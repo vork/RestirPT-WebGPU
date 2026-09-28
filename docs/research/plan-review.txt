@@ -1,0 +1,808 @@
+
+========== unbiasedness verdict: ready_with_fixes
+
+[critical|VALID] R1 §§3 passes 3-4 (suffix_refresh, temporal_*); §1 Kernels ('Suffix refresh is a separate pass'); §2 rule 8
+  PROBLEM: Pass 3 says it will 'refresh prev-frame reservoirs under S_t, and canonical samples under S_{t-1} when needed' before temporal classification. There are four problems. (a) If pass 3 rewrites reservoir_prev (F or rcRadiance) in place, the stored route π_p(Y_p) = lum(F_p^st)/J_p no longer equals F_{t-1}(X_p), while π_p(X_c) comes from the exact E_{t-1}. That is the mixed evaluator whose partition of unity fails: B(r) = 1/(1+c_p) − r/(r+c_p), −4.3% for a 2× intensity step. It is exactly the Falcor bias that rule 8 forbids. (b) 'When needed' cannot be known in pass 3, because s is drawn later in temporal_resample. (c) The graph has no pass for the inverse shift T^{-1}(X_c): replay into q', reconnection and the S_{t-1} end term. It would be traced inside temporal_resample, which contradicts §1's rule that replay is a separate compacted indirect pass. (d) The write-back of a selected temporal 
+  FIX: Replace §3 steps 3–4 with the four-pass temporal layout from gap-temporal §8.3.
+3. temporal_classify: choose q' (see R8). Translate every stored light index of X_p (endpoint and suffix-cache lightIdx) with prevToCur; if any is −1, Y_p is undefined. Set c_p = min(20, c_prev). Do inline forward shifts for k=2 and class-L d=2, and ballot-append the rest to Q_f.
+4. temporal_forward (indirect over Q_f): replay, reconnection and end-term re-evaluation under S_t. The suffix/end-term refresh may run as a separate pass, but it writes only scratch (gap-perf B9 suffixOut, fwd/inv). D-class suffix terms depend only on the source reservoir; N1 and L end terms depend on the offset vertex, so they are evaluated in the shift. Nothing writes reservoir_prev.
+5. temporal_select: compute w̃_c and w̃_p and draw s with the resampling RNG. If s = p, finalize W_Y with π_p(Y_p) = lum(F_p^st)/J_p, read from the untouched reservoir_prev. If s = c, append q to Q_i.
+6. temporal_inverse (indirect over Q_i): compute T^{-1}(X_c) under S_{t−1} (prev camera, prev jittered V-buffer, thr_{t−1}, lightsPrev, pmf_{t−1}, curToPrev), with the canonical end term re-evaluated under L_{t−1} from its suffix cache into scratch. Then finalize W_Y.
+Invariants:
+- reservoir_prev is read-only for the whole frame.
+- The temporal output stores F_t(Y), plus rcRadiance and the end-term cache valid under S_t (I1).
+- jDen ← J_rc·jDen
+
+[major|VALID] R2 §§2 rule 9 (Moving lights); §3 pass 0 (lightsChanged flags)
+  PROBLEM: Rule 9 says the refresh runs 'only for samples on moved lights; an intensity or colour change is an analytic rescale'. That keys the refresh per light. But F contains 1/q = A/pmf(L) and the MIS weights ω1 and ω2, and these depend on the global power pmf. Any power edit, add or remove renormalizes pmf for every light. Two kinds of sample are then affected even when their own light is unchanged: every NEE-terminated sample (including emissive triangles), and every BSDF-hit-emitter ending (ω2 through p1 of the hit triangle). For all of them F_t ≠ F_{t−1}. With a per-light mask, I1 is violated. The forward shift then uses the wrong integrand, and the next frame's stored route is wrong. J_P only fixes the PSS reparametrization, not the integrand.
+  FIX: Append to rule 9: 'Refresh scope is per frame, not per light. If pmf_t ≠ pmf_{t−1} bitwise (any power or luminance edit, add or remove), every light-terminated reservoir gets its end term re-evaluated under the new pmf, without rays. This covers NEE ends (1/q and ω1) and BSDF-hit emitter ends, including emissive triangles in Mode A: ω2_t = p2/(M(B)·p1_t + p2), with p1_t built from pmf_t (also never reuse the cached case-(c) aux p1 across frames).
+Prefer recomputing the end term from the suffix-cache inputs (x_{d−1}, ω_o, β_s, lightIdx, uv). Visibility is unchanged for an unmoved light, because geometry is static. Use the ratio form N_t = N_{t−1}·(Le_t/Le_{t−1})·(ω1_t/ω1_{t−1})·(q_{t−1}/q_t) only when N_{t−1}, Le_{t−1} and ω1_{t−1} are > 0.
+Shadow rays are needed only for samples whose own light moved, rotated or was resized. The inverse direction (canonical under S_{t−1}) likewise uses pmf_{t−1} for every light-terminated path.
+Rebuild the alias table only when powers or the light set change, so the pmf is bitwise stable otherwise.
+Tests: ix-e must pass T6(b) at frame 15 (checking reservoirs written at frame 14) on pixels lit only by the unchanged light B. Planted control N7 is a per-light refresh mask. At frame 14, pmf_B drops from 0.5 to 1/3. B's D-class temporal samples keep 1/pmf_{t−1}, so their F is 2/3 of the true value. Predicted outcome: B's temporal contribution DARKEN
+
+[major|VALID] R3 §§2 rule 4 (last bullet); §1 Reservoir ('plus the NEE light pdf')
+  PROBLEM: 'Light vertices: J = 1 within a frame, and pmf_t/pmf_{t−1} across frames' is wrong or ambiguous in four ways. (i) For a BSDF-hit emitter used as rc vertex (case d, k = d), J = p^y_{d−1}(ω',ℓ)·G(y_{d−1}→z) / [p^x_{d−1}·G(x_{d−1}→z)], which is not 1. There is also never a pmf ratio, because that path has no light-selection dimension. (ii) J_P must multiply every NEE-terminated path (classes L, N1, D-NEE), not only those where the light vertex is the rc vertex. Omitting it gives the N2 bias. (iii) J = 1 holds only for area-uniform light-local (u,v) sampling with a shading-point-independent pmf. Porting Cycles' spherical-rectangle sampler silently breaks it. (iv) §1 caches 'the NEE light pdf', which invites reusing a p1 measured at a vertex the shift replaces (C2).
+  FIX: Replace rule 4's last bullet with the following light-vertex factors.
+(a) NEE-sampled light vertex (forced rc, k = d): J = 1 within a frame. This holds only because light points are sampled area-uniformly in light-local (u,v): rect uniform; disk/ellipse concentric; triangle b = (1−√u1, √u1(1−u2), √u1·u2). The pmf must also be shading-point independent. Any solid-angle light sampler (e.g. Cycles' spherical rectangle) requires J = p_A(z|y_{d−1})/p_A(z|x_{d−1}).
+(b) BSDF-hit emitter as rc vertex (case d): J = p^y_{d−1}(ω',ℓ_{d−1})·G(y_{d−1}→z)/cachedJden, with p_k := 1. There is never a pmf factor. Temporally, multiply by J_M = A_t/A_{t−1} only for a resized Mode-B analytic area light.
+(c) Temporal: multiply by J_P = pmf_t(L)/pmf_{t−1}(L) for every NEE-terminated path (classes L, N1, D-NEE), wherever the light vertex sits relative to k. Never apply it to BSDF-hit endings. J_P never enters jDen.
+(d) Delta lights and the sun: J = 1 (× J_P temporally), never t_x²/t_y².
+(e) A light pdf may be cached only when its measuring vertex is the copied rc vertex x_{d−1} (cases b and c), and only within one frame. Cases (a) and (d) always recompute p1 at y_{d−1}, and every cross-frame use recomputes from that frame's light buffer and pmf. Rename §1's 'NEE light pdf' field to 'aux: case-(b)/(c) p1 at x_{d−1}'.
+
+[major|VALID] R4 §§2 rules 6 and 9 (inconsistency between the adopted gap-rc predicate and the gap-temporal refresh design)
+  PROBLEM: The plan adopts gap-rc's predicate. Under it, the NEE candidate's pair (x_{d−2}, x_{d−1}) uses EV_NEE, whose invFP pdf is the BSDF pdf of the NEE direction. For forced NEE, O1 also tests (y_{d−2}, y_{d−1}) with EV_RECONNECT_NEE toward x_d. Both depend on the light point Φ_s(L,u,v). So k* and the class (L vs N1) change when a light moves or rotates, which contradicts gap-temporal §5.1 ('k is light-independent… the class of a path never changes under light edits') and its test §9.3-6 ('class invariance across light edits'). The rule-9 refresh and the suffix-cache classes rely on that invariance. If the forward shift or refresh trusts the stored k/class on light-change frames without re-running O1/O2 against Φ_t (and the inverse against Φ_{t−1}), the temporal shift is not bijective. The resulting bias concentrates on glossy x_{d−1} near moving lights. Mode-B BSDF_ANALYTIC pairs (x_{d−1}, z)
+  FIX: Add to rule 6: 'k* is always evaluated in the destination frame's light state. Forward temporal shifts run O1/O2/O3 with Φ_t(L,u,v) and the frame-t light normal; this affects EV_NEE's invFP pdf p̄(ω_NEE), EV_RECONNECT_NEE, and Mode-B terminal pairs (x_{d−1}, z). Inverse shifts use Φ_{t−1}. If k or the class would differ, the shift is undefined in both directions, using the same code. The refresh pass never relabels a reservoir's k or class.'
+Note that D-classes with k ≤ d−2 are light-independent. Only L↔N1 (and Mode-B terminal-pair or full-replay classes) can flip.
+Replace gap-temporal test §9.3-6 with: 'T defined ⇒ class and k preserved; report the class-change (undefined) rate per light-change frame; T3/T5 must still pass.'
+Alternative, if light-independent classes are preferred: drop pair d−1 with EV_NEE from NEE candidates' pair lists and EV_RECONNECT_NEE from forced-NEE O1 (EvanLuo rule; gap-rc §3.5 answer 1 says both variants are unbiased if applied identically). Choose exactly one variant and code it only in rc.wgsl.
+
+[major|VALID] R5 §§1 Materials ('VNDF sampling, rejecting samples below Ng exactly as Cycles does'; 'flat shading first'); §2 (missing rule)
+  PROBLEM: The plan copies Cycles' asymmetry (samplers reject below Ng; eval does not). It never states that a shift re-evaluating a BSDF-sampled segment must apply the canonical sampler's support indicator. Examples are ω' at y_{k−1} with the copied lobe, and the stored ω_k at x_k under the new V. Without the indicator, p̂(ȳ) > 0 on paths the canonical path tree can never generate. That violates GRIS Def. 5.2, so ReSTIR adds energy that our own PT never integrates: bias against our PT, not only against Cycles. This happens for smooth shading, for normal maps (M7), and for refraction configurations with no valid microfacet. Cycles' eval lacks that check (bsdf_microfacet.h:622-623 TODO), but its sampler can only produce valid ones. Validation is flat-only, so this is not caught before interactive GLBs (smooth and normal-mapped by default) use it.
+  FIX: Add §2 rule 15: 'Sampler-support indicator in shifts. When a shift evaluates a BSDF-sampled segment, multiply both f and the joint pdf by 1_supp(ℓ,V,L), computed after the two-sided N/Ng flip for the evaluating V. This covers:
+- the reconnection direction ω' at y_{k−1} with the copied ℓ_{k−1};
+- the stored ω_k at x_k with V^y = normalize(y_{k−1} − x_k) when ℓ_k is a BSDF lobe;
+- cases (c) and (d).
+Support per lobe (Cycles sample-side tests, bsdf_diffuse.h:57-63, bsdf_microfacet.h:762-765):
+- D: Ng·L > 0 (and N·L > 0 via eval).
+- S / glass-R: Ns·V > 0 ∧ Ng·L ≥ 0 ∧ Ns·L ≥ 0.
+- T: Ns·V > 0 ∧ Ng·L < 0 ∧ Ns·L < 0 ∧ H·V > 0 ∧ H·L < 0, with H = −normalize(η·L + V) re-oriented so Ns·H > 0.
+NEE segments get no indicator (Cycles' NEE has no Ng test). Implement it once as bsdf_sample_support() in the shared BSDF module, used by base, replay and shift.'
+In §7 add Gate-3 rung 3.8: 'smooth-shaded + normal-mapped scenes (and rough glass), our ReSTIR ≡ our PT (no Cycles).' It must pass before M7 enables normal maps in ReSTIR.
+
+[major|VALID] R6 §§2 rule 6 (O1/O2/O3 sentence)
+  PROBLEM: 'An offset path must fail every earlier pair (O1)' does not say which event is used at y_{k−1} for the last pre-rc pair (y_{k−2}, y_{k−1}). The natural replay-loop implementation uses the direction the replay would sample at y_{k−1}. The correct event is the reconnection event: copied ℓ_{k−1}, direction ω' toward x_k, and p̄^y(ω'). The wrong one gives a non-bijective shift. gap-rc ranks this as the most likely asymmetry bug ('the check most implementations forget'). The sentence also omits O0 (structure and lobe feasibility) and the NEE-final (case g) pdf definition, which must be identical in base and offset.
+  FIX: Replace the O1–O3 sentence in rule 6 with: 'Offset checks for base rc index k. All use rcPairTest with the destination's stored thr.
+(O0) The replay reaches y_{k−1} without a miss. The copied-lobe joint pdfs are positive: p^y_{k−1}(ω',ℓ_{k−1}) > 0 and, for a continuing x_k, p^y_k(ω_k,ℓ_k|−ω') > 0. For k = ∅, same d and same technique.
+(O1) Every pair j < k fails. Pairs j ≤ k−2 use the replayed EV_BSDF events. The last pre-rc pair (y_{k−2}, y_{k−1}) uses EV_RECONNECT at y_{k−1}: copied ℓ_{k−1}, ω' = normalize(x_k − y_{k−1}), and p̄^y_{k−1}(ω'). Never use the direction the replay would sample at y_{k−1}. For forced NEE, use EV_RECONNECT_NEE toward x_d.
+(O2) The pair (y_{k−1}, x_k) passes with recomputed p̄^y_{k−1}(ω') and p̄^y_k(ω_k|−ω'), with the cosine at the receiving vertex. Skip O2 only for forced NEE.
+(O3) For k = ∅, no pair of ȳ passes, including the terminal emitter/env pair.
+For an NEE-final x_k (case g), the invFP pdf is the all-lobe BSDF pdf of the NEE direction, in base and offset alike. Replay and reconnection passes both call the same rcPairTest (gap-rc §6.1–6.2, §9.1).'
+
+[major|VALID] R7 §§2 rule 3 (Enhanced RIS-NEE MIS weight)
+  PROBLEM: Rule 3 uses 'p1' for two different quantities. It is the solid-angle pdf inside ω1 = M·p1/(M·p1+p2), and it is also the factor in the UCW 'W^RIS·p1'. W^RIS is an area-measure (μ) UCW, so its factor must be the source density q in μ (P/A or P), not the solid-angle pdf. An implementer who multiplies by the solid-angle p1 introduces an r²/|cosθ_z| measure error, which is a bias. The rule also never states the BSDF-hit counterpart ω2 = p2/(M·p1+p2) with the same M. With RIS-NEE at x1 (M = 32), emitter hits at x2 must use M(1) = 32. The index B = x_{d−1} and the delta-lobe conventions are unstated too.
+  FIX: Rewrite rule 3 as follows.
+- NEE source density in μ: q = P(L)/A_L (area light or emissive triangle, area-uniform) or q = P(L) (delta, sun).
+- RIS ratio: r_i = lum(f_cos·Λ_i)/q_i, with Λ = L_e|cosθ_z|/r² for area and triangle lights, I(ω)/r² for delta lights, and E for the sun. Both terms are in μ.
+- Stored NEE weight: W_NEE = W^RIS·q(Y) = (1/M)·Σ_i r_i / r_Y. This is Enhanced's 'W^RIS·p1', whose p1 is the source density in W^RIS's (area) measure, not a solid-angle pdf.
+- F_NEE = T·ω1·f_cos·Λ·V/q.
+- The solid-angle p1 = q·r²/|cosθ_z| is used only inside ω1 = M(B)·p1/(M(B)·p1 + p2) and ω2 = p2/(M(B)·p1 + p2), where B is the vertex index of x_{d−1}.
+- M(B) is one deterministic function shared by NEE-time, BSDF-hit-time, replay and shift code. With the plan's primary-only RIS-NEE: M(1) = 32 when RIS-NEE is on, and M(B) = 1 otherwise. If RIS-NEE is extended to deeper bounces, use max(1, ⌊32/B²⌋).
+- ω1 ≡ 1 for isDelta lights and for Mode-A analytic lights.
+- p2 is the marginal over non-delta lobes, with the delta lobes' sample weights kept in the normaliser. ω2 = 1 after a delta lobe (MIS skip).
+Add U3's planted mixed-measure control and U1's NEE-time vs hit-time partition test (incl. M ∈ {1, 32}) to Gate 0.
+
+[major|VALID] R8 §§3 pass 4 ('3×3 search'); §5 M6 ('disocclusion boost'); §2 rules 7–8
+  PROBLEM: (a) The temporal 3×3 search criterion is unspecified. If it prefers non-empty, high-W or high-c reservoirs, or falls through to 'the next valid reservoir', the choice of the temporal domain becomes sample-dependent. The GRIS weights then no longer integrate over a fixed input set, which biases the result. (b) The disocclusion boost adds neighbours only for disoccluded pixels. That set is non-reciprocal: the extra neighbour j never shifts X_j into c's domain in S1. So S2 either drops j (treating 'not computed' as failed, the C3 energy loss) or counts it in k without a candidate. Both are biased, yet gate 3.7 treats the boost as an unbiased feature.
+  FIX: Add to rule 8: 'The temporal source pixel q' is a function only of the current and previous G-buffers, the (dual) motion vectors and a sample-independent RNG. This covers back-projection rounding, the 3×3 search order and acceptance, and the dual-MV choice. It never depends on reservoir contents (emptiness, W, c, p̂, F). If no q' passes the G-buffer test, there is no temporal candidate (c_p = 0).'
+Add to rule 7: 'The disocclusion boost keeps pairing. Extra pairing textures are used by a pair (p,q) iff A(p,q) ∧ (dis(p) ∨ dis(q)), where dis() depends only on G-buffers and motion, and the decision is made once in canonical order in pair_accept. Both pixels then compute the shift, write slots, and count the pair in S and in k. Non-reciprocal extra neighbours are allowed only if the receiving pixel computes both shifts itself (two-shift pairwise).' Classify the boost explicitly as an unbiased feature only in this reciprocal form, and include it in Gate-3 rung 7.
+
+[major|VALID] R9 §§1 Materials ('Glass/transmission… spec from the glass gap report'); §8 pending; §2
+  PROBLEM: The plan gives no ReSTIR rules for transmission, and several are needed for unbiasedness.
+(1) Cycles inverts η on backfacing hits and flips N and Ng. At a reconnection vertex x_k, or at y_{k−1}, η must come from the evaluating path's own V. A cached side or η from the base path is wrong for the offset.
+(2) The joint pdf of glass sub-lobes is not a V-only q times a direction pdf. Cycles picks R vs T at the sampled H with P_R(H) = avg(R)/avg(R+T), and the refraction pdf carries the generalized-half-vector Jacobian η²|H·L|/(V·H + η·L·H)².
+(3) Delta also covers refraction with |η−1| < 1e-4, which Cycles treats as singular, not just α_x·α_y ≤ 2e-10.
+(4) The 2-bit lobe codes cannot hold R and T.
+(5) The RNG layout must include the R/T decision (Cycles reuses the rescaled rand.z).
+(6) Replay may flip R/T or hit TIR. That is allowed (PSS J = 1), but O3 must still hold.
+(7) Reconnection through a
+  FIX: Require the pending glass spec to contain §2 rule 16 (glass):
+(a) Lobe codes are 3 bits: D, S, R_g, T_g, NEE, NONE, for ℓ_{k−1} and ℓ_k (e.g. pathFlags bits 22–27; the 3-bit temporal class field moves to 28–30). A lobe is delta iff α_x·α_y ≤ 2e-10, or, for T_g only, |η−1| < 1e-4 (bsdf_microfacet.h:771).
+(b) η and the N/Ng flip are never stored. Recompute them at every evaluation from the side of the evaluating V (backfacing ⇒ η = 1/ior; svm/closure.h:392, :761). This applies at x_k with V^y = normalize(y_{k−1} − x_k) and at y_{k−1}.
+(c) Joint pdfs (Cycles eval :666-673, pdf = common·lobe_pdf/(1+λ_I)):
+  - p(L,T_g|V) = q(G|V)·D(H)·G1(V)·|V·H|/(Ns·V)·η²|H·L|/(V·H + η·L·H)²·(1 − P_R(H)), with H = −normalize(η·L + V);
+  - p(L,R_g|V) = q(G|V)·D(H)·G1(V)/(4·Ns·V)·P_R(H), with P_R(H) = avg(R)/avg(R+T) at that H;
+  - the marginal (MIS, footprints) sums R_g and T_g, which are disjoint by side.
+(d) Copying ℓ ∈ {R_g, T_g} fixes the interaction type. If V^y changes side so that ω_k violates it, the joint pdf is 0 and the shift is undefined, symmetrically.
+(e) Port Cycles' eval verbatim: no extra 1/η² radiance factor, Fresnel on the side-dependent ior, and (Tier 2) ggx_glass_E/inv_E tables selected by η<1 and re-evaluated with V^y.
+(f) The fixed per-vertex RNG layout contains the R/T decision. Use Cycles' rescaled closure-selection dimension (surface_shader.h:425-438) or a dedicated 4th slo
+
+[major|VALID] R10 §§5 M2 (cycles_settings.py list), M3 (glass), M7 (Tier 2, e2e GLB test); §7 Gate 2 (vi)
+  PROBLEM: Five Cycles parity traps for glass are missing.
+(a) Cycles' GGX refraction eval has no configuration-validity check (TODO at bsdf_microfacet.h:622-623). D and Λ are sign-symmetric and the Fresnel term uses |cos|. So NEE through a rough-glass T lobe gets energy in configurations its own sampler cannot produce, and Cycles' NEE/BSDF MIS is not a partition there. Its expectation in that region depends on the power heuristic and Cycles' light-tree pdf, so our balance-heuristic PT cannot match it exactly. This is the same mechanism as the smooth-shading case.
+(b) caustics_reflective and caustics_refractive are not pinned. Under __CAUSTICS_TRICKS__, turning them off zeroes glass reflection/transmission tints after diffuse bounces, which is biased by design.
+(c) The Glass BSDF node defaults to MULTI_GGX (introspected), and glTF transmission imports as MULTI_GGX. Tier-2 glass needs ggx_glass_E/Ea
+  FIX: Add to the M2 settings list:
+- caustics_reflective = caustics_refractive = True (pinned explicitly);
+- Glass BSDF distribution and Principled distribution = GGX for Tier-1 glass tests;
+- the bridge forces sun.angle = 0 for every SUN light.
+Add to the glass spec:
+- Port the refraction eval literally (no configuration-validity check) for NEE. BSDF-sampled segments carry the R5 support indicator.
+- Cycles' NEE through a rough T lobe is not a NEE/BSDF partition in invalid configurations (H·V ≤ 0 or H·L ≥ 0). This region is reached at any vertex whose V is inside the glass and whose light lies in the outward half-space (e.g. after internal reflection/TIR), so it cannot be excluded by light placement on closed glass.
+- Exact-parity Gate-2 glass scenes therefore use smooth (delta) glass, which gets no NEE.
+- For rough glass, run an A/B of our PT with Cycles-literal vs validity-checked T eval. Put scenes whose difference exceeds δ into the model-approximate tier.
+Add to Tier 2: ggx_glass_E (16³), ggx_glass_Eavg (16²), ggx_glass_inv_E (16³) and ggx_glass_inv_Eavg (16²), 8704 floats in total, selected by η < 1 (bsdf_microfacet.h:373-386).
+Add to M7: 'KHR_materials_volume is unsupported in v1. The loader warns. The e2e import test deletes the Volume Absorption node (it absorbs whenever attenuationDistance is finite; density = 1/attenuationDistance) and sets sun angles to 0 before renderin
+
+[major|VALID] R11 §§1 Geometry and BVH (Wächter–Binder offsets); §2 rule 6
+  PROBLEM: No single segment-visibility contract is specified. The base found x_k with a closest-hit ray. The inverse shift re-tests (x_{k−1}, x_k) with a shadow ray whose epsilon, t_max, primitive exclusion or offset side can differ. The forward shift is then defined while the inverse is undefined. That asymmetric domain is bias of positive measure, concentrated at contact geometry (scene xi) and inside glass, where offsetting along +Ng for a transmitted segment starts the ray outside.
+  FIX: Add to §2 rule 6: 'One visibility function visible(a, b) serves every segment test: NEE shadow, reconnection (forward and inverse), refresh, and the T3 re-test of the base's own rc segment. It tests triangles only; with alpha, it returns the R12 transmittance.
+- Offsets use Wächter–Binder per endpoint: a along sign(Ng_a·ω)·Ng_a with ω = normalize(b − a), and b along sign(Ng_b·(−ω))·Ng_b, i.e. toward the side the segment arrives from. This handles transmitted/glass segments.
+- t_max is the distance between the offset points, with one shared ε (this reconciles gap-light's (1−ε)·dist with gap-rc's dist).
+- Exclude both endpoint primitives (for triangle lights the light primitive is the endpoint).
+- Target: T3 VIS class = 0 in ≥ 10⁷ round trips, including the scene-xi contact cases and glass.'
+
+[major|VALID] R12 §§5 M7 ('Alpha (MASK/BLEND) as a transparent BSDF with transparent bounces, deterministic per path')
+  PROBLEM: 'Deterministic per path' is ambiguous. If BLEND pass-through on visibility or reconnection segments is a stochastic or path-hashed decision, p̂ becomes a random function of y. The pairwise/Talbot m_i are then no longer deterministic functions, which makes them invalid, and forward and inverse shifts can disagree. Cycles also counts transparent crossings, including on shadow rays, toward transparent_max_bounces = 8 by default, which truncates the reference.
+  FIX: Replace the M7 alpha bullet with the following.
+- MASK: a binary alpha ≥ cutoff test, treated as a geometry property by every ray (any-hit filter).
+- BLEND on NEE/shadow segments (including forced-NEE rc segments, both base and offset): the deterministic transmittance ∏(1−α_i) along the segment, matching Cycles' transparent shadows.
+- BLEND on BSDF continuation rays: decide pass-through with replayed per-crossing dimensions from the fixed layout (vertex, crossing index). Crossings create no vertices.
+- BLEND on BSDF-sampled reconnection segments (y_{k−1}→x_k): the canonical F of such a segment carries no transmittance, because pass probability and transparent weight cancel. So choose exactly one of:
+  (i) a pair whose segment crosses any BLEND surface fails P_k, via one deterministic crossing query shared by base and offset, in rc.wgsl; or
+  (ii) treat crossings like lobe selections. F uses opaque-only visibility, and J (and jDen) carry ∏_{y-seg}(1−α)/∏_{x-seg}(1−α).
+  Never use deterministic transmittance in F for BSDF-sampled rc segments.
+- References set transparent_max_bounces = 1024, and our renderer applies no cap.
+- Add a Gate-3 alpha rung (ReSTIR ≡ PT, with BLEND surfaces crossing rc segments) before alpha is enabled for imported assets.
+
+[minor|unverified(minor)] R13 §§2 rule 7 and §3 pass 5 ('pairwise MIS with RGB shading weights')
+  PROBLEM: The RGB shading estimator's normalization is not stated. If the Falcor-style unnormalized weights (W = Σw/p̂/(k+1)) are used and the RGB sum is not also divided by (k+1), the pixel is (k+1)× too bright. It is also unspecified how FAILED and NOT_ACCEPTED partners enter k, and which estimator applies in rungs without a spatial pass.
+  FIX: Add to rule 7: 'Shading colour L_pix = m_c·F⃗_c(X_c)·W_c + Σ_{j∈S_c} m_j·G⃗_j·W_j, with G⃗_j = F⃗_c(Y_j)·J_{j→c} from the slot. m_i already contains 1/(k+1), with k = |S_c|. FAILED partners count in k and contribute 0; NOT_ACCEPTED partners are excluded. With Falcor-style unnormalized weights, divide the RGB sum by (k+1) too. Scalar w_i = lum(w⃗_i) drives the selection and W_out = Σw_i/p̂_c(Y). Without a spatial pass, shade with F(Y)·W. Length-1 terms are added once, outside. Gate-0 check: lum(L_pix) == Σ_i w_i to 1e-6 relative.'
+
+[minor|unverified(minor)] R14 §§2 rule 10 (RR); §4 docs/math.md; §7 Gate 3 ladder ordering
+  PROBLEM: (a) Index conventions (x0 camera, x1 primary, d = light-vertex index, k ≥ 2) are not pinned in the plan, while Falcor uses rcVertexLength = k−1 and pathLength = d−1. Porting its logic invites off-by-ones in 'needs replay', M(B) and the RR ranges. (b) The RR range is stated only as 'exactly the tests survived', without explicit indices. (c) 'RR stays off until Gate 3.1 passes' implies RR is on in rungs 3.2–3.6 before RR itself has its own rung. (d) There are no Gate-3 rungs for smooth shading, normal maps, glass or alpha before these become defaults for imported assets.
+  FIX: Put gap-rc §1's index table verbatim into docs/math.md: d ≥ 2; k ∈ {2..d} ∪ {∅}; Falcor rcVertexLength = k−1 and pathLength = d−1; needs-replay ⇔ k > 2 ∨ k = ∅; M(B) with B = index of x_{d−1}.
+Rule 10 addition: 'RR test i happens at x_i after NEE at x_i. An NEE candidate ending at x_d survived tests i = 1..d−2. A BSDF-hit emitter at x_d survived i = 1..d−1. The UCW factor is 1/∏ over exactly those tests.'
+Ladder: add rung 3.1b (initial RIS with RR ≡ PT); keep RR off in rungs 3.2–3.6 and toggle it in 3.7; add rungs 3.8 (smooth and normal-mapped, R5), 3.9 (glass, R9) and 3.10 (alpha, R12).
+
+[minor|unverified(minor)] R15 §§2 rule 8 (E_{t−1} contents); §1 Textures (ray-cone LOD); §1 Reservoir (8-bit M)
+  PROBLEM: (a) The ray-cone LOD at x1 in interactive mode makes F_{t−1}(X_p) depend on the previous camera's cone. If E_{t−1} evaluates x1' with the current camera's LOD, stored ≠ recomputed and the mixed evaluator returns. (b) In Mode B, E_{t−1} must intersect BSDF endings against lightsPrev. (c) Changes to M(B), c, α_min or max length are part of S_{t−1}. (d) With 3 spatial rounds × 6 neighbours and uncapped spatial confidence, c reaches (1+6)³ = 343 > 255, which overflows the 8-bit M. That is unbiased only by accident; the behaviour must be defined.
+  FIX: Extend rule 8's E_{t−1} list with: 'the previous ray-cone/LOD plane at x1' (or LOD 0 in exact modes); in Mode B, the crossing loop over lightsPrev; frame config (M(B), τ, α_min, max length). Any config change resets the temporal history.'
+Add to §1 Reservoir: 'The 8-bit c saturates at 255 (min(255, ·)). Offline and validation keep f32 c.'
+
+  MISSING: ["Separate temporal_inverse pass (queue of pixels where the canonical was selected) and a read-only reservoir_prev invariant; the suffix refresh writes scratch buffers only (R1)", "Light-index renumbering to frame t, refreshed rcRadiance, and a jDen update when a temporal sample is selected (R1)", "Global analytic end-term refresh for all light-terminated samples on pmf-change frames (R2)", "Case-(d) BSDF-hit-emitter Jacobian, and J_P applied to every NEE-terminated class; area-uniform light sampling as a precondition for J = 1 (R3)", "Resolution of the gap-rc vs gap-temporal contradiction: k*/class can change when lights move (R4)", "Sampler-support indicator for shifted BSDF-sampled segments (smooth shading, normal maps, refraction validity) plus a matching Gate-3 rung (R5)", "Explicit O0 and last-pre-rc-pair EV_RECONNECT rule, and the case-(g) NEE-direction pdf, in the plan's rule 6 (R6)", "Measure-explicit RIS-NEE UCW (W^RIS\u00b7q, not solid-angle p1), \u03c92 with the same M(B), and the M(B) index definition (R7)", "Sample-independent temporal source-pixel selection and a reciprocal (paired) disocclusion boost (R8)", "Glass ReSTIR rules: side-dependent \u03b7, 3-bit R/T lobe codes, H-dependent R/T joint pdf with the refraction half-vector Jacobian, singular refraction at |\u03b7\u22121| < 1e-4, RNG slot for the R/T choice, T3 glass cases (R9)", "Cycles glass parity: missing refraction-validity check in the eval, caustics flags, MULTI_GGX glass tables, KHR_materials_volume absorption node from the stock importer, sun default angle 0.00918 rad (R10)", "Single symmetric segment-visibility function (endpoint exclusion, side-correct offsets) (R11)", "Deterministic BLEND-alpha visibility (transmittance product) and a transparent-bounce cap policy (R12)", "RGB shading-weight normalization formula (R13)", "Pinned index conventions, explicit RR survival ranges, and Gate-3 rungs for RR, smooth/normal-mapped, glass and alpha (R14)", "E_{t\u22121} additions (previous LOD plane, Mode-B lightsPrev crossings, frame-config reset) and saturating 8-bit confidence (R15)"]
+
+========== webgpu-feasibility verdict: ready_with_fixes
+
+[critical|VALID] WGPU-1 §§1 Kernels (prefix replay compaction + dispatchWorkgroupsIndirect); §3 steps 4–5; §3 Modes (Offline); §7 Gate 3
+  PROBLEM: Replay queues use 1D dispatchWorkgroupsIndirect with 64-wide groups. That caps a queue at 65,535×64 = 4,194,240 items. When the indirect x exceeds maxComputeWorkgroupsPerDimension, the WebGPU spec makes the dispatch a no-op, and Dawn implements this with an injected validation pass that zeroes the args. Every pair in that queue is then silently skipped: its slots keep stale or zero values, the result darkens, and no error is raised. The cap is exceeded in configurations the gates use: 1080p with N=3 at replay fraction f_r > 0.67; ensemble E=64×256² with N=3 at f_r > 0.33; Offline unpaired, 6 neighbours × 2 directions at 1080p, at f_r > 0.17; Talbot-exact inverse over more than 4.19 M px; and T3's 10⁷ trials. The glass/mirror scene (vi) will have a high f_r. Three related problems: queue capacity per queue is unspecified (overflow also drops items silently); the gap-perf item encoding (p<
+  FIX: Add to §1 Kernels a normative sub-bullet 'Replay queues and dispatch sizing':
+(a) The args pass reads the queue counter and computes n = min(counter, capacity). It stores n in the queue header and writes 2D indirect args: g = ceil(n/64); args = (min(g,65535), ceil(g/65535), 1). Replay kernels declare `requires linear_indexing;`, compute item = workgroup_index*64 + local_invocation_index, and return when item >= header.n. The replay kernels contain no subgroup operations, so this early return is legal.
+- Every direct dispatch uses the same 2D split: T3/T5/T7 trial kernels and the reductions. Over the limit, a direct dispatch is a validation error rather than a silent skip, but it still fails.
+- Per-pixel passes keep 2D 8×8 grids. A 1D 64-wide per-pixel dispatch already fails at E=64×256² (4,194,304 px > 4,194,240).
+(b) One `queue` buffer holds a header {counter, n, capacity, overflowFlag} per queue at 256-B-aligned offsets, followed by item regions. Each region is sized for the worst case of the largest configured mode: Q_f = P, Q_i = P, spatial = N_max·P per round.
+- In append(), a lane writes only if base+prefix < capacity. Otherwise it does atomicOr(overflowFlag, 1) and writes nothing.
+- Every validation run reads the flags back and fails the gate if any flag is set.
+(c) Item encoding is (pixel<<4)|slot, with slot < 16 and pixel < 2^28. If a direction bit or more slots are ev
+
+[major|VALID] WGPU-2 §§3 steps 3–4 (suffix_refresh, temporal_classify / temporal_replay_reconnect / temporal_resample); §2 rule 8
+  PROBLEM: Contribution MIS needs an inverse shift T⁻¹(X_c) under S_{t−1} whenever the canonical is selected. That shift is a prefix replay in the previous domain plus a reconnection, and the pass graph has no pass or queue for it. Doing it inline in temporal_resample would put traversal and the BSDF library into the resample kernel, against the plan's own 'replay is a separate compacted pass' rule. suffix_refresh is also mis-sequenced and underspecified. It runs before selection, so 'canonical samples under S_{t−1} when needed' cannot be known at that point. 'Refresh prev-frame reservoirs under S_t', read as an in-place update, overwrites F_{t−1}(X_p), which is still needed as π_p(Y_p) = lum F_p^st / J_p (invariant I1). The plan does not allocate the suffixOut buffer at all.
+  FIX: Replace §3 steps 3–4 with the gap-temporal §8.3 layout, as proposed, with these corrections.
+
+3. suffix_refresh runs on light-change frames only and never writes in place. The prev reservoir stays read-only, because π_p(Y_p) = lum F_p^st / J_p needs F_{t−1}(X_p), per invariant I1.
+- It writes B9 `suffixOut` (already in gap-perf §4.2; name it explicitly in the plan).
+- suffixOut holds only the **prefix-independent** suffix terms: classes D-NEE and B1/D-BSDF, i.e. the β_s ⊙ N_s or emitter term beyond x_k.
+  - (a) fwd[q']: for prev reservoirs whose stored light moved or changed, under S_t.
+  - (b) inv[q]: for canonicals whose stored light (via curToPrev) moved or changed, under S_{t−1} (lightsPrev, pmf_{t−1}). The predicate is scene-level ('stored light changed'), never 'canonical selected'.
+  - Acceptable alternative: fuse (b) into T4 so that only selected canonicals are refreshed. gap-perf §2.4 measured fusion at only 3–4% cost. Pick one approach.
+- Class L and N1 end-terms depend on the offset path's incoming direction at x_k (or y_{d−1}), so they cannot be precomputed. They are evaluated inside the reconnection: T1/T2 under S_t, T4 under S_{t−1}.
+- Layout: suffixOut is 2×16 B/px in validation and 2×8 B/px in production. It is bound rw in suffix_refresh and ro in T1–T4.
+
+4. Temporal passes:
+- T1 temporal_classify: inline reconnection-only forward shifts; appends forward replays
+
+[major|VALID] WGPU-3 §§1 Device (relaxed math) and Kernels (compile-time rules); §2 rule 6; §5 M4 (T2/T3); §7 Gate 0
+  PROBLEM: Initial sampling, replay, shift and inverse evaluation are separate pipelines. Chrome compiles MSL with fp math_mode(relaxed): FMA contraction was measured, and reassociation and reciprocal-division are allowed. So the same WGSL can yield different last-ulp values for ray origins, footprints and pdfs in different pipelines. Near a threshold, a predicate can then flip, or a replayed ray can hit the neighbouring triangle at an edge. Gate 0 requires 'zero invertibility logic violations', but the plan never says how FP-boundary flips (expected rate about 1e-7 to 1e-6, so a few in 10⁷ T3 trials) are told apart from logic bugs. It also omits the single-engine validation build, the only configuration in which the FP class is exactly 0. The plan's ban on a single traversal call site (39% slower) contradicts that build unless the ban is limited to production. Further gaps: whether strictMath has 
+  FIX: Add to §2 rule 6 and Gate 0 the violation classes of gap-rc §10.3, stated in the plan:
+- Every predicate and replay decision records its margin: log2(footprint/thr) per pair, |α−α_min|, and the replayed hit's barycentric distance to the nearest edge.
+- FP-BOUNDARY means |margin| < 2^-16 (roughness: < 1e-6), or both hits within 1e-6 of an edge. Any other violation, any σ mismatch not explained by a margin flip, any T3-3 asymmetry and any T3-D (f64 TypeScript dual implementation) disagreement is LOGIC.
+- Gate 0: LOGIC = 0 in at least 10⁷ round trips per case in the production multi-pipeline build; FP-BOUNDARY rate ≤ 1e-5 per round trip, reported; T3-D agreement on 10⁵ dumped paths.
+
+The single-engine validation build (gap-rc §8.3 item 7: one pipeline, a runtime mode uniform, one call site each of traverse/vertexFromIds/offsetRay/rcPairTest) is an OPTIONAL diagnostic, not a gate prerequisite. Build it only if FP-BOUNDARY exceeds 1e-5 or LOGIC and FP cases cannot be separated. When built, its FP-BOUNDARY count must be exactly 0. Scope the §1 'never force a single traversal site' ban to production pipelines.
+
+Add to §1 Device:
+- In validation the V-buffer stores bary as f32 bits. unorm16 is allowed only in the production layout, and there it is quantized before any use (same rule as rc data, gap-rc §8.3 item 5).
+- Data-dependent denominators are checked with integer-bit tests (zero,
+
+[major|VALID] WGPU-4 §§1 Reservoir (validation layout); §3 Modes; §7 Gate 3 ladder (ensemble R ≥ 256, dynamic ix-a…e)
+  PROBLEM: The Gate 3 ladder relies on ensemble runs, but the plan defines no ensemble mode: no member layout, no member isolation for spatial and paired partners or for temporal reprojection, no reduction across members, and no memory budget. The only budget available (gap-perf, 1.31 GB for E=64×256²) assumed 64 B reservoirs. The plan's validation layout (uncompressed f32 core plus the f32 suffix cache) is 8 SoA planes = 128 B, and f32 slots are 32 B. Per pixel that gives about 540 B: reservoirs 2×128, paired slots 3×32, temporal slot plus select state 48, queues 20, V-buffer cur/prev 2×32, motion 8, suffixOut 32, colour 16. At E=64×256² (4.19 M px) that is about 2.26 GB, with a 1.07 GB reservoir arena and about 300–500 ms of GPU per ensemble frame. There is a pairing problem too: if the atlas shares one per-frame pairing transform and pairs across member borders, members are no longer independent
+  FIX: Add §3 'Ensemble mode (validation only)' as proposed, with these corrections.
+
+Layout and memory
+- Atlas of 256² member tiles. Default E=16 (1024², ≈0.57 GB at ≈540 B/px validation layout). E=64 (2048², ≈2.3 GB, 1.07 GB reservoir arena) only after the M0 allocation probe succeeds. All allocations happen inside pushErrorScope('out-of-memory').
+- Add a per-B/px memory table for the validation layout to §1 Reservoir.
+
+Member independence
+- The RNG seed includes the member id. The camera and light script are shared. All per-pixel passes map atlas pixels to member-local pixels; the 8×8 reservoir tiling fits because 256 is divisible by 8.
+- Spatial acceptance A(p,q) includes member(p)==member(q). This is symmetric, so pairs stay involutive. A cross-member partner gets status NOT_ACCEPTED, exactly like an out-of-image partner. Each member then behaves exactly like a standalone 256² run. Do not clamp: clamping breaks the pairing involution.
+- Pairing uses member-local coordinates with a per-member dihedral transform and offset, drawn **independently** per member from (frameSeed, memberId) and held in a uniform array. A shared transform would correlate members and bias the across-run SE.
+- Temporal back-projection and the 3×3 search are rejected outside the member.
+
+Reduction
+- Per frame, output per-pixel Σx and Σx² over the E members in f32.
+- Also output **per-member tile sums**: 16×1
+
+[major|VALID] WGPU-5 §§3 Modes (Offline, PT); §5 M0/M2 (harness, PT batches); §7 automated tests
+  PROBLEM: No per-submit GPU-time budget, checkpointing, or device-loss resume is specified for long runs. Offline mode runs 32 initial path trees per pixel, about 28 ns/px each: roughly 1.9 s in one dispatch at 1080p and 0.23 s at 512². A 4096-spp PT batch at 512² is 1.07e9 paths, which at the measured Sponza rate of about 27 Mpaths/s is about 40 s if submitted as one batch. The stated 262,144-spp reference at 512² is about 43 min per Sponza-class configuration. The platform guidance is to keep each submit at or below 100–200 ms, and macOS or Chrome can lose the device on long command buffers. Streaming RIS split across dispatches needs persisted running state (Σw), which is not in the reservoir. Running Blender (Metal) at the same time as Chrome GPU jobs adds contention and timeout risk and invalidates any timing.
+  FIX: Add §7 'Submit budget and checkpointing' (normative):
+1. GPU time per queue.submit: target ≤ 100 ms, hard cap 200 ms, measured with timestamps.
+   - Work per submit adapts from measured timing.
+   - A single pass that exceeds the cap is tiled into row-band or member-group sub-dispatches in separate submits. Examples: 1080p Offline initial, E=64 initial ≈ 117 ms.
+2. PT reference batches:
+   - Each 4096-spp batch is split into sub-submits of k spp that accumulate into the f32 batch buffer. Choose k from the M0-measured rate: at the measured ≈27 Mpaths/s Sponza-class rate, 16 spp at 512² is ≈ 155 ms, so start at k ≤ 8 there.
+   - Each completed batch is read back and POSTed immediately. meta.json lists the completed batches.
+3. Offline mode:
+   - The C = 32 initial path trees run as ⌈C/c⌉ dispatches of c trees.
+   - Streaming-RIS state {Σw, selected sample, F} persists in the validation reservoir; the W field holds Σw until the finalize step. Each w_i includes m_i = 1/C (or divide by C at the end): W = Σw/p̂(Y).
+   - Each tree's resampling-RNG draw is keyed by the global candidate index, so the split result is bitwise identical to a single dispatch. Add a unit test at small resolution comparing c=32 in one dispatch with c=4 over 8 dispatches.
+   - Each spatial round is its own submit.
+4. 1080p progressive/validation frames and ensemble frames submit per pass family.
+5. The harness
+
+[major|VALID] WGPU-6 §§1 Textures; §5 M1 (bucket textures), M7 (KTX2, end-to-end stock GLB vs Cycles)
+  PROBLEM: Square power-of-two bucketing requires resampling any texture whose size is not a class size, which changes the integrand. Every textured Cycles comparison (the M7 end-to-end GLB, V2 sweeps with textures) is then biased by construction. The padding alternative breaks hardware wrap. Cycles on Metal samples the original-resolution byte texture with a hardware linear sampler (repeat, clamp_to_edge, clamp_to_zero or mirrored_repeat), no mips, then un-associates alpha, then decodes sRGB. Matching that exactly needs native-size textures and the same sampler address mode. Other unspecified details: createImageBitmap by default applies colour-space conversion and premultiplication; 16-bit, HDR and KTX2/BC7 sources cannot match Cycles' decode; interactive mips must be built in linear space; there is no texture memory budget (200 textures at 2048² is about 4.5 GB); and CLIP (clamp-to-zero) has no 
+  FIX: Replace the §1 Textures bullets with the following.
+
+Validation mode (every Cycles comparison)
+- Never resample.
+  - Use one texture_2d_array per distinct (w,h), at most 16 per validation scene. Alternatively, limit validation assets to power-of-two squares so that class arrays need no resampling.
+  - mipLevelCount = 1; rgba8unorm for both colour and data.
+  - Material slot = {array, layer, uvSet, wrap, srgb}.
+- Sampling mirrors Cycles' Metal path (kernel/device/metal/compat.h:387-395; context_begin.h:42; gpu/image.h: no mip path):
+  - a hardware linear sampler with the matching address mode (repeat, clamp-to-edge or mirror-repeat);
+  - textureSampleLevel at LOD 0;
+  - then the svm/image.h order: optional un-association, then sRGB→linear for sRGB slots.
+- Blender image interpolation must be 'Linear'. Cubic and Smart take Cycles' bicubic path.
+- Alpha: do NOT key un-association on 'non-constant alpha'.
+  - Either replicate Cycles exactly: load-time association of 4-channel non-data byte images unless the alpha mode is channel-packed or none, mirroring its 8-bit arithmetic on the CPU, and in the kernel un-associate only when the node's NODE_IMAGE_ALPHA_UNASSOCIATE flag is set, per sample, only for 0<α<1 (svm/image.h:31-34);
+  - or, in v1, restrict validation textures to α≡1 and add alpha-textured validation later with its own test.
+- CLIP (clamp_to_zero): 'return 0 outside [0,1]'
+
+[major|VALID] WGPU-7 §§5 M4 (spatial reuse with random neighbours); §3 step 5 and Modes (Offline 3 rounds × 6 neighbours); §1 Reservoir (8-bit M)
+  PROBLEM: M4 prescribes random-neighbour, unpaired pairwise MIS, but §3, the binding plan and the slot layout describe only the paired structure, where each pixel shifts its own path into each partner and each shift is computed once per pair. Unpaired reuse needs two shifts per neighbour (neighbour→centre and centre→neighbour), 2N slots, queue items with a direction bit, and a different spatial_shift kernel. That is a second kernel family that is neither specified nor budgeted, and it is superseded in M6. Offline mode (6 unpaired neighbours × 2 directions) also multiplies queue size (see WGPU-1). With 3 rounds, the uncapped spatial confidence reaches 7³ = 343, which overflows the 8-bit M of the production layout.
+  FIX: Change M4: spatial reuse uses the paired pass structure from the start: pair_accept → args → spatial_replay_reconnect → spatial_shift → spatial_resample, one slot per partner, with defensive pairwise MIS computed from the slots (§2 rule 7).
+- M4 partner maps are random involutions within radius r. Build them with the same machinery as M6: a toroidally involutive rg8sint tile plus a per-frame, per-round dihedral transform and offset, applied consistently to lookup coordinates and offset vectors.
+- The M4 tile can be a simple uniform-disk involution; M6 swaps in the σ=16 textures (254/230/210, corrected n_σ) without changing any kernel.
+- Avoid regenerating a full-image perfect matching in JS every frame; at 1080p that is 2 M px per frame.
+
+Change Offline: 32 candidates, 3 rounds × N=6 paired partner maps with fresh transforms each round, ping-pong buffers, validation layout only.
+
+Add to §1 Reservoir: 8-bit M is legal only when c_max = c_init·(c_cap+1)^[temporal on]·(1+N)^rounds ≤ 255. Otherwise use f32 confidence (validation layout). Examples:
+- 84 for temporal + N=3 × 1 round, which fits;
+- 7³ = 343 for Offline with c_init = 1, which does not.
+
+Queue capacity: N_max·P per spatial round (see WGPU-1).
+
+[major|VALID] WGPU-8 §§1 Stack (two Vitest lanes; composer 'behaves the same in the browser and in Node'); §1 Device; §5 M0
+  PROBLEM: dawn.node (webgpu@0.6.1) runs a different Dawn/Tint revision from Chrome 154, and that it even loads under Node 26 is unverified. The native Dawn inside dawn.node may not apply Chrome's fingerprinting limit tiers (the tiers cap textures at 48 sampled / 8 storage from 128 raw slots), so a layout that Chrome rejects could pass in Node. Features the plan uses may be missing in 0.6.1: immediates (Chrome 149+), subgroups, subgroup_uniformity, linear_indexing, and texture-formats-tier2 read-write rgba32float. The Metal math mode may also differ. Node has no Web Workers and no createImageBitmap. Without a lane profile and fallbacks, 'the same WGSL everywhere' breaks, and results could diverge between lanes without anyone noticing.
+  FIX: Add to §1 Device:
+- device.ts requests, for every 'max*' limit, min(adapter.limits, CHROME154_M5PRO_PROFILE). Alignment ('min*') limits are left at their defaults. The profile values: 10 storage buffers, 8 storage textures, 48 sampled textures, 16 samplers, 4 bind groups, 64 B immediates, 32 KiB workgroup storage, 4294967292 for binding and buffer size, 2048 array layers, 16384 for 2D dimensions, 65535 workgroups per dimension. With these limits, no lane can accept a layout that Chrome rejects.
+- The WGSL composer has a feature profile, read from features and wgslLanguageFeatures, with fallbacks:
+  - immediates → a small uniform ring buffer with dynamic offsets;
+  - subgroup-ballot append → one atomicAdd per item (queue order changes, per-item results do not);
+  - tier-2 read_write storage textures → storage-buffer accumulators, always used in harness mode;
+  - linear_indexing → workgroup_id.x + workgroup_id.y·num_workgroups.x;
+  - buffer_view is never used.
+
+Add to M0: both lanes print and diff adapter info, limits, features, wgslLanguageFeatures, the FMA probe and the x!=x probe. Record any differences in docs/platform-lanes.md. If webgpu@0.6.1 fails to load under Node 26, the Node lane runs CPU tests only until fixed.
+
+Add to §7: the Chrome lane is authoritative for every gate and for T1–T17. dawn.node is a fast pre-check, never used for sign-off. Replace 'GPU tests in both 
+
+[minor|unverified(minor)] WGPU-9 §§5 M0 smoke tests; §7 reference cache key
+  PROBLEM: The M0 headless test only checks that an adapter exists. It does not reject a software fallback adapter or check that limits and features match the measured profile (which was measured in Chromium 152, not Chrome 154). The plan launches with --enable-unsafe-webgpu, which also unlocks unsafe-experimental WGSL (sized_binding_array, chromium_print) that users will not have. Chrome auto-updates, so Dawn/Tint can change between runs, yet the reference cache key includes only the Blender version.
+  FIX: Add to M0:
+- Headless Chrome must satisfy `adapter.info.vendor==='apple'`, `!adapter.info.isFallbackAdapter`, an architecture starting with 'metal', and limits ≥ the profile. Otherwise abort; never run gates on a software adapter.
+- Launch first without `--enable-unsafe-webgpu` (WebGPU is on by default in macOS Chrome) and add the flag only if the adapter is null. With the flag on, the composer rejects any `requires`/`enable` that is not in the shipped whitelist (immediate_address_space, subgroups, subgroup_uniformity, linear_indexing, unrestricted_pointer_parameters, pointer_composite_access).
+
+Add to §7:
+- meta.json and the result-cache key include `navigator.userAgent`, `adapter.info` and the Chrome version.
+- The harness warns when Chrome is no longer 154.0.8037.58, with the option to pin Chrome for Testing 154 through Playwright.
+
+[minor|unverified(minor)] WGPU-10 §§1 Bindings; §3 pass graph
+  PROBLEM: The plan's claim of '≤ 8 of 10 storage buffers' comes from gap-perf's graph, which lacks T3/T4, suffixOut, the Cycles LUTs, a full-frame debug output and the ensemble reduction. Under an explicit shared G0 layout, lightTiles (B4) counts against every pass. Adding these pushes some passes to 9–10 with no recorded tally. The write-set rule is stated only for buffers, but the V-buffer, thr and motion textures swap roles cur↔prev, and a texture that is written as storage cannot also be sampled in the same pass. Presenting to the canvas is also unspecified: a compute write needs bgra8unorm-storage, which is not in the feature list.
+  FIX: Replace the §1 Bindings bullet with a per-pass table (extending gap-perf §4.4) and these rules:
+- Put the LUTs (36,992 B), alias/pmf cur and prev, id maps and lights cur and prev into `records` (B3).
+- Move `lightTiles` (B4) out of the shared G0 into the G1 of `presample_lights` (rw) and `initial` (ro) only.
+- The resulting maximum is T4 = bvh, tris, records (3) + reservoirs rw, slots rw, queue ro, suffixOut ro (4) + probe (1) = 8.
+- Textures follow the same write-set rule as buffers. cur/prev V-buffer, thr and motion roles swap by choosing between 2 prebuilt bind-group variants, never by binding one texture as both storage and sampled.
+- Present and upscale through a fullscreen render pass that samples `color`. If a compute write to the canvas is ever used, add `bgra8unorm-storage` to the required features.
+
+[minor|unverified(minor)] WGPU-11 §§1 Geometry and BVH; §5 M1 (traversal guards, T12)
+  PROBLEM: The limits of the BVH encoding and the failure modes of traversal are not tied to validation. The Aila–Laine leaf reference allows at most 127 triangles per leaf and firstTri < 2^24 (16.7 M triangles). The 32-entry private stack (and the CWBVH group stack) silently drops pushes on overflow, and an iteration-cap exit returns a miss. Both are missed occluders, which cause light leaks, which bias the result. Under FMA contraction, Möller–Trumbore and even Woop are not watertight on shared edges unless edge functions are evaluated in a canonical order. That matters for T12, the glass scene (vi) and the contact-geometry scene (xi). Degenerate triangles produce Inf or NaN in 1/a.
+  FIX: Add to §1 Geometry and BVH:
+(a) The loader rejects scenes with more than 2^24 triangles (or the leaf encoding is widened), and leaves are capped at 3–4 triangles.
+(b) The SAH builder caps depth at 30 by forcing a median split or a leaf beyond that depth. The traversal counts stack overflows and iteration-cap exits (cap 1<<16) in the probe buffer, and every validation run fails if either count is non-zero.
+(c) Zero-area and non-finite triangles are dropped at flatten time and logged; primIds stay stable.
+(d) T12 watertightness and scenes (vi) and (xi) run the Woop intersector. Its triangle record stores v0, v1, v2 plus global vertex ids, and edge functions are evaluated in canonical global-vertex order so that shared edges contract identically.
+
+[minor|unverified(minor)] WGPU-12 §§1 Kernels (createComputePipelineAsync, 6 pipelines: 0.7 s; override rule)
+  PROBLEM: The plan has several code-shape axes: reservoir layout (validation or production), BSDF (V1, V2+glass, Tier 2), BVH2 or CWBVH, MT or Woop, BVH debug counters, and single-engine or per-stage. Each has about 20 pipelines: primary, presample, initial, refresh, T1–T4, args, pair_accept, spatial replay/shift/resample, dupmap, accumulate, SVGF×3, resolve, debug_view, reduce. Each distinct override or #define set is a full Tint→MSL→Metal compile of 0.2–0.9 s, with a material-library cost of 70–160 ms per inlined copy. The '6 pipelines: 0.7 s' figure understates startup, and the UI toggles (PT/ReSTIR, validation layout, V1/V2) would compile on demand with nothing in the plan to handle the stall.
+  FIX: Add to §1 Kernels a pipeline-variant table listing the axes above, and state:
+- Only the active variant is compiled at startup, in parallel (about 2–4 s).
+- Other variants compile lazily on toggle behind a progress indicator, cached in a Map keyed by the variant hash, and never inside the frame loop.
+- debugMode is a uniform. Only BVH instrumentation is an override.
+- BSDF-bearing kernels route every eval through one call site (the E2e pattern, −17% compile time).
+- Validation runs pre-compile their single variant before the timed loop.
+
+[minor|unverified(minor)] WGPU-13 §§1 Performance targets table ('measured, gap-perf')
+  PROBLEM: The 28–35 ms and 37–51 ms targets come from mock kernels: synthetic replay fraction f_r = 10%, no alpha any-hit, no glass, one texture test, and a 2-lobe BSDF. Delta glass and mirror force full replay, so f_r rises by about 5.8 ms at 720p per extra 10%. Omitted features add an estimated 10–25%. Timestamps are quantized to 65.536 µs, so small passes read as 0 and a per-pass chart built from them is noisy.
+  FIX: Relabel the table 'mock-kernel estimates (gap-perf §1.4) at f_r = 10%, without alpha, glass or large textures; expect +10–25%'. Add:
+- From M4 on, per-frame queue counts (the measured f_r) are logged and shown in the timing chart.
+- M8 adds a dynamic-resolution controller that targets 33 ms using the gap-perf §7 cost model.
+- The per-pass chart averages at least 32 frames.
+- Perf measurements run with `--enable-webgpu-developer-features` for unquantized timestamps.
+
+[minor|unverified(minor)] WGPU-14 §§6 Debug visualizations; §4 debug/*.wgsl
+  PROBLEM: Per-stage full-frame views are a user requirement: per-bounce radiance, MIS weights, failing predicate term, log|J|, BVH steps. The plan does not say how the owning megakernel exports these values, and the probe buffer B10 (about 1 MB) only covers a single pixel. Without a defined output there will be ad hoc buffers that break the storage-buffer budget.
+  FIX: Add to §6:
+- Full-frame debug values are written by the pass that owns them into one `debugOut` rgba32float storage texture in G3 (+1 storage texture, 3 of 8 in use) when the `debugMode` uniform selects that pass and view.
+- Slot, queue and reservoir views are computed by `debug_view` directly from the reservoir, slot and queue buffers bound read-only.
+- The pixel inspector uses the probe buffer (atomic counter + records), read back through a 3-deep MAP_READ ring.
+
+[minor|unverified(minor)] WGPU-15 §§1 Stack / Geometry (Worker BVH build); §5 M1 (URL loading), M7 (LightUSD), M8 (tinybvh WASM)
+  PROBLEM: The plan loads GLB/USD from URLs and runs its loaders and BVH build in Workers, but it never states the cross-origin-isolation constraint. Threaded WASM (a pthread build of tinybvh, the Needle USD build) or SharedArrayBuffer would require COOP/COEP. That in turn blocks loading assets from servers that do not send CORP headers, which breaks the URL-loading requirement. The transfer of large vertex, index and BVH buffers from the Workers is also unspecified; structured cloning copies hundreds of MB.
+  FIX: Add to §1 Stack a hard constraint:
+- The app never requires cross-origin isolation. So: no SharedArrayBuffer, and single-threaded WASM only (the LightUSD 'next' build, the draco, meshopt and mikktspace decoders, and tinybvh built without pthreads).
+- Parallelism comes from several Workers that exchange ArrayBuffers through transfer lists.
+- The main thread uploads with mappedAtCreation buffers, or writeBuffer in chunks of at most 64 MB.
+
+  MISSING: ["Temporal inverse-shift pass T4 with its own queue Q_i and the T3\u2192T4 finalize state (contribution MIS has nowhere to run T\u207b\u00b9(X_c))", "A suffixOut buffer (fwd/inv) so suffix refresh never overwrites the stored F_{t\u22121}(X_p)", "2D indirect-dispatch args, per-queue capacity/overflow headers, and test T17 for more than 4.19 M replay items", "Ensemble-mode spec: member atlas, member-local pairing and transforms, symmetric member test in A(p,q), GPU reduction across members, memory table for the validation layout (about 540 B/px), default E=16", "Per-submit GPU-time budget (\u2264100 ms), batch checkpointing, device-loss resume, and never running Blender and Chrome GPU jobs concurrently", "Offline mode split across dispatches, with streaming-RIS \u03a3w persisted in the reservoir", "Single-engine validation pipeline plus a margin-based FP-BOUNDARY vs LOGIC classification for Gate 0", "Device-limit profile clamp applied in all lanes, plus a composer feature profile with fallbacks (immediates, subgroups, tier-2 storage textures) for dawn.node", "Validation texture path without resampling: one array per distinct (w,h), Cycles' Metal sampler address modes, alpha un-association, createImageBitmap flags", "Chrome version and adapter info in meta.json and the reference cache key; rejection of fallback adapters in headless runs", "Measurement of our PT samples/s in M0 to size the Gate 2/3 spp budgets", "Pipeline-variant table and lazy compile policy", "debugOut storage texture for full-frame per-stage debug views", "BVH depth cap and a validation-fatal counter for stack overflow and iteration-cap exits"]
+
+========== validation-design verdict: ready_with_fixes
+
+[critical|VALID] V1 §§1 Lights (Mode A/B); §5 M3 ('Mode B as a variance option'); §7 Gate 2 scene (vi)
+  PROBLEM: The plan says Mode A and Mode B 'have identical expectation', so Mode B is only a variance option. That is false whenever a singular (isDelta) lobe comes right before an analytic-light vertex. Singular vertices do no NEE, and in Mode A, BSDF rays never hit MIS-off lights. So every path camera→mirror→area light, or →smooth glass→glass→area light, contributes 0 in Mode A (and also in Cycles with per-light MIS off). In Mode B / Cycles defaults it contributes normally. Two user requirements are therefore silently broken in the default mode: roughness-0 glTF metals do not reflect area lights, and a room lit by an area light through a smooth glass window renders dark (glass also blocks NEE shadow rays). Every gate would still pass, because Stage A compares against Cycles with MIS off. There is also a conflict to resolve: scene-io §8.3 tells build_scene.py to set `use_multiple_importance_sampli
+  FIX: §1 Lights: replace 'Modes A and B have identical expectation, which is itself a unit test.' with: 'Modes A and B have identical expectation only for light-ending paths whose vertex x_{d−1} is non-singular. A singular vertex (αx·αy ≤ 2e-10, smooth glass, or |η−1| < 1e-4) gets no NEE. In Mode A its BSDF ray never hits an analytic light, and the same is true in Cycles with per-light MIS off. So camera→mirror→area light, camera→mirror→camera-visible light, and diffuse→smooth glass→area light all contribute 0. Mode A is a validation restriction and must not be the product default for scenes that have singular lobes.' Also document an optional cheaper Mode A′: analytic area lights are hittable (pass-through, MIS weight 1) only by BSDF rays that leave a singular vertex, which is Cycles' PATH_RAY_MIS_SKIP case. NEE weight stays 1 everywhere else. A′ has the same expectation as Mode B and as Cycles with MIS on, and it needs no analytic-light MIS pdfs.
+§5 M3: replace 'Mode B as a variance option, gated by a "mode A ≡ mode B" test' with: 'Mode B (or A′) ships with glass. It needs the crossing loop, Blender per-light MIS on, and transparent_max_bounces = 1024. U9 (A ≡ B) runs only on scenes without singular lobes. Positive control: on a roughness-0 mirror + rect-light scene, the harness must detect A < B, and B must be ≡ Cycles with MIS on. Cycles-only sanity check: scene (i) with Cycles M
+
+[major|VALID] V2 §§1 Path space (per-frame jitter); §7 Gate 3 ladder items 3-6
+  PROBLEM: The plan says 'Uniform per-frame subpixel jitter … equals the Cycles BOX filter' but never says how the jitter is seeded across ensemble runs. Suppose the jitter sequence is a deterministic function of the frame index (TAA-style Halton/R2) shared by all R runs. Then the frame-t ensemble mean estimates radiance at one fixed sub-pixel point, not the BOX-filtered pixel integral that our PT and Cycles compute. That produces systematic discrepancies at silhouettes, shadow edges and texture detail, i.e. false failures in every per-frame ensemble test (Gate 3.3/3.4/3.6). If someone 'fixes' this by giving the PT the same fixed offset, the chain back to Cycles is broken.
+  FIX: §1 Path space, add a validation jitter rule:
+- The subpixel offset is j_t(p) = U01²(hash(runSeed, t, p, JITTER_STREAM)). It is i.i.d. across runs and independent of the path/replay and resampling streams.
+- A run-independent deterministic sequence (Halton/R2 shared by all runs) is forbidden in ReSTIR-unbiased mode.
+- Interactive mode and the upscaler may use Halton/R2 plus a per-run Cranley–Patterson rotation drawn from runSeed. That keeps each frame's offset uniform and i.i.d. across runs.
+
+Add T13b:
+- (a) Test the jitter values alone, with no rendering: at a fixed t and pixel, a χ² uniformity test over 4096 run seeds (Šidák α = 0.01).
+- (b) Positive control: the frame-1 ensemble on a 1-px checker-textured plane passes tile TOST against the BOX PT reference.
+- (c) Negative control: the same test with a shared deterministic jitter must fail.
+
+T16: meta.json records jitterMode, which must equal 'iid-per-run' for Gates 3-4.
+
+[major|VALID] V3 §§5 M2/M5, §7 Gate 3 items 3-6 (ensemble R ≥ 256), gap-temporal §9.1 pass criteria
+  PROBLEM: The Stage-B per-frame ensemble gates are under-powered as specified, and the plan has no compute budget.
+
+Power: TOST passes only if the CI half-width is well below δ. With spatial reuse, pixels are correlated. As a rough estimate, a single run's per-pixel relative σ is about 0.75 and a 32² tile holds only about 20 effective independent pixels. At R=256 that gives a tile relative SE of about 1.05%, which cannot certify δ_tile=1%. For all m=256 tiles to pass with 99% probability, SE ≤ δ/(t_{0.99}+z_{1−0.01/m}) ≈ δ/6.3, which would need R ≈ 11,000. The unbiased estimator would fail the gate.
+
+Missing infrastructure: the plan does not say how per-run tile aggregates leave the GPU. Those aggregates are required because within-run pixels are correlated, and full per-run images would be about 18 GB at R=1024 × 6 test frames.
+
+Cost: the validation-harness report asks for 'our PT every frame' at
+  FIX: Add §7.1 'Sample-size rule and compute budget'.
+
+(1) Sizing rule: for every aggregate (tile, mask region, global), choose spp/K/R/B so that SE_Δ ≤ δ/(t_{1−α,ν} + z_{1−0.005/m}). That is about δ/6.4 for m = 256 tiles and δ/4.9 globally at α = 0.01; |Δ̂| is two-sided. Estimate SE from a ~5% pilot. If the tier cap cannot reach it, enlarge the aggregate (64² tiles, mask regions) and record the choice in report.json. Never loosen δ silently.
+
+(2) Dynamic per-frame gates: the reviewer's defaults (global 0.2%, 64² tiles 2%, mask regions 3%, R ≥ 1024) are starting points, confirmed or replaced by the pilot. Static Stage B uses offline-mode independent frames plus time-average batch means, with B set by rule (1), not fixed at 2048. Under the reviewer's own σ assumptions, 32² tiles at 1% need B ≈ 10⁴.
+
+(3) Move the ensemble mode from val §3.6 / gap-perf §5.3 into the plan: E members per dispatch, member-clamped spatial neighbours, and a member index in the seed. Add an `ensembleStats` pass that reduces each run's test frame to 16²/32²/64² tile sums, mask-region sums and the global sum (f32 per workgroup, f64 on the CPU), and accumulates per-pixel Σx and Σx² across runs on the GPU. Only these vectors are read back.
+
+(4) PT references for dynamic scenes are rendered only at the gap-temporal §9.1 test frames and at t−1 of each (needed for the M_new/M_gone masks), at ≥ 16×4096 spp. Drift reg
+
+[major|VALID] V4 §§5 M0/M2 (compare.py, harness IO), §7 Gate 2 C0a
+  PROBLEM: Several orientation and registration errors can pass unnoticed.
+
+(a) C0a uses identical emissive squares at the 4 corners and the centre. That pattern is invariant under vertical and horizontal flips and 180° rotation, so a raster-y flip, a PFM row-order error (PFM is bottom-to-top) or a handedness error passes the centroid test.
+
+(b) All validation scenes are 512×512. With sensor_fit VERTICAL and a square image, hfov = vfov, so an inverted aspect (tx = ty·H/W) or the Camera.angle_x trap is invisible. The app itself renders 16:9.
+
+(c) The plan never states the row↔raster mapping. Cycles raster y=0 is at the bottom.
+
+(d) The scene is 'recentred at load'. If the bridge exports recentred triangles but scene.json camera/lights in original coordinates (or the reverse), every scene shifts. The scene.json coordinate frame ('in Blender terms') is also ambiguous: Y-up glTF frame or Z-up?
+  FIX: Replace C0a with five emissive squares at known world positions, sized about 12 px at 512², with DISTINCT Strength·Color:
+- TL red, TR green, BL blue, BR white;
+- plus yellow at (0.3W, 0.62H), off-symmetry.
+
+Render at 512², 640×360 and 360×640. Per-colour centroids of ours and Cycles must agree within 0.1 px. The non-square renders are what expose an inverted aspect (tx = ty·H/W). Add C0a-far: the whole scene translated by (1000, 0, −500) m to exercise recentring.
+
+§1 Path space: copy cyc §5.4/§6's raster rule into the plan and docs/math.md. Image pixel (c, r), with row 0 at the TOP, covers Cycles raster [c, c+1]×[H−1−r, H−r]. d_cam = ((2(c+u)/W−1)·tan(vfov/2)·W/H, (2(H−1−r+v)/H−1)·tan(vfov/2), −1).
+
+M0 smoke tests, add an IO orientation test:
+- The harness uploads I(c,r) = (c, r, c+r).
+- Node writes PFM, whose rows are bottom-to-top.
+- compare.py loads it with row 0 = top and asserts I[0, W−1] = (W−1, 0, W−1).
+- compare.py also loads a Blender EXR of C0a and checks that the red square is top-left.
+
+§1 Units: 'scene.json uses the glTF canonical frame (right-handed, +Y up, metres, un-recentred world coordinates). "Blender terms" (L81) refers only to light units and semantics. Recentring is render-internal and applied identically to triangles, camera, lights and tracks. build_scene.py applies C = R_x(+90°) exactly once to bridged meshes, camera and lights.'
+
+[major|VALID] V5 §§5 M3 (glass), §7 Gate 2 (vi), §8 glass spec pending
+  PROBLEM: Glass is a user requirement, but it has only one mixed scene, '(vi) glass and mirror', and no analytic calibration.
+
+(1) Blender 5.1.2 defaults do not match single-scatter GGX: introspected this session, the Glass BSDF is MULTI_GGX, the Refraction BSDF is BECKMANN and Principled is MULTI_GGX. The M2 override list only mentions Principled.
+
+(2) Cycles' refraction convention is not radiance-scaled for singular glass. The singular branch returns eval = transmittance with no η² factor (bsdf_microfacet.h L767-781). The rough branch carries η² in both eval and pdf, so the sample weight has none. A pbrt-style 1/η² radiance scaling therefore differs from Cycles by 2.25× wherever a path starts or ends inside glass. Only a scene with an emitter immersed in glass can pin this down.
+
+(3) Bounce accounting through glass (transmission_bounces = max_bounces) has no analytic check.
+
+(4) The stock glTF i
+  FIX: Add to §7 Gate 2, before (vi). Each scene gets a Glass-BSDF variant AND a Principled variant (Transmission Weight 1, IOR 1.5), because glTF glass maps to Principled, not to the Glass BSDF.
+
+C0h slab:
+- Smooth glass slab, 1×1×0.1 m, flat-shaded, distribution GGX, roughness 0, IOR 1.5, in front of a two-sided emissive mesh quad with L_e = 1.
+- Use a narrow FOV (≤ 5°), or predict per pixel with exact Fresnel. Test interior pixels only.
+- b ∈ {0,1,2,3,5}. Pixel = L_e·(1−R)²·Σ_{j=0}^{⌊(b−1)/2⌋} R^{2j} with R = 0.04. That gives b=0: 0, b=1: 0.9216, b=3: 0.923075.
+- Within 0.05% in both engines.
+- Add a 45° variant with exact Fresnel.
+
+C0i immersed emitter:
+- An emissive quad 5 cm inside a glass block, viewed through one face, at roughness 0 and 0.3.
+- Must match Cycles (TOST 0.5%).
+- This pins the convention: Cycles' BTDF carries no 1/η² radiance scaling. The singular branch has weight T/P(T); in the rough branch η² cancels between eval and pdf. The glass spec (§8) must adopt this convention.
+
+C0j rough-glass furnace:
+- A GGX glass sphere, r ∈ {0.1, 0.3, 0.6}, inside a uniform emissive sphere with L = 1, b = 64.
+- Radial profile vs Cycles, TOST 0.5%.
+
+C0k glass shadow:
+- A point light, a glass sphere and a diffuse plane.
+- The sphere's shadow region is exactly 0 in both engines. Glass occludes shadow rays, and point-light caustics are impossible.
+
+M2 cycles_settings: set distribution
+
+[major|VALID] V6 §§5 M7 (loader fidelity / e2e), §7 Gate 2 scene list, §1 Units (UsdLux)
+  PROBLEM: The scene bridge proves the renderer's correctness but cannot detect loader errors: our parse feeds both engines. The plan's loader-fidelity tests compare only geometry and transforms (GLB vs Blender import) and raw attributes (USD vs a pxr dump). They cannot catch wrong unit or semantic conversions such as UsdLux normalize (USD fallback false, so Blender treats the light as unnormalized), DistantLight (energy = 4·intensity; the plan says 'sun intensity/4', which is ambiguous), a SphereLight with radius 0.5 (a soft-falloff disk in Blender), upAxis/metersPerUnit, UV v-flip, the glTF spot cone mapping, KHR_texture_transform, or alpha MASK.
+
+Only GLB gets an end-to-end stock-import test; USD has none. The §7 Gate 2 list also omits (vii) textures and (viii) USD, even though validation/scenes lists them. Textures, normal maps and alpha, all user-facing, are therefore never gated against Cycle
+  FIX: §5 M7: replace the single E2E-GLB line with two end-to-end tests.
+
+E2E-GLB:
+- bpy.ops.import_scene.gltf(export_import_convert_lighting_mode='SPEC', import_shading='FLAT', then 'NORMALS').
+- Post-process: distribution GGX (Tier 1) or MULTI_GGX (Tier 2) per run; per-light MIS from lightMode; visible_camera False; shadow_terminator_geometry_offset 0; use_bump_map_correction False; world None.
+- Assets: a Cornell GLB with KHR_lights_punctual point + spot (innerConeAngle ≠ 0), MetalRoughSpheresNoTextures, TextureTransformTest, NormalTangentMirrorTest, AlphaBlendModeTest (MASK), EmissiveStrengthTest, TransmissionTest/IORTestGrid.
+
+E2E-USD:
+- bpy.ops.wm.usd_import(import_lights=True, light_intensity_scale=1, apply_unit_conversion_scale=True), with the same post-process.
+- Inputs: the Blender-exported Cornell.usda, plus a hand-authored .usda covering:
+  - upAxis Z and Y;
+  - metersPerUnit 0.01;
+  - Rect/DiskLight with normalize true and false;
+  - SphereLight treatAsPoint;
+  - SphereLight radius 0.5, supported as a soft-falloff disk or rejected with a warning;
+  - ShapingAPI spot;
+  - DistantLight;
+  - UsdPreviewSurface with a UV v-flip.
+- Blender's importer applies its own conventions to every file. So the hand-authored file is compared with our loader in 'Blender-compatible' mode, i.e. with the scene-io §6 Blender-author rule forced on. Spec-mode deviations are asserted as documented
+
+[major|VALID] V7 §§5 M5 light editor + tests; §7 Gate 2 C0 list; Gate 3 item 6 (ix-a…e)
+  PROBLEM: Several user-facing light features have no Stage-A or Stage-B validation.
+
+- Sun: in the editor, but no C0 scene.
+- Disk and ellipse area lights: in the editor, but C0e is rect only.
+- Area spread < 180°: in the property panel, but all references use spread = π.
+- Point/spot 'radius' > 0: in the property panel. The M2 override forces radius 0, and gap-light excludes r > 0 lights entirely.
+- visibleToCamera: gap-light U11 exists but is not in the plan.
+
+Dynamic sequences cover each motion in isolation. None covers simultaneous camera and light motion, which is the normal interactive case and exercises E_{t−1} with both the previous camera and the previous lights. None covers a gizmo 'teleport' jump, an FOV change during a sequence (the user-facing FOV control changes R_pri and thr), or a moving sun.
+  FIX: Add to §7 Gate 2 the following analytic scenes. Each is checked in both engines against its closed form, then ours against Cycles.
+- C0l sun: angle 0, E = 1, 30° elevation, Lambert ρ = 0.5. L = ρ·E·sin30°/π.
+- C0m disk and ellipse: disk on-axis E = L·πr²/(h²+r²) with L = P/(πA). Ellipse E by 2000² quadrature.
+- C0n rect with spread ∈ {30°, 90°}: E by quadrature of L(θ) = P/(πA)·(tan a − tan θ)/(tan a − a), a = spread/2. This is Cycles' area_light_spread_attenuation with normalize_spread = 1/(tan a − a).
+- C0o visibleToCamera rect (U11(ii)): pixel = L_e + the radiance of the wall behind it.
+- C0p, only if radius stays in the editor:
+  - sphere with use_soft_falloff = False, facing irradiance P/(4πd²);
+  - soft-falloff disk, on-axis P/(4π(d²+r²));
+  - Stage B J = p_A(z|y)/p_A(z|x).
+  - Otherwise remove 'radius' from the M5 panel, fix r = 0, and clamp USD SphereLight radius to 0 with a warning.
+
+Add to Gate 3 item 6:
+- ix-f: scripted fly path, rotating spot and rect power ramp simultaneously; a 2 m light teleport at frame 30; FOV ramp 60°→40° over frames 40-56. The FOV ramp tests projection-matrix changes in reprojection and in E_{t−1}. R_pri itself is FOV-independent (gap-rc §6.3, L855); thr changes only through x₁.
+- ix-g: sun rotating 1°/frame.
+
+docs/validation.md gets a coverage table mapping every light type and editor property to ≥ 1 Stage-A scene and ≥ 1 Stage-B scene. A CP
+
+[major|VALID] V8 §§5 M2 compare.py; §7 Gates 1-3 decision rules
+  PROBLEM: The decision rules have four statistical flaws.
+
+(a) No suite-level error control. Each scene/config/gate/channel uses Šidák α=0.01 plus χ²_red, KS and mean-t checks. With ≈50-100 units per `npm run validate`, P(at least one false failure) is about 40-60%. With 'stop at first failure' and M8 CI, this makes the gates flaky, and people will learn to ignore failures.
+
+(b) Relative δ on dark or zero tiles (black background in C0a, falloff tails in C0c, outside the spot cone) makes TOST fail or produces NaN (0/0).
+
+(c) Luminance-only tests miss chromatic bugs (e.g., the Enhanced RGB shading weights), and ReSTIR's p̂ is luminance.
+
+(d) The planted controls (light ×1.01, dropped Jacobian) are 2-5× larger than the Stage-B δ of 0.2%, so they do not show that the harness can certify 0.2%. There is also no A/A test for ReSTIR ensembles, which is where correlation handling can go wrong.
+  FIX: Add to §5 M2 compare.py:
+
+(1) Suite FWER:
+- Each run declares n_units = scenes × configs × gates × {Y, R, G, B}.
+- Every REJECTION-type test (Šidák tile t, χ²_red, KS, mean-t) uses α_u = 1 − 0.99^{1/n_units}.
+- A failed unit is re-run once on a disjoint seed range, and fails only if the re-run also fails.
+- TOST false failures are not controlled by α. They are controlled by power, via the §7.1 sizing rule from V3.
+
+(2) Dark tiles:
+- Relative δ applies when R̄_tile ≥ 0.05·R̄_image. Otherwise use the absolute margin δ·0.05·R̄_image.
+- Tiles with zero variance in both engines must match to 1e-6·R̄_image.
+- Guard every 0/0.
+
+(3) Run every test on Y, R, G and B, as val §3.1 already recommends.
+
+(4) TOST uses α = 0.01 per side, i.e. a 98% CI.
+
+Gate 1:
+- A/A calibration is done mainly by disjoint splits of existing replicates, which needs no new rendering: Cycles K-seed halves, PT batch halves, ReSTIR run halves (R/2 vs R/2 through the full pipeline). Repeat with ≥ 20 random re-splits. Whole-suite re-rendered A/A is needed only for cheap tiers.
+- δ-scale plants, each making the gate fail in ≥ 9 of 10 repeats:
+  - Stage A: light power ×1.0075 (global), and one 32² region brightened by 3%.
+  - Stage B: final W ×1.003, and c_p+1 in the temporal MIS denominator only.
+- A/A pass and plant detection are both required. An underpowered TOST 'detects' any plant trivially, so detection alone pr
+
+[major|VALID] V9 §§5 M2 cycles_settings.py / render_reference.py; §7 cache
+  PROBLEM: The M2 override list is incomplete, and the reference cache can go stale.
+
+Missing or unspecified settings:
+- transparent_max_bounces: the plan says 'every per-type bounce limit equal to max_bounces'. If transparent is included, b=0 makes alpha cut-outs and Mode-B pass-throughs terminate paths.
+- volume_bounces.
+- sampling_pattern value: 'explicit' but not named. A new scene gets AUTOMATIC, which becomes BLUE_NOISE_PURE in background renders.
+- scrambling_distance and auto_scrambling_distance.
+- camera clip_start / clip_end: defaults 0.1 / 100-1000. Cycles clips camera rays against planes, and the fly camera goes closer than 0.1 m.
+- Per-light object visible_camera (default False), normalize, exposure, use_temperature, unit object scale.
+- Glass/Refraction distribution.
+- resolution_percentage and pixel_aspect.
+- caustics_reflective/refractive, use_fast_gi, use_compositing/use_sequencer,
+  FIX: Make cycles_settings.py table-driven.
+
+Sampling and integrator:
+- samples = spp; use_adaptive_sampling False; use_denoising False (scene and view layer).
+- sample_clamp_direct = sample_clamp_indirect = 0; blur_glossy 0; light_sampling_threshold 0.
+- caustics_reflective = caustics_refractive = True; use_fast_gi False; use_guiding False.
+- max_bounces = diffuse = glossy = transmission = b; volume_bounces 0.
+- transparent_max_bounces = 1024 ALWAYS, never tied to b. This supersedes cyc §1's '≥ 8 keep' and scene-io's '64'.
+- pixel_filter_type BOX.
+- sampling_pattern 'TABULATED_SOBOL'; scrambling_distance 1.0; auto_scrambling_distance False.
+- seed = hash(rep[, frame]) & 0x7fffffff; use_animated_seed False.
+- film_exposure 1; film_transparent False; use_motion_blur False; use_compositing = use_sequencer = False.
+- resolution_percentage 100; pixel_aspect 1; time_limit 0; world None.
+- use_persistent_data stays False unless it is shown not to affect animated-light references.
+
+Camera: sensor_fit VERTICAL; angle_y = vfov; clip_start = our near (1e-4); clip_end 1e5; DOF off; shift 0.
+
+Lights: normalize True; exposure from scene.json (default 0), not forced to 0; use_temperature False; object scale 1; visible_camera = visibleToCamera; per-light MIS from lightMode; spread from JSON.
+
+Materials and objects:
+- distribution = 'GGX' on every node that has a `distribution` property (Glass, Refr
+
+[minor|unverified(minor)] V10 §§5 M3/M4/M5/M6 test lists; §7 Gate 0
+  PROBLEM: The gap reports define concrete tests that the plan's milestone lists do not reference, so they can get lost:
+- gap-light U1-U12 (including the U8 planted-bias ladder, U10 pass-through replay and U11 primary emission);
+- gap-rc T3-0 (self-shift over all path-tree candidates), T3-3 paired-acceptance symmetry, T3-4 case coverage ≥10⁵ per case, T3-5 chained C4 transitivity, T3-D (a TypeScript float64 dual implementation of k* and O0-O3, the only test that catches a bug implemented identically on both GPU sides), and dense stratified PSS sweeps;
+- gap-bsdf U-1…U-13, U-T1…U-T3, T-C1…T-C3;
+- gap-temporal §9.2 T6(a-c) extensions and §9.3 unit tests 1-6.
+  FIX: Add a §7 'Test registry' table (ID → milestone → gate) and reference it from each milestone:
+- M3: T1, T8/U-1…U-10, U-T1…U-T3, T9/U1-U4, T10/T-C1, T-C2 (M7), U9 (delta-free, V1).
+- M4: T2, T3-0…T3-5, T3-D, T4, T5, T6(a-b), T7, U5-U7, U10, U11, U-11…U-13, dense PSS sweeps (d ≤ 4, 2²⁰ ū per pair).
+- M5: gap-temporal §9.2 T6(a-c), §9.3 tests 1-6, N1-N6, U8 ladder.
+- M6: T14 and T3-3.
+
+Gate 0 requires LOGIC = 0 in ≥10⁷ round trips per case in the production multi-pipeline build, and FP-BOUNDARY = 0 in the single-pipeline strictMath build (gap-rc §10.3).
+
+[minor|unverified(minor)] V11 §§1 Performance targets ('2 bounces'); §5 M3 bounce semantics; M7 alpha
+  PROBLEM: 'Bounces' is used both for UI and interactive settings ('Interactive defaults: 2 bounces') and in Cycles semantics (max_bounces = N allows ≤ N+1 scattering vertices), with no normative mapping. Also, the plan does not say that alpha/transparent pass-throughs must not consume the bounce budget (Cycles counts them only in transparent_bounce). If our alpha path counts them as bounces, foliage darkens relative to Cycles.
+  FIX: Add to §1 Path space: 'maxBounces everywhere (UI, scene.json, harness, T16) has Cycles semantics: ≤ maxBounces+1 scattering vertices, d_max = maxBounces+2 segments. Alpha and Mode-B light pass-throughs consume no bounce, no RNG dimension and no RR.'
+
+Add a unit check: C0f with b=0 must equal L_e(1+ρ) within 0.1%, and C0h (glass slab) covers transmission counting.
+
+T16 asserts that PT and ReSTIR maxBounces equal the reference manifest's max_bounces.
+
+[minor|unverified(minor)] V12 §§5 M6 (96 B equivalence gate) vs §7 Gate 5 ('lossy layout' as biased); T16
+  PROBLEM: The 96 B layout is gated inconsistently. M6 requires an equivalence gate against the uncompressed layout, while Gate 5 lists 'lossy layout' as a biased mode with only a bias budget. Correctness rule 14 (quantise before computing F) makes the layout an unbiased estimator, so it belongs in Gate 3.
+
+Separately, T16 does not assert that the display chain is out of the measurement: internal-resolution scale, upscaler, exposure/tonemap and denoiser. A validation run at 0.75× resolution with upscaling would compare the wrong images.
+  FIX: In §7 Gate 3 item 7, add: 'the 96 B layout with rule 14 must pass Gate-3 δ (0.2% global / 1% tile), plus T3 ID round-trips with quantised fields. Gate 5 keeps only the duplication map and the interactive-only options.'
+
+Extend T16: 'validation runs assert internal-resolution scale = 1, upscaler off, denoiser off, and readback of the linear accumulation buffer before exposure/tonemap. The config hash in meta.json includes these.'
+
+  MISSING: ["An ensembleStats GPU reduction pass that emits per-run tile, mask and global aggregates for 16\u00b2/32\u00b2/64\u00b2 tiles, plus per-pixel \u03a3x/\u03a3x\u00b2 across runs. Replicate-based SE for correlated ReSTIR pixels is impossible without it.", "validation/budget.json with measured anchors (Cycles s/4096 spp at 512\u00b2 for Cornell b=3, Cornell b=7 and a Sponza-class scene; our PT ms/spp; ReSTIR ms/frame), a pilot-based spp/K/R sizing rule, and tiered runs (per-commit \u226410 min, nightly \u22484-5 h, weekly \u224812 h)", "A GPU lock in the orchestrator so Blender Metal renders and Chrome WebGPU runs never overlap", "An asymmetric, non-square C0a (640\u00d7360 and 360\u00d7640) plus a far-from-origin recentring variant", "An IO orientation round-trip unit test (harness upload \u2192 PFM, bottom-to-top rows \u2192 compare.py; plus a Cycles EXR of C0a)", "Glass calibration scenes: C0h slab (analytic, with bounce truncation), C0i emitter immersed in glass (\u03b7\u00b2 convention), C0j rough-glass furnace, C0k glass shadow", "Scene (vi-B): area light seen in a roughness-0 mirror and through smooth glass, our Mode B vs Cycles MIS-on with transparent_max_bounces=1024; restrict U9 (A\u2261B) to delta-free scenes, with a positive control", "Analytic scenes for the sun (C0l), disk/ellipse (C0m), spread < 180\u00b0 (C0n), visibleToCamera (C0o), and radius > 0 (C0p) or removal of radius from the editor", "Dynamic sequences ix-f (camera and lights moving together, light teleport, FOV ramp) and ix-g (rotating sun)", "An E2E-USD stock-import test (normalize true/false, SphereLight radius, DistantLight 4\u00d7, upAxis Z/Y, metersPerUnit, UV flip) alongside an expanded E2E-GLB asset list", "Gate 2/3 entries for (vii) textures, (vii-N) normal map, (vii-A) MASK alpha, (viii) USD, and a smooth-shaded Stage-B scene", "Suite-level FWER control with a single confirmatory re-run, absolute margins for dark tiles, per-channel (R, G, B, Y) tests, and TOST \u03b1 stated explicitly", "\u03b4-scale planted controls for Stage B (W\u00d71.003; c_p+1 in the MIS denominator) and an ours-vs-ours ReSTIR ensemble A/A", "The validation jitter rule: i.i.d. per run and per frame, with test T13b", "A cycles_settings table with a read-back assert dumped to manifest.json, and a cache key that includes the validation/blender/*.py hashes and texture bytes", "KHR_materials_volume handling (Cycles \u03c3_a = density\u00b7(1\u2212color)) or explicit stripping in the e2e post-process", "A te
+
+========== requirements-coverage verdict: ready_with_fixes
+
+[critical|VALID] R1 §§1 Materials (Glass bullet, lobe classes); §1 Reservoir pathFlags; §5 M3/M4; §7 Gate 2/3; §8 pending
+  PROBLEM: Glass/transmission is a user requirement, but it has no spec. M3 schedules glass 'per the glass spec'. M4 meanwhile freezes the interfaces glass must fit into:
+- 2-bit lobe codes {D, S, NEE, NONE};
+- the rc predicate D_k/R_k/F_k/I_k, defined only for reflection lobes;
+- T3-4 case coverage, which has no transmission case;
+- lobe-joint pdfs with no reflect/refract selection probability.
+No report covers transmission: gap-bsdf sets transmission = 0, and gap-rc and gap-light never mention it. When glass lands after M4, rc.wgsl and the reservoir format need rework. Reconnection through rough glass is also an unguarded bias source, because the new direction can flip between the reflection and transmission hemispheres. Finally, the interactive default of 2 bounces (≤ 3 scattering vertices) only just covers a glass sphere, and TIR rims render dark.
+  FIX: Accept the proposed glass interface contract and the M3a/M3b split, with these corrections. Downgrade the severity to major: plan §8 already flags the glass spec as pending, but freezing the interfaces now is still needed.
+(1) Use 3-bit lobe codes: ℓ_{k−1} in bits 22–24, ℓ_k in bits 25–27, and bits 28–31 kept for gap-light's reserved uses (light-map frame parity, RR). Fold the delta variants into the code {D, S, S_δ, T, T_δ, NEE, NONE}, so gap-bsdf §7.3's separate deltaBefore/deltaAfter bits are no longer needed.
+(3) Keep the conservative v1 rule: P_k is false if ℓ_{k−1} ∈ {T, T_δ} or ℓ_k ∈ {T, T_δ}. Add: when y_{k−1} is transmissive, a reconnection direction ω′ on the side that does not match the copied lobe ℓ_{k−1} (reflection vs refraction) makes the shift FAILED (undefined), never 'defined with F = 0' (gap-light §5.6). Add this case to T3-4.
+(5) Cite io_scene_gltf2/blender/imp/pbrMetallicRoughness.py:218-254 for transmissionFactor → 'Transmission Weight' (not animation_pointer.py). The stock importer does add a Volume Absorption node when KHR_materials_volume.thicknessFactor ≠ 0 (pbrMetallicRoughness.py:23-57). Ignoring volume is therefore a documented deviation from the stock importer as well, and the scene bridge must never emit volume nodes.
+(6) Keep: interactive 2 bounces for opaque scenes, 4 for the glass preset.
+vi-glass references keep caustics_reflective = caustics_
+
+[major|VALID] R2 §§1 Lights (Mode A/B); §5 M3; §7 Gate 2 scene (vi)
+  PROBLEM: The plan says 'Modes A and B have identical expectation, which is itself a unit test', and M3 gates Mode B on 'mode A ≡ mode B'. That identity is false whenever x_{d−1} has a delta lobe. NEE cannot sample through a delta mirror or smooth glass, and in Mode A analytic lights cannot be hit by BSDF rays, so those light paths vanish. The gap-light proof assumes NEE covers every light point.
+
+The user-visible result: with the default Mode A, an area light is **invisible in smooth mirrors and smooth glass**, and it casts no caustics. That is the glass-plus-area-light combination the user explicitly asked for. Cycles with per-light MIS off matches, so Stage A still passes, which hides the gap.
+
+Three more problems follow:
+- Validation scene (vi) was designed to test 'caustics via BSDF hits' from an area light, which cannot happen in Mode A.
+- Mode B in ReSTIR (BSDF_ANALYTIC candidates, crossing
+  FIX: Apply the proposed §1 rewrite (A ≡ B only when no light-ending path has a delta lobe at x_{d−1}; U9 runs only on delta-free scenes, including gap-light §8's crossing scene). Also apply the Mode B scheduling: PT in M3b; ReSTIR BSDF_ANALYTIC candidates, replay crossings and rc case (d) in M6. Run scene (vi) in both modes: Mode A vs Cycles with MIS off, Mode B vs Cycles with MIS on and transparent_max_bounces = 1024. Also run caustics with an emissive-mesh light in both modes.
+One precision: with the r = 0.02 GGX mirror, area-light caustics still exist in Mode A via NEE at the mirror vertex. Only delta mirrors and smooth glass lose them.
+Replace the help text with: "With point and spot lights, glass and mirrors cast fully opaque shadows. Cycles does the same with MNEE/shadow caustics off, its default. In Mode A this also holds for area lights: smooth mirrors and glass show no area-light reflections, refractions or caustics. Use Mode B, or an emissive mesh, for those."
+
+[major|VALID] R3 §§1 Units (UsdLux); §1 Lights; §2 rule 1; §5 M5 light editor property panel; M7 USD
+  PROBLEM: The plan exposes and imports non-delta point lights that its formulas exclude:
+- the M5 property panel has a 'radius' field;
+- §1 Units says a USD SphereLight is 'imported as a soft-falloff *disk*'.
+
+In the UsdLux schema, SphereLight defaults to radius 0.5 and DistantLight to angle 0.53°, so almost every USD light arrives non-delta. gap-light explicitly excludes r > 0 lights, which would need cone sampling, a p_A-ratio Jacobian, double-crossing labels and soft-falloff semantics. §2 rule 1 handles only delta point/spot/sun. An engineer following the plan would render these lights with delta formulas, which is wrong in expectation, or would have to invent unvalidated formulas.
+  FIX: Add to §1 Lights:
+"v1 analytic lights are exactly: point and spot with radius 0; rect and disk area lights; sun with angle 0 (stretch). Radius > 0, sun angle > 0, spread = 0, CylinderLight, DomeLight and GeometryLight are unsupported: log them and skip or simplify them (gap-light §10 item 6)."
+Spread: gap-light §3.4 specifies only spread = 180°. Either restrict v1 to 180°, or support 0 < spread < 180° only by implementing the power-preserving attenuation from cyc §2.4 (area.h:106-118) and adding a spread variant of C0e.
+In §1 Units, replace the soft-falloff-disk wording. A UsdLux SphereLight becomes a point light with r := 0, with intensity chosen to preserve the sphere's radiant intensity L·πr² for the file's `normalize` flag, which defaults to **false**:
+- normalize = true → I = i·2^e/4;
+- normalize = false with r > 0 → I = i·2^e·πr²;
+- r = 0 or treatAsPoint → the io §5.4 rule.
+A DistantLight gets angle := 0. Show a 'simplified light' badge. The bridge writes shadow_soft_size = 0, use_soft_falloff = False and sun angle = 0 to Blender.
+Remove 'radius' from the light-editor panel.
+
+[major|VALID] R4 §§5 M1, M2, M7 (USD)
+  PROBLEM: USD loading is a headline user requirement ('load scenes (usd/glb in the website)'), but it arrives only in M7, after all ReSTIR work. Its only planned path is a pinned RC dependency (`lightusd@1.0.0-rc4`, renamed in 2026) whose `getLight()`/`getMeshCopy()` fields are UNVERIFIED for rc4, and the spike is scheduled at M7 start. If the spike fails that late, the fallbacks are either weaker (the three.js USDLoader maps lights naively) or leave the website entirely (offline Blender conversion).
+
+There is also an ordering conflict: M2's `make_cornell.py` already exports a Cornell USD, and the manual end-to-end test loads 'a USD (Cornell)', yet the app cannot read USD until M7. Gate 2 omits scene (viii) USD, which val puts in Stage A.
+  FIX: Accept the proposed fix as written:
+- M0: a 2-day LightUSD rc4 spike in Chrome 154 through its Worker loader, producing docs/decisions/usd.md with go / fallback-1 / fallback-2. M0 already runs Blender, so it can export the Cornell USD needed for the spike ad hoc.
+- M2: a minimal UsdSceneSource covering UsdGeomMesh, xformOps, upAxis/metersPerUnit, UsdPreviewSurface constants, and UsdLux Rect/Disk/Sphere(→ r = 0 point, per the corrected R3 rule)/Shaping(spot).
+- Scene (viii) and (vii) join the Gate-2 set at the M3a exit, matching val §9, which lists (i)–(viii).
+- M7 keeps PointInstancer/instanceable, UsdUVTexture textures and (viii-L).
+Drop the 'ordering conflict' argument. The manual end-to-end test in §7 is a final check, and make_cornell exporting USD in M2 is only an asset, not a contradiction.
+
+[major|VALID] R5 §§5 M3, M5 (light editor, animation tracks)
+  PROBLEM: The user cannot place, edit or move a light until M5, after the ReSTIR core. Until then, lights come only from hand-written scene.json or from glTF KHR_lights_punctual. The M3 path tracer, which the plan treats as the reference, is never exercised interactively with the user's own lights or with moving lights. That exercise would validate the cur/prev light buffers, id maps and pmf rebuilds before temporal ReSTIR depends on them. M5 is also the heaviest milestone: temporal, E_{t−1}, id maps, pmf Jacobian, suffix refresh, animation, editor, ix-a…e ensembles and N1–N6. That concentrates schedule risk on one milestone.
+  FIX: Move from M5 to M3a:
+- the light editor (add, pick, gizmos, panel, delete, duplicate, save/load scene.json);
+- animation tracks and the timeline, with resolved frames[] export;
+- cur/prev light buffers with stable ids and curToPrev/prevToCur maps.
+The pmf and alias table are rebuilt deterministically in stable-ID order **only when lights change**. The rebuild is skipped otherwise, so P_sel^t ≡ P_sel^{t−1} bitwise and J_P = 1 exactly (gap-temporal §7).
+The PT resets accumulation on any light, camera or animation change.
+M3a exit:
+- the editor and animation work in PT mode;
+- scene.json round-trips losslessly;
+- ix-a…ix-e are authored and exported;
+- PT vs Cycles passes on their keyframes (val ix rows: every 8th frame, K = 8);
+- gap-temporal §9.3-1 (light maps) passes.
+M5 keeps temporal reuse, E_{t−1}, the pmf Jacobian, suffix refresh, the ensembles and N1–N6.
+
+[major|VALID] R6 §§1 Denoiser and display; §5 M1, M8
+  PROBLEM: 'Resolution scaling and upscaling' is placed in M8, but every earlier milestone is expected to be interactive. On an M5 Pro Retina display at devicePixelRatio 2, the canvas is about 3024×1964 (14") or 3456×2234 (16"). That is 11–15× the pixels of the 960×540 internal resolution that the performance table and gap-perf's GO decision assume. Measured costs scale about linearly (34 ms at 540p, 132 ms at 1080p), so flying in ReSTIR mode between M4 and M7 would run at roughly 390 ms or more per frame. The plan never mentions devicePixelRatio.
+  FIX: Add to M1:
+"Render targets are sized from an internal resolution that is independent of devicePixelRatio: default 960×540 at the canvas aspect, with a 540p/720p/1080p/native dropdown. A nearest/bilinear blit upscales to the canvas, whose backing size is CSS size × DPR and is updated on resize and DPR change. Validation and the harness always use the explicit resolution in scene.json."
+M8 keeps only the higher-quality upscaler and tuning.
+
+[major|VALID] R7 §§5 M2 (harness calibration); §7 Gate 1
+  PROBLEM: M2 must calibrate the harness with the planted biases 'light ×1.01, wrong spot blend, dropped Jacobian'. The renderer they would be planted in does not exist yet: the PT arrives in M3 and the Jacobian in M4. val §3.9 also requires an A/A test on 'our PT'. As written, Gate 1 cannot pass at the end of M2, so M2 has no achievable exit, and the harness's end-to-end plumbing (readback to f64, EXR, compare.py) is first exercised together with a brand-new PT.
+  FIX: Replace the M2 calibration with an emission-only kernel (primary hit → L_e, plus camera-visible lights) and Gate 1-lite:
+(a) A/A: Cycles seeds 1–8 vs 9–16 on C0b and (i), at nominal FPR (χ²_red, KS, tile FPR).
+(b) Cycles-vs-Cycles planted controls detected at their MDB: light ×1.01 on (i), and spot blend 0.15→0.16 on C0d or (iii). Neither needs our PT.
+(c) The emission kernel passes C0a (≤ 0.1 px) and C0b (≤ 1e-4), plus an A/A on two of our seed sets.
+At M3a, repeat light ×1.01 and add 'drop 1% at bounce 2' as **our-PT-vs-Cycles** controls, because the MDB depends on our PT's variance, and add the A/A on our PT (val §3.9).
+'Omit the spatial Jacobian' goes to M4; N1–N6 go to M5.
+
+[major|VALID] R8 §§1 Geometry and BVH; §5 M1, M7 (Alpha)
+  PROBLEM: Alpha is deferred to M7 as 'Alpha (MASK/BLEND) as a transparent BSDF… deterministic per path', so all ReSTIR visibility, replay and reconnection code (M4–M6) is written without it. Adding it in M7 changes visibility in every pass, and BLEND as stochastic transparency would add a PSS dimension plus fractional shadow transmittance to every shift. Applying alpha in some passes but not others is the same class of bias as the plan's rule 12, which forbids mixing occlusion semantics.
+
+The plan's own end-to-end scene, Sponza, has alpha-masked foliage, and the gap-perf timings explicitly exclude alpha-tested any-hit. No report specifies alpha semantics: cyc-verify lists it as omission 5, and gap-bsdf puts it out of scope.
+  FIX: Add to §1 Geometry:
+"Alpha MASK (glTF alphaMode MASK; UsdPreviewSurface opacityThreshold > 0) is a geometric cutout inside traversal from M1. Alpha = baseColorFactor.a × baseColorTexture.a × COLOR_0.a. The hit is rejected when alpha < alphaCutoff (default 0.5), which matches Blender's `1 − (a < cutoff)` node (io_scene_gltf2/blender/imp/pbrMetallicRoughness.py:524-620). Constant-alpha MASK materials are resolved at load, with no texture fetch.
+Flagged triangles carry a bit in the triangle record (wgpu §4.6). The texture is always sampled bilinear at LOD 0, never with ray-cone LOD, even in interactive mode, identically in closest-hit and any-hit traversal and in every pass (primary, BSDF, shadow, reconnection, refresh). A cutout consumes no random numbers and creates no vertex, so shifts, replay and rc.wgsl are unchanged.
+For Cycles parity: MASK becomes the importer's 0/1 transparent mix, and alpha scenes set transparent_max_bounces = 1024.
+Alpha BLEND is a v1 non-goal: it is rendered as MASK with cutoff 0.5, logged, and the bridge writes it as MASK."
+Remove alpha from M7. Add scene (xii), an alpha-textured foliage card over a diffuse floor under a rect light, to Gate 2 (M3a) and Gate 3 step 2 (M4). Re-measure Sponza with alpha in M8.
+
+[major|VALID] R9 §§5 (all milestones); §7 Gates
+  PROBLEM: No milestone has an explicit exit line. The plan says only 'The exit gates are in §7', with no mapping from milestone to gate:
+- Gate 1 is infeasible at M2 (R7).
+- Gate 4 (convergence slope) belongs to no milestone.
+- M7 (textures, normal maps, USD, loader fidelity) has no gate; Gate 2 omits (vii) and (viii).
+- M8 has no performance acceptance numbers.
+- The denoiser has no acceptance criteria.
+- 'Every milestone ships its own debug views' is not checkable.
+
+An engineer cannot tell when a milestone is done.
+  FIX: Add an Exit line to every milestone plus `npm run validate -- --milestone Mx`, following the proposed list, with these changes:
+(a) M3a's Gate-2 run of (vii) is flat-shaded or uses the 'model-approximate' tier, since smooth shading is not a Cycles MIS partition (gap-bsdf §8.2). Normal-mapped and smooth (vii) stays in M7.
+(b) M8 performance numbers (≤ 35 ms at 540p with N = 3; ≤ 32 ms with N = 1 and moving lights; ≤ 51 ms at 720p) are **reported targets**, not correctness gates. They come from gap-perf's mock kernels, which exclude alpha any-hit and full BSDF cost (gap-perf §1.4, §8). Missing them is a documented deviation. `validate --all` green in unbiased mode and the denoiser acceptance criteria remain hard exits.
+(c) The exits referencing M3b, vi-glass, Mode-B ReSTIR, the M2 USD source and the editor at M3a apply only if R1, R2, R4 and R5 are adopted.
+Add a 'Milestone' column to the §6 table.
+
+[major|VALID] R10 §Context 'Research basis' and tags; §2; §4 docs/math.md
+  PROBLEM: The plan is not executable without re-reading about 1.2 MB of reports:
+(a) The '(report §x)' tags (gris, enh, gap-rc, …) are never mapped to files. None of the 17 agent IDs appears in the plan, and the docs/research names are unspecified.
+(b) There is no precedence rule, yet the copied reports contain superseded, bias-relevant statements. Examples: io recommends rgba8unorm-srgb, light MIS True and import-the-same-file; wgpu puts area lights in the BVH; gris uses a tiny pixel filter; val T14 has the +1.76σ⁻² typo; gap-perf's binding table assumes Talbot temporal resampling.
+(c) docs/math.md appears in the layout but no milestone owns it.
+(d) §2 omits several bias-critical formulas: the I_k and R²_pri expressions, the defensive pairwise MIS weights, the contribution-MIS temporal update, the rc case table (a)–(e), and the suffix-refresh formulas.
+(e) The user asked to 'understand the math, 
+  FIX: Apply as proposed:
+- the tag → agent-id → docs/research name table (all 17 ids verified against the files on disk; add 'glass' when it lands);
+- the precedence rule 'plan §1–§2 > gap-* (incl. glass) > *-verify > critique §2 resolutions > original reports';
+- the superseded list, all verified present: io L214/L559 rgba8unorm-srgb; io L516 import-the-same-file; io L662 light MIS True; wgpu L403 area lights as geometry; gris L1087 tiny pixel filter; val L492 +1.76σ⁻²; val L48 'cannot be matched'; gap-perf L528 'temporal resample (Talbot)' row (its bindings must be re-derived for contribution MIS, which needs E_{t−1} inputs when the canonical sample is selected);
+- M0 owns docs/math.md with the listed anchors, and `// math.md#anchor` comments in the WGSL;
+- paste gap-rc §7.3 (m_c, m_j, W_out, c_out) into rule 7 and gap-temporal §3.6's per-pixel pseudo-code (L342–364) into rule 8, plus the I_k and R²_pri formulas from gap-rc §0 item 2 into rule 6.
+
+[major|VALID] R11 §§6 Debug visualizations; §5 M1 'Debug-view framework'
+  PROBLEM: Debug visualizations of every stage are an explicit user requirement, but §6 lists views with no mechanism behind them. In particular:
+- There is no stage-tap model showing the image or reservoir after initial, temporal, spatial, final and denoise, which is what 'showing the various stages' most directly means.
+- There is no per-pixel AOV storage: gap-perf reserves only a ~1 MB probe-record buffer (B10), which cannot hold per-pixel shift outcome codes or log|J| maps.
+- The gizmos, spot cones and '3D overlay of base and shifted paths' need a raster overlay pass, and the plan is compute-only.
+- There are no pause, single-step or freeze-seed/history controls, which are essential for inspecting temporal stages.
+- There is no policy on recompiles: 70–160 ms per BSDF copy makes override-based view switching slow.
+- There is no browser EXR decoding for the Cycles compare view.
+  FIX: Add the proposed 'Framework' paragraph to §6:
+(1) A tap model: a uniform `debugTap` (no recompiles, consistent with the §1 override policy) and a per-pixel vec4f AOV plane **inside the B10 debug binding (G3)**, so no extra storage-buffer slot is used, sized from the internal resolution (about 8 MB at 540p).
+(2) A stage selector (after initial, temporal and spatial; final; denoised) with an A|B split.
+(3) A probe pixel with the B10 record ring (wgpu §7).
+(4) One raster overlay pass after resolve, depth-tested against V-buffer depth, for gizmos, cones, frames and probe paths.
+(5) Time controls: pause, step, freeze seed/frame, freeze or reset history.
+(6) A HUD with bit-test NaN/Inf counters and per-pass timings.
+(7) A Cycles compare view using three.js EXRLoader as a parser only, shipped in M3a.
+
+[major|VALID] R12 §§5 M1 Fly camera; M5 (→M3a) Light editor and animation
+  PROBLEM: The UX the user explicitly asked for is under-specified, and part of it is self-conflicting:
+- **Input model.** Pointer lock plus WASD conflicts with click-pick and gizmo drags; there is no mode model.
+- **E/Q axis.** Nothing says whether E/Q move along world up or camera up.
+- **Keyboard layout.** No layout-independent keys.
+- **Missing camera settings.** Sensitivity, pitch clamp and scene-scaled speed are unspecified.
+- **Light picking.** Analytic lights are not in the BVH, so a click cannot hit them.
+- **Light placement.** No placement-on-surface flow.
+- **Editing operations.** No delete, duplicate or undo.
+- **Type changes.** Changing a light's type must preserve the stable-id and map semantics.
+- **Emissive meshes.** They cannot move (static geometry), and the UI does not say so.
+- **File lights.** glTF and USD lights are not stated to be editable.
+- **Animation.** 'Timeline and pro
+  FIX: Apply the proposed camera and editor spec, with one refinement. Default mouse-look to **RMB-drag with setPointerCapture + movementX/Y**, and keep pointer lock optional ('F' fly mode). Chrome's pointer lock shows an exit banner on each lock, and after an Esc exit it needs a fresh engagement gesture, which makes repeated hold-RMB locking fragile.
+Keep the rest:
+- LMB reserved for pick and gizmos;
+- WASD in the horizontal plane, E/Q along world ±Y (internal frame is glTF Y-up, io §8.1), read via KeyboardEvent.code while flying;
+- speed scaled to the scene diagonal, with wheel, Shift and Ctrl modifiers;
+- sensitivity and invert-Y in localStorage;
+- Home, bookmarks, 'use file camera';
+- recorded camera matrices go into tracks.camera.
+Editor: surface placement from a V-buffer readback; CPU proxy picking (analytic lights are not in the BVH); translate and rotate gizmos only (no light scale, io §8.1 item 2); panel in Blender units; delete, duplicate, undo/redo; a type change is remove + add with a new id (gap-temporal §7); file lights become editor lights; emissive meshes are marked static; the auto rect light is not added in validation; presets plus keyframes (linear, slerp, step); wall-clock interactive time vs frame/fps in validation; resolved frames[] export with CONSTANT keys and motion blur off (io §8.1, §8.3). The sun entry depends on R13.
+
+[major|VALID] R13 §§1 (Lights, Materials, Textures, Reservoir); §5 M6, M7; new §0 Non-goals
+  PROBLEM: There is no non-goals list, and several items that are neither requested nor needed for correctness are scheduled ahead of the correctness-first finish line:
+- sun and ellipse lights (the user asked for point, spot and area);
+- Tier-2 MULTI_GGX (needed only to match Blender's stock importer, while the bridge forces GGX);
+- KTX2;
+- alpha BLEND;
+- sample gallery;
+- in M6, the 96 B lossy production layout with its equivalence gate, branch-to-select micro-optimisations and f16 path state. These are speed work that touches bias-critical reservoir code.
+
+The plan is also silent on environment lighting (world = None), so the user will get a black sky with no explanation.
+  FIX: Add §0 Non-goals (v1):
+- environment, HDRI or world lighting (black background; keep gap-light's reserved env technique and endpoint codes);
+- moving or deforming geometry;
+- volumes and KHR_materials_volume;
+- alpha BLEND (rendered as MASK);
+- coat, sheen, SSS, anisotropy and thin film;
+- lights with radius > 0 and suns with angle > 0;
+- spread = 0;
+- IES profiles;
+- a light BVH.
+Stretch (after M8, each with its own gate): sun; ellipse area shape; Tier-2 MULTI_GGX with the stock-imported-GLB end-to-end test (the M7 end-to-end test uses the bridge with distribution = 'GGX', per gap-bsdf §0 item 11); KTX2/Basis; the sample gallery.
+Move from M6 to M8: the 96 B production layout with its equivalence gate, and branch-to-select micro-optimisations. f16 path state is already in M8, so it needs no move. M6 keeps paired reuse, RR, RIS-NEE tiles, RGB shading weights, dual motion vectors and disocclusion boost, the duplication map, and Mode-B ReSTIR if R2 is adopted.
+
+[minor|unverified(minor)] R14 §§3 Modes; §5 M4, M6
+  PROBLEM: The user asked for ReSTIR PT as 'Enhanced 2026 + GRIS 2022'. M4 builds random-neighbour gather spatial reuse, where the gathering pixel performs both shifts per neighbour. M6 then introduces the paired slot architecture, which is the only spatial architecture §3 documents. The 2022 path therefore has no documented passes and no status as a retained mode, and nothing guarantees it survives as the baseline the Enhanced paper compares against. That baseline is also the natural reference point for toggling Enhanced features one at a time.
+  FIX: Add to §3 Modes:
+
+"`ReSTIR-2022`: the same path tree, hybridShift and rc.wgsl (with the normative Enhanced predicate). Spatial reuse is random-neighbour gather: k ∈ {1…6}, radius 10–30 px, and pixel c computes both T_{j→c}(X_j) and T_{c→j}(X_c). It uses defensive pairwise MIS with k = |S_c| and temporal contribution MIS, and no Enhanced features. Passes: `spatial_gather_2022` plus the shared compacted replay pass. The mode is retained after M6, runs Gate 3 steps 1–4, and is available as an A|B split against Enhanced."
+
+In M6, state that paired reuse is added beside it, not in place of it.
+
+[minor|unverified(minor)] R15 §§1 Denoiser and display; §5 M8
+  PROBLEM: The toggleable simple denoiser is a named user requirement. It sits in M8 together with CWBVH, f16 and performance tuning, so it is the item most likely to be squeezed out, and it has no acceptance criteria. Its inputs (G-buffer, motion vectors, history) all exist by the end of M5.
+  FIX: Move A-SVGF-lite to a new **M5.5** (after temporal reuse), and ship a spatial-only à-trous toggle on the PT in M3a for early use.
+
+Acceptance:
+- The toggle works in all non-validation modes, and the harness asserts it is off in the PT-validation and ReSTIR-unbiased modes.
+- On (i), (v), (vii) and ix-d, the mean FLIP of denoised 1-frame ReSTIR against a 64k-spp PT reference is ≥ 2× lower than without denoising.
+- After the ix-e intensity steps, the image recovers 95% within ≤ 8 frames.
+- Cost is ≤ 3 ms at 960×540.
+
+M8 only tunes the denoiser.
+
+[minor|unverified(minor)] R16 §§5 M2/M7 (reference-compare); §7 Manual end-to-end step 8
+  PROBLEM: 'Use Blender… to create validation data' is covered only by the CLI (`npm run validate`). There is no flow from a scene the user edited in the website (drag-dropped GLB, placed and animated lights) to a Cycles reference of that exact scene. Manual step 8, 'Compare against the Cycles EXR of the same scene.json', has no defined way to produce that EXR for an interactive scene. Drag-dropped files have no URI that the bridge could hand to Blender.
+  FIX: Add to M3a:
+
+"An **'Export for Cycles'** action writes scene.json with resolved frames and uploads the parsed scene (flattened geometry and materials) plus the source assets to the Vite dev-server middleware (`upload-middleware.ts`). A dev-only `/api/reference` endpoint runs `build_scene.py` and `render_reference.py` headless, using the M0-measured spp budget, and returns the EXR path. The compare view (R11-7) auto-loads the EXR. Localhost only; disabled in production builds."
+
+  MISSING: ["The glass/transmission spec (still pending in \u00a78) and an interface contract for it now: a T lobe class, 3-bit lobe codes, how the rc predicate treats transmission, the reflect/refract choice in the joint pdf, occlusion semantics, the glTF thin-walled/volume decision, and Gate 2/3 glass scenes", "A correct statement of when Mode A equals Mode B (only when x_{d\u22121} is never delta), a milestone for Mode B in ReSTIR, and a note to the user that in Mode A area lights do not appear in smooth mirrors or glass", "A rule for USD lights with default radius 0.5 and DistantLight angle 0.53\u00b0 (simplify to delta, flag in the UI), and removal of the 'radius' editor field", "Explicit non-goals, e.g. environment/world lighting (black sky), alpha BLEND, volumes, coat/sheen, radius > 0 lights", "A per-milestone exit criterion, a mapping from milestones to gates, and performance and denoiser acceptance numbers", "A table mapping each report tag to its source file and docs/research name, a precedence rule with a list of superseded report statements, and a milestone that owns docs/math.md (a formula-to-shader index)", "Defensive pairwise MIS, contribution-MIS temporal, I_k and R\u00b2_pri formulas written into \u00a72", "The debug-view mechanism: stage-tap selector, per-pixel AOV plane, probe-pixel record ring, raster overlay pass, pause/step/freeze controls, browser EXR decoding for the compare view", "A camera input model that avoids the pointer-lock vs picking/gizmo conflict, with E/Q on world up, layout-independent keys and speed scaled to the scene", "A light-editor spec: picking analytic lights without the BVH, placing a light on a surface, delete/duplicate/undo, type change = remove + add, file lights editable, emissive meshes static", "A spec for authoring animation (presets, keyframes, timeline) and how interactive time maps to validation frames (resolved frames[], CONSTANT keys)", "An internal render resolution independent of devicePixelRatio, from M1", "Alpha MASK cutout semantics in traversal from M1, used by every pass", "An in-app flow from the edited scene to a Cycles reference (export, local Blender endpoint, EXR, compare view)", "A retained ReSTIR-2022 baseline mode and its passes", "A USD spike and a minimal loader before M7"]

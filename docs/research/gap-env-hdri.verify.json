@@ -1,0 +1,82 @@
+{
+ "verdict": "minor_issues",
+ "corrections": [
+  {
+   "item": "ENV-ALIAS / ENV-PDF: the claim that the evaluated pdf equals the sampling density exactly, with p1Env(uv) re-looking up the cell for NEE samples",
+   "problem": "The NEE sample is computed as uv = (f32(j) + du)/W_m. In f32 that sum can round up to j+1, so envPdfSA(uv) returns the neighbouring cell's pdf for a sample that came from cell j. The estimator then uses the wrong pdf at cell edges, and the error is amplified by P_j/P_{j+1} next to sharp features. At W_m = 4096 this is roughly 3e-4 relative near a bright texel. That is below \u03b4, but it breaks the stated exactness, and the ENV-U3 GPU \u03c7\u00b2 test (binned by cell(uv)) may flag it.",
+   "corrected": "Keep every NEE sample inside its own cell. After computing uv, clamp each coordinate to the largest f32 below the cell's upper edge, e.g. uv.x = min(uv.x, bitcast<f32>(bitcast<u32>(f32(j+1)/f32(Wm)) - 1u)), and the same for v with i and H_m. Then p1Env(uv(i,j,du,dv)) \u2261 pdfUV[i\u00b7W_m+j] for NEE, shifts and refresh, and one function of direction still serves both techniques. Reword 'exact' as 'exact up to the 2^-16 lattice and f32 quadrature'.",
+   "evidence": "Pure-Python f32 simulation of the spec's formula. The fraction of lattice offsets that cross into cell j+1 is 1.5e-5 (W_m=512), 3.1e-5 (W_m=1024, j=1023), 6.1e-5 (W_m=4096, j=1024) and 1.22e-4 (W_m=4096, j=4095). Cycles avoids this at NEE because it uses the sampler's own indices (background.h:88-97, pdf from cdf_u/cdf_v of index_u/index_v).",
+   "severity": "minor"
+  },
+  {
+   "item": "ENV-PDF pole cap 'sin\u03b8 < 1e-6 excluded on both sides' (\u00a72.4, \u00a74 numerics)",
+   "problem": "On the BSDF-escape side, v comes from acos(b.z) in f32. Every direction with \u03b8 < ~2.4e-4 rad has b.z rounded to 1.0, so v = 1, s = 0 and \u03c92 = 1. NEE still accepts lattice samples with 1e-6 < \u03b8 < 2.4e-4, where \u03c91 \u2248 1. That double-counts about 1.8e-7 sr per pole, so the two caps do not match. The effect is negligible for real HDRIs but scales with the radiance at the pole (e.g. a sun at the zenith).",
+   "corrected": "When a direction is available (BSDF escapes, camera misses, refresh), compute s for envPdfSA from the well-conditioned s = length(b.xy). Use sin(\u03c0\u00b7min(v,1\u2212v)) only for NEE lattice uv. Both sides then apply the 1e-6 cap to the true \u03b8. Alternatively, raise the cap to s < 5e-4 on both sides. Either way, keep risk 7 and bound it in ENV-U6.",
+   "evidence": "acos(1 \u2212 2^-24 in f32) = 3.45e-4 rad, so f32 cannot represent 0 < \u03b8 < ~3.45e-4 through acos, and cells with \u03b8 < ~2.4e-4 round to \u03b8 = 0. The spec's envPdfSA uses s = sin(\u03c0\u00b7min(v,1\u2212v)) from that v (spec \u00a72.4 WGSL).",
+   "severity": "minor"
+  },
+  {
+   "item": "ENV-CYCLES-PARITY / \u00a71.4 table: world max_bounces rationale 'NEE gating only'",
+   "problem": "Setting this lower than the scene's max_bounces biases Cycles, and the spec does not say so. light_select_reached_max_bounces drops background NEE for bounce > max_bounces, but light_sample_mis_weight_forward_background still applies power_heuristic(mis_ray_pdf, bg_pdf) to BSDF escapes, so energy is lost. Pinning 1024 is correct, but the reason given invites someone to 'optimise' it.",
+   "corrected": "Rationale: 'must be \u2265 scene max_bounces+1; a lower value makes Cycles biased low (NEE is skipped but forward MIS still down-weights BSDF escapes)'. Add a read-back assert world.cycles.max_bounces \u2265 max_bounces in cycles_settings.py.",
+   "evidence": "K/light/light.h:25-29,240 (max_bounces check only in NEE selection); K/light/sample.h:556-587 (forward background MIS has no max_bounces check); grep finds no other max_bounces use in light/*.h or shade_background.h.",
+   "severity": "minor"
+  },
+  {
+   "item": "ENV-LENGTH1 wording '(also through alpha cutouts and Mode-B light crossings)'",
+   "problem": "The list is incomplete. In Cycles, camera rays pass through every camera-visible analytic light in all modes, not just Mode B. lights_intersect tests only SHADER_EXCLUDE_CAMERA for camera rays, independent of MIS. shade_light then advances tmin and counts a transparent bounce, so the env behind a camera-visible rect light is visible with weight 1 in Modes A, A\u2032 and B.",
+   "corrected": "'Camera ray miss (also through alpha cutouts and through any camera-visible analytic light, in every mode; lights never occlude) adds visibleToCamera\u00b7L_env with weight 1'. Add one C0p/C0o variant with a camera-visible rect light in front of the env in Mode A.",
+   "evidence": "K/light/light.h:278-296 (camera rays: only SHADER_EXCLUDE_CAMERA check); K/integrator/shade_light.h:35-36,85-92 (advance tmin, transparent bounce).",
+   "severity": "minor"
+  },
+  {
+   "item": "ENV-VISIBILITY t_max = +\u221e and suffix-cache escape flag t_occ = +\u221e",
+   "problem": "The plan runs under relaxed Metal math (plan \u00a71.1: NaN/Inf checks are bit tests), where arithmetic and comparisons involving IEEE +Inf are not guaranteed. WGSL also cannot write an Inf literal (1.0/0.0 is a const-expression error). Cycles itself uses FLT_MAX.",
+   "corrected": "Use a finite t_max = FLT_MAX (0x7f7fffff) or a scene-bound value (e.g. 4\u00b7R_s + \u03b5) in visibleInf. Encode 'escaped' as an explicit flag bit (or the FLT_MAX sentinel compared bitwise), never as an IEEE Inf value.",
+   "evidence": "Plan \u00a71.1 'Relaxed Metal math: NaN and Inf checks are bit tests'; K/light/light.h:155 (ls->t = FLT_MAX for the background).",
+   "severity": "minor"
+  },
+  {
+   "item": "\u00a72.1 loader: 'negatives kept (Cycles renders them), importance uses |\u00b7|'",
+   "problem": "The ReSTIR target is p\u0302 = luminance(F), and RIS/GRIS weights must be non-negative. A negative texel can make p\u0302 and w negative (undefined resampling), and the realized-pdf support argument assumes L \u2265 0.",
+   "corrected": "In validation, reject EXRs with negative texels, or clamp them to 0 at load and export the clamped texels so Cycles sees the same data (ENV-U9 hash). In interactive mode, clamp to 0 with a warning. RGBE inputs are unaffected (unsigned mantissas).",
+   "evidence": "Plan \u00a71.7 target p\u0302 = luminance(F); plan rule 8 weights w_j = m_j\u00b7lum(G_j)\u00b7W_j assume \u2265 0; OIIO rgbe2float produces only non-negative values (hdrinput.cpp exponent_table/rgbe2float).",
+   "severity": "minor"
+  },
+  {
+   "item": "ENV-PREDICATE and scenes (xiii)/C0q(c): '\u03b1 \u2265 0.2', 'V1 GGX \u03b1 \u2208 {0, 0.05, 0.15, 0.2, 0.3, 0.5}'",
+   "problem": "The units are ambiguous. Plan rule 5 and gap-rc define the guard on perceptual roughness r (Blender Roughness, GGX \u03b1 = r\u00b2); gap-rc flags a unit mismatch against the EvanLuo code, whose GGX \u03b1 \u2265 0.2 means r \u2265 0.447. If (xiii) values are read as GGX \u03b1, then 0.15 is r = 0.387 and passes, and the intended '\u03b1 < 0.2 \u2192 full replay' check is not exercised. The value 0.2 also sits exactly on the \u2265 threshold, an FP-boundary case.",
+   "corrected": "State 'r = perceptual roughness (Blender Roughness input); GGX \u03b1 = r\u00b2' in ENV-PREDICATE and both scene lists. Use r \u2208 {0, 0.05, 0.15, 0.19, 0.21, 0.3, 0.5}, or keep r = 0.2 only as a labelled boundary case with bitwise-identical f32 constants on both sides.",
+   "evidence": "Plan \u00a72 rule 5 ('R_k: r(\u2113_{k\u22121}) \u2265 0.2 in perceptual roughness'); gap-rc report lines 42, 185-186, 367 (\u03b1 notation = perceptual; unit mismatch noted).",
+   "severity": "minor"
+  },
+  {
+   "item": "\u00a75.4 tiers vs asset list (studio_small_09 in (xiii))",
+   "problem": "The tight tier is \u2264 12 EV and the heavy-tail tier is sun HDRIs \u2265 19 EV. studio_small_09 is 18 EV, fits neither, and is used for the Stage-A (M3c) gate of scene (xiii).",
+   "corrected": "Put (xiii) in the heavy-tail tier (pilot-SE sizing, K doubled), or define the tight tier as '\u2264 18 EV and no sun/specular-to-diffuse caustic chains', and record the tier per scene in report.json.",
+   "evidence": "Poly Haven API checked in this session: evs_cap overcast_soil_puresky 12, studio_small_09 18, kloofendal_48d_partly_cloudy_puresky 21. The three 1k .hdr URLs return HTTP 200 with sizes 1,195,816 / 1,615,248 / 1,435,119 B.",
+   "severity": "minor"
+  },
+  {
+   "item": "\u00a71.1 Blender builder snippet",
+   "problem": "env.image = img is used before img is loaded (line order). np.asarray(img.pixels) iterates in Python: 134 M floats for an 8k map is impractically slow. reshape(H,W,4) assumes 4 channels, but Image.channels can differ.",
+   "corrected": "Load img first. Hash via buf = np.empty(W*H*img.channels, np.float32); img.pixels.foreach_get(buf); buf.reshape(H,W,img.channels)[..., :3]. Do not set world.use_nodes: it is deprecated in 5.1.2 and the node tree already exists on worlds.new.",
+   "evidence": "Headless Blender 5.1.2 in this session: worlds.new() already has 'World Nodetree'; accessing use_nodes gives DeprecationWarning 'expected to be removed in Blender 6.0'; Image has a 'channels' property; blender/image.cpp load_metadata uses ibuf->channels.",
+   "severity": "minor"
+  },
+  {
+   "item": "ENV-ALIAS sampling shift 'i0 = h0 >> (32 \u2212 log2H_m)'",
+   "problem": "With log2H_m = 0 (H_m = 1, W_m = 2) the shift is by 32. WGSL takes the shift amount modulo 32, so i0 = h0 and the index is out of bounds. The same applies to the column table with W_m = 1.",
+   "corrected": "Require W_m \u2265 4 (H_m \u2265 2), e.g. W_m = max(4, pow2 \u2264 min(W, cap)), or special-case log2 = 0 with i0 = 0.",
+   "evidence": "WGSL spec: for u32 e1 >> e2, the shift count is e2 mod bit-width; spec \u00a72.4 WGSL.",
+   "severity": "minor"
+  }
+ ],
+ "omissions": [
+  "Env-NEE on/off toggle mid-sequence (UI 'Env NEE on/off', = Cycles sampling_method NONE) and P(env) clamp changes are not classified in the temporal change taxonomy. The toggle changes pmf[ENV] and every other light's pmf, so it must be either 'radiometric' (J_P for all NEE-terminated samples, BSDF_ENV \u03c92 re-evaluated) or a config change with history reset. Specify which.",
+  "Apply the realized-probability rule to the global light alias too. p1Env multiplies by pmf[ENV]; if the global alias uses float thresholds, the realized selection probability of ENV differs from the stored pmf[ENV] (tiny but systematic). Store the realized pmf from the alias integers, as done for the env tables, or confirm the plan's global alias already does.",
+  "Budget risk for C0s with sampling_method NONE (BSDF-only). The 10^4 texel at 45\u00b0 covers about 1.06e-4 sr, and a cosine sample hits it with probability \u2248 2.4e-5. Holding the sun's share of E within \u03b4 = 0.5% therefore needs about 1e4 spp at 512\u00b2 in both renderers. Add budget.json rows, or gate the NONE variants on global aggregates only.",
+  "Add an assertion to cycles_settings.py that no world shader contains Light Path / Is-Camera-Ray or other ray-type-dependent nodes, except the optional unvalidated background-colour mix. Such nodes make the baked importance map (evaluated with PATH_RAY_EMISSION|PATH_RAY_IMPORTANCE_BAKE, bake.h:55-77) differ from the shaded radiance. That is variance only, but it changes what the camera sees.",
+  "Checked against source this session, no change needed: direction_to_equirectangular default range (\u22122\u03c0, \u03c0, \u2212\u03c0, \u03c0) and inverse (projection.h:19-48); svm_node_tex_environment safe_normalize and no 1\u2212v (svm/image.h:234-268); Mapping POINT = R_z(\u03b3)\u00b7v from euler_to_transform (mapping_util.h, transform.h:201-225); TexCoord.Generated \u2192 NODE_GEOM_P = ray_D in background (shader_nodes.cpp:4165-4170, shader_data.h:376); EXTENSION_REPEAT forced (shader_nodes.cpp image_params); Metal sampler index extension+4 \u2192 repeat/linear on both axes, RGBA32Float, no mips, 16384 cap (device_impl.mm:1005-1150, compat.h:387-396); FLOAT4 for float images (blender/image.cpp); background map bake at cell centres, avg(|rgb|)\u00b7sin(row-centre), pdf = f/(2\u03c0\u00b2 sin\u03b8\u00b7mean f), map_average_radiance = cdf_total\u00b7\u03c0/2 (light.cpp:29-65,927-1150, background.h:20-142); enable rule has_portal || (use_mis && spatially varying) (light.cpp:280-300); use_mis = sampling_method != NONE and MANUAL/AUTOMATIC resolution (blender/light.cpp); MIS_SKIP for camera and singular bounces, transparent crossings keep flags (path_state.h:59,110-216); forward background MIS \u00d7 light-tree pdf (sample.h:556-587); world visibility flags camera/diffuse/glossy/transmission/scatter (blender/shader.cpp:1731-1740; RNA 'shadow' exists but is unused); fast GI off \u2192 ao_bounces 0 (sync.cpp:494-503); OIIO rgbe2float = byte\u00b72^(e\u2212136), no +0.5 (hdrinput.cpp v3.1.7.0); Blender .hdr read through OIIO (format_hdr.cc). ReSTIR side: Jacobians (e) J = p^y/p^x with G \u2261 1 and (f) J = 1 spatially / J_P temporally, the ENV predicate (F = +\u221e, I skipped, R at x_{k\u22121}), the world-vs-env-local storage split and the rotation/strength taxonomy are consistent with gap-rc (e)/(f), gap-temporal \u00a76 (J_P = P_sel ratio) and plan rules 3/5/10. RNA (headless 5.1.2): world.cycles {is_caustics_light, sampling_method NONE/AUTOMATIC/MANUAL = AUTOMATIC, sample_map_resolution, max_bounces}; alpha_mode enum includes 'NONE'; bpy.data.colorspace.working_space = 'Linear Rec.709'; OpenImageIO Python 3.1.7.0 ships with Blender; ShaderNodeOutputWorld.target includes 'ALL'."
+ ]
+}

@@ -1,0 +1,908 @@
+                   ReSTIRPTEnhanced:AlgorithmicAdvancesforFasterand
+                   MoreRobustReSTIRPathTracing
+                   DAQILIN,NVIDIA,USA
+                   MARKUSKETTUNEN,NVIDIA,Finland
+                   CHRISWYMAN,NVIDIA,USA
+                                                                                           Orig.  Ref.  Ours
+                       Original ReSTIR PT (37.1 ms) FLIP: 0.321                                                 ReSTIRPTEnhanced(12.6ms)FLIP:0.263
+                   Fig. 1. We enhance the performance and robustness of ReSTIR PT [Lin et al. 2022] with a set of novel
+                   algorithms. Our techniques provide a significant speedup, reduce correlation artifacts (first inset row),
+                   reduce color noise (third inset row), and improve the quality of glossy reflections (e.g., on the ground
+                   plane) and refractions (second inset row), as seen in this Spaceship scene.
+                   AlgorithmsleveragingReSTIR-stylespatiotemporalreusehaverecentlyproliferated,hugelyincreasingeffective
+                   samplecountforlighttransportinreal-timerayandpathtracers.Manypapershaveexplorednoveltheoretical
+                   improvements, but algorithmic improvements and engineering insights toward optimal implementation have
+                   largely been neglected. We demonstrate enhancements to ReSTIR PT that make it 2‚Äì3√ó faster, decrease
+                   both visual and numerical error, and improve its robustness, making it closer to production-ready. We halve
+                   the spatial reuse cost by reciprocal neighbor selection, robustify shift mappings with new footprint-based
+                   reconnection criteria, and reduce spatiotemporal correlation with duplication maps. We further improve both
+                   performance and quality by extensive optimization, unifying direct and global illumination into the same
+                   reservoirs, and utilizing existing techniques for color noise and disocclusion noise reduction.
+                   CCSConcepts:‚Ä¢Computingmethodologies‚ÜíRaytracing.
+                   Additional Key Words and Phrases: Optimization, Sampling, Light Transport, Real Time
+                   ACMReferenceFormat:
+                   Daqi Lin, Markus Kettunen, and Chris Wyman. 2026. ReSTIR PT Enhanced: Algorithmic Advances for Faster
+                   andMoreRobustReSTIRPathTracing.Proc.ACMComput.Graph.Interact.Tech. 9, 1, Article 13 (May 2026),
+                   19 pages. https://doi.org/10.1145/3804494
+                   Authors‚Äôaddresses:DaqiLin,daqil@nvidia.com,NVIDIA,USA;MarkusKettunen,mkettunen@nvidia.com,NVIDIA,Finland;
+                   Chris Wyman, chris.wyman@acm.org, NVIDIA, USA.
+                   Please use nonacm option or ACM Engage class to enable CC licenses
+                   This work is licensed under a Creative Commons Attribution 4.0 International License.
+                   ¬©2026Copyrightheldbytheowner/author(s).
+                   ACM2577-6193/2026/5-ART13
+                   https://doi.org/10.1145/3804494
+                                                    Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+                  13:2                                                                                         Daqi Lin, Markus Kettunen, and Chris Wyman
+                  1 INTRODUCTION
+                  ReSTIRPathTracing[Linetal. 2022] greatly improves path quality by spatiotemporally reusing
+                  path samples. But their prototype has high compute and memory overheads, yielding sluggish
+                  performance even on high-end GPUs (originally 40-80 ms per frame on an RTX 3090).
+                      Aspublished, ReSTIR PT exhibits robustness problems: it suffers spatiotemporal correlations,
+                  variance near disocclusions, and color noise. The hybrid shift, which enables ReSTIR PT to handle
+                  specular light transport, relies on simple roughness and distance thresholds to determine reuse
+                  strategy; these thresholds often benefit from adjustment per scene. While further research proposes
+                  partial solutions [Kettunen et al. 2023; Sawhney et al. 2024; Zhang et al. 2024], they do not fix
+                  the poor performance. In this paper, we propose techniques that greatly optimize ReSTIR PT‚Äôs
+                  performance and improve its robustness and quality, reducing the gap to productization.
+                      Ourspecific contributions include:
+                        ‚Ä¢ Halving shift mapping costs in spatial reuse by reciprocal neighbor selection‚àó (Section 3);
+                        ‚Ä¢ Newrayfootprint thresholds that adapt to scene and materials‚àó (Section 4);
+                        ‚Ä¢ Reducing correlation artifacts by sample duplication maps‚àó (Section 5);
+                        ‚Ä¢ Improving quality and cost by unifying ReSTIR for direct and indirect light (Section 6); and
+                        ‚Ä¢ Other optimizations that boost performance and improve robustness by reducing color and
+                            disocclusion noise. (Section 6)
+                  2 BACKGROUND
+                  Recent advances in hardware and denoising, like SVGF [Schied et al. 2017], NVIDIA NRD [NVIDIA
+                  2020], and DLSS Ray Reconstruction [NVIDIA 2025], have made real-time ray-traced global illu-
+                  mination (GI) practical. Many real-time solutions today rely on radiosity-like recursive gathering
+                  with discretization, caching, and interpolation (e.g., Lumen [Wright et al. 2022], DDGI [Majercik
+                  et al. 2019], and Surfel GI [Halen et al. 2021]); this limits accuracy and responsiveness. Brute force
+                  path tracing is accurate but slow, requiring many samples for a denoisable image.
+                      Morerecently, spatiotemporal reservoir resampling (ReSTIR) [Bitterli et al. 2020] aggressively
+                  reuses Monte Carlo samples from other pixels and frames in an unbiased way. When applied to
+                  path samples, ReSTIR amortizes the cost of tracing paths over space and time. This preserves
+                  path tracing‚Äôs accuracy but delivers tens to hundreds more samples at the same cost. ReSTIR DI
+                  [Bitterli et al. 2020] enables real-time, many-light rendering and ReSTIR GI [Ouyang et al. 2021]
+                  targets diffuse/mid-glossy surfaces. Our work speeds and improves robustness of ReSTIR PT [Lin
+                  et al. 2022], improving the unbiased rendering of general paths, including multi-bounce specular
+                  reflection and caustics. Below, we review the resampling theory behind these ReSTIR algorithms.
+                  2.1      RISandGRIS
+                  Resampled importance sampling (RIS) [Talbot et al. 2005] aims to sample from a low-variance
+                                     ¬Ø     ÀÜ                                             ‚à´                       ¬Ø
+                  target PDF Ì†µÌ±ù ‚àù Ì†µÌ±ù ‚âà Ì†µÌ±ì to estimate an integral Œ© Ì†µÌ±ì (Ì†µÌ±•) dÌ†µÌ±•. As Ì†µÌ±ù is often dif√ècult to sample directly,
+                  RIS draws Ì†µÌ±Ä i.i.d. candidates Ì†µÌ±ãÌ†µÌ±ñ ‚àº Ì†µÌ±ù (a suboptimal source PDF), selecting one Ì†µÌ±å proportional
+                                                                           ÀÜ                                                                                         ¬Ø
+                  to resampling weights Ì†µÌ±§Ì†µÌ±ñ = (1/Ì†µÌ±Ä)Ì†µÌ±ù(Ì†µÌ±ãÌ†µÌ±ñ)/Ì†µÌ±ù(Ì†µÌ±ãÌ†µÌ±ñ). As Ì†µÌ±Ä ‚Üí ‚àû, Ì†µÌ±å‚Äôs distribution converges to Ì†µÌ±ù =
+                   ÀÜ ‚à´     ÀÜ                                                          ÀÜ
+                  Ì†µÌ±ù/ Œ© Ì†µÌ±ù(Ì†µÌ±•) dÌ†µÌ±•. Talbot et al. [2005] construct Ì†µÌ±ù by dropping the visibility term in direct illumination
+                  to improve sampling ef√èciency. The expression Ì†µÌ±ì (Ì†µÌ±å)Ì†µÌ±ä unbiasedly estimates integral ‚à´ Ì†µÌ±ì (Ì†µÌ±•) dÌ†µÌ±•,
+                                                     √ç                                                 Ì†µÌ±å                                                  Œ©
+                                            ÀÜ           Ì†µÌ±Ä
+                  whereÌ†µÌ±ä = (1/Ì†µÌ±ù(Ì†µÌ±å))                       Ì†µÌ±§ estimates 1/Ì†µÌ±ù (Ì†µÌ±å), the reciprocal of Ì†µÌ±å‚Äôs unknown PDF.
+                               Ì†µÌ±å                       Ì†µÌ±ñ=1   Ì†µÌ±ñ                      Ì†µÌ±å
+                      Generalized resampled importance sampling (GRIS) [Lin et al. 2022] allows random variables
+                  like Ì†µÌ±å to be used as candidates in another resampling pass. This chained resampling forms the
+                  ‚àóAsterisked contributions apply to other spatiotemporal reuse algorithms, e.g., Bauszat et al. [2017]; Ouyang et al. [2021]
+                  Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+                                          ReSTIR PT Enhanced: Algorithmic Advances for Faster and More Robust ReSTIR Path Tracing                                                                                                                                                                                                                                                               13:3
+                                          basis of ReSTIR. In GRIS, candidate samples can have different distributions, come from different
+                                          domains Œ© , and be correlated. The samples are mapped to the target domain Œ© by bijective shift
+                                                                                 Ì†µÌ±ñ
+                                          mappingsÌ†µÌ±á : Œ© ‚Üí Œ© to computeÌ†µÌ±å =Ì†µÌ±á (Ì†µÌ±ã ), which are used in the resampling weights
+                                                                                   Ì†µÌ±ñ               Ì†µÌ±ñ                                                                       Ì†µÌ±ñ               Ì†µÌ±ñ          Ì†µÌ±ñ                                                         
+                                                                                                                                                                                                                                                      Ì†µÌºïÌ†µÌ±á           
+                                                                                                                                                                                                                    ÀÜ                                           Ì†µÌ±ñ   
+                                                                                                                                                                       Ì†µÌ±§ =Ì†µÌ±ö (Ì†µÌ±å )Ì†µÌ±ù(Ì†µÌ±å )Ì†µÌ±ä                                                                               ,                                                                                                                      (1)
+                                                                                                                                                                              Ì†µÌ±ñ                 Ì†µÌ±ñ         Ì†µÌ±ñ                 Ì†µÌ±ñ           Ì†µÌ±ãÌ†µÌ±ñ  Ì†µÌºïÌ†µÌ±ã               
+                                                                                                                                                                                                                                                                  Ì†µÌ±ñ
+                                         withtheresamplingoutputÌ†µÌ±å sampledproportionallytotheÌ†µÌ±§ . Here,Ì†µÌ±ä                                                                                                                                                                                                          are unbiased contribution
+                                                                                                                                                                                                                                                                       Ì†µÌ±ñ                                Ì†µÌ±ãÌ†µÌ±ñ
+                                          weights, random variables that satisfy E[Ì†µÌ±ä                                                                                                                           |Ì†µÌ±ã ] = 1/Ì†µÌ±ù                                  (Ì†µÌ±ã ), usually computed from prior RIS
+                                                                                                                                                                                                        Ì†µÌ±ãÌ†µÌ±ñ           Ì†µÌ±ñ                             Ì†µÌ±ãÌ†µÌ±ñ            Ì†µÌ±ñ
+                                          or GRIS passes, |Ì†µÌºïÌ†µÌ±á /Ì†µÌºïÌ†µÌ±ã | is the Jacobian determinant of the shift mapping, andÌ†µÌ±ö are resampling
+                                                                                                              Ì†µÌ±ñ               Ì†µÌ±ñ                                                                                                                                                                                                                Ì†µÌ±ñ
+                                                                                                                                                                                                                                                                                                                                               ¬Ø
+                                          MISweights that normalize the coverage of the target domain. Convergence to Ì†µÌ±ù happens when
+                                                          √ç
+                                         Var[ Ì†µÌ±Ä Ì†µÌ±§ ] ‚Üí 0. Unbiased integration of Ì†µÌ±ì using Ì†µÌ±å is typically guaranteed by including a
+                                                                 Ì†µÌ±ñ=1             Ì†µÌ±ñ                                                                                                                                                                 ÀÜ
+                                          canonical sample that completely covers the support of Ì†µÌ±ù as one of the inputs to GRIS.
+                                          2.2                 ReSTIR
+                                          Reservoir-based spatiotemporal importance resampling (ReSTIR) applies chained GRIS passes
+                                          across frames to progressively improve the sample distribution, greatly improving real-time image
+                                          quality. Each pixel maintains a reservoir, which is essentially a tuple (Ì†µÌ±ã,Ì†µÌ±ä ,Ì†µÌ±ê) carrying a sample,
+                                                                                                                                                                                                                                                                                                                       Ì†µÌ±ã
+                                          its unbiased contribution weight, and a confidence weight (originally called an ‚Äúeffective sample
+                                          count‚Äù) used to weigh domains/techniques when computing resampling MIS. In a GRIS pass, the
+                                          current pixel‚Äôs reservoir provides the canonical sample, and other pixels contribute neighboring
+                                          samples. The reservoir is then updated to the selected output sample Ì†µÌ±å, whose confidence weight
+                                          accumulates those of all input samples.
+                                                   AReSTIRframestartsbygeneratingper-pixel initial candidates and using RIS to select an initial
+                                          sampleÌ†µÌ±å. An ef√ècient streaming implementation uses weighted reservoir sampling [Chao 1982]
+                                          and initializes a reservoir with Ì†µÌ±ê = 1. This is followed by temporal and spatial reuse passes, which
+                                          are GRIS passes including neighbor samples as candidates. Finally, reservoirs are used to shade the
+                                          current frame using estimator Ì†µÌ±ì (Ì†µÌ±ã)Ì†µÌ±ä                                                                                                         andthese reservoirs get passed to the next frame to serve
+                                                                                                                                                                                  Ì†µÌ±ã
+                                          as temporal neighbors. Below are key details of temporal and spatial reuse.
+                                                   Temporal Reuse. In the temporal GRIS, a neighbor is determined using temporal reprojection
+                                          following the shading point‚Äôs motion. The confidence weight Ì†µÌ±êtemp of the temporal reservoir is
+                                          capped by a confidence capÌ†µÌ±êCap giving a new confidence after resampling of min(Ì†µÌ±êCap,Ì†µÌ±êtemp) + 1.
+                                         This avoids slow sample turnover in dynamic scenes and unlimited build ups of correlation.
+                                                   Spatial Reuse. In spatial GRIS, Ì†µÌ±Ä ‚àí1 spatial neighbors are randomly drawn from a disk with a set
+                                          radius (often 30 pixels). Neighbors whose G-Buffer attributes (e.g., normal, depth) differ too much
+                                          are rejected. After spatial reuse, the confidence weight sums all accepted neighbors‚Äô confidences.
+                                          2.3                 ReSTIRPT
+                                          ReSTIRPT[Linetal.2022]aimstoreusealltypesofpathsproducedbyapathtracer.Foralength-Ì†µÌ±ë
+                                                             ¬Ø
+                                          path x = [x ,x ,x ,...,x ], ReSTIR GI [Ouyang et al. 2021] reuses x and later vertices using the
+                                                                                    0          1           2                    Ì†µÌ±ë                                                                                                                                                               2
+                                          samereconnection shift as ReSTIR DI [Bitterli et al. 2020]. But this fails when x1 or x2 are specular.
+                                          ReSTIR PT introduced a hybrid shift that postpones reconnection until vertices satisfy certain
+                                          reconnection criteria; until reconnection, the new path is traced by reusing the same random
+                                          numbers. ReSTIR PT only evaluates a single BSDF lobe at each vertex, allowing shifts to each BSDF
+                                          lobe separately; here, we omit lobe indices for clarity and defer details to our supplemental.
+                                                                                                                                                                                                                      √ç‚àû ‚à´                                        ¬Ø             ¬Ø
+                                                   Path space definition. The path space integral                                                                                                                            Ì†µÌ±ë=1             Œ© Ì†µÌ±ì (x) dx spans paths of all lengths, where
+                                                   ¬Ø                                                                                                                                                                                              Ì†µÌ±ë
+                                          Ì†µÌ±ì (x) contains BSDF, geometry, sensor, and emitter terms. Starting from primary hit x , the path
+                                                                                                                                                                                                                                                                                                                                                                     1
+                                                                                                                   Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+                  13:4                                                                                       Daqi Lin, Markus Kettunen, and Chris Wyman
+                  tracer samples each vertex‚Äôs BSDF for a path continuation direction and each vertex also performs
+                  next event estimation (NEE). To enable different shift mappings in these cases, ReSTIR PT attaches
+                                                   ¬Ø
+                  a technique index to x to indicate if the final path vertex is sampled by NEE or a BSDF-sampled
+                  continuation ray; this requires splitting the integrand and using MIS weights.
+                                                                 ¬Ø      ¬Ø         ¬Ø
+                      Hybrid Shift. To shift a path x to y = Ì†µÌ±á (x), prior gradient-domain rendering work (e.g. Kettunen
+                  et al. [2015]) requires the reconnection vertex x and the preceding vertices x                                             and y         to be all
+                                                                                         Ì†µÌ±ò                                            Ì†µÌ±ò‚àí1          Ì†µÌ±ò‚àí1
+                 ‚Äúrough‚Äù. To avoid storing the base path vertices or replaying the base path, ReSTIR PT precomputes
+                                                               ¬Ø
+                  a reconnection vertex x on x by finding the first pair (x                                    , x ) that satisfies two reconnection
+                                                       Ì†µÌ±ò                                                 Ì†µÌ±ò‚àí1     Ì†µÌ±ò
+                  criteria: a roughness threshold min(Ì†µÌªºx                       , Ì†µÌªºx ) ‚â• Ì†µÌªºmin (with Ì†µÌªº from the path‚Äôs sampled lobes) and a
+                                                                            Ì†µÌ±ò‚àí1     Ì†µÌ±ò
+                  distance threshold ‚à•x ‚àí x                    ‚à• ‚â• Ì†µÌ±ëmin that avoids geometric singularities. This predetermines the
+                                                  Ì†µÌ±ò      Ì†µÌ±ò‚àí1
+                  replayed path length and allows GPU optimization. Shift invertibility is checked when connecting
+                  from y          to x .
+                            Ì†µÌ±ò‚àí1        Ì†µÌ±ò
+                      Jacobian. ReSTIR PT implementations often use a primary sample space (PSS) parameterization.
+                                                                                                                                                                     ¬Ø
+                  Given path lengthÌ†µÌ±ë and sampling techniqueÌ†µÌ±°, the path tracer turns random number sequences u
+                                             ¬Ø             ¬Ø                                                                         ¬Ø             ¬Ø      ¬Ø         ¬Ø
+                  into paths. With x = Ì†µÌ≤≥                (u) denoting the produced path, we integrate Ì†µÌ∞π(u) = Ì†µÌºîÌ†µÌ±°(x)Ì†µÌ±ì (x)/Ì†µÌ±ùÌ†µÌ±°(x)
+                                                      Ì†µÌ±°,Ì†µÌ±ë
+                  over a unit hypercube, where the MIS weight Ì†µÌºîÌ†µÌ±° splits the path space between techniques and
+                       ¬Ø                                                          ¬Ø                                ¬Ø             ¬Ø
+                  Ì†µÌ±ùÌ†µÌ±° (x) is the path space PDF. We assume u is associated with x and Ì†µÌ±á(u) maps it to a sequence
+                                           ¬Ø                                                    ¬Ø        ¬Ø
+                  associated with y, and denote quantities related to x and y via superscripts Ì†µÌ±• andÌ†µÌ±¶. Then, the PSS
+                  Jacobian determinant for the hybrid shift is
+                                                                        Ì†µÌ±¶       ‚Ä≤                             Ì†µÌ±¶
+                                                                      Ì†µÌ±ù     (Ì†µÌºî      )Ì†µÌ∞∫(y        ‚Üíx )Ì†µÌ±ù (Ì†µÌºî )
+                                                             Ì†µÌºïÌ†µÌ±á  =    Ì†µÌ±ò‚àí1     Ì†µÌ±ò‚àí1        Ì†µÌ±ò‚àí1         Ì†µÌ±ò   Ì†µÌ±ò    Ì†µÌ±ò   ,                                      (2)
+                                                               ¬Ø        Ì†µÌ±•                                     Ì†µÌ±•
+                                                              Ì†µÌºïu       Ì†µÌ±ù     (Ì†µÌºî      )Ì†µÌ∞∫(x        ‚Üíx )Ì†µÌ±ù (Ì†µÌºî )
+                                                                          Ì†µÌ±ò‚àí1     Ì†µÌ±ò‚àí1        Ì†µÌ±ò‚àí1         Ì†µÌ±ò   Ì†µÌ±ò    Ì†µÌ±ò
+                  whichcorresponds to reconnecting from y                                to x ; the Jacobian is 1 if no reconnection happens.
+                                Ì†µÌ±•                                                 Ì†µÌ±ò‚àí1        Ì†µÌ±ò
+                  Above, Ì†µÌ±ù (Ì†µÌºî ) ‚â° Ì†µÌ±ù(Ì†µÌºî |x ,‚àíÌ†µÌºî                      ) is the solid-angle PDF of sampling the direction ‚àíÌ†µÌºî                                        =
+                                Ì†µÌ±ò    Ì†µÌ±ò             Ì†µÌ±ò   Ì†µÌ±ò      Ì†µÌ±ò‚àí1                                                                                        Ì†µÌ±ò‚àí1
+                                  ‚àí‚àí‚àí‚àí‚àí‚Üí        ‚àí‚àí‚àí‚àí‚àí‚Üí           Ì†µÌ±•                                                                 ‚Ä≤
+                  x¬õx         = x x          /‚à•x x         ‚à•, Ì†µÌ±ù   (Ì†µÌºî ) is replaced with 1 for Ì†µÌ±ò = Ì†µÌ±ë, and Ì†µÌºî                            is a shorthand for
+                    Ì†µÌ±ò Ì†µÌ±ò‚àí1         Ì†µÌ±ò  Ì†µÌ±ò‚àí1      Ì†µÌ±ò  Ì†µÌ±ò‚àí1       Ì†µÌ±ò    Ì†µÌ±ò                                               2           Ì†µÌ±ò‚àí1
+                  y¬õx .Thesingle-sidedgeometrytermÌ†µÌ∞∫(x ‚Üí y) iscosÌ†µÌºÉ/||x‚àíy|| ,whereÌ†µÌºÉ is the angle between
+                    Ì†µÌ±ò‚àí1 Ì†µÌ±ò
+                  y¬õx andy ‚Äôsnormal.
+                    Ì†µÌ±ò‚àí1 Ì†µÌ±ò           Ì†µÌ±ò‚àí1
+                      Implementation. ReSTIR PT assumes a direct illumination (DI) sampling method exists and skips
+                  DI paths in its own estimator [Lin et al. 2022]. At initial resampling, a path tree is generated by the
+                  path tracer and the indirect lighting paths are fed through RIS to resample one representative path.
+                  Theassociated random seed, reconnection vertex x , and the incident radiance and direction on x
+                                                                                               Ì†µÌ±ò                                                                    Ì†µÌ±ò
+                  are stored in the reservoir to facilitate the shift mapping in temporal and spatial reuse.
+                      Our ReSTIR PT Enhanced retains the baseline architecture [Lin et al. 2022] while halving the
+                  spatial reuse cost by neighbor pairing (Section 3), introducing scene-independent reconnection
+                  criteria (Section 4), applying adaptive Ì†µÌ±êCap reduction for sample decorrelation (Section 5), and it
+                  contains various optimizations (Section 6) that enhance ReSTIR PT‚Äôs performance.
+                  3 AMOREEFFICIENTPAIREDSPATIALREUSE
+                  ReSTIR PT‚Äôs spatial and temporal reuse rely on GRIS resampling. Neighbor reuse requires not only
+                  shifting neighbors to the current pixel but also needs to shift the current pixel to neighbors to
+                  compute good MIS weights. Even with ef√ècient pairwise MIS [Lin et al. 2022], all spatial neighbors
+                  require two shifts, doubling the work (Figure 2, left).
+                      For pixel Ì†µÌ∞¥ to reuse from Ì†µÌ∞µ, we must shift both pixels‚Äô paths to the other. We observe that after
+                  Ì†µÌ∞¥ reuses from Ì†µÌ∞µ, Ì†µÌ∞µ can reuse from Ì†µÌ∞¥ for free, saving 50% by amortizing duplicate spatial shifts
+                  (Figure 2, right). To ef√èciently pair pixels Ì†µÌ∞¥ and Ì†µÌ∞µ, we precompute a random reuse texture storing a
+                  Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+              ReSTIR PT Enhanced: Algorithmic Advances for Faster and More Robust ReSTIR Path Tracing                     13:5
+              Fig. 2. Left: When performing spatial reuse for the current pixel (blue), the chosen neighbors (red)
+              must shift their paths to the current pixel, while the current pixel must shift its path to the neighbors
+              for MIS weights. Right: Blue pixel reusing from red requires the same shift mappings as the red pixel
+              reusing from blue. Hence, if blue reuses from red, red can reuse from blue without paying for shifts.
+              Fig. 3. Left: We initialize the image with consecutive link indices. Right: We shuf√íe each 2 √ó 2
+              pixel block with a random permutation and repeatÌ†µÌ±õÌ†µÌºé times to reach the desired standard deviation,
+              offsetting every other shuf√íe diagonally by one.
+              coordinate offset to each pixel‚Äôs coupled neighbor; Ì†µÌ∞¥ stores the delta to Ì†µÌ∞µ, and Ì†µÌ∞µ stores the delta to
+             Ì†µÌ∞¥. To support reuse from multiple neighbors, we prepare multiple independent textures.
+              3.1   Computingreusetextures
+              Producing a reuse texture with coordinate deltas following a given distance distribution is a non-
+              trivial problem with global constraints, and we found optimization-based approaches slow and
+              unreliable. Instead, we permute an initial texture with random shuf√íes; the deltas produced by the
+              randomwalksfollowanormaldistribution.
+                                                                             1                                              2
+                WeassumeatargetstandarddeviationÌ†µÌºé ‚â• 0.8 pixels . We then choose an even image-size like
+              254√ó254,andfill it with consecutive link indices (Figure 3, left). We then shuf√íe the link indices
+             withÌ†µÌ±õÌ†µÌºé tiled 2 √ó 2 shuf√íes, every other offset by 1 while looping over the edge (Figure 3, right).
+             Therepeat count is                                                                     
+                                 Ì†µÌ±õ  = Ì†µÌºé2 +1.46Ì†µÌºé‚àí1 + 1.76Ì†µÌºé‚àí2 + 0.656Ì†µÌºé‚àí3 + 0.5 ‚âà           Ì†µÌºé2 + 0.5 .                  (3)
+                                   Ì†µÌºé     2                                                   2
+             Therepeatedshuf√íesmoveeachlinkindexroughlyaccordingtoanormaldistributionwithstandard
+                            ‚àö
+              deviation Ì†µÌºé/ 2. We then pair the pixels with matching link indices. With correlation decreasing at
+              each shuf√íe, the coordinate delta roughly follows a normal distribution with standard deviation
+              ‚àöÔ∏Å 2       2
+                Ì†µÌºé /2 + Ì†µÌºé /2 = Ì†µÌºé. The negative powers in Equation 3 are function fit correction for small Ì†µÌºé.
+             1Smallest supported Ì†µÌºé is 0.8, given by applying one shuf√íe iteration.
+              2Resolutions 256 √ó 256 require 16-bit channels to represent coordinate deltas 128 and -128 and past.
+                                     Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+                 13:6                                                                                   Daqi Lin, Markus Kettunen, and Chris Wyman
+                     Thelinks are now contained within the reuse texture, and links near edges can be long. To make
+                 the reuse texture tileable, we break long links by subtracting the width of the square texture from
+                 coordinate deltas greater than half the width, and adding it to coordinate deltas less than minus
+                 half the width. Finally, we pack these Ì†µÌ±• andÌ†µÌ±¶ directional deltas into a 16-bit luminance texture.
+                     Finding links. To find coordinate deltas, each pixel locates the other pixel with its link index. Our
+                 CUDAimplementation constructs an index table of size Ì†µÌ±Å/2 √ó 2, where Ì†µÌ±Å is the pixel count of
+                 the reuse texture. First, every pixel reads its own link index, and writes its pixel location into the
+                 index table at location (link index, 0). This is a parallel write with a data race, so only half the pixels
+                 succeed. Next, each pixel whose location is not at (link index, 0), writes it to (link index, 1). This
+                 enables every pixel to find its linked neighbor in the index table.
+                 3.2     Usingreusetextures
+                 AssumingspatialreusewithÌ†µÌ±Å neighbors,wepreloadÌ†µÌ±Å reusetextures.Toavoidcorrelationartifacts
+                                                                                                                                                             3
+                 from texture repeats, we pick a different size for each, e.g., 254, 230 and 210 for three neighbors .
+                 Ourreusetexture is self-inverting: Ì†µÌ∞¥ links to Ì†µÌ∞µ, and Ì†µÌ∞µ links to Ì†µÌ∞¥. Hence, the reuse texture should
+                 be changed every frame. Rather than generating many reuse textures, we randomly flip, mirror,
+                 transpose, and offset each reuse texture each frame. Empirically, this completely solves the problem.
+                 3.3     Discussion
+                 Bekaert et al. [2002] split 16 √ó 16 pixel blocks into groups of 16 pixels in an Ì†µÌ±Å-rooks pattern and
+                 perform all-to-all reuse within each group. This also avoids the additional work for MIS weights,
+                 but produces structured artifacts at low sample counts. We avoid such structure by overlaying large
+                 different-sized Gaussian-permuted reuse textures; each pixel follows a different, random reuse
+                 pattern with no block borders. Our reuse textures can also be used in classical path reuse.
+                 4 SCENE-INDEPENDENTRECONNECTIONCRITERIA
+                 During ReSTIR‚Äôs sample reuse, neighbor samples are shifted into the current domain prior to
+                 reuse. Ideal shift mapping preserves the target PDF value of the path [Wyman et al. 2023], i.e.
+                                Ì†µÌºïÌ†µÌ±á 
+                 ¬Ø        ¬Ø            ¬Ø ¬Ø
+                 Ì†µÌ±ùÌ†µÌ±ó (Ì†µÌ±á (u))    ¬Ø  ‚âàÌ†µÌ±ùÌ†µÌ±ñ(u). Without loss of generality, we analyze the reconnection criteria for ReSTIR
+                                Ì†µÌºïu                                                                                                                
+                                                                                                ¬Ø       ¬Ø        ¬Ø ¬Ø 4                          Ì†µÌºïÌ†µÌ±á 
+                 PT‚Äôs hybrid shift in primary sample space; we assume Ì†µÌ±ùÌ†µÌ±ó(Ì†µÌ±á(u)) ‚âà Ì†µÌ±ùÌ†µÌ±ñ(u)                                 and focus on          ¬Ø , which
+                                                                                                                                                Ì†µÌºïu
+                                                                                                                                                    Ì†µÌºïÌ†µÌ±á 
+                 is only affected by the choice of reconnection vertex. A good shift mapping should have  ¬Ø  ‚âà 1.
+                                                                                                                                                    Ì†µÌºïu
+                     Theoriginalhybridshift[Linetal.2022]selectsreconnectionvertexx usingadistancethreshold
+                                                                                                                        Ì†µÌ±ò
+                 ||x    ‚àíx || ‚â• Ì†µÌ±ëmin that forbids short path reconnections (i.e., near corners) and a roughness
+                     Ì†µÌ±ò      Ì†µÌ±ò‚àí1
+                 threshold min(Ì†µÌªºx            , Ì†µÌªºx ) ‚â• Ì†µÌªºmin to forbid connections on highly glossy surfaces. These thresholds
+                                          Ì†µÌ±ò‚àí1     Ì†µÌ±ò
+                 can be suboptimal and often require scene-specific tuning, since suitable reconnection distances
+                 androughness levels are interdependent.
+                     Weintroduceadualrayfootprint threshold and a new single-vertex roughness threshold, giving
+                 reconnection constraints that are more robust in the presence of specular materials, do not require
+                 scene-specific tuning, and enable earlier (and hence cheaper) reconnection opportunities.
+                     Theintuition for the new footprint thresholds comes from considering the geometric meaning
+                      Ì†µÌºïÌ†µÌ±á                               Ì†µÌºïÌ†µÌ±á 
+                 of  ¬Ø  ‚âà 1. We first express  ¬Ø  as the product of two ratios,
+                      Ì†µÌºïu             Ì†µÌ±¶                    Ì†µÌºïu                                                             Ì†µÌ±¶
+                                    Ì†µÌ±ù     (Ì†µÌºî‚Ä≤    )Ì†µÌ∞∫(y        ‚Üíx )                                                      Ì†µÌ±ù  (Ì†µÌºî )
+                                      Ì†µÌ±ò‚àí1    Ì†µÌ±ò‚àí1        Ì†µÌ±ò‚àí1        Ì†µÌ±ò            (4a)            and                     Ì†µÌ±ò    Ì†µÌ±ò .          (4b)
+                                    Ì†µÌ±ùÌ†µÌ±•   (Ì†µÌºî     )Ì†µÌ∞∫(x        ‚Üíx )                                                      Ì†µÌ±ùÌ†µÌ±• (Ì†µÌºî )
+                                      Ì†µÌ±ò‚àí1    Ì†µÌ±ò‚àí1        Ì†µÌ±ò‚àí1        Ì†µÌ±ò                                                    Ì†µÌ±ò    Ì†µÌ±ò
+                 3Ourheuristic algorithm tries to minimize near-periods within 3840 pixels, i.e., cases where a multiple of a texture‚Äôs width
+                 is close to a multiple of another texture‚Äôs width.
+                 4                                                                    ¬Ø     ¬Ø       ¬Ø
+                  Geometryandmicrofacet NDFtermsarecancelled inÌ†µÌºîÌ†µÌ±°(x)Ì†µÌ±ì (x)/Ì†µÌ±ùÌ†µÌ±° (x), which avoids extreme values in the shift.
+                 Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+                    ReSTIR PT Enhanced: Algorithmic Advances for Faster and More Robust ReSTIR Path Tracing                                                                                13:7
+                    Thefirst one is between the area densities of vertex x when hypothetically traced from y                                                                              and
+                                                                                                                   Ì†µÌ±ò                                                              Ì†µÌ±ò‚àí1
+                    whenoriginally traced from x                               . The second one is between the solid angle densities of Ì†µÌºî when
+                                                                         Ì†µÌ±ò‚àí1                                                                                                       Ì†µÌ±ò
+                    hypothetically sampledwithoutgoingdirectiony¬õx andwhenoriginallysampledwithoutgoing
+                                                                                                          Ì†µÌ±ò‚àí1 Ì†µÌ±ò
+                    direction x¬õx . Our threshold aims to bound the change of these densities.
+                                        Ì†µÌ±ò‚àí1 Ì†µÌ±ò
+                         Thereciprocal of area probability density of a vertex on a surface has the geometric meaning of
+                    the footprint, i.e., the area represented by the sample. Intuitively, a longer reconnection distance
+                    or rougher material at x                           enlarges the ray footprints and reduces the density change at shift
+                                                                Ì†µÌ±ò‚àí1
+                    mapping, making a shift reconnecting from x                                                more useful. To bound Equation 4b, we look
+                                                                                                        Ì†µÌ±ò‚àí1
+                    at inverse ray footprint (Ì†µÌ±ùÌ†µÌ±•(Ì†µÌºî )Ì†µÌ∞∫(x                              ‚Üíx ))‚àí1,which is the reciprocal area density of x
+                                                                   Ì†µÌ±ò     Ì†µÌ±ò         Ì†µÌ±ò          Ì†µÌ±ò‚àí1                                                                                      Ì†µÌ±ò‚àí1
+                    produced by tracing from x . Our analysis shows that thresholding this footprint equivalently
+                                                                       Ì†µÌ±ò
+                    bounds the change of solid angle density in Equation 4b.
+                         Specifically, our new criterion for reconnection is then defined by a dual ray footprint threshold:
+                                                                                                                                                 Ì†µÌ±ê         ||x ‚àíx ||2
+                                       Ì†µÌ±•                                           ‚àí1        Ì†µÌ±•                                    ‚àí1                          0        1
+                          min((Ì†µÌ±ù            (Ì†µÌºî       )Ì†µÌ∞∫(x           ‚Üíx )) ,(Ì†µÌ±ù (Ì†µÌºî )Ì†µÌ∞∫(x ‚Üí x                                 ))     ) ‚â•            
+                              ,     (5)
+                                       Ì†µÌ±ò‚àí1      Ì†µÌ±ò‚àí1           Ì†µÌ±ò‚àí1           Ì†µÌ±ò             Ì†µÌ±ò    Ì†µÌ±ò         Ì†µÌ±ò         Ì†µÌ±ò‚àí1                 100 Ì†µÌ±õ ,xdx                /(4Ì†µÌºã)
+                                                                                                                                                          x       1 0
+                                                                                                                                                            1
+                    where the RHS is a constant multiple of the primary ray footprint that measures the distance
+                    betweenthenearbyprimaryhits. WefoundtheconstantmultiplierÌ†µÌ±ê = 0.02 (i.e.,Ì†µÌ±ê/100 = 0.0002) to
+                    workwellindiverse scenes. We also enforce a single-vertex threshold (Ì†µÌªºx                                                              ‚â•Ì†µÌªºmin) at vertex x
+                    to cheaply avoid trying to reconnect in some tricky edge cases.                                                                 Ì†µÌ±ò‚àí1                                   Ì†µÌ±ò‚àí1
+                    4.1       Explanation of the dual footprint thresholds
+                    Weprovide a brief explanation of how our dual footprint thresholds achieve the bounding and
+                                                                                                                                                                    ¬Ø
+                    provide a full derivation in the supplemental material. Consider shifting a path x in one pixel to
+                     ¬Ø            ¬Ø                                                                                                                  ¬Ø
+                    y = Ì†µÌ±á(x) in another pixel. For a candidate reconnection vertex x on x, connecting from y
+                                                                                                                                           Ì†µÌ±ò                                              Ì†µÌ±ò‚àí1
+                    instead of x                perturbs the path-traced area density of x and the angular density of Ì†µÌºî . We want
+                                         Ì†µÌ±ò‚àí1                                                                           Ì†µÌ±ò                                                   Ì†µÌ±ò
+                    these relative changes to be small: for small Ì†µÌºñ,
+                                 Ì†µÌ±¶        ‚Ä≤                                                                                               Ì†µÌ±¶                
+                              Ì†µÌ±ù      (Ì†µÌºî        )Ì†µÌ∞∫(y          ‚Üíx )                                                                    Ì†µÌ±ù   (Ì†µÌºî )           
+                                Ì†µÌ±ò‚àí1       Ì†µÌ±ò‚àí1          Ì†µÌ±ò‚àí1           Ì†µÌ±ò   ‚àí1 < Ì†µÌºñ             (6a)              and                     Ì†µÌ±ò     Ì†µÌ±ò   ‚àí1 < Ì†µÌºñ,               (6b)
+                                Ì†µÌ±•                                                                                                         Ì†µÌ±•                
+                              Ì†µÌ±ù      (Ì†µÌºî        )Ì†µÌ∞∫(x          ‚Üíx )                                                                    Ì†µÌ±ù   (Ì†µÌºî )           
+                                 Ì†µÌ±ò‚àí1       Ì†µÌ±ò‚àí1          Ì†µÌ±ò‚àí1           Ì†µÌ±ò                                                                   Ì†µÌ±ò     Ì†µÌ±ò
+                                                        2       Ì†µÌºïÌ†µÌ±á                 2
+                    whichimply (1‚àíÌ†µÌºñ) <  ¬Ø < (1+Ì†µÌºñ) .
+                                                                 Ì†µÌºïu
+                         Rayfootprint threshold. Equation 6a requires bounding the change in area density at x when
+                                                                                                                                                                                   Ì†µÌ±ò
+                    reconnecting from y                          instead of x               . Assuming random replay preserves local area density
+                                                          Ì†µÌ±ò‚àí1                        Ì†µÌ±ò‚àí1
+                    (Figure4),weanalyzehowtheareadensityofx changesunderaspatialdisplacementŒîx = y ‚àíx ,
+                    wherey isobtained by replaying from y                                          . Ì†µÌ±ò                                                                      Ì†µÌ±ò        Ì†µÌ±ò     Ì†µÌ±ò
+                                   Ì†µÌ±ò                                                         Ì†µÌ±ò‚àí1
+                         Weassume ‚à•Œîx ‚à• is bounded by a constant multiple of the primary ray footprint [M√ºller et al.
+                                                     Ì†µÌ±ò            ‚àöÔ∏É
+                                                                            ‚à•x ‚àíx ‚à•2
+                                                       ¬Ø                       0    1
+                    2021], ‚à•Œîx ‚à• < Ì†µÌ±ê1Ì†µÌ±Öx = Ì†µÌ±ê1                                               . Further assuming that relative density variation within
+                                       Ì†µÌ±ò              pri             ‚ü®Ì†µÌ±õ   ,xdx ‚ü©/(4Ì†µÌºã)
+                                                           ‚àöÔ∏Å             x1    1 0
+                    a footprint of radius                     Ì†µÌ±ê2/(Ì†µÌ±ùÌ†µÌ±•      (Ì†µÌºî        )Ì†µÌ∞∫(x          ‚Üíx )) is bounded by Ì†µÌºñ, a suf√ècient condition for
+                                                                       Ì†µÌ±ò‚àí1       Ì†µÌ±ò‚àí1          Ì†µÌ±ò‚àí1          Ì†µÌ±ò 2
+                                                                                                              Ì†µÌ±ê      ¬Ø
+                    Equation 6a is (Ì†µÌ±ùÌ†µÌ±•                   (Ì†µÌºî       )Ì†µÌ∞∫(x           ‚Üíx))‚àí1 > 1(Ì†µÌ±Öx )2. This ray footprint threshold avoids
+                                                    Ì†µÌ±ò‚àí1       Ì†µÌ±ò‚àí1          Ì†µÌ±ò‚àí1            Ì†µÌ±ò               Ì†µÌ±ê2     pri
+                    reconnections near density peaks caused by glossy BSDFs or geometric singularities. In practice,
+                    wecollapse the constants into a single parameter Ì†µÌ±ê in Equation 5; larger Ì†µÌ±ê makes reconnection
+                    moreconservative, i.e., favor postponing.
+                         Inverse ray footprint threshold. The ray footprint bounds changes in area density at x but does
+                                                                                                                                                                              Ì†µÌ±ò
+                    not capture changes in the BSDF sampling PDF Ì†µÌ±ùÌ†µÌ±•(Ì†µÌºîÌ†µÌ±ò) caused by altering the outgoing direction
+                                                                                                            Ì†µÌ±ò
+                    ‚àíÌ†µÌºîÌ†µÌ±ò‚àí1, which can be significant for low-roughness glossy materials.
+                                                        Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+              13:8                                                                       Daqi Lin, Markus Kettunen, and Chris Wyman
+                  (a) GGX roughness 0.3             (b) (zoomed in)           (c) GGX roughness 0.7            (d) (zoomed in)
+               Fig. 4. Visualizing secondary hits (red and blue points) sampled for two pixels (red and blue triangles
+               onthefloor) by BSDF sampling with the same random numbers reveals a near-exact spatial shift in the
+               sample populations and thus sample density. Green circles show radii proportional to sample footprints,
+               i.e., reciprocal probability densities. At a fixed surface point, larger footprints generally imply a smaller
+               density change between the red and blue populations and thus safer reconnection. Studying different
+               GGXroughnesses (a-b, c-d) shows larger roughnesses generally allow safer reconnection.
+                  Wetherefore define the inverse ray footprint (Ì†µÌ±ùÌ†µÌ±•(Ì†µÌºî )Ì†µÌ∞∫(x ‚Üíx                    ))‚àí1. Assuming approximate
+                                                                      5     Ì†µÌ±ò   Ì†µÌ±ò      Ì†µÌ±ò     Ì†µÌ±ò‚àí1
+               BSDF PDF reciprocity for glossy materials, it can be interpreted as the area per sample of a
+               reverse-traced ray (as if the path is traced from the light). Under the same smoothness assumptions
+               as above, and withÌ†µÌ∞∫(x ‚Üíx              ) ‚âà Ì†µÌ∞∫(x ‚Üíy          ) for distant reconnections, a suf√ècient condition
+                                           Ì†µÌ±ò     Ì†µÌ±ò‚àí1          Ì†µÌ±ò     Ì†µÌ±ò‚àí1
+                                                                         Ì†µÌ±ê2   ¬Ø
+               for Equation 6b is (Ì†µÌ±ùÌ†µÌ±•(Ì†µÌºî )Ì†µÌ∞∫(x ‚Üíx             ))‚àí1 > 1 (Ì†µÌ±Öx )2. We reuse the same parameterÌ†µÌ±ê for both
+                                         Ì†µÌ±ò  Ì†µÌ±ò      Ì†µÌ±ò     Ì†µÌ±ò‚àí1         Ì†µÌ±ê2  pri
+               thresholds for simplicity, yielding the combined test in Equation 5. This enables safe reconnection
+               to distant glossy surfaces without enforcing a roughness threshold at x .6
+                                                                                                       Ì†µÌ±ò
+               4.2   Single-vertex roughness threshold
+              Weretain a roughness threshold at x                to guard against cases where parallax, curvature, or very
+                                                            Ì†µÌ±ò‚àí1
+               low roughness can make footprint-based bounds unreliable. These cases would otherwise require
+               excessively large geometric bounds or overly large footprint tolerances.
+                  The roughness threshold also handles reconnection to environment lights, where Œîx is un-
+                                                                                                                              Ì†µÌ±ò
+               boundedandsharpchangesinangulardensitymayoccur.Withthissafeguard,wecanuseatighter
+               footprint parameter (Ì†µÌ±ê) that performs well in typical scenes. For non-parametric materials, we
+               discuss using the BSDF sampling PDF as a roughness proxy in the supplemental material.
+               5 CORRELATIONREDUCTIONWITHDUPLICATIONMAPS
+               Oneofthegreatest challenges to ReSTIR‚Äôs stability is sample correlation. The main sources for
+               sample correlation are
+                   ‚Ä¢ Low-probability, high-energy fireflies from initial sampling, and
+                   ‚Ä¢ Imperfect shift mappings that artificially shift samples into high-energy fireflies.
+              These fireflies spread to neighbor pixels via spatiotemporal reuse, forming correlation blobs (e.g.,
+               disks or streaks) sometimes occupying numerous pixels and persisting over many frames. Poorly
+               chosen parameters exacerbate visual artifacts (e.g., a small spatial reuse radius).
+               5We assume Ì†µÌ±ùÌ†µÌ±• (Ì†µÌºî ) = Ì†µÌ±ù(Ì†µÌºî |x , ‚àíÌ†µÌºî   ) ‚âà Ì†µÌ±ù(‚àíÌ†µÌºî     |x ,Ì†µÌºî ), which is exact for NDF sampling of microfacet glossy
+                             Ì†µÌ±ò  Ì†µÌ±ò        Ì†µÌ±ò  Ì†µÌ±ò    Ì†µÌ±ò‚àí1          Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò
+               material and approximate for VNDF sampling [Heitz 2018].
+               6For diffuse or emissive x , reconnection does not affect Ì†µÌ±ùÌ†µÌ±• (Ì†µÌºî ) and the inverse ray footprint test is skipped.
+                                        Ì†µÌ±ò                               Ì†µÌ±ò  Ì†µÌ±ò
+               Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+              ReSTIR PT Enhanced: Algorithmic Advances for Faster and More Robust ReSTIR Path Tracing                     13:9
+                 (a) Ours (no decorrelation)        (b) + Correlation reduction                   (c) Reference
+                 (12.9 ms, FLIP: 0.297)             (13.6 ms, FLIP: 0.295)
+                     (d) Duplication map of (a)         (e) Duplication map of (b)            (f) Bias visualization
+              Fig. 5. Evaluating our de-duplication method (b) in Kitchen, where camera motion along the ground
+              introduces many correlations (a) due to reuse of suboptimal temporal neighbors. We compute a
+              duplication map (d, e), counting duplicate samples in each 17√ó17 neighborhood (black to red represents
+              0‚Äì20% duplication in the visualization) and use this to adaptively decrease Ì†µÌ±êCap. This introduces some
+              bias, appearing as energy loss. Our average absolute relative bias (mean(|bias|/ref.)) is 3.25% in (b).
+              Wealsovisualize this bias per-pixel (f), where more glossy surfaces exhibit larger bias.
+                Correlation artifacts make denoising ReSTIR challenging, as artifacts get detected as signal. Pre-
+             vious work fights sample correlation by partially reusing paths while keeping prefixes independent
+              [Kettunen et al. 2023] or mutating samples to reduce impoverishment [Sawhney et al. 2024]. But
+              these methods are expensive and only reduce certain types of correlation.
+                Weintroduce a simple but effective solution based on Ì†µÌ±êCap reduction, essentially limiting the
+              temporal confidence weights adaptively. The motivation is simple‚Äîhow high we weight temporal
+              samples directly impacts potential correlation strength. Highly weighting temporal reuse provides
+              morechancesforfireflies to spread spatially and makes them more temporally persistent.
+                Oursolution measures prior frame‚Äôs correlations around each pixel and reducesÌ†µÌ±êCap in highly
+              correlated areas. Our correlation measure simply counts pixels in a spatial neighborhood that share
+              the current pixel‚Äôs sample, by which we mean the samples are shifted copies from the same initial
+              candidate. We detect this by comparing the random seeds already stored for (potential) random
+              replay. We implement our method as follows:
+                (1) After finishing each frame, compute a sample duplication map. Each pixel counts how many
+                    reservoirs in the surrounding 17√ó17 region share its random seed. This count is divided by
+                    288 to compute a duplication score Ì†µÌ∞∑ ‚àà [0,1].
+                (2) Whendoingtemporalresampling,lookuptheduplicationscorecorrespondingtothetemporal
+                    reservoir used (i.e., backprojecting the current pixel into prior frame).
+                (3) We compute a modified Ì†µÌ±êCap for temporal reuse as Ì†µÌ±êCap = lerp(Ì†µÌ±êDefault,Ì†µÌ±êmin,Ì†µÌ∞∑Ì†µÌªº). Where
+                                                                                                  Cap      Cap
+                    Ì†µÌ±êDefault is the default (e.g., 20 in Lin et al. [2022]) and Ì†µÌ±êmin is the minimum Ì†µÌ±êCap used when
+                      Cap                                                           Cap
+                    encountering Ì†µÌ∞∑ = 1. Ì†µÌªº sets the sensitivity of the reduction. Ì†µÌªº = 1 gives a linear reduction,
+                    whileÌ†µÌªº closer to 0 gives a quick reduction as Ì†µÌ∞∑ increases.
+                In our tests, we found Ì†µÌ±êmin = 1 and Ì†µÌªº = 0.1 yield good results. Our adaptive Ì†µÌ±êCap dramatically
+                                            Cap
+              reduces correlation artifacts caused by high-energy samples produced by sampling or resampling.
+                                     Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+           13:10                                                     Daqi Lin, Markus Kettunen, and Chris Wyman
+              Because this approach adjusts confidence weights based on specific samples, the partition of
+           unity of MIS weightsÌ†µÌ±öÌ†µÌ±ñ is violated, introducing a small bias. This bias only occurs in correlated
+           areas where we modifyÌ†µÌ±êCap; essentially our approach trades correlation for bias. Figure 5 shows
+           our method in a very dif√ècult scene, where it averages 3.25% absolute relative bias.
+           6 IMPLEMENTATIONIMPROVEMENTS
+           Beyondouralgorithmic contributions, we introduce implementation-focused improvements that
+           furtherenhanceperformanceandrobustness.WereduceredundancybycombiningseparateReSTIR
+           direct and indirect lighting passes into one unified algorithm (Section 6.1), apply GPU optimizations
+           to reduce thread divergence (Section 6.2), and adopt existing techniques to reduce color (Section 6.3)
+           and disocclusion noise (Section 6.4). The quality improvements these bring can be seen aggregated
+           in Figure 1 and Figure 13, but more individual ablations are provided in the supplemental.
+           6.1   UnifyingDirectLightingandGlobalIllumination
+           Real-time renderers often separately compute direct and indirect lighting, with indirect light often
+           approximated more aggressively. But using ReSTIR, we can ef√èciently sample high-quality indirect
+           illumination. Rather than running separate direct and indirect ReSTIR passes, as in Lin et al. [2022],
+           wecombinebothusingasinglereservoir.
+              The idea is simple. Lin et al. [2022] start by initially sampling a path tree by emanating NEE
+           rays from BSDF-sampled vertices [x ,...,x ] whereÌ†µÌ±õ is limited by the maximum allowed bounces.
+                                              2    Ì†µÌ±õ                         ¬Ø
+           Initial resampling selects and stores a single path in the reservoir, i.e., x = [x ,x ,x , ...,x ] with a
+                                                                                    0  1  2     Ì†µÌ±ë
+           single NEE/BSDF ray connecting to a light at x (see Section 2.3) withÌ†µÌ±ë ‚â• 3 originally. Direct light
+                                                       Ì†µÌ±ë
+           can be handled by simply tracing another NEE ray from x when generating the path tree, and
+                                                                    1
+           giving the (unified) initial resampling a chance to select a shorter direct lighting path (Ì†µÌ±ë = 2) from
+           the tree. The selected path is thus sampled from the full path space.
+              This removes the cost and storage of separate ReSTIR passes for direct and indirect light. Some-
+           whatsurprisingly, it also improves quality as direct lighting now benefits from ReSTIR PT‚Äôs built-in
+           shift mapping (especially on glossy highlights). Implementation details for modifying the MIS
+           weights and source PDFs in primary sample space are provided in the supplemental material.
+              For scenes with many lights, we optionally apply RIS when generating NEE samples at x . As
+                                                                                                    1
+           in ReSTIR DI, visibility is excluded from the target function and tested only for the selected light.
+           Wereusethepresampledlight-tile scheme from Wyman and Panteleev [2021] to improve cache
+           coherence: each frame precomputes 128 tiles with 1024 lights, from which each 8 √ó 8 screen tile
+           draws a light tile to generate candidates per bounce.
+           6.2   ImprovingGPUPerformancebyReducingDivergence
+           MonteCarlopathtracing incurs substantial GPU divergence as neighboring paths often traverse
+           very different geometry and materials. ReSTIR PT further increases divergence due to additional
+           control flow and intermediate data, e.g., reservoirs. We apply a set of optimizations that reduce
+           both code and data divergence, substantially improving GPU ef√èciency.
+           6.2.1  Low-level Code Optimization. A naive ReSTIR PT implementation contains many branches
+           arising from reservoir sampling and heterogeneous path cases. We reduce divergence by replacing
+           most branches with conditional moves and simplifying computations while preserving equivalent
+           results. We also reduce reservoir storage from 88 bytes to 64 bytes by removing unnecessary fields
+           andapplying lossy compression to selected quantities (details in the supplemental material).
+           6.2.2  Stream Compaction for Random Replay. In many scenes, only a few pixel‚Äìneighbor pairs
+           require random replay, yet warp-level execution forces all threads to wait. We parallelize over
+           Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+              ReSTIR PT Enhanced: Algorithmic Advances for Faster and More Robust ReSTIR Path Tracing                    13:11
+              pixel‚Äìneighbor pairs, applying stream compaction to discard pairs that do not require replay. This
+              reduces warp divergence and the number of active warps, yielding a substantial speedup.
+              6.2.3  Forced NEE Light Reconnection. During random replay, paths ending at NEE-sampled light
+             vertices incur expensive light sampling that other path types avoid. Since replayed random numbers
+              usually select the same light (e.g., with power-based sampling), we force reconnection to such
+             vertices if no earlier reconnection is found. This removes light sampling from random replay,
+              improving performance. Any potential variance increase is mitigated by path MIS weights, which
+              already downweight these cases (as such surfaces are typically glossy).
+              6.2.4  Russian Roulette. Initial resampling is often the most expensive stage due to long, divergent
+              paths. We apply Russian roulette to reduce average path length at initial sampling, but remove it
+              from random replay to avoid killing valid paths during reuse. This effectively removes the roulette
+              dimensions from the path parametrization and applies an external roulette at initial path sampling,
+              modifying the sampling PDF in primary sample space (see supplemental). Although this slightly
+              increases noise in initial samples, spatiotemporal reuse largely suppresses its impact in the final
+              result, and the roulette failures at shift mapping are completely avoided.
+              6.3   ReducingColorNoise
+                                                                                                                            ÀÜ
+              ReSTIRinherentlysuffersfromcolornoisebecauseresamplingoperatesonascalartargetfunctionÌ†µÌ±ù,
+             while the integrand F(Ì†µÌ±¶) is RGB-valued. GRIS therefore samples primarily according to luminance,
+              leaving chroma poorly importance-sampled.
+                Prior work[Kettunenetal.2023;Linetal.2022]notedthattheestimateF(Ì†µÌ±å)Ì†µÌ±ä canbeimproved
+                                                                                                         Ì†µÌ±å
+              bymarginalizing over the random index choice. In ReSTIR PT, this improvement comes at almost
+                                     ÀÜ   | |
+              noextra cost: since Ì†µÌ±ù = F , F(Ì†µÌ±å ) is already evaluated during spatial reuse. We accumulate vector-
+                                                 Ì†µÌ±ñ                                       √ç
+             valued resampling weights w =Ì†µÌ±ö (Ì†µÌ±å )F(Ì†µÌ±å )Ì†µÌ±ä            |Ì†µÌºïÌ†µÌ±á /Ì†µÌºïÌ†µÌ±ã | and use Ì†µÌ±Ä  w for shading. As spatial
+                                               Ì†µÌ±ñ     Ì†µÌ±ñ Ì†µÌ±ñ    Ì†µÌ±ñ  Ì†µÌ±ãÌ†µÌ±ñ    7  Ì†µÌ±ñ            Ì†µÌ±ñ=1  Ì†µÌ±ñ
+              neighborstypicallycontainuncorrelatedchromanoise ,spatialreusenaturallyaveragesitout.This
+              decouples resampling and shading: scalar weights drive future resampling, while vector weights
+              are used for shading. Unlike similar techniques for direct lighting [Wyman and Panteleev 2021],
+              our method incurs no additional computations.
+              6.4   ReducingDisocclusionNoisewithDualMotionVectors
+              Disocclusion causes severe noise in ReSTIR as newly visible surfaces lack any temporal history.
+              Dual motion vectors [Zeng et al. 2021] address this by reprojecting pixels using an alternative
+              motionvector that assumes consistent relative motion between occluding and disoccluded surfaces.
+                Weapplythisdirectly to ReSTIR‚Äôs temporal resampling and observe a substantial reduction in
+              disocclusion noise. While prior work avoids copy-paste artifacts by storing incident radiance fields,
+              this issue does not arise in ReSTIR PT: unbiased path resampling prevents pattern cloning. The
+              remaining correlated noise is mild and can be further reduced using our decorrelation strategy
+             (Section 5).
+              7 EVALUATION
+              Ourevaluation uses a PC with NVIDIA RTX 5880 Ada graphics card and AMD Ryzen Threadripper
+              PRO3975WX32-CoresCPU.WeusetheFalcor[Bentyetal.2020]real-timerenderingframework
+              andstart optimization from the original ReSTIR PT source code [Lin et al. 2022]. All images are
+              rendered in 1920√ó1080. We use the HDR version of FLIP [Andersson et al. 2021] as the metric for
+             7Although spatiotemporal reuse can also create spatially correlated color noise, such correlation is usually not among the
+              randomly sampled spatial neighbors in the new frame.
+                                     Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+               13:12                                                                      Daqi Lin, Markus Kettunen, and Chris Wyman
+               Table 1. Frame and pass costs (in milliseconds) averaged over four scenes (Veach Ajar, Carousel,
+               OperaHouse,andBathroom)ofvaryingcomplexity.Methodsunderthedashedlineincuraddedcost.
+                            Method                                    Total     Initial   Temporal     Spatial   ReSTIRDI
+                                                                     frame    sampling      reuse       reuse    andothers
+                            Baseline                                  35.73     10.59        5.30       14.79       5.05
+                            +Codemicroop(Section 6.2.1)               32.98     10.70        4.16       13.06       5.07
+                            +Forced NEE reconnect (Section 6.2.3)     29.75     11.44        3.40       9.73        5.19
+                            +Replay compaction (Section 6.2.2)        26.81     11.79        2.66       6.99        5.37
+                            +Paired spatial reuse (Section 3)         25.02     12.56        2.80       4.11        5.55
+                            +Russian roulette (Section 6.2.4)         16.52      5.21        2.24       3.83        5.24
+                            +Unify DI & GI (Section 6.1)              13.04      6.47        2.14       3.43        1.00
+                            - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+                            +Newthresholds (Section 4)                14.51      6.68        2.92       3.60        1.31
+                            +All improvements (Section 5, 6.3, 6.4)   15.53      6.77        3.20       3.73        1.83
+               imageerror, as it closely aligns with the perceptual difference when flipping to compare images.
+               WeborrowReSTIRPT‚Äôsdefaulttemporalandspatialparameters, namelyÌ†µÌ±êCap = 20 for temporal
+               resampling and use of 3 random spatial neighbors in a 30-pixel radius.
+                  For paired spatial reuse, we compute 3 pairing textures that realize Gaussian distributions with
+               the same average sample radial distance for spatial resampling. As the mean sample distance of an
+                                                                            ‚àöÔ∏Å
+               isotropic Gaussian with standard deviation Ì†µÌºé is Ì†µÌºé            Ì†µÌºã/2, and the mean sample distance of a uniform
+               disk of radius Ì†µÌ±Ö is 2Ì†µÌ±Ö/3, we propose choosing Ì†µÌºé = ‚àöÔ∏Å8/(9Ì†µÌºã)Ì†µÌ±Ö to match prior work‚Äôs empirically
+               chosenÌ†µÌ±Ö. For the default Ì†µÌ±Ö = 30 in ReSTIR, this gives Ì†µÌºé = 16.0. Our paired spatial reuse does not
+               fully halve costs, due to overhead from splitting spatial reuse in two: a pre-pass shifts each path to
+               all paired neighbors, and a second pass performs resampling.
+                  Weuse1spppathtracing (one path tree per pixel) to produce the initial samples. For RIS of
+               NEEsamples(Section 6.1), we draw 32 light samples from the light tiles for NEE candidates at the
+               primaryhit,followingWymanandPanteleev[2021].WereducethenumberofNEElightcandidates
+               at deeper bounces using an inverse-square decay schedule, allocating 32/Ì†µÌ∞µ2 samples (clamped to a
+               minimumof1)atbounceindexÌ†µÌ∞µ.
+               7.1    Performance
+               Table 1 shows performance of our techniques, with each row adding one new feature/optimization
+               ontopofabaselineofLinetal.‚Äôs [2022] public source code. We first measure the speedup from
+               our cost-reduction techniques, which provide an average 2.74√ó speedup across the four tested
+               scenes. These scenes were chosen to reflect a range of geometry and material complexity. Results
+               for individual scenes are provided in the supplemental material. To provide further insight into the
+               effect of our low-level GPU optimizations, we profiled Opera House using NSight Graphics. The
+               profiler data indicate that the optimizations in Section 6.2.1‚Äì6.2.3 reduce thread divergence and
+               improve GPU computation ef√èciency. Specifically, SM warp occupancy increases from 22.4% to
+               31.1%, active threads per warp increase from 15.3 to 19.9, and warp latency decreases from 347k to
+               241k cycles, all without changing the sampler behavior. Applying Russian roulette (Section 6.2.4)
+               further improves these metrics to 34.9%, 20.6, and 82k cycles, respectively.
+                  Under the dashed line we show the added cost brought by our techniques from Section 4, 5, and
+               6. New thresholds reflects the cost of our scene-independent reconnection criteria that improves
+               shift mapping quality. The all improvements row applies all other techniques (decorrelation, color
+               noise and disocclusion noise reduction). These increase average cost by 19% versus our fastest
+               version. But even with these quality improvements, we are still 2.30√ó faster than Lin et al. [2022].
+               Ourperformancealso scales better with resolution, as reported in the supplemental document.
+               Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+                     ReSTIR PT Enhanced: Algorithmic Advances for Faster and More Robust ReSTIR Path Tracing                                                                                 13:13
+                        (a) Original image                   (b) Swap once                   (c) Swap twice                      (a) Pairing texture                 (b) Histogram
+                       Fig. 6. Our pairing texture enables an invertible stochas-                                              Fig. 7. Visualizing Ì†µÌºé = 16.0, which
+                       tic Gaussian ‚Äúblur.‚Äù Swapping twice recovers the original                                               has the same average sample distance
+                       image. Here we use a pairing texture with Ì†µÌºé = 16.0.                                                    as Ì†µÌ±Ö = 30 uniform disk sampling.
+                                                                          Paired Spatial Reuse         Ì†µÌºé = 2.7            Ì†µÌºé = 5.3          Ì†µÌºé = 10.6           Ì†µÌºé = 16.0         Reference
+                                                                          PairPaireedd SpatialSpatial ReuseReuse
+                                                                          PairPaireeddSpatialSpatialReuseReuse
+                                                                          PairPaireeddSpatialSpatialReuseReuse
+                                                                          PairPairPaireeedddSpatialSpatialSpatialReuseReuseReuse
+                                                                          PairPaireeddSpatialSpatialReuseReuse
+                                                                          PairPaireeddSpatialSpatialReuseReuse
+                                                                          PairPaireedd SpatialSpatial ReuseReuse
+                                                                          Paired Spatial Reuse
+                                                                               (Ì†µÌºé = 16.0)
+                                                                               ((Ì†µÌºéÌ†µÌºé == 1616..00))
+                                                                               ((Ì†µÌºéÌ†µÌºé == 1616..00))
+                                                                               ((Ì†µÌºéÌ†µÌºé ==1616..00))
+                                                                               (((Ì†µÌºéÌ†µÌºéÌ†µÌºé === 161616...000)))
+                                                                               ((Ì†µÌºéÌ†µÌºé ==1616..00))
+                                                                               ((Ì†µÌºéÌ†µÌºé == 1616..00))
+                                                                               ((Ì†µÌºéÌ†µÌºé == 1616..00))
+                                                                               (Ì†µÌºé = 16.0)
+                                                                                     Time:/FLIP:    3.72 ms / 0.313    3.99 ms / 0.289    3.77 ms / 0.283     3.79 ms / 0.287
+                                                                                                        Ì†µÌ±Ö = 5             Ì†µÌ±Ö = 10            Ì†µÌ±Ö = 20             Ì†µÌ±Ö = 30          Reference
+                                 (Ì†µÌ±Ö = 30)
+                                 ((Ì†µÌ±ÖÌ†µÌ±Ö == 3030))
+                                 ((Ì†µÌ±ÖÌ†µÌ±Ö == 3030))
+                                 ((Ì†µÌ±ÖÌ†µÌ±Ö ==3030))
+                                 (((Ì†µÌ±ÖÌ†µÌ±ÖÌ†µÌ±Ö === 303030)))
+                                 ((Ì†µÌ±ÖÌ†µÌ±Ö ==3030))
+                                 ((Ì†µÌ±ÖÌ†µÌ±Ö == 3030))
+                                 ((Ì†µÌ±ÖÌ†µÌ±Ö == 3030))
+                                 (Ì†µÌ±Ö = 30)
+                          RandomSpatial Reuse
+                          RandomRandom SpatialSpatial ReuseReuse
+                          RandomRandomSpatialSpatialReuseReuse
+                          RandomRandomSpatialSpatialReuseReuse
+                          RandomRandomRandomSpatialSpatialSpatialReuseReuseReuse
+                          RandomRandomSpatialSpatialReuseReuse
+                          RandomRandomSpatialSpatialReuseReuse
+                          RandomRandom SpatialSpatial ReuseReuse
+                          RandomSpatial Reuse                          Spatial Reuse Time:/FLIP:    6.24 ms / 0.329    6.13 ms / 0.294    6.24 ms / 0.285     6.21 ms / 0.289
+                     Fig. 8. Comparing our paired spatial reuse (top) with traditional random spatial reuse from a uniform
+                     disk (bottom) in the Opera House. In each column, we choose aÌ†µÌºé value that produces the same average
+                     sample distance as a uniformly-sampled disk of radius Ì†µÌ±Ö.
+                         Storage. Our methodalsoreducesstoragerelativetothebaselinethroughtwochanges:compress-
+                     ing the ReSTIR PT reservoir and unifying the reservoirs for direct and indirect lighting. Because
+                     each ReSTIR pass requires two sets of reservoirs to support temporal reuse, these changes reduce
+                     per-pixel storage from 2 √ó (88 + 16) bytes in the baseline implementation (which uses 16-byte
+                     reservoirs for ReSTIR DI) to 2 √ó 64 bytes. With a 1920√ó1080 render resolution, this lowers memory
+                     consumption from 431 MB to 265 MB.
+                     7.2       Ablation Studies
+                     Westudyourpairedspatialreuse(Section3),newreconnectioncriteria(Section4),anddecorrelation
+                     technique (Section 5) more closely here. Isolated studies of techniques in Section 6 are included in
+                     the supplemental document.
+                         Evaluation of paired spatial reuse. We encode pairing textures as two-channel tilable images,
+                     storing integer offsets (ŒîÌ†µÌ±•,ŒîÌ†µÌ±¶) ‚àà [‚àí127,127]2 per pixel (wrapped by tiling). Figure 7a visualizes a
+                     254√ó254pairingtexture.InFigure6wevalidateourtexturebyswappingeachpixelwithitspaired
+                     neighbor; one swap gives a blur with Gaussian noise while a second recovers the original image.
+                         Figure8comparesourpairedspatialreuseagainsttraditionaluniformdisksampleswithdiskradii
+                     Ì†µÌ±Ö = 5, 10, 20, 30, matched to Gaussian kernels with equal average sample distances. Paired reuse
+                     speedsReSTIR‚Äôsspatialreuseby1.63√óonaveragebyhalvingshiftmappingcostswithonlyamodest
+                     overhead. It also lowers FLIP error, likely because a Gaussian distribution concentrates samples
+                     closer to the center (i.e., Figure 7b), increasing the probability to select compatible neighbors.
+                                                         Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+                                                               13:14                                                                                                                                                                                                                                                                                                                                       Daqi Lin, Markus Kettunen, and Chris Wyman
+                                                                                                                                                                                                                                                                                                                                                          Reference                                                      OursÌ†µÌ±ê = 0.5                                                                 Ì†µÌ±ê = 0.1                                                          Ì†µÌ±ê = 0.02
+                                                                                                                                                                                                                           Ourdecorrelation method
+                                                                                                                                                                                                                           OurOur dedecorrcorrelationelation methomethodd
+                                                                                                                                                                                                                           OurOurdedecorrcorrelationelationmethomethodd
+                                                                                                                                                                                                                          OurOurdedecorrcorrelationelationmethomethodd
+                                                                                                                                                                                                                          OurOurOurdededecorrcorrcorrelationelationelationmethomethomethoddd
+                                                                                                                                                                                                                          OurOurdedecorrcorrelationelationmethomethodd
+                                                                                                                                                                                                                           OurOurdedecorrcorrelationelationmethomethodd
+                                                                                                                                                                                                                           OurOur dedecorrcorrelationelation methomethodd
+                                                                                                                                                                                                                           Ourdecorrelation method
+                                                                                                                                                                                                                                                          (Ì†µÌ±ê = 0.1)
+                                                                                                                                                                                                                                                         ((Ì†µÌ±êÌ†µÌ±ê   == 00..11))
+                                                                                                                                                                                                                                                         ((Ì†µÌ±êÌ†µÌ±ê == 00..11))
+                                                                                                                                                                                                                                                         ((Ì†µÌ±êÌ†µÌ±ê ==00..11))
+                                                                                                                                                                                                                                                         (((Ì†µÌ±êÌ†µÌ±êÌ†µÌ±ê === 000...111)))
+                                                                                                                                                                                                                                                         ((Ì†µÌ±êÌ†µÌ±ê ==00..11))
+                                                                                                                                                                                                                                                         ((Ì†µÌ±êÌ†µÌ±ê == 00..11))
+                                                                                                                                                                                                                                                         ((Ì†µÌ±êÌ†µÌ±ê   == 00..11))
+                                                                                                                                                                                                                                                          (Ì†µÌ±ê = 0.1)
+                                                                                                                                                                                                                                                                                                                                                                                                                                      0.372                                                               0.405                                                              0.451
+                                                                                                                                                                                                                                                                                                                                                          Unfiltered                                               RTXDIÌ†µÌ±† = 0.05                                                                      Ì†µÌ±† = 0.2                                                           Ì†µÌ±† = 0.8
+                                                                                                          (Ì†µÌ±† = 0.2)
+                                                                                                          ((Ì†µÌ±†Ì†µÌ±†  == 00..22))
+                                                                                                         ((Ì†µÌ±†Ì†µÌ±† == 00..22))
+                                                                                                         ((Ì†µÌ±†Ì†µÌ±† ==00..22))
+                                                                                                         (((Ì†µÌ±†Ì†µÌ±†Ì†µÌ±† === 000...222)))
+                                                                                                         ((Ì†µÌ±†Ì†µÌ±† ==00..22))
+                                                                                                         ((Ì†µÌ±†Ì†µÌ±† == 00..22))
+                                                                                                          ((Ì†µÌ±†Ì†µÌ±†  == 00..22))
+                                                                                                          (Ì†µÌ±† = 0.2)
+                                                                                      RTXDIboiling filter
+                                                                                     RTXDIRTXDI bboilingoiling filterfilter
+                                                                                     RTXDIRTXDIbboilingoilingfilterfilter
+                                                                                     RTXDIRTXDIbboilingoilingfilterfilter
+                                                                                     RTXDIRTXDIRTXDIbbboilingoilingoilingfilterfilterfilter
+                                                                                     RTXDIRTXDIbboilingoilingfilterfilter
+                                                                                     RTXDIRTXDIbboilingoilingfilterfilter
+                                                                                     RTXDIRTXDI bboilingoiling filterfilter
+                                                                                      RTXDIboiling filter                                                                                                                                                                                                         FLIP:                                           0.352                                                               0.402                                                               0.499                                                              0.576
+                                                               Fig. 9. Comparing our duplication-based decorrelation (top) and RTXDI‚Äôs boiling filter (bottom) in
+                                                               the Tower Bridge scene, which exhibits strong correlations (see unfiltered inset) due to poor initial
+                                                               sample quality. The parameters reflect weak, medium (default), and strong correlation reduction in
+                                                               both methods. Increasing FLIP errors reflect the darkening bias the methods introduce.
+                                                                             Evaluation of the new reconnection criteria. We comprehensively evaluated our new reconnection
+                                                               criteria. For the single-vertex roughness threshold, we use ReSTIR PT‚Äôs default Ì†µÌªº = 0.2. For dual
+                                                               footprint thresholds, we empirically foundÌ†µÌ±ê = 0.02 (see Equation 5) to be near-optimal across a
+                                                               wide range of scenes. Ablation results for different Ì†µÌ±ê values are provided in the supplemental.
+                                                                             Figures 10, 11, and 12 compare our criteria with Lin et al.‚Äôs [2022] reconnection rules, which use
+                                                               a world-space distance threshold and a two-vertex roughness test. We set the distance threshold to
+                                                               2%oftheshortest scene dimension, typical to prior work. Across variations in viewing distance,
+                                                               material roughness, and lighting conditions, our thresholds consistently deliver higher-quality
+                                                               resampling with improved robustness.
+                                                                             Our ray footprint thresholds resemble the path footprint criteria of Bekaert et al. [2003] and
+                                                               M√ºller et al. [2021]. However, we found path footprints alone often fail to eliminate unconnectable
+                                                               paths because they do not consider material properties at the reconnection vertex. Additional
+                                                               comparisons are included in our supplemental.
+                                                                             Ablation study of duplication-based decorrelation. In Figure 9, we compare our duplication-based
+                                                               correlationreductionmethodtotheboilingfilterinRTXDISDK[NVIDIA2021].Thisfiltercomputes
+                                                                                                                                                                                                                                                   ¬Ø
+                                                               an average resampling weight Ì†µÌ±§ over each warp‚Äôs pixels and clears any reservoir with weight
+                                                                                                        ¬Ø
+                                                               Ì†µÌ±§Ì†µÌ±ó > Ì†µÌ±éÌ†µÌ±§ where Ì†µÌ±é = ‚àí9 + 10/Ì†µÌ±† is controlled by strength factor Ì†µÌ±† ‚àà (0,1]. Note that RTXDI‚Äôs boiling
+                                                               filter causes substantial energy loss to remove most artifacts.
+                                                               7.3                            Overall quality evaluation
+                                                               Figure 1 and Figure 13 show the overall performance and quality improvement with our enhanced
+                                                               ReSTIRPT.ComparedtoLinetal.[2022],ourenhancedReSTIRPTreducescorrelationartifacts,
+                                                               color and disocclusion noise. It exhibits better quality thanks to our new reconnection criteria (e.g.,
+                                                               see the surfaces inside the glass in Figure 1) and the unification of direct and indirect lighting, yet
+                                                               runs significantly faster, reaching 2.08√ó-3.05√ó speedup over Lin et al. [2022].
+                                                               7.4                            Bias and Convergence
+                                                               Ourdecorrelationtechnique(Section5)introducesbias,butdisablingitrestoresunbiasednesswhile
+                                                               retaining all remaining benefits of ReSTIR PT Enhanced (see Figure 14 and additional comparisons
+                                                               at the end of the supplemental document). In practice, this bias is usually small relative to the
+                                                               noise level. As shown in Figure 15, the biased and unbiased variants of our method have nearly
+                                                               overlapping convergencecurvesunderbothMSEandFLIPoverthetimerangerelevanttoreal-time
+                                                               Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+               ReSTIR PT Enhanced: Algorithmic Advances for Faster and More Robust ReSTIR Path Tracing                             13:15
+                 (a) Near view (reference)     (b) Baseline (FLIP: 0.223)      (c) Ours (FLIP: 0.223)         (d) Inset Reference
+                  (e) Far view (reference)     (f) Baseline (FLIP: 0.296)      (g) Ours (FLIP: 0.291)         (h) Inset Reference
+               Fig. 10. Our new reconnection thresholds adapt to varying viewing distances, improving consistency
+               in the Kitchen scene. In the baseline [Lin et al. 2022], thresholds good for the near view behave poorly
+               for the far view.
+                   (a) Lin et al. [2022] (FLIP: 0.339)    (b) Our thresholds (FLIP: 0.322)                 (c) Reference
+               Fig. 11. A failure case shown by Lin et al. [2022] in San Miguel. Previously, the hybrid shift sampled
+               caustics poorly (pointed by the arrow) from near-delta distant highlights (the lamp reflection on the
+               far window). Our new threshold effectively adjusts ‚Äúroughness‚Äù by distance, here allowing reconnection
+               to the window.
+                   (a) Lin et al. [2022] (FLIP: 0.185)    (b) Our thresholds (FLIP: 0.185)                 (c) Reference
+                   (d) Lin et al. [2022] (FLIP: 0.271)     (e) Our thresholds (FLIP: 0.252)                (f) Reference
+               Fig. 12. Lin et al.‚Äôs [2022] reconnections perform similarly to our work in diffuse scenes like Veach
+               Ajar. With metallic walls (roughness of 0.3), their baseline shows significantly more noise. Our new
+               thresholds automatically enlarge reconnection distances, giving more consistent noise.
+                                        Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+                  13:16                                                                                     Daqi Lin, Markus Kettunen, and Chris Wyman
+                    Watercolor                                                      Org.  Ref.  Ours
+                     Original ReSTIR PT (30.1 ms) FLIP: 0.171                                          ReSTIRPTEnhanced(14.5ms)FLIP:0.166
+                    ZeroDay                                                         Org.  Ref.  Ours
+                     Original ReSTIR PT (47.1 ms) FLIP: 0.439                                          ReSTIRPTEnhanced(21.4ms)FLIP:0.414
+                    Crown                                                           Org.  Ref.  Ours
+                     Original ReSTIR PT (50.0 ms) FLIP: 0.483                                          ReSTIRPTEnhanced(16.4ms)FLIP:0.444
+                  Fig. 13. Comparing Lin et al. [2022] to our enhancements in the Watercolor, Zero Day, and Crown
+                  scenes. We sample glossy surfaces noticeably better, thanks to improved MIS on primary hits and better
+                  reconnection thresholds. We also reduce color and disocclusion noise with fewer correlation artifacts.
+                  rendering (< 0.1 s). Our default biased version even achieves lower MSE initially as it prevents the
+                  spread of outliers. With longer accumulation, however, its convergence curve gradually flattens
+                  as the bias emerges. In more typical scenes such as Watercolor, where correlation is less severe
+                  than in Kitchen (Section 5), the convergence curve flattens more slowly with an overall lower bias
+                  level. Overall, we find the default decorrelated, biased variant more preferable for real-time image
+                  quality. When a noise-free unbiased image is desired, accumulating it with temporal reuse disabled
+                  is typically more ef√ècient [Lin et al. 2022].
+                  8 CONCLUSIONANDFUTUREWORK
+                 Wepresented a suite of new ideas to enhance ReSTIR PT, improving both performance and robust-
+                  ness. Optimizations range from low-level GPU code improvements to larger algorithmic changes,
+                  showinguptoa3√óspeedup.Weimproverobustnessviabettershiftmapping,correlation reduc-
+                  tion, and reductions in color and disocclusion noise, providing consistently higher visual quality.
+                  Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+                ReSTIR PT Enhanced: Algorithmic Advances for Faster and More Robust ReSTIR Path Tracing                                          13:17
+                  (a) Ours (no decorrelation)            (b) ((a)-ref.)/ref.        (c) avg. of 1024 runs of (a)            (d) ((c)-ref.)/ref.
+                             (e) Ours                    (f) ((e)-ref.)/ref.        (g) avg. of 1024 runs of (e)           (h) ((g)-ref.)/ref.
+                Fig. 14. Our method without decorrelation (a) exhibits more correlation artifacts in Watercolor
+                under an upward-moving camera, including noise clusters on the lamp and correlated dark and bright
+                trails in the disocclusion region. After averaging 1024 independent runs, our default version reveals
+                systematic error (due to bias) as can be seen in (h), shown using the same color scale as in Figure 5.
+                               Watercolor                         Kitchen                        Watercolor                        Kitchen
+                     100
+                                       Baseline      10 3               Baseline                         Baseline                        Baseline
+                                       Ours (no decorr.)                Ours (no decorr.)                Ours (no decorr.)               Ours (no decorr.)
+                                       Ours                             Ours          10 1               Ours                            Ours
+                     10 1
+                                                     10 4
+                    MSE                              MSE                              FLIP                            FLIP10 1
+                     10 2
+                                                     10 5
+                     10 3                            10 6
+                        100     101     102    103      100     101     102     103     10 2    10 1    100     101      10 2    10 1    100    101
+                                  Iteration                       Iteration                    Cumulative Time (s)              Cumulative Time (s)
+                          (a) MSE vs. iteration count for two scenes                      (b) FLIP vs. cumulative time for two scenes
+                Fig. 15. Convergence plots for Watercolor (Figure 13, 14) and Kitchen (Figure 5), comparing
+                baseline ReSTIR PT, our method without decorrelation (Ours no decorr.), and our default method with
+                decorrelation (Ours). Our default method exhibits more bias in Kitchen due to heavier correlation
+                reduction. For each scene and method, we run the same camera animation 1024 times with different
+                random seeds for sampling, capture the same view during camera motion, and average the results
+                across runs. (a) shows mean squared error versus iteration count. (b) remaps iteration count of the data
+                points in (a) to cumulative rendering time of the captured frames and reports FLIP error. FLIP is less
+                sensitive to fireflies and correlation artifacts, but still sensitive to regional brightness differences.
+                Several contributions generalize to other reuse algorithms: paired spatial reuse, footprint-based
+                reconnection thresholds, and temporal history control via duplication maps. We further found that
+                a unified ReSTIR, sampling direct and indirect lighting together, improves both speed and quality.
+                    Despitetheseadvances,ReSTIRPTfacesopenchallengesmotivatingfuturework.High-frequency
+                features remain sensitive to temporal noise during motion, and overall quality is bounded by the
+                effectiveness of initial sampling, especially for low-probability light transport effects such as
+                caustics. Some issues are partially addressed by recent work such as Area ReSTIR [Zhang et al.
+                2024], suggesting exploring smooth transitions from ReSTIR PT Enhanced to an enhanced Area
+                ReSTIRwithin a shared framework. Additional opportunities also remain for further algorithmic
+                andhardware-aware optimizations on newer GPU architectures.
+                                            Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+             13:18                                                                Daqi Lin, Markus Kettunen, and Chris Wyman
+             ACKNOWLEDGMENTS
+             WethankMiikaAittalafor useful discussions on pairwise reuse textures, Aaron Lefohn for general
+             support, and the anonymous reviewers for their constructive feedback.
+             REFERENCES
+             PontusAndersson,JimNilsson,PeterShirley,andTomasAkenine-M√∂ller.2021. Visualizingerrorsinrenderedhighdynamic
+                range images. In Eurographics-Short Papers. Eurographics-European Association for Computer Graphics, 25‚Äì28.
+             Pablo Bauszat, Victor Petitjean, and Elmar Eisemann. 2017. Gradient-domain path reusing. ACM Transactions on Graphics
+                (TOG) 36, 6 (2017), 1‚Äì9.
+             Philippe Bekaert, Mateu Sbert, and John H Halton. 2002. Accelerating Path Tracing by Re-Using Paths. Rendering Techniques
+                2, 2002 (2002), 125‚Äì134.
+             Philippe Bekaert, Philipp Slusallek, Ronald Cools, Vlastimil Havran, and Hans-Peter Seidel. 2003. A custom designed density
+                estimation method for light transport. (2003).
+             Nir Benty, Kai-Hwa Yao, Petrik Clarberg, Lucy Chen, Simon Kallweit, Tim Foley, Matthew Oakes, Conor Lavelle, and Chris
+                Wyman.2020. TheFalcor Rendering Framework. https://github.com/NVIDIAGameWorks/Falcor
+             Benedikt Bitterli, Chris Wyman, Matt Pharr, Peter Shirley, Aaron Lefohn, and Wojciech Jarosz. 2020. Spatiotemporal
+                reservoir resampling for real-time ray tracing with dynamic direct lighting. ACM Transactions on Graphics (Proceedings
+                of SIGGRAPH) 39, 4 (July 2020).
+             Min-Te Chao. 1982. A general purpose unequal probability sampling plan. Biometrika 69, 3 (1982), 653‚Äì656.
+             Henrik Halen, Andreas Brinck, Kyle Hayward, and Xiangshun Bei. 2021. Global Illumination Based on Surfels. Talk at
+                ACMSIGGRAPH2021,AdvancesinReal-TimeRenderinginGames. https://www.ea.com/seed/news/siggraph21-global-
+                illumination-surfels
+             Eric Heitz. 2018. Sampling the ggx distribution of visible normals. Journal of Computer Graphics Techniques (JCGT) 7, 4
+                (2018), 1‚Äì13.
+             MarkusKettunen, Daqi Lin, Ravi Ramamoorthi, Thomas Bashford-Rogers, and Chris Wyman. 2023. Conditional resampled
+                importance sampling and ReSTIR. In SIGGRAPH Asia 2023 Conference Papers. 1‚Äì11.
+             MarkusKettunen,MarcoManzi,MiikaAittala,JaakkoLehtinen,Fr√©doDurand,andMatthiasZwicker.2015. Gradient-domain
+                path tracing. ACM Transactions on Graphics (TOG) 34, 4 (2015), 1‚Äì13.
+             DaqiLin,MarkusKettunen,BenediktBitterli,JacopoPantaleoni,CemYuksel,andChrisWyman.2022.GeneralizedResampled
+                Importance Sampling: Foundations of ReSTIR. 41, 4 (2022), 75:1‚Äì75:23. https://doi.org/10.1145/3528223.3530158
+             Zander Majercik, Jean-Philippe Guertin, Derek Nowrouzezahrai, and Morgan McGuire. 2019. Dynamic Diffuse Global
+                Illumination with Ray-Traced Irradiance Fields. Journal of Computer Graphics Techniques (JCGT) 8, 2 (5 June 2019), 1‚Äì30.
+             Thomas M√ºller, Fabrice Rousselle, Jan Nov√°k, and Alexander Keller. 2021. Real-time neural radiance caching for path
+                tracing. arXiv preprint arXiv:2106.12372 (2021).
+             NVIDIA. 2020. NVIDIA Real-Time Denoiser Delivers Best-in-Class Denoising in Ubisoft‚Äôs Watch Dogs Legion.   https:
+                //developer.nvidia.com/blog/nvidia-real-time-denoiser-delivers-best-in-class-denoising-in-watch-dogs-legion/
+             NVIDIA. 2021. RTXDI SDK ‚Äì Light Resampling In Practice. https://developer.nvidia.com/blog/new-video-light-resampling-
+                in-practice-with-rtxdi/. Accessed: 2025-11-29.
+             NVIDIA.2025. DLSS 4: Transforming Real-Time Graphics with AI. https://research.nvidia.com/labs/adlr/DLSS4/. Technical
+                Report.
+             Yaobin Ouyang, Shiqiu Liu, Markus Kettunen, Matt Pharr, and Jacopo Pantaleoni. 2021. ReSTIR GI: Path Resampling for
+                Real-Time Path Tracing. Computer Graphics Forum (2021).
+             RohanSawhney,DaqiLin,MarkusKettunen,BenediktBitterli, Ravi Ramamoorthi, Chris Wyman, and Matt Pharr. 2024.
+                Decorrelating restir samplers via mcmc mutations. ACM Transactions on Graphics 43, 1 (2024), 1‚Äì15.
+             Christoph Schied, Anton Kaplanyan, Chris Wyman, Anjul Patney, Chakravarty R Alla Chaitanya, John Burgess, Shiqiu
+                Liu, Carsten Dachsbacher, Aaron Lefohn, and Marco Salvi. 2017. Spatiotemporal variance-guided filtering: real-time
+                reconstruction for path-traced global illumination. In Proceedings of High Performance Graphics. 1‚Äì12.
+             Justin Talbot, David Cline, and Parris Egbert. 2005. Importance Resampling for Global Illumination. In Eurographics
+                SymposiumonRendering(2005), Kavita Bala and Philip Dutre (Eds.). The Eurographics Association.
+             Daniel Wright, Krzysztof Narkowicz, and Patrick Kelly. 2022. Lumen: Real-time Global Illumination in Unreal Engine 5.
+                Talk at ACM SIGGRAPH2022,AdvancesinReal-TimeRenderinginGames. https://advances.realtimerendering.com/
+                s2022/SIGGRAPH2022-Advances-Lumen-Wright%20et%20al.pdf
+             Chris Wyman, Markus Kettunen, Daqi Lin, Benedikt Bitterli, Cem Yuksel, Wojciech Jarosz, and Pawel Kozlowski. 2023. A
+                gentle introduction to restir path reuse in real-time. In ACM SIGGRAPH 2023 Courses. 1‚Äì38.
+             Chris WymanandAlexeyPanteleev. 2021. Rearchitecting Spatiotemporal Resampling for Production. In High-Performance
+                Graphics - Symposium Papers.
+             Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.
+              ReSTIR PT Enhanced: Algorithmic Advances for Faster and More Robust ReSTIR Path Tracing                    13:19
+              ZhengZeng,ShiqiuLiu, Jinglei Yang, Lu Wang, and Ling-Qi Yan. 2021. Temporally Reliable Motion Vectors for Real-time
+                RayTracing. In Computer Graphics Forum, Vol. 40. Wiley Online Library, 79‚Äì90.
+              SongZhang,DaqiLin,MarkusKettunen,CemYuksel,andChrisWyman.2024. AreaReSTIR:ResamplingforReal-Time
+                Defocus and Antialiasing. ACM Transactions on Graphics (TOG) 43, 4 (2024), 1‚Äì13.
+                                     Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article 13. Publication date: May 2026.

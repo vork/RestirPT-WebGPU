@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.venv/
+validation/.venv/
+validation/out/
+validation/cache/
+validation/assets/downloaded/
+docs/papers/*.pdf
+*.tmp.*
+.DS_Store
+test-results/
+.vite/

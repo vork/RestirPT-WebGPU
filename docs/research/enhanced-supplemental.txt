@@ -1,0 +1,585 @@
+  ReSTIRPTEnhanced:AlgorithmicAdvancesforFasterand
+  MoreRobustReSTIRPathTracing‚ÄìSupplementalDocument
+  DAQILIN,NVIDIA,USA
+  MARKUSKETTUNEN,NVIDIA,Finland
+  CHRISWYMAN,NVIDIA,USA
+  CCSConcepts:‚Ä¢Computingmethodologies‚ÜíRaytracing.
+  Additional Key Words and Phrases: Optimization, Sampling, Light Transport, Real Time
+  ACMReferenceFormat:
+  Daqi Lin, Markus Kettunen, and Chris Wyman. 2026. ReSTIR PT Enhanced: Algorithmic Advances for Faster
+  and More Robust ReSTIR Path Tracing ‚Äì Supplemental Document. Proc. ACM Comput. Graph. Interact. Tech. 9,
+  1 (May 2026), 13 pages. https://doi.org/10.1145/3804494
+  1 LOBE-INDEXEDPATHSANDPRIMARYSAMPLESPACE
+  Modern path tracers often evaluate only a single sampled lobe for each path vertex, effectively
+  splitting the integrand associated with the same geometric path across all lobe combinations. In
+  ReSTIR PT, this separation allows more effective path reuse, as instead of classifying the whole
+  vertex as either rough or (near-)specular, leading to suboptimal reuse decisions, only (near-)specular
+  lobes are postponed with random replay.
+  In addition to sampling a single BSDF lobe to extend the path, each vertex also performs next
+  event estimation (NEE) with all lobes enabled. Therefore, the path space integral can be written as
+  ‚àû  ‚à´
+  ‚àëÔ∏Å‚àëÔ∏Å  ¬Ø  ¬Ø  ¬Ø
+  Ì†µÌ∞º  =  Ì†µÌºî  ¬Ø (x)Ì†µÌ±ì¬Ø(x) dx ,  (1)
+  Œ©  Ì†µÌ±õ(‚Ñì)  ‚Ñì
+  Ì†µÌ±ë=1 ¬Ø  Ì†µÌ±ë
+  ‚Ñì‚ààÌ†µÌ∞ø
+  Ì†µÌ±ë
+  ¬Ø  ¬Ø  Ì†µÌ±ë‚àí1
+  whereeachpathxnowcontainsalobesequence‚Ñì = (‚ÑìÌ†µÌ±ó)Ì†µÌ±ó=1 with ‚ÑìÌ†µÌ±ó ‚àà {0,1,2,...,Ì†µÌ±Ålobe} defining
+  the lobe used at vertex xÌ†µÌ±ó, with a NEE sample (at the last vertex x ) encoded by index 0. Ì†µÌ±Ålobe is
+  Ì†µÌ±ë
+  the maximumnumberofBSDFlobesinavertex,Ì†µÌ∞ø isthesetofallpossiblelobesequences, and
+  ¬Ø  Ì†µÌ±ë
+  Ì†µÌ±õ(‚Ñì) ‚àà {1,2} differentiates between BSDF and NEE sampling (based on ‚Ñì  ) for MIS weights like
+  ¬Ø  Ì†µÌ±ë‚àí1
+  ¬Ø  Ì†µÌ±ùÌ†µÌ±° (x)
+  Ì†µÌºîÌ†µÌ±° (x) =  ¬Ø  ¬Ø . Written out explicitly, the lobe-specific path contribution is
+  Ì†µÌ±ù1(x)+Ì†µÌ±ù2(x)
+  Ì†µÌ±ë‚àí1   
+  ¬Ø  √ñ
+  Ì†µÌ±ì ¬Ø(x) =  Ì†µÌºå  (x  ‚Üíx ‚Üíx )Ì†µÌ∞∫(x ‚Üîx )Ì†µÌ±â(x ‚Üîx ) Ì†µÌ∞ø (x ‚Üíx  ) ,  (2)
+  ‚Ñì  Ì†µÌ±ó =0  ‚ÑìÌ†µÌ±ó  Ì†µÌ±ó +1  Ì†µÌ±ó  Ì†µÌ±ó ‚àí1  Ì†µÌ±ó  Ì†µÌ±ó +1  Ì†µÌ±ó  Ì†µÌ±ó +1  Ì†µÌ±í  Ì†µÌ±ë  Ì†µÌ±ë‚àí1
+  where Ì†µÌºå  is the chosen BSDF lobe ‚Ñì at x for vertices Ì†µÌ±ó ‚â• 1, and the sensor responseÌ†µÌ±ä (x ‚Üí x )
+  ‚ÑìÌ†µÌ±ó  Ì†µÌ±ó  Ì†µÌ±ó  e  1  0
+  for the sensor vertex Ì†µÌ±ó = 0.
+  Inprinciple, this allows a unique mappingtoprimarysamplespaces(PSS)canthenbeestablished,
+  ¬Ø ¬Ø  ¬Ø
+  turningthe (x,‚Ñì) pair into a random numbersequenceu ‚àà Ì†µÌ≤∞  whereÌ†µÌ±ë (pathlength)andÌ†µÌ±° ‚àà {1,2}
+  Ì†µÌ±°,Ì†µÌ±ë
+  Authors‚Äôaddresses:DaqiLin,daqil@nvidia.com,NVIDIA,USA;MarkusKettunen,mkettunen@nvidia.com,NVIDIA,Finland;
+  Chris Wyman, chris.wyman@acm.org, NVIDIA, USA.
+  Please use nonacm option or ACM Engage class to enable CC licenses
+  This work is licensed under a Creative Commons Attribution 4.0 International License.
+  ¬©2026Copyrightheldbytheowner/author(s).
+  ACM2577-6193/2026/5-ART
+  https://doi.org/10.1145/3804494
+  Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article . Publication date: May 2026.
+  2  Daqi Lin, Markus Kettunen, and Chris Wyman
+  (BSDForNEElightsampling) specifies the dimensionality of the primary sample space, giving the
+  integral  ‚à´
+  ‚àû 2
+  ‚àëÔ∏Å‚àëÔ∏Å  ¬Ø  ¬Ø
+  Ì†µÌ∞º  =  Ì†µÌ≤∞  Ì†µÌ∞π (u) du  (3)
+  Ì†µÌ±ë=1 Ì†µÌ±°=1  Ì†µÌ±°,Ì†µÌ±ë
+  ¬Ø  ¬Ø
+  Ì†µÌºî  ¬Ø (Ì†µÌ≤≥  (u))Ì†µÌ±ì¬Ø(Ì†µÌ≤≥  (u))
+  ¬Ø  Ì†µÌ±õ(‚Ñì)  Ì†µÌ±°,Ì†µÌ±ë  ‚Ñì  Ì†µÌ±°,Ì†µÌ±ë
+  where Ì†µÌ∞π(u) =  is the PSS integrand and Ì†µÌ≤≥  is a function that warps the
+  ¬Ø  Ì†µÌ±°,Ì†µÌ±ë
+  Ì†µÌ±ùÌ†µÌ±° (Ì†µÌ≤≥  (u))
+  Ì†µÌ±°,Ì†µÌ±ë  ¬Ø
+  randomsequenceintothelobe-indexedpath.NotethatÌ†µÌ±ùÌ†µÌ±°(Ì†µÌ≤≥ (u)) isthepath-spacesamplingPDF
+  Ì†µÌ±°,Ì†µÌ±ë
+  in the path tracer that accounts for the change of variables between the path space and the PSS.
+  ¬Ø
+  ThePSSsourcePDFÌ†µÌ±ù(u) = 1 for paths directly produced by the path tracer.
+  WithPSSparameterization, the Jacobian determinant for the hybrid shift can be expressed as
+  Ì†µÌ±¶  Ì†µÌ±¶  ‚Ä≤  Ì†µÌ±¶
+  ¬Ø  Ì†µÌ±ù  (Ì†µÌºî  , ‚Ñì  )Ì†µÌ∞∫(y  ‚Üíx )Ì†µÌ±ù (Ì†µÌºî ,‚Ñì )
+  Ì†µÌºïu  =  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  ,  (4)
+  ¬ØÌ†µÌ±•  Ì†µÌ±•  Ì†µÌ±•
+  Ì†µÌºïu  Ì†µÌ±ù  (Ì†µÌºî  , ‚Ñì  )Ì†µÌ∞∫(x  ‚Üíx )Ì†µÌ±ù (Ì†µÌºî ,‚Ñì )
+  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò
+  whereÌ†µÌ±ùÌ†µÌ±•(Ì†µÌºî ,‚Ñì ) ‚â° Ì†µÌ±ù(Ì†µÌºî ,‚Ñì |x ,‚àíÌ†µÌºî  ) is the joint PDF of sampling the direction Ì†µÌºî  = x¬õx  =
+  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò+1
+  ‚àí‚àí‚àí‚àí‚àí‚Üí  ‚àí‚àí‚àí‚àí‚àí‚Üí  Ì†µÌ±•
+  x x  /‚à•x x  ‚à• andlobe‚Ñì atx withoutgoingdirection‚àíÌ†µÌºî  . Other termslikeÌ†µÌ±ù  (Ì†µÌºî  , ‚Ñì  )
+  Ì†µÌ±ò  Ì†µÌ±ò+1  Ì†µÌ±ò  Ì†µÌ±ò+1  ‚Ä≤  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1
+  are similarly defined. Ì†µÌºî  is a shorthand for y¬õx , the direction formed by reconnection. The
+  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1 Ì†µÌ±ò  2
+  single-sided geometry termÌ†µÌ∞∫(x ‚Üí y) is defined as cosÌ†µÌºÉ/||x ‚àí y|| whereÌ†µÌºÉ is the angle made by
+  y¬õx andthenormalaty  . Note that the Jacobian is simply the result of reconnection. Random
+  Ì†µÌ±ò‚àí1 Ì†µÌ±ò  Ì†µÌ±ò‚àí1
+  replay is an identity shift in PSS, therefore having a Jacobian of 1.
+  2 DETAILEDDERIVATIONOFTHEFOOTPRINTTHRESHOLDS
+  Thedualfootprint threshold is
+  Ì†µÌ±•  Ì†µÌ±•  ‚àí1  Ì†µÌ±ê  ||x0 ‚àí x1||2
+  (max(Ì†µÌ±ù  (Ì†µÌºî  )Ì†µÌ∞∫(x  ‚Üíx ),Ì†µÌ±ù (Ì†µÌºî )Ì†µÌ∞∫(x ‚Üí x  )))  ‚â•  
+  ,  (5)
+  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò‚àí1  100 Ì†µÌ±õ ,xdx  /(4Ì†µÌºã)
+  x  1 0
+  1
+  whereÌ†µÌ±ùÌ†µÌ±•  (Ì†µÌºî  ) and Ì†µÌ±ùÌ†µÌ±• (Ì†µÌºî ) are PDFs of sampling Ì†µÌºî  andÌ†µÌºî at x  and x , respectively. The
+  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò‚àí1  Ì†µÌ±ò
+  analysis assumes samples without lobe indices, with marginal PDF for direction sampling available.
+  Thelobe-indexed case is discussed in Section 3.
+  ¬Ø  ¬Ø
+  Weconsider shifting a path x starting from pixel A to a path y in a neighboring pixel B. For any
+  pair of corresponding primary hits x1 and y1, we assume their world-space distance is bounded by
+  ¬Ø
+  the primary ray footprint radius Ì†µÌ±Öx (‚Äúspread at the primary vertex‚Äù [M√ºller et al. 2021]) up to a
+  constant factor,  pri
+  ‚àöÔ∏Ñ  ‚à•x ‚àíx ‚à•2
+  ¬Ø  ¬Ø  0  1
+  |x1 ‚àí y1| < Ì†µÌ∞∂1Ì†µÌ±Öx ,  Ì†µÌ±Öx  =  ,  (6)
+  pri  pri  ‚ü®Ì†µÌ±õ  , xdx ‚ü©/(4Ì†µÌºã)
+  x  1 0
+  1
+  ¬Ø
+  and similarly |x ‚àí y | ‚â§ Ì†µÌ∞∂ Ì†µÌ±Öy . Before reconnection, we further assume that random replay
+  1  1  1 pri
+  produces corresponding vertices x and y on the same (locally flat) surface and that the distances
+  Ì†µÌ±ñ  Ì†µÌ±ñ
+  between them grow at most linearly:
+  |x ‚àíy | < Ì†µÌ∞∂ |x ‚àí y | .  (7)
+  Ì†µÌ±ñ  Ì†µÌ±ñ  2  1  1
+  These bounds reflect that neighboring pixels cannot diverge arbitrarily in a finite scene.
+  ¬Ø
+  For a potential reconnection vertex x on x, connecting from y  instead of x  perturbs the
+  Ì†µÌ±ò  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1
+  Jacobian of the shiftÌ†µÌ±á. A suf√ècient condition for a stable mapping is that the relative change in the
+  area density at x and the relative change in the BSDF sampling density at the next vertex are both
+  Ì†µÌ±ò
+  Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article . Publication date: May 2026.
+  ReSTIR PT Enhanced ‚Äì Supplemental Document  3
+  small. We express this as
+  Ô£±  Ì†µÌ±¶  ‚Ä≤  Ì†µÌ±•  
+  
+  Ô£¥ Ì†µÌ±ù  (Ì†µÌºî  )Ì†µÌ∞∫(y  ‚Üíx )‚àíÌ†µÌ±ù  (Ì†µÌºî  )Ì†µÌ∞∫(x  ‚Üíx )
+  Ô£¥  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò
+  Ô£¥  <Ì†µÌºñ,  (8)
+  Ô£¥  Ì†µÌ±•
+  Ô£¥
+  Ô£¥Ô£≤  Ì†µÌ±ù  (Ì†µÌºî  )Ì†µÌ∞∫(x  ‚Üíx )
+  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò
+  Ì†µÌ±¶  Ì†µÌ±•  
+  Ô£¥  
+  Ô£¥ Ì†µÌ±ùÌ†µÌ±ò (Ì†µÌºîÌ†µÌ±ò) ‚àí Ì†µÌ±ùÌ†µÌ±ò (Ì†µÌºîÌ†µÌ±ò)
+  Ô£¥
+  Ô£¥  <Ì†µÌºñ,  (9)
+  Ô£¥  Ì†µÌ±•
+  Ô£¥  Ì†µÌ±ùÌ†µÌ±ò (Ì†µÌºîÌ†µÌ±ò)
+  Ô£≥  2  Ì†µÌ±•  2
+  ¬Ø  
+  for a small Ì†µÌºñ, which ensures (1 ‚àíÌ†µÌºñ) < Ì†µÌºïÌ†µÌ±á/Ì†µÌºïu  < (1+Ì†µÌºñ) . Our goal is to turn these conditions
+  into simple, local thresholds based on ray footprints and inverse ray footprints.
+  Rayfootprint threshold. The term Ì†µÌ±ùÌ†µÌ±•  (Ì†µÌºî  )Ì†µÌ∞∫(x  ‚Üîx )istheareadensityofthevertexx
+  ¬Ø  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò
+  whenthepathxisgeneratedbypathtracing.Wedenoteitby
+  ¬Ø
+  Ì†µÌ±ùx(x ) ‚â° Ì†µÌ±ùÌ†µÌ±•  (Ì†µÌºî  )Ì†µÌ∞∫(x  ‚Üîx ),  (10)
+  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò
+  ¬Ø
+  andrefer to its inverse 1/Ì†µÌ±ùx(x ) as the ray footprint at x . Intuitively, this footprint measures the
+  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò
+  typical spacing between nearby area samples. Analogously, tracing from y  induces
+  Ì†µÌ±ò‚àí1
+  ¬Ø  Ì†µÌ±¶
+  Ì†µÌ±ùy(x ) ‚â° Ì†µÌ±ù  (Ì†µÌºî‚Ä≤  )Ì†µÌ∞∫(y  ‚Üîx ),  (11)
+  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò
+  andtheleft-hand side of (8) becomes  
+  ¬Ø
+  y  ¬Ø
+  x  
+  Ì†µÌ±ù  (x ) ‚àíÌ†µÌ±ù (x )
+  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  .  (12)
+  ¬Ø
+  Ì†µÌ±ùx(x )
+  Ì†µÌ±ò  Ì†µÌ±ò
+  ¬Ø
+  ¬Ø  y
+  Directly comparing Ì†µÌ±ùx and Ì†µÌ±ù is awkward. Instead, we make the empirical assumption that
+  Ì†µÌ±ò  Ì†µÌ±ò  ¬Ø
+  randomreplay preserves the area density along y, i.e.,
+  ¬Ø    
+  ¬Ø  y
+  Ì†µÌ±ùx(x ) ‚âà Ì†µÌ±ù  Ì†µÌ±á  (x ) ,  (13)
+  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  replay  Ì†µÌ±ò
+  whereÌ†µÌ±á  denotes continuing random replay from y  to produce a vertex near x . Under this
+  replay  Ì†µÌ±ò‚àí1  ¬Ø  Ì†µÌ±ò
+  approximation, (8) is controlled by the variation of a single density function Ì†µÌ±ùy(Ì†µÌ±•) under a small
+  spatial shift:  Ì†µÌ±ò
+  ¬Ø  ¬Ø  
+  y  y  
+  Ì†µÌ±ù  (x ) ‚àíÌ†µÌ±ù (Ì†µÌ±á  (x ))
+  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  replay  Ì†µÌ±ò  .  (14)
+  ¬Ø
+  Ì†µÌ±ùy(Ì†µÌ±á  (x ))
+  Ì†µÌ±ò  replay  Ì†µÌ±ò
+  Wenowassumeafootprint-basedsmoothnessconditionontheareadensity:foranyareasample
+  Ì†µÌ±• with density Ì†µÌ±ùarea(Ì†µÌ±•), the relative change of Ì†µÌ±ùarea inside a disk of radius proportional to the
+  footprint ‚àöÔ∏Å1/Ì†µÌ±ùarea(Ì†µÌ±•) is bounded by Ì†µÌºñ. Formally, there exists a constant Ì†µÌ±ê2 such that if Ì†µÌ±¶,Ì†µÌ±ß satisfy
+  max(‚à•Ì†µÌ±¶ ‚àíÌ†µÌ±•‚à•, ‚à•Ì†µÌ±ß ‚àíÌ†µÌ±•‚à•) < ‚àöÔ∏Ç  Ì†µÌ±ê2  ,  (15)
+  Ì†µÌ±ùarea(Ì†µÌ±•)
+  then  
+  
+  Ì†µÌ±ùarea(Ì†µÌ±ß) ‚àí Ì†µÌ±ùarea(Ì†µÌ±¶)  <Ì†µÌºñ.  (16)
+  Ì†µÌ±ùarea(Ì†µÌ±¶)
+  In words, the density is approximately constant within a footprint-sized neighborhood.
+  Since (according to Equation 7) the distance between x andÌ†µÌ±á  (x ) can be bounded by the
+  primary footprint,  Ì†µÌ±ò  replay  Ì†µÌ±ò
+  ¬Ø
+  y
+  Ì†µÌ±á  (x ) ‚àí x  ‚â§Ì†µÌ±ê Ì†µÌ±Ö  whereÌ†µÌ±ê =Ì†µÌ∞∂ Ì†µÌ∞∂ .  (17)
+  replay  Ì†µÌ±ò  Ì†µÌ±ò  1 pri  1  1 2
+  Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article . Publication date: May 2026.
+  4  Daqi Lin, Markus Kettunen, and Chris Wyman
+  Combining this geometric bound, the smoothness assumption (Equation 15, 16), and all the deriva-
+  tions above, a suf√ècient condition for (8) is
+  ¬Ø  ‚àöÔ∏Ñ  Ì†µÌ±ê2  1  Ì†µÌ±ê2  ¬Ø
+  Ì†µÌ±ê1Ì†µÌ±Öy  <  =‚áí  > 1(Ì†µÌ±Öy )2.  (18)
+  pri  ¬Ø  ¬Ø  pri
+  Ì†µÌ±ùy(x )  Ì†µÌ±ùy(x )  Ì†µÌ±ê2
+  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò
+  ¬Ø
+  Byshift invertibility, the same condition must hold for x, yielding
+  1  Ì†µÌ±ê2
+  1  ¬Ø
+  (Ì†µÌ±ùÌ†µÌ±•  (Ì†µÌºî  )Ì†µÌ∞∫(x  ‚Üíx ))‚àí1 =  >  (Ì†µÌ±Öx )2.  (19)
+  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  ¬Ø  pri
+  Ì†µÌ±ùx(x )  Ì†µÌ±ê2
+  Ì†µÌ±ò  Ì†µÌ±ò
+  In practice, we collapse the constants into a single user parameter Ì†µÌ±ê and obtain the ray footprint
+  threshold, which corresponds to the first term in Equation 5. Increasing Ì†µÌ±ê effectively shrinks
+  the admissible footprint and enforces a more conservative notion of local smoothness, making
+  reconnections rarer but more robust.
+  Inverse ray footprint threshold. The ray footprint threshold controls the change in area density at
+  x , but it does not account for how reconnection affects the BSDF sampling density Ì†µÌ±ùÌ†µÌ±•(Ì†µÌºî ) at the
+  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò
+  next vertex. This effect depends only on the change in outgoing direction ‚àíÌ†µÌºîÌ†µÌ±ò‚àí1, and can be severe
+  for low-roughness glossy materials where the BSDF PDF is sharply peaked.
+  Wetherefore introduce the inverse ray footprint,
+  (Ì†µÌ±ùÌ†µÌ±• (Ì†µÌºî )Ì†µÌ∞∫(x  ‚Üíx ))‚àí1,  (20)
+  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò‚àí1
+  which we interpret as the footprint of a reverse-traced ray from x towards x  . Assuming
+  Ì†µÌ±ò  Ì†µÌ±ò‚àí1
+  approximate reciprocity of the BSDF sampling PDFs for glossy materials,
+  Ì†µÌ±ùÌ†µÌ±• (Ì†µÌºî ) = Ì†µÌ±ù(Ì†µÌºî |x , ‚àíÌ†µÌºî  ) ‚âà Ì†µÌ±ù(‚àíÌ†µÌºî  |x ,Ì†µÌºî ),  (21)
+  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò
+  this inverse footprint is proportional to the area density Ì†µÌ±ù(x  |x ,Ì†µÌºî ) of the hit point of a reverse
+  ray, via  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò
+  Ì†µÌ±ù(‚àíÌ†µÌºî  |x ,Ì†µÌºî ) = Ì†µÌ±ù(x  |x ,Ì†µÌºî )Ì†µÌ∞∫(x ‚Üí x  ).  (22)
+  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò‚àí1
+  Reconnecting from y  instead of x  perturbs this density, and we can reuse the same footprint-
+  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1
+  smoothness argument as above: if  ‚àöÔ∏Ç
+  |y  ‚àíx |<  Ì†µÌ±ê2  ,  (23)
+  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ù(x  |x ,Ì†µÌºî )
+  then  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò
+  
+  Ì†µÌ±ù(y  |x ,Ì†µÌºî ) ‚àí Ì†µÌ±ù(x  |x ,Ì†µÌºî )
+  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò  <Ì†µÌºñ.  (24)
+  Ì†µÌ±ù(x  |x ,Ì†µÌºî )
+  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò
+  Again using the geometric bound and assuming that the geometry term Ì†µÌ∞∫(x  ‚Üíx ) ‚âà
+  Ì†µÌ±ò  Ì†µÌ±ò‚àí1
+  Ì†µÌ∞∫(x ‚Üíy  ) for distant reconnections, we arrive at a condition analogous to the ray footprint
+  Ì†µÌ±ò  Ì†µÌ±ò‚àí1
+  case:  2
+  Ì†µÌ±ê1  ¬Ø
+  (Ì†µÌ±ùÌ†µÌ±• (Ì†µÌºî )Ì†µÌ∞∫(x  ‚Üíx ))‚àí1 >  (Ì†µÌ±Öx )2.  (25)
+  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò‚àí1  Ì†µÌ±ê2  pri
+  3 CONDITIONALVS.MARGINALPDFINFOOTPRINTTHRESHOLD
+  Tohandlemulti-layer material (e.g. material that contains both diffuse and specular components),
+  ReSTIRPTuseslobe-specific connectability [Lin et al. 2022] ‚Äì only the roughness of the sampled
+  lobe is used to test against the roughness threshold. Correspondingly, the lobe index is preserved in
+  reconnection. This yields a Jacobian determinant expressed in Equation 4. Since reconnection does
+  not change the lobe type, it is reasonable to assume that the lobe sampling PMF remains nearly
+  constant (as a result of shifting to a neighboring pixel that has similar material and similar viewing
+  Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article . Publication date: May 2026.
+  ReSTIR PT Enhanced ‚Äì Supplemental Document  5
+  (a) Marginal PDF (default)  (b) Conditional PDF  (c) Reference
+  FLIP: 0.171  FLIP: 0.169
+  Fig. 1. Replacing the ideal conditional PDF with marginal PDF for directional sampling results in
+  shorter reconnection distances for glossy reflection for multi-lobed material as shown in this modified
+  VeachAjarscene, where the reconnection distances shrinks as the diffuse component strength grows.
+  This only results in slight quality loss. Ì†µÌ±ê = 0.02 is used in this example.
+  Fig. 2. Comparison between applying reconnection shift (left) and hybrid shift (right) on a teapot
+  lid with a neural material that represents multiple material layers without explicit lobe or roughness
+  information. Our hybrid shift uses the PDF-based threshold in place of the single-vertex roughness
+  threshold to achieve a similar shift mapping effect, and provides significantly higher quality for the
+  specular reflection.
+  direction) and focus on the change of the direction sampling PDF within the lobe when analyzing
+  the threshold. Ideally, directional sampling PDFs Ì†µÌ±ùÌ†µÌ±•  (Ì†µÌºî  |‚Ñì  ) and Ì†µÌ±ùÌ†µÌ±• (Ì†µÌºî |‚Ñì ) conditioned on
+  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1 Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò
+  the lobes should be used instead of Ì†µÌ±ùÌ†µÌ±•  (Ì†µÌºîÌ†µÌ±ò‚àí1) and Ì†µÌ±ùÌ†µÌ±• (Ì†µÌºîÌ†µÌ±ò), respectively.
+  Ì†µÌ±ò‚àí1  Ì†µÌ±ò
+  In practice, we simply use the marginal directional sampling PDFs (over all lobes) as we found
+  that the quality difference is negligible. This results in the dual footprint threshold in Equation 5
+  wepresented earlier. While this can sometimes cause premature reconnection on materials mixing
+  diffuse and specular components (e.g. plastics), where the specular PDF tested against the threshold
+  is reduced by the diffuse component, the effect is minor (Figure 1): a stronger reduction corresponds
+  to a weaker specular contribution. The practical benefit is that we can reuse the same marginal PDF
+  evaluation already needed for MIS weights, avoiding extra API complexity in the rendering system.
+  4 PDF-BASEDCONNECTIBILITYFORBLACK-BOXMATERIAL
+  For general materials (BSDF), we do not always have a separation of lobes available, and roughness
+  values might not be available. Still, we can modify our thresholds such that it can be used for any
+  black-box material with only BSDF and PDF queries available. The footprint thresholds work as is
+  with BSDF-sampling PDF substituted. To use the roughness threshold, we replace the roughness
+  value with the reciprocal squared solid angle PDF that samples the Ì†µÌºîÌ†µÌ±ò‚àí1 direction (inspired by
+  Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article . Publication date: May 2026.
+  6  Daqi Lin, Markus Kettunen, and Chris Wyman
+  PathTracing  +ReSTIR
+  NoRR  RR  NoRR  RR  Reference
+  Path Tracing  PT+RR  ReSTIRPT  ReSTIRPT+RR
+  Time:  6.1 ms  4.8 ms  12.1 ms  10.2 ms
+  FLIP:  0.914  0.942  0.207  0.222
+  Fig. 3. Applying Russian roulette (RR) on path tracing yields much fewer non-zero pixels in the Veach
+  Ajar scene. However, with spatiotemporal reuse there is only slight noise increase.
+  spherical gaussians):
+  1/(Ì†µÌ±ùÌ†µÌ±•  (Ì†µÌºîÌ†µÌ±ò‚àí1))2 ‚â• Ì†µÌªºmin .  (26)
+  Ì†µÌ±ò‚àí1
+  WefindthatusingthesameÌ†µÌªºmin tunedfortheoriginalroughnessthresholdyieldssatisfyingresults.
+  Intuitively, a large PDF value suggests a glossy reflection which is likely to cause problem for
+  reconnection. For multi-layer black-box material, large PDFs also suggest the "specular lobe" is
+  being sampled. An example on neural material [Zeltner et al. 2024] is shown in Figure 2.
+  5 RIS-BASEDNEEINPRIMARYSPACEPARAMETERIZATION
+  MISWeightswithRIS-Based NEE. WithÌ†µÌ±Ä > 1 (Ì†µÌ±Ä being the candidate count) RIS for NEE, we
+  replace the original single-sample MIS weight in the integrand to multi-sample MIS weight, i.e.
+  ¬Ø  ¬Ø  ¬Ø  ¬Ø  ¬Ø
+  for an NEE path x, Ì†µÌºî1(x) = Ì†µÌ±ÄÌ†µÌ±ù1(x)/(Ì†µÌ±ÄÌ†µÌ±ù1(x) + Ì†µÌ±ù2(x)) where 1 and 2 represents NEE and BSDF
+  light sampling strategy, respectively. Ì†µÌºî2(Ì†µÌ±•) is defined similarly. Note that the actual NEE PDF is
+  unknownduetotheRISprocessandweusetheÌ†µÌ±Ä-sampleMISformulationwiththelightsampling
+  source PDFÌ†µÌ±ù1 assuming the RIS can approximate the quality of fully evaluating all Ì†µÌ±Ä lights in NEE.
+  PSS Implication. We treat the RIS process as a black box and stick to our original primary sample
+  space definition which assumes only one NEE sample is produced with a known PDF. Note that
+  the actual sampling process does not have to be the same as the sampling process the PSS assumes.
+  ¬Ø  ¬Ø  ¬Ø
+  Therefore, the integrand (without lobe indexing) is still Ì†µÌºî1(x)Ì†µÌ±ì (x)/Ì†µÌ±ù1(x) for an NEE light sample,
+  just with a modified MIS weight Ì†µÌºî1 compared to the single sample NEE. The effect of the RIS is
+  incorporated into the UCW. Instead of 1 (assuming no Russian roulette), the UCW of the selected
+  NEEsamplebecomesÌ†µÌ±ä =Ì†µÌ±äRIS Ì†µÌ±ù (Ì†µÌ≤≥(Ì†µÌ±à)) whereÌ†µÌ±à is the hypothetical random numbers that
+  Ì†µÌ±à  Ì†µÌ≤≥(Ì†µÌ±à )  1
+  couldhavegeneratethesamelightsampleintheoriginalsingle-sampleNEEsamplingprocedureand
+  Ì†µÌ±äRIS  is the path-space UCW produced by the RIS process, assuming area measure like in ReSTIR
+  Ì†µÌ≤≥(Ì†µÌ±à )
+  DIis used. The Ì†µÌ±ù1(Ì†µÌ≤≥(Ì†µÌ±à)) term is also the Jacobian that converts between the parameterizations
+  and we can verify that the original NEE sampling hasÌ†µÌ±ä  = 1/Ì†µÌ±ù1(Ì†µÌ≤≥(Ì†µÌ±à)) which cancels the
+  Jacobian to yield 1.  Ì†µÌ≤≥(Ì†µÌ±à )
+  6 RUSSIANROULETTEIMPLEMENTATIONDETAILS
+  Theinitial resampling can often be the most expensive stage in ReSTIR PT due to the code and data
+  divergence in a path tracer. To reduce thread divergence in initial resampling, we apply Russian
+  roulette to reduce the average path length and also lower the chance of excessively long paths.
+  Usually, the primary sample space (PSS) is extended with random numbers for Russian roulette,
+  which can create caveats for shift mapping: naively replaying the random numbers to perform
+  Russian roulette tests in hybrid shift can increase shift failure, as a survived path can sometimes be
+  shifted to a killed path, invalidating the sample.
+  Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article . Publication date: May 2026.
+  ReSTIR PT Enhanced ‚Äì Supplemental Document  7
+  ReSTIR PT (with ReSTIR DI)  ReSTIR PT (Unified DI+GI)
+  Time: 16.0 ms  Time: 13.4 ms  Reference
+  FLIP: 0.390  FLIP: 0.332
+  Fig. 4. By including direct illumination in sampling and disabling ReSTIR DI [Bitterli et al. 2020], the
+  Unified version significantly improves the DI sampling, especially for specular reflection, thanks to
+  hybrid shift and pairwise MIS. Using light tiles for NEE also improved lighting quality of subsequent
+  bounces (reflection of the chair in the second inset). Frame time also reduces due to eliminating a
+  separate ReSTIR pass.
+  (a) Original  (b) Our color noise reduction  (c) Reference
+  (17.0 ms, FLIP: 0.376)  (17.0 ms, FLIP: 0.284)
+  Fig. 5. Evaluation of our color noise reduction method in Zero Day. Ì†µÌ±Ä = 4 for spatial resampling (3
+  spatial neighbors) in this case. By accumulating the vectorized form of resampling weight in spatial
+  reuse, we achieve significant color noise reduction almost for free.
+  Ourapproachis to deterministically select survival when shifting a path. This would require
+  extra Jacobian calculation in a PSS extended with Russian roulette dimensions. We circumvent
+  this complexity by decoupling the definition of primary sample space from the actual sampling
+  process ‚Äì the paths are defined in the original primary sample space without Russian roulette
+  andtheRussianroulette only alters the initial sample‚Äôs PDF. In practice, we change the uniform
+  √é
+  ¬Ø  ¬Ø  Ì†µÌ±ë‚àí1  ¬Ø  ¬Ø
+  Ì†µÌ±ù(u) = 1 to Ì†µÌ±ù(u) =  Ì†µÌ±ñ=1 Ì†µÌ±ûÌ†µÌ±ñ (u) where Ì†µÌ±ûÌ†µÌ±ñ(u) are survival probabilities at each bounce. This way,
+  although Russian roulette can make the initial samples noisier, the ReSTIR PT output quality is
+  affected to a much smaller extent thanks to spatiotemporal reuse (Figure 3).
+  7 INDIVIDUALEVALUATIONSONDI-GIUNIFICATION,COLORNOISEAND
+  DISOCCLUSIONNOISEREDUCTION
+  Figure 4, Figure 5, and Figure 6 present evaluations of our DI‚ÄìGI unification, color noise reduction,
+  anddisocclusion noise reduction methods, respectively.
+  Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article . Publication date: May 2026.
+  8  Daqi Lin, Markus Kettunen, and Chris Wyman
+  (a) Traditional Motion Vectors  (b) Dual Motion Vectors  (c) Reference
+  (8.8 ms, FLIP: 0.259)  (9.1 ms, FLIP: 0.231)
+  Fig. 6. Applying dual motion vectors [Zeng et al. 2021] provides a dramatic reduction of disocclusion
+  noise which is severe in the Veach Ajar due to undersampling. The result contains some correlated
+  noise but does not show "copy-pasting" artifacts.
+  8 RESERVOIRCOMPRESSION
+  Reducing reservoir sizes helps reduce the bandwidth cost inside the reuse passes where each
+  pixel reads its own reservoir from the memory and randomly access the reservoirs in a local
+  neighborhood. Lin et al. [2022] uses 88-byte reservoirs for ReSTIR PT where attributes related to
+  the reconnection vertex occupy a lot of the reservoir size. We found that many of the attributes can
+  be compressed in a lossy format without affecting the quality. We list the details in Algorithm 1
+  whereweshrinkthereservoir size to 64 bytes.
+  Algorithm1Acompressionofthereservoirstructshrinks its size from 88 bytes to 64 bytes.
+  struct Reservoir {
+  float W; float3 F; // F is the integrand, pHat = luminance(F).
+  uint initRandomSeed, rcVertexRandomSeed;
+  float M; uint pathFlags; // Pack M as 8 bit integer into pathflags.
+  uint rcVertexInstanceID, rcVertexPrimitiveIndex;
+  float2 ‚Üí uint rcVertexBarycentrics; // Compress as two 16-bit Unorms.
+  float3 ‚Üí uint rcVertexWi; // Octahedron encoding as two 16-bit Unorms.
+  float3 rcVertexRadiance;
+  float4 ‚Üí float2 rcVertexCachedValues; // Combine the separately stored
+  Jacobian terms Ì†µÌ±ù(Ì†µÌºîÌ†µÌ±ò),Ì†µÌ∞∫(Ì†µÌ±•Ì†µÌ±ò‚àí1,Ì†µÌ±•Ì†µÌ±ò),Ì†µÌ±ù(Ì†µÌºîÌ†µÌ±ò+1) (float3) of the base path into their
+  product (float); NEE Light PDF (float) which is separately used to compute
+  path MIS weight is unchanged.
+  }
+  9 COMPLETEPERFORMANCERESULTS
+  Table 1 provides complete performance results of the four tested scenes at the default 1920√ó1080
+  resolution. Table 2 studies performance scaling across 540p, 1080p, and 2160p render resolutions.
+  Compared with the baseline ReSTIR PT, our ReSTIR PT Enhanced has a smaller cost increase
+  as resolution rises. In particular, our frame time increases by 4.03√ó from 1080p to 2160p (a 4√ó
+  increase of pixels), whereas the baseline‚Äôs frame time increases by 4.57√ó. This is likely because our
+  optimizationsreducepressureonthememorysystem,leadingtobetterscalingathigherresolutions.
+  10 ABLATIONOFFOOTPRINTTHRESHOLDPARAMETERCHOICE
+  AparametersweepforÌ†µÌ±ê for the dual ray footprint threshold is provided in Figure 8. The optimalÌ†µÌ±ê
+  are in the range of 0.005-0.04 across tested scenes with a wide variety of scales and materials, and
+  Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article . Publication date: May 2026.
+  ReSTIR PT Enhanced ‚Äì Supplemental Document  9
+  Table 1. Performance Results: Frame Time and Pass Times (in milliseconds)
+  Scene  Method  Frame  Initial  Temporal  Spatial  ReSTIR DI
+  Time  Sampling  Reuse  Reuse  andothers
+  VeachAjar  Baseline  21.99  3.57  2.99  12.23  3.20
+  +Codemicroop  19.34  3.54  2.19  10.44  3.17
+  +Forced NEE reconnect  15.75  3.98  1.93  6.89  2.95
+  +Replay compaction  13.02  4.16  1.40  4.50  2.96
+  +Paired spatial reuse  12.10  4.56  1.53  2.88  3.13
+  +Russian roulette  10.20  3.17  1.34  2.67  3.02
+  +Unify DI & GI  7.64  2.89  1.29  2.71  0.75
+  +Newthresholds  8.74  3.09  1.72  2.92  1.01
+  +All improvements  9.89  3.14  1.81  3.17  1.77
+  Carousel  Baseline  46.76  17.74  6.88  15.92  6.22
+  +Codemicroop  43.82  17.74  5.70  14.25  6.13
+  +Forced NEE reconnect  40.55  18.02  5.00  11.45  6.08
+  +Replay compaction  36.51  17.17  4.29  8.81  6.24
+  +Paired spatial reuse  32.85  17.35  4.36  4.81  6.33
+  +Russian roulette  20.16  6.29  3.07  4.50  6.30
+  +Unify DI & GI  17.47  8.98  3.10  3.93  1.46
+  +Newthresholds  19.43  10.01  3.62  4.23  1.57
+  +All improvements  20.70  10.12  4.17  4.33  2.08
+  OperaHouse  Baseline  49.29  15.69  7.25  19.10  7.25
+  +CodeMicroop  46.87  16.25  5.82  17.17  7.63
+  +Forced NEE reconnect  43.61  17.78  4.45  13.21  8.17
+  +Replay compaction  40.30  19.35  3.10  9.10  8.75
+  +Paired spatial reuse  38.63  21.13  3.31  5.11  9.08
+  +Russian roulette  22.14  6.30  2.78  4.78  8.28
+  +Unify DI & GI  16.69  9.33  2.48  3.88  1.00
+  +Newthresholds  18.67  8.81  4.30  3.97  1.59
+  +All improvements  19.54  8.96  4.67  4.07  1.84
+  Bathroom  Baseline  24.87  5.34  4.09  11.91  3.53
+  +Codemicroop  21.90  5.26  2.94  10.37  3.33
+  +Forced NEE reconnect  19.10  5.99  2.20  7.36  3.55
+  +Replay compaction  17.41  6.50  1.84  5.55  3.52
+  +Paired spatial reuse  16.49  7.21  1.99  3.63  3.66
+  +Russian roulette  13.59  5.06  1.78  3.38  3.37
+  +Unify DI & GI  10.35  4.69  1.68  3.18  0.80
+  +Newthresholds  11.20  4.80  2.04  3.27  1.09
+  +All improvements  11.99  4.84  2.15  3.35  1.65
+  Average  Baseline  35.73  10.59  5.30  14.79  5.05
+  +Codemicroop  32.98  10.70  4.16  13.06  5.07
+  +Forced NEE reconnect  29.75  11.44  3.40  9.73  5.19
+  +Replay compaction  26.81  11.79  2.66  6.99  5.37
+  +Paired spatial reuse  25.02  12.56  2.80  4.11  5.55
+  +Russian roulette  16.52  5.21  2.24  3.83  5.24
+  +Unify DI & GI  13.04  6.47  2.14  3.43  1.00
+  +Newthresholds  14.51  6.68  2.92  3.60  1.31
+  +All improvements  15.53  6.77  3.20  3.73  1.83
+  Table 2. Performance vs. Resolution. "Ours" includes all our optimizations and quality improvements.
+  Frame time (milliseconds) is reported for each scene and resolution combination.
+  Method  Resolution  VeachAjar Carousel OperaHouse Bathroom Avg.timescaling
+  Baseline  960√ó540  5.75  14.28  13.34  6.53
+  1920√ó1080  21.99  46.76  49.29  24.87  3.65√ó
+  3840√ó2160  97.66  208.63  234.12  114.63  4.57√ó
+  Ours  960√ó540  2.70  6.66  5.26  3.16
+  1920√ó1080  15.53  20.70  19.54  11.99  3.57√ó
+  3840√ó2160  62.34  77.99  82.10  50.13  4.03√ó
+  Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article . Publication date: May 2026.
+  10  Daqi Lin, Markus Kettunen, and Chris Wyman
+  (a) Kitchen  (b) Crown  (c) Bathroom
+  Fig. 7. Scenes
+  (d) Veach Ajar  (e) Burger Restaurant  (f) Bistro Exterior
+  Fig. 8. Ablation of constant Ì†µÌ±ê values for the dual footprint threshold using the FLIP metric, testing
+  Ì†µÌ±ê = 0.005‚Äì0.64 across six scenes with very different scene dimensions and materials. Kitchen, Crown,
+  Bathroom, Veach Ajar, Burger Restaurant, Bistro Exterior achieve minimum FLIP at Ì†µÌ±ê =
+  0.04,0.01,0.02,0.02,0.01,0.005, respectively. This gives a Ì†µÌ±ê = 0.0175 scene average, proving the near-
+  optimal choice of Ì†µÌ±ê = 0.02.
+  Ì†µÌ±ê = 0.005  Ì†µÌ±ê = 0.02  Reference
+  Fig. 9. Ì†µÌ±ê = 0.02 and Ì†µÌ±ê = 0.005 do not have obvious difference for the dual footprint threshold in
+  BurgerRestaurant(nocorrelation reduction technique used in the result).
+  the cross-scene average optimalÌ†µÌ±ê = 0.0175 ‚âà 0.02. We can see that diffuse scenes (e.g. Figure 9) are
+  less sensitive to the Ì†µÌ±ê choice than glossy scenes (e.g. Figure 10).
+  11 ADDITIONALABLATIONSTUDIESOFOURDUALFOOTPRINTTHRESHOLD
+  To further validate the effectiveness of our method, we also compare against two alternative
+  methods to define adaptive thresholds that are directly derived from prior work.
+  Thefirst alternative is directly using the path footprint threshold as in Neural Radiance Cache
+  [M√ºlleretal. 2021]. While this is a good approach for determining when to stop path tracing to read
+  fromtheradiance cache, it is insuf√ècient to function as a robust reconnection threshold, mainly
+  because it does not consider the BSDF of the reconnection vertex. Figure 11 shows a case where the
+  path footprint threshold allows reconnection vertex to be on a delta surface, causing poor caustics
+  quality.
+  Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article . Publication date: May 2026.
+  ReSTIR PT Enhanced ‚Äì Supplemental Document  11
+  Ì†µÌ±ê = 0.005  Ì†µÌ±ê = 0.02  Reference
+  Fig. 10. Ì†µÌ±ê = 0.02 is significantly better than Ì†µÌ±ê = 0.005 for the dual footprint threshold in Kitchen (no
+  correlation reduction technique used in the result).
+  Path footprint  Path footprint  Ours  Reference
+  (Ì†µÌ±ê = 0.02) FLIP: 0.173  (Ì†µÌ±ê = 2) FLIP: 0.219  FLIP: 0.159
+  Fig. 11. Ignoring the reconnection vertex material, the path footprint threshold causes invalid recon-
+  nections on the glass egg and noisy caustics (Ì†µÌ±ê = 0.02) in regions farther from the refractor. Achieving
+  similar caustic quality as ours needs at least Ì†µÌ±ê = 2, which degrades diffuse reflection quality. This
+  meansnoÌ†µÌ±ê value for the path footprint threshold can match our quality in this case.
+  Jacobian bounding  Jacobian bounding  Ours  Reference
+  (Ì†µÌ±ê = 0.02) FLIP: 0.237  (Ì†µÌ±ê = 0.0002) FLIP: 0.234  FLIP: 0.229
+  Fig. 12. As can be shown in this case in Kitchen scene, having two BSDF-sampling PDFs in the
+  threshold test rejects reconnection between glossy surfaces over-aggressively (Ì†µÌ±ê = 0.02 right inset).
+  Whenthethresholding constantÌ†µÌ±ê is lowered to 0.0002, the glossy reflection quality is still a bit worse
+  than our method, meanwhile the noise at the diffuse wall corner (left inset) starts to increase. This
+  meansnoÌ†µÌ±ê value for Jacobian bounding can match our quality in this case.
+  Thesecondalternativeisreplacingthedualfootprintthresholdwithasingle"Jacobianbounding"
+  threshold. Basically Equation 5 is changed into
+  Ì†µÌ±•  Ì†µÌ±•  ‚àí1  Ì†µÌ±ê  ||x0 ‚àí x1||2
+  (Ì†µÌ±ù  (Ì†µÌºî  )Ì†µÌ∞∫(x  ‚Üîx )Ì†µÌ±ù (Ì†µÌºî ))  ‚â•  
+  ,  (27)
+  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò‚àí1  Ì†µÌ±ò  Ì†µÌ±ò  Ì†µÌ±ò  100 Ì†µÌ±õ ,xdx  /(8Ì†µÌºã2)
+  x  1 0
+  1
+  Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article . Publication date: May 2026.
+  12  Daqi Lin, Markus Kettunen, and Chris Wyman
+  wheretheRHSisthatofEquation5multipliedby2Ì†µÌºã (thereciprocal PDF of sampling a hemisphere
+  uniformly) to match the threshold scales after including an additional PDF value in LHS. Intuitively,
+  this bounds the PSS-to-area Jacobian determinant, so that the reconnection is less likely to have ex-
+  treme Jacobians. This method also imitates clamping the spike-inducing Ì†µÌºå(x ‚Üí x ‚Üí x )Ì†µÌ∞∫(x ‚Üî
+  0  1  2  1
+  x )Ì†µÌºå(x ‚Üí x ‚Üí x ) term in VPL contribution [Davidoviƒç et al. 2010; Ha≈°an et al. 2009]. As can
+  2  1  2  3
+  be seen in Figure 12, the Jacobian-bounding method is suboptimal compared to our method as it
+  discourages reconnection between two glossy surfaces too strongly.
+  12 BASELINECOMPARISONWITHANDWITHOUTDECORRELATION
+  Figure 13 provides a three-way comparison between the baseline, our method without the decorre-
+  lation technique (Section 5 of the main paper), and our default method with decorrelation enabled.
+  Comparedtothebaseline, both versions of our method provides the same level of speedup and
+  enhancementofimagequality(whencorrelation is ignored) due to various algorithmic improve-
+  ments. Our decorrelation technique further suppresses correlated noise at a slight performance
+  cost.
+  REFERENCES
+  Benedikt Bitterli, Chris Wyman, Matt Pharr, Peter Shirley, Aaron Lefohn, and Wojciech Jarosz. 2020. Spatiotemporal
+  reservoir resampling for real-time ray tracing with dynamic direct lighting. ACM Transactions on Graphics (Proceedings
+  of SIGGRAPH) 39, 4 (July 2020).
+  Tom√°≈°Davidoviƒç, Jaroslav K≈ôiv√°nek, Milo≈° Ha≈°an, Philipp Slusallek, and Kavita Bala. 2010. Combining global and local
+  virtual lights for detailed glossy illumination. ACM Transactions on Graphics (TOG) 29, 6 (2010), 1‚Äì8.
+  Milo≈° Ha≈°an, Jaroslav K≈ôiv√°nek, Bruce Walter, and Kavita Bala. 2009. Virtual spherical lights for many-light rendering of
+  glossy scenes. In ACM SIGGRAPH Asia 2009 papers. 1‚Äì6.
+  DaqiLin,MarkusKettunen,BenediktBitterli,JacopoPantaleoni,CemYuksel,andChrisWyman.2022.GeneralizedResampled
+  Importance Sampling: Foundations of ReSTIR. 41, 4 (2022), 75:1‚Äì75:23. https://doi.org/10.1145/3528223.3530158
+  Thomas M√ºller, Fabrice Rousselle, Jan Nov√°k, and Alexander Keller. 2021. Real-time neural radiance caching for path
+  tracing. arXiv preprint arXiv:2106.12372 (2021).
+  Tizian Zeltner, Fabrice Rousselle, Andrea Weidlich, Petrik Clarberg, Jan Nov√°k, Benedikt Bitterli, Alex Evans, Tom√°≈°
+  Davidoviƒç, Simon Kallweit, and Aaron Lefohn. 2024. Real-time neural appearance models. ACM Transactions on Graphics
+  43, 3 (2024), 1‚Äì17.
+  ZhengZeng,ShiqiuLiu, Jinglei Yang, Lu Wang, and Ling-Qi Yan. 2021. Temporally Reliable Motion Vectors for Real-time
+  RayTracing. In Computer Graphics Forum, Vol. 40. Wiley Online Library, 79‚Äì90.
+  Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article . Publication date: May 2026.
+  ReSTIR PT Enhanced ‚Äì Supplemental Document  13
+  Spaceship
+  Original ReSTIR PT  Ours (no decorrelation)  OurReSTIRPTEnhanced
+  (37.1 ms, FLIP: 0.321)  (12.1 ms, FLIP: 0.256)  (12.6 ms, FLIP: 0.263)
+  Watercolor
+  Original ReSTIR PT  Ours (no decorrelation)  OurReSTIRPTEnhanced
+  (30.1 ms, FLIP: 0.171)  (13.9 ms, FLIP: 0.166)  (14.5 ms, FLIP: 0.166)
+  ZeroDay
+  Original ReSTIR PT  Ours (no decorrelation)  OurReSTIRPTEnhanced
+  (47.1 ms, FLIP: 0.439)  (20.3 ms, FLIP: 0.407)  (21.4 ms, FLIP: 0.414)
+  Crown
+  Original ReSTIR PT  Ours (no decorrelation)  OurReSTIRPTEnhanced
+  (50.0 ms, FLIP: 0.483)  (16.0 ms, FLIP: 0.436)  (16.4 ms, FLIP: 0.444)
+  Fig. 13. Comparison between original ReSTIR PT [Lin et al. 2022], our method with no decorrelation,
+  andourdefaultmethod.FLIPerrorincreasesslightly because FLIP is relatively insensitive to correlation
+  artifacts, but sensitive to luminance differences introduced by bias.
+  Proc. ACMComput. Graph. Interact. Tech., Vol. 9, No. 1, Article . Publication date: May 2026.

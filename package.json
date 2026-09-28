@@ -1,0 +1,44 @@
+{
+  "name": "webgpu-restir-pt",
+  "private": true,
+  "version": "0.0.1",
+  "description": "ReSTIR PT Enhanced path tracer in WebGPU, statistically validated against Blender Cycles",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project cpu --project node-dawn",
+    "test:chrome": "vitest run --project chrome",
+    "test:all": "vitest run",
+    "smoke:chrome": "tsx validation/harness/run-chrome.ts --smoke",
+    "validate": "tsx validation/harness/validate.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/three": "^0.186.0",
+    "@vitest/browser": "^5.0.2",
+    "@vitest/browser-playwright": "^5.0.2",
+    "@webgpu/types": "^0.1.74",
+    "playwright": "^1.63.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2",
+    "webgpu": "^0.6.1"
+  },
+  "dependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/extensions": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
+    "draco3dgltf": "^1.5.7",
+    "meshoptimizer": "^1.3.0",
+    "mikktspace": "^1.1.1",
+    "three": "^0.186.1",
+    "tweakpane": "^4.0.5"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "webgpu@0.6.1": true
+  }
+}
