@@ -9,6 +9,9 @@
 //   G3  debug (DebugResources.layout)
 // Pipeline variants: colour format × BVH_STATS (compiled lazily when a BVH view is selected) × MT/Woop × the scene's
 // texture binding counts. Switching views never recompiles otherwise (debugMode is a uniform).
+// M3a: renderMode 'pt' (the app's default; the Renderer default stays 'albedo' for the M1 tests) adds the reference path tracer pass (pt-kernel.ts PtFramePass) after `primary`: one
+// sample per pixel per frame, progressive mean into the colour target (replaces the M1 albedo placeholder beauty, which
+// remains available as renderMode 'albedo'). Lights: setLights() (cur/prev light buffers, deterministic alias rebuild).
 import { composeWgsl, createCheckedShaderModule } from '../gpu/wgsl-composer.ts';
 import { shaderSources } from '../shaders/index.ts';
 import type { EnvironmentData, SceneData } from '../scene/types.ts';
@@ -18,6 +21,9 @@ import {
   writeEnvParams, type EnvGpuResources, type EnvParamsCpu,
 } from './env-gpu.ts';
 import { SceneGpu, type BvhBuilder } from './scene-gpu.ts';
+import type { LightData } from '../scene/types.ts';
+import type { LightsUpdate } from './lights-gpu.ts';
+import { PtFramePass } from './pt-kernel.ts';
 import type { TexturePathMode } from './textures-gpu.ts';
 
 export const GBUF_TEXEL_BYTES = 80;
@@ -47,6 +53,12 @@ export interface RendererOptions {
   watertight: boolean;
   accumulate: boolean;
   thrTau: number;
+  /** 'pt': reference path tracer beauty (M3a); 'albedo': the M1 placeholder (albedo on hits, env on misses). */
+  renderMode: 'pt' | 'albedo';
+  /** PT: Cycles max_bounces N. */
+  maxBounces: number;
+  /** PT: Russian roulette (unbiased; off by default, plan §2 rule 11). */
+  rr: boolean;
 }
 
 export interface RendererTargets {
@@ -69,6 +81,9 @@ export interface RendererContext {
 
 interface SceneState {
   gpu: SceneGpu;
+  /** PT pass (undefined while compiling or after a compile error; the albedo placeholder is shown meanwhile). */
+  pt?: PtFramePass;
+  ptPending?: Promise<PtFramePass | undefined>;
   layout: GPUBindGroupLayout;
   group: GPUBindGroup;
   pipelines: Map<string, GPUComputePipeline>;
@@ -88,7 +103,7 @@ export class Renderer {
   readonly device: GPUDevice;
   /** Defaults are the validation path: exact textures and Woop watertight intersection (Möller–Trumbore leaks through
    *  the shared diagonal of a quad; plan §1.3). The interactive app opts into MT explicitly (src/app/integration.ts). */
-  readonly options: RendererOptions = { textureMode: 'validation', watertight: true, accumulate: true, thrTau: THR_TAU };
+  readonly options: RendererOptions = { textureMode: 'validation', watertight: true, accumulate: true, thrTau: THR_TAU, renderMode: 'albedo', maxBounces: 3, rr: false };
   env!: EnvGpuResources;
   sceneData: SceneData | undefined;
   origin: [number, number, number] = [0, 0, 0];
@@ -141,14 +156,17 @@ export class Renderer {
       });
       const state = this.makeState(gpu);
       const key = this.variantKey(this.targets?.t.colorFormat ?? 'rgba32float', false);
+      const ptP = this.compilePt(state, (this.targets?.t.colorFormat ?? 'rgba32float') as GPUTextureFormat);
       const pipe = await this.compile(state, key);
-      if (gen !== this.generation) { gpu.destroy(); return undefined; }
-      if (!pipe) { gpu.destroy(); throw new Error(this.lastError ?? 'primary pipeline failed'); }
+      await ptP;
+      if (gen !== this.generation) { state.pt?.destroy(); gpu.destroy(); return undefined; }
+      if (!pipe) { state.pt?.destroy(); gpu.destroy(); throw new Error(this.lastError ?? 'primary pipeline failed'); }
       state.pipelines.set(key, pipe);
       const old = this.state;
       this.state = state;
       this.sceneData = scene;
       this.origin = origin;
+      old?.pt?.destroy();
       old?.gpu.destroy();
       this.lastError = undefined;
       return gpu;
@@ -162,6 +180,7 @@ export class Renderer {
     const texChanged = o.textureMode !== undefined && o.textureMode !== this.options.textureMode;
     const wtChanged = o.watertight !== undefined && o.watertight !== this.options.watertight;
     Object.assign(this.options, o);
+    this.state?.pt?.setSettings({ maxBounces: this.options.maxBounces, rr: this.options.rr });
     if (!this.sceneData) return;
     if (texChanged || wtChanged) await this.setScene(this.sceneData, this.origin);
   }
@@ -175,6 +194,34 @@ export class Renderer {
     const layout = this.device.createBindGroupLayout({ label: 'primary-g1-scene', entries: gpu.layoutEntries(GPUShaderStage.COMPUTE) });
     const group = this.device.createBindGroup({ label: 'primary-g1-scene', layout, entries: gpu.bindGroupEntries() });
     return { gpu, layout, group, pipelines: new Map(), pending: new Map() };
+  }
+
+  /** Compile the PT pass for `state` (never throws; errors go to lastError and the placeholder beauty stays). */
+  private compilePt(state: SceneState, colorFormat: GPUTextureFormat): Promise<PtFramePass | undefined> {
+    if (state.ptPending && state.pt?.colorFormat === colorFormat) return state.ptPending;
+    const p = (async () => {
+      try {
+        const pt = await PtFramePass.create(this.device, state.gpu, this.env, colorFormat, {
+          maxBounces: this.options.maxBounces, rr: this.options.rr, features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures,
+        });
+        const tg = this.targets;
+        if (tg) pt.setTargets({ width: tg.t.width, height: tg.t.height, color: tg.t.color, frameUniforms: tg.t.frameUniforms });
+        state.pt?.destroy();
+        state.pt = pt;
+        return pt;
+      } catch (e) {
+        this.lastError = `PT: ${e instanceof Error ? e.message : String(e)}`;
+        console.error(e);
+        return undefined;
+      }
+    })();
+    state.ptPending = p;
+    return p;
+  }
+
+  /** Analytic lights for the PT (stable ids; the alias table is rebuilt only when powers or the set change). */
+  setLights(lights: readonly LightData[]): LightsUpdate | undefined {
+    return this.state?.pt?.setLights(lights);
   }
 
   private variantKey(colorFormat: string, stats: boolean): string { return `${colorFormat}|${stats ? 'stats' : 'plain'}`; }
@@ -245,6 +292,7 @@ export class Renderer {
     const next = await createEnvResources(this.device, env, 'env');
     const old = this.env;
     this.env = next;
+    this.state?.pt?.setEnvironment(next);
     if (this.targets) this.targets.frameGroup = this.frameGroup(this.targets.t);
     destroyEnvResources(old);
   }
@@ -289,6 +337,9 @@ export class Renderer {
       ],
     });
     this.targets = { t, gbuf, accum, vbuf, group, frameGroup: this.frameGroup(t) };
+    const s = this.state;
+    if (s?.pt && s.pt.colorFormat !== t.colorFormat) void this.compilePt(s, t.colorFormat);
+    else s?.pt?.setTargets({ width: t.width, height: t.height, color: t.color, frameUniforms: t.frameUniforms });
   }
 
   get gbuffer(): GPUBuffer | undefined { return this.targets?.gbuf; }
@@ -302,8 +353,9 @@ export class Renderer {
    */
   encode(
     encoder: GPUCommandEncoder,
-    frame: { advanced: boolean; debugMode: number; debugGroup: GPUBindGroup },
+    frame: { advanced: boolean; debugMode: number; debugGroup: GPUBindGroup; /** skip the PT pass (primary timing) */ noPt?: boolean },
     timestamps?: () => GPUComputePassTimestampWrites | undefined,
+    ptTimestamps?: () => GPUComputePassTimestampWrites | undefined,
   ): boolean {
     const s = this.state;
     const tg = this.targets;
@@ -330,6 +382,10 @@ export class Renderer {
     pass.setBindGroup(3, frame.debugGroup);
     pass.dispatchWorkgroups(Math.ceil(tg.t.width / 8), Math.ceil(tg.t.height / 8));
     pass.end();
+    // PT beauty after the primary pass (same jitter/seed; overwrites the placeholder colour). Skipped for BVH-stat views.
+    if (this.options.renderMode === 'pt' && s.pt && !frame.noPt && !isBvhStatsView(frame.debugMode)) {
+      s.pt.encode(encoder, { advanced: frame.advanced, accumulate: this.options.accumulate }, ptTimestamps?.());
+    }
     return true;
   }
 
@@ -346,7 +402,7 @@ export class Renderer {
     const read = this.device.createBuffer({ size: n * 8, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
     const enc = this.device.createCommandEncoder({ label: 'primary-timing' });
     for (let i = 0; i < iterations; i++) {
-      this.encode(enc, { advanced: false, debugMode: 0, debugGroup }, () => ({ querySet: qs, beginningOfPassWriteIndex: 2 * i, endOfPassWriteIndex: 2 * i + 1 }));
+      this.encode(enc, { advanced: false, debugMode: 0, debugGroup, noPt: true }, () => ({ querySet: qs, beginningOfPassWriteIndex: 2 * i, endOfPassWriteIndex: 2 * i + 1 }));
     }
     enc.resolveQuerySet(qs, 0, n, res, 0);
     enc.copyBufferToBuffer(res, 0, read, 0, n * 8);
@@ -369,12 +425,20 @@ export class Renderer {
       out.push(`isect ${g.watertight ? 'Woop (watertight)' : 'Möller–Trumbore'}  textures ${this.options.textureMode} ${mib(g.stats.textureBytes)} MiB  geom ${mib(g.stats.geometryBytes)} MiB`);
     }
     out.push(envMemoryReport(this.env).text + (this.env.present ? `  γ ${(this.env.params.rotationZ * 180 / Math.PI).toFixed(1)}° s ${this.env.params.strength}` : ''));
+    const pt = this.state?.pt;
+    if (this.options.renderMode === 'pt') {
+      const l = pt?.lights.summary();
+      out.push(pt
+        ? `PT max_bounces ${pt.settings.maxBounces}${pt.settings.rr ? ' RR' : ''}  lights ${l!.analytic} analytic + ${l!.emissiveTriangles} emissive tris (Mode ${pt.lights.lightMode})`
+        : 'PT: compiling (albedo placeholder shown)');
+    }
     if (this.loading) out.push('renderer: uploading / compiling ...');
     if (this.lastError) out.push(`renderer error: ${this.lastError.split('\n')[0]}`);
     return out;
   }
 
   destroy(): void {
+    this.state?.pt?.destroy();
     this.state?.gpu.destroy();
     if (this.targets) { this.targets.gbuf.destroy(); this.targets.accum.destroy(); this.targets.vbuf.destroy(); }
     destroyEnvResources(this.env);

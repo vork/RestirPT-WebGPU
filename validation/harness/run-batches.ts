@@ -4,6 +4,8 @@
 //   npx tsx validation/harness/run-batches.ts --package validation/scenes/c0b_512 --spp 64 --batches 4 --check
 //   npx tsx validation/harness/run-batches.ts --package validation/scenes/c0p_512 --frames 0,1,2 --check
 //   npx tsx validation/harness/run-batches.ts --scene /validation/assets/cornell/cornell.usda --spp 16 --batches 2
+//   npx tsx validation/harness/run-batches.ts --package validation/scenes/cornell_i_512 --kernel pt --spp 256 --batches 16
+//     (M3a reference PT; --max-bounces N overrides the package's render.maxBounces, --rr, --technique mis|nee|bsdf)
 // If the package directory is missing and --make-c0b is given, an equivalent C0b package (calib_scenes.py make_c0b:
 // 100 m emissive quad at z = −2, L_e = (0.5, 0.25, 0.125)·2, vfov 40°, 512²) is written with exportScenePackage to
 // validation/out/tmp-c0b/ and rendered instead.
@@ -19,7 +21,8 @@ import { createServer, type ViteDevServer } from 'vite';
 import { decodePFM } from '../../src/core/io/pfm.ts';
 import { exportScenePackage } from '../../src/core/scene/scene-package.ts';
 import type { SceneData } from '../../src/core/scene/types.ts';
-import type { RenderBatchesReport } from './batch-run.ts';
+import type { RenderBatchesReport, ValidationKernel } from './batch-run.ts';
+import type { PtTechnique } from '../../src/core/render/pt-kernel.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const OUT = path.join(ROOT, 'validation/out');
@@ -41,6 +44,9 @@ const { values: args } = parseArgs({
     frames: { type: 'string' },
     check: { type: 'boolean', default: false },
     'make-c0b': { type: 'boolean', default: false },
+    'max-bounces': { type: 'string' },
+    rr: { type: 'boolean', default: false },
+    technique: { type: 'string' },
   },
 });
 
@@ -145,7 +151,9 @@ async function main(): Promise<number> {
       let rep: RenderBatchesReport;
       try {
         rep = await page.evaluate((o) => window.__harness!.renderBatches(o), {
-          run: runId, package: pkgUrl, sceneUrl: args.scene, kernel: args.kernel as 'emission', spp: Number(args.spp), batches: Number(args.batches),
+          run: runId, package: pkgUrl, sceneUrl: args.scene, kernel: args.kernel as ValidationKernel, spp: Number(args.spp), batches: Number(args.batches),
+          maxBounces: args['max-bounces'] !== undefined ? Number(args['max-bounces']) : undefined, rr: args.rr,
+          technique: args.technique as PtTechnique | undefined,
           width: args.width ? Number(args.width) : undefined, height: args.height ? Number(args.height) : undefined, seed, chromeVersion, frame,
         });
       } finally {

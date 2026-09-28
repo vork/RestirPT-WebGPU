@@ -79,6 +79,15 @@ export interface AppHooks {
   hudLines?(app: App): string[];
 }
 
+export interface BeforeFrameInfo {
+  now: number;
+  /** Wall-clock seconds since the previous frame (unclamped) and the clamped camera dt. */
+  rawDt: number;
+  dt: number;
+  /** The frame index advances this frame (not paused, or a single step). */
+  advance: boolean;
+}
+
 export interface RenderSettings {
   resolution: ResolutionPreset;
   colorFormat: ColorFormat;
@@ -155,6 +164,10 @@ export class App {
   /** Same counters since start, never reset, plus how many frames were actually read back (gates use these). */
   readonly runTotals = { nan: 0, inf: 0, bvhOverflow: 0, bvhItercap: 0, queueOverflow: 0, probeOverflow: 0, framesRead: 0 };
   axesHandle: number | undefined;
+  /** Called at the start of every frame, before the camera update and the uniforms (editor, timeline). */
+  readonly beforeFrame = new Set<(f: BeforeFrameInfo) => void>();
+  /** While true the frame loop submits no GPU work (e.g. a Cycles reference render holds the GPU, plan §7.5). */
+  suspended = false;
 
   static async create(opts: AppOptions): Promise<App> {
     const gpu = opts.gpu ?? await createGpuContext(navigator.gpu, { label: 'app' });
@@ -451,7 +464,7 @@ export class App {
   private readonly tick = (now: number): void => {
     if (!this.running) return;
     requestAnimationFrame(this.tick);
-    if (this.fatal) return;
+    if (this.fatal || this.suspended) { this.lastT = undefined; return; }
     try {
       this.frame(now);
     } catch (e) {
@@ -472,6 +485,7 @@ export class App {
     const r = this.render;
     const advance = !r.paused || this.stepPending;
     this.stepPending = false;
+    for (const cb of this.beforeFrame) cb({ now, rawDt, dt, advance });
     const reset = this.resetPending;
     this.resetPending = false;
     if (reset) { this.frameIndex = 0; this.totals.nan = this.totals.inf = 0; this.hooks.onResetHistory?.(this); }

@@ -6,6 +6,7 @@ import { encodePFM } from '../../src/core/io/pfm.ts';
 import { sha256Hex } from '../../src/core/io/zlib.ts';
 import { BatchAccumulator, type SubmitBudget } from '../../src/core/render/batch-accumulator.ts';
 import { EMISSION_COUNTERS, EmissionKernel } from '../../src/core/render/emission-kernel.ts';
+import { PT_COUNTERS, PtKernel, type PtTechnique } from '../../src/core/render/pt-kernel.ts';
 import { createEnvResources, destroyEnvResources, writeEnvParams } from '../../src/core/render/env-gpu.ts';
 import { computeRenderOrigin } from '../../src/core/render/frame-uniforms.ts';
 import { SceneGpu } from '../../src/core/render/scene-gpu.ts';
@@ -15,7 +16,8 @@ import type { SceneData } from '../../src/core/scene/types.ts';
 import { isUsdName, loadUsd } from '../../src/core/scene/usd/load-usd.ts';
 import { packageSha256, uploadFile } from './export-package.ts';
 
-export type ValidationKernel = 'emission';
+/** 'emission': M2 length-1 kernel; 'pt': the M3a reference path tracer (Mode A, env BSDF-only). */
+export type ValidationKernel = 'emission' | 'pt';
 
 export interface RenderBatchesOptions {
   /** Output directory name under validation/out/ (safe path component). */
@@ -39,6 +41,12 @@ export interface RenderBatchesOptions {
   watertight?: boolean;
   /** Also upload mean.pfm (mean over all batches; compare.py ignores it, marker_check.py --image uses it). Default true. */
   writeMean?: boolean;
+  /** kernel 'pt': Cycles max_bounces (default: the package's render.maxBounces, else 3). */
+  maxBounces?: number;
+  /** kernel 'pt': Russian roulette (default off; RR is unbiased but not part of Cycles-parity semantics). */
+  rr?: boolean;
+  /** kernel 'pt': estimator (default 'mis'; 'nee'/'bsdf' are the T9d single-technique estimators). */
+  technique?: PtTechnique;
 }
 
 export interface RenderBatchesReport {
@@ -90,7 +98,7 @@ async function loadSource(o: RenderBatchesOptions): Promise<{ scene: SceneData; 
 export async function renderBatches(ctx: GpuContext, o: RenderBatchesOptions): Promise<RenderBatchesReport> {
   const t0 = performance.now();
   const errors: string[] = [];
-  if (o.kernel !== 'emission') throw new Error(`unknown kernel ${o.kernel}`);
+  if (o.kernel !== 'emission' && o.kernel !== 'pt') throw new Error(`unknown kernel ${o.kernel}`);
   if (!(o.spp >= 1 && o.batches >= 1)) throw new Error('spp and batches must be ≥ 1');
   const { device, features, wgslLanguageFeatures } = ctx;
   const src = await loadSource(o);
@@ -101,13 +109,23 @@ export async function renderBatches(ctx: GpuContext, o: RenderBatchesOptions): P
   const gpu = await SceneGpu.create(device, src.scene, origin, { textureMode: 'validation', watertight, features, wgslLanguageFeatures });
   const env = await createEnvResources(device, src.scene.env);
   if (src.frame?.env) writeEnvParams(device, env, src.frame.env);
-  const kernel = await EmissionKernel.create(device, gpu, env, { features, wgslLanguageFeatures });
-  kernel.setView({ camera: { camToWorld: src.camera.camToWorld as number[], yfov: src.camera.yfov }, width: W, height: H, runSeed: o.seed });
+  const view = { camera: { camToWorld: src.camera.camToWorld as number[], yfov: src.camera.yfov }, width: W, height: H, runSeed: o.seed };
+  const pkgBounces = typeof src.source.maxBounces === 'number' ? src.source.maxBounces : undefined;
+  const maxBounces = o.maxBounces ?? pkgBounces ?? 3;
+  const lightMode = src.source.lightMode === 'B' ? 'B' : 'A';
+  if (o.kernel === 'pt' && lightMode !== 'A') errors.push('kernel pt: Mode B is M3b (rendering as Mode A)');
+  const kernel = o.kernel === 'pt'
+    ? await PtKernel.create(device, gpu, env, { features, wgslLanguageFeatures, maxBounces, rr: o.rr ?? false, technique: o.technique ?? 'mis', lightMode: 'A' })
+    : await EmissionKernel.create(device, gpu, env, { features, wgslLanguageFeatures });
+  kernel.setView(view);
+  const ptInfo = kernel instanceof PtKernel
+    ? { maxBounces, rr: kernel.settings.rr, technique: kernel.settings.technique, lightMode, lights: kernel.lights.summary() }
+    : undefined;
   const acc = new BatchAccumulator(device, W, H, o.budget);
   const tSetup = performance.now();
 
   const files: string[] = [];
-  const counters = { nonFinite: 0, bvhOverflow: 0, bvhItercap: 0 };
+  const counters = { nonFinite: 0, bvhOverflow: 0, bvhItercap: 0, negative: 0 };
   const submits = { total: 0, maxMs: 0, overBudget: 0, overHardCap: 0, perBatch: [] as number[] };
   const batchMs: number[] = [];
   try {
@@ -116,6 +134,7 @@ export async function renderBatches(ctx: GpuContext, o: RenderBatchesOptions): P
       counters.nonFinite += r.counters[EMISSION_COUNTERS.nonFinite];
       counters.bvhOverflow += r.counters[EMISSION_COUNTERS.bvhOverflow];
       counters.bvhItercap += r.counters[EMISSION_COUNTERS.bvhItercap];
+      if (o.kernel === 'pt') counters.negative += r.counters[PT_COUNTERS.negative];
       submits.total += r.submits; submits.maxMs = Math.max(submits.maxMs, r.maxSubmitMs);
       submits.overBudget += r.overBudget; submits.overHardCap += r.overHardCap; submits.perBatch.push(r.submits);
       batchMs.push(r.wallMs);
@@ -131,12 +150,14 @@ export async function renderBatches(ctx: GpuContext, o: RenderBatchesOptions): P
     kernel.destroy(); acc.destroy(); gpu.destroy(); destroyEnvResources(env);
   }
   if (counters.nonFinite) errors.push(`${counters.nonFinite} NaN/Inf samples (T15)`);
+  if (counters.negative) errors.push(`${counters.negative} negative samples (T15)`);
   if (counters.bvhOverflow || counters.bvhItercap) errors.push(`BVH overflow ${counters.bvhOverflow}, iteration cap ${counters.bvhItercap}`);
   if (submits.overHardCap) errors.push(`${submits.overHardCap} submits above the 200 ms hard cap`);
 
   const config = {
     kernel: o.kernel, sppPerBatch: o.spp, width: W, height: H, jitter: 'iid-per-run', filter: 'box-1px',
     scene: src.source.packageSha256 ?? src.source.fileSha256, frame: o.frame ?? null, textureMode: 'validation', intersector: watertight ? 'woop-watertight' : 'moller-trumbore',
+    ...(ptInfo ? { maxBounces: ptInfo.maxBounces, rr: ptInfo.rr, technique: ptInfo.technique, lightMode: 'A', env: 'bsdf-only (sampling_method NONE equivalent)' } : {}),
   };
   const configHash = await sha256Hex(new TextEncoder().encode(stable(config)));
   const info = describeContext(ctx) as { vendor?: string; architecture?: string; description?: string };
@@ -149,9 +170,14 @@ export async function renderBatches(ctx: GpuContext, o: RenderBatchesOptions): P
     adapterInfo: { vendor: info.vendor, architecture: info.architecture, description: info.description },
     // replicate identifiers for compare.py (confirmatory re-runs need disjoint seeds)
     seeds: Array.from({ length: o.batches }, (_, b) => `${o.seed}:${b}`),
-    sampleIndexing: 'batch b = run-global samples [b*sppPerBatch, (b+1)*sppPerBatch); jitter = rand2(pcg3d(seed, k, pixelIndex).x, 0, STREAM_JITTER)',
+    sampleIndexing: 'batch b = run-global samples [b*sppPerBatch, (b+1)*sppPerBatch); jitter = rand2(pcg3d(seed, k, pixelIndex).x, 0, STREAM_JITTER)'
+      + (o.kernel === 'pt' ? '; path stream = pcg3d(pcg3d(seed, k, pixelIndex).x, vertex*16 + slot, STREAM_PATH).x (math.md#rng-layout)' : ''),
     image: { format: 'PFM RGB float32', rowOrder: 'PFM bottom-to-top (decodes to row 0 = top)', value: 'batch mean radiance' },
-    scene: { ...src.source, triangles: src.scene.geometry.indices.length / 3, cameraVisibleLights: kernel.cameraVisibleLights, env: !!src.scene.env, origin },
+    scene: {
+      ...src.source, triangles: src.scene.geometry.indices.length / 3, env: !!src.scene.env, origin,
+      ...(kernel instanceof EmissionKernel ? { cameraVisibleLights: kernel.cameraVisibleLights } : {}),
+    },
+    ...(ptInfo ? { pt: ptInfo } : {}),
     counters, submits,
     timings: { loadMs: tLoad - t0, setupMs: tSetup - tLoad, batchMs, totalMs: performance.now() - t0 },
     files, ok: errors.length === 0, errors,

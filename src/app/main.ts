@@ -2,6 +2,7 @@
 // ?scene=<url>&env=<url> override it, ?pattern=1 keeps the analytic test pattern (shell tests, tests/app/e2e-app.ts).
 import { createGpuContext } from '../core/gpu/device.ts';
 import { App, type AppHooks } from './app.ts';
+import { installEditor } from './editor/index.ts';
 import { createIntegration, type Integration } from './integration.ts';
 import type { SceneLoader } from './loader.ts';
 
@@ -31,6 +32,7 @@ export async function boot(loader?: SceneLoader, hooks?: AppHooks): Promise<App>
   window.__integration = integration;
   const app = await App.create({ canvas, ui, gpu, loader: loader ?? integration?.loader, hooks: hooks ?? integration?.hooks });
   window.__app = app;
+  if (integration) installEditor(app, integration); // M3a light editor, timeline, compare view
   app.start();
   if (integration && !q.has('scene')) {
     const url = new URL(DEFAULT_SCENE_URL, location.href).href;

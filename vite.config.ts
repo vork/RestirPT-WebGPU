@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
+import { referenceEndpointPlugin } from './validation/harness/reference-endpoint.ts';
 import { harnessUploadPlugin } from './validation/harness/upload-middleware.ts';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
@@ -17,7 +18,8 @@ export default defineConfig({
       'three', 'three/examples/jsm/loaders/EXRLoader.js', 'tweakpane',
     ],
   },
-  plugins: [harnessUploadPlugin(`${root}validation/out`)],
+  // Both plugins are dev-only (apply: 'serve'); /api/reference spawns headless Blender for "Export for Cycles".
+  plugins: [harnessUploadPlugin(`${root}validation/out`), referenceEndpointPlugin({ root })],
   build: {
     target: 'es2023',
     rolldownOptions: {

@@ -14,6 +14,7 @@ import { loadEnvironment, type EnvLoadMode } from '../core/scene/env/load-env.ts
 import { loadScene as loadGltfScene } from '../core/scene/load-scene.ts';
 import { loadUsd } from '../core/scene/usd/load-usd.ts';
 import type { EnvironmentData, SceneData } from '../core/scene/types.ts';
+import { ensureLightStore, type LightStore } from '../core/scene/light-store.ts';
 import type { App, AppHooks } from './app.ts';
 import { DEG } from './camera-math.ts';
 import { extensionOf, type SceneLoader } from './loader.ts';
@@ -41,6 +42,12 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
   let resolveReady!: () => void;
   const sceneReady = new Promise<void>((r) => { resolveReady = r; });
   let pendingScenes = 0;
+  // Analytic lights (M3a): the scene's LightStore is the single source of truth (editor, animation, loaders write it).
+  // Changes only mark the lights dirty; renderFrame pushes store.list() to the renderer ONCE per frame, which is the one
+  // place the cur/prev light buffers flip (id maps + alias rebuild only when the powers/set changed).
+  let lightStore: LightStore | undefined;
+  let lightUnsub: (() => void) | undefined;
+  let lightsDirty = false;
 
   const ensure = (app: App): Promise<Renderer> => {
     rendererP ??= (async () => {
@@ -48,7 +55,7 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
       for (const v of EXTRA_VIEWS) if (!app.debug.registry.get(v.id)) app.registerDebugView(v);
       app.render.jitter = 'iid'; // plan §1.2: i.i.d. per-run/per-frame jitter; the panel offers R2 and pixel centre
       const r = await Renderer.create({ device: gpu.device, debugLayout: app.debug.layout, features: gpu.features, wgslLanguageFeatures: gpu.wgslLanguageFeatures },
-        { watertight: false }); // interactive default: MT (the panel toggles Woop; validation paths default to Woop)
+        { watertight: false, renderMode: 'pt' }); // interactive default: MT (the panel toggles Woop; validation paths default to Woop); PT beauty (M3a)
       renderer = r;
       if (app.targets) r.resize(app.targets);
       addRendererPanel(app, r);
@@ -59,15 +66,22 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
   };
 
   const renderFrame: AppHooks['renderFrame'] = (encoder, ctx) => {
-    renderer?.encode(encoder, { advanced: ctx.advanced, debugMode: ctx.debug.mode, debugGroup: ctx.targets.debug.bindGroup }, () => ctx.timestamps('primary'));
+    if (lightsDirty && lightStore && renderer?.setLights(lightStore.list())) lightsDirty = false;
+    renderer?.encode(encoder, { advanced: ctx.advanced, debugMode: ctx.debug.mode, debugGroup: ctx.targets.debug.bindGroup }, () => ctx.timestamps('primary'), () => ctx.timestamps('pt'));
   };
 
   const adoptScene = async (app: App, scene: SceneData, origin: [number, number, number]) => {
     const r = await ensure(app);
     pendingScenes++;
     try {
+      const store = ensureLightStore(scene); // before the upload: scene.lights mirrors the store (stable ids)
       const g = await r.setScene(scene, origin);
       if (!g) return; // superseded by a newer scene
+      lightUnsub?.();
+      lightStore = store;
+      lightsDirty = true;
+      // Any light change restarts the PT accumulation (M5 replaces this by the temporal light-change handling).
+      lightUnsub = store.onChange(() => { lightsDirty = true; app.resetHistory(); });
       if (g.warnings.length) app.loading.warn(...g.warnings);
       // Scene-scaled default ranges for the distance views (the registry entries are the live defaults).
       const diag = boundsDiagonal(scene.bounds);
@@ -155,6 +169,11 @@ function addRendererPanel(app: App, r: Renderer): void {
     .on('change', () => { if (r.sceneData) reupload(); });
   f.addBinding(o, 'watertight', { label: 'watertight (Woop)' }).on('change', () => { if (r.sceneData) reupload(); });
   f.addBinding(o, 'accumulate', { label: 'accumulate' }).on('change', () => app.resetHistory());
+  // M3a reference path tracer (PT) vs the M1 albedo placeholder; bounce count and Russian roulette.
+  f.addBinding(o, 'renderMode', { label: 'mode', options: { 'PT (reference)': 'pt', 'albedo (M1)': 'albedo' } }).on('change', () => app.resetHistory());
+  f.addBinding(o, 'maxBounces', { label: 'max bounces', min: 0, max: 13, step: 1 })
+    .on('change', () => { void r.setOptions({ maxBounces: o.maxBounces }); app.resetHistory(); });
+  f.addBinding(o, 'rr', { label: 'Russian roulette' }).on('change', () => { void r.setOptions({ rr: o.rr }); app.resetHistory(); });
   if (import.meta.env.DEV) addExportFolder(app, r);
 }
 
