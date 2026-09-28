@@ -961,3 +961,51 @@ def plant_detection(stack: np.ndarray, spec: GateSpec, plant_fn: Callable[[np.nd
                 significant_rate=sig / n_repeats, mdb_global_median=float(np.median(mdb_y)),
                 detected=fails >= required, powered=ctrl_pass >= required,
                 calibrated=bool(fails >= required and ctrl_pass >= required))
+
+
+def rendered_plant_detection(ref: Replicates, planted: Replicates, spec: GateSpec, n_repeats: int = 10,
+                             rng: np.random.Generator | int | None = 0, required: int | None = None) -> dict:
+    """Rendered (real) plant: the planted replicates come from a separate render of the planted scene on seeds
+    disjoint from `ref` (the caller checks disjointness). In each repeat `ref` is split into disjoint halves A/B
+    and a half-size subset P of `planted` is drawn; P vs B must FAIL (detected) and A vs B must PASS (powered),
+    both in ≥ `required` (default ⌈0.9·n_repeats⌉) repeats — the same rule as plant_detection.
+    Also reported: which gating checks failed on the planted side (equivalence vs rejection-type), the planted
+    Δ (P vs B) and the control MDBs (global, tile max/median) per channel."""
+    rng = np.random.default_rng(rng)
+    required = required if required is not None else math.ceil(0.9 * n_repeats)
+    sp = spec.with_(min_replicates=2)
+    h = min(ref.n // 2, planted.n)
+    fails = ctrl_pass = sig = equiv_fail = 0
+    failed_names: dict[str, int] = {}
+    deltas: dict[str, list[float]] = {ch: [] for ch in sp.channels}
+    mdb_g: dict[str, list[float]] = {ch: [] for ch in sp.channels}
+    mdb_tmax: dict[str, list[float]] = {ch: [] for ch in sp.channels}
+    mdb_tmed: dict[str, list[float]] = {ch: [] for ch in sp.channels}
+    for _ in range(n_repeats):
+        a, b = _halves(ref.n, rng)
+        p = np.sort(rng.permutation(planted.n)[:h])
+        r_plant = evaluate_gate(planted.subset(p), ref.subset(b[:h]), sp)
+        r_ctrl = evaluate_gate(ref.subset(a[:h]), ref.subset(b[:h]), sp)
+        fails += not r_plant.passed
+        ctrl_pass += r_ctrl.passed
+        sig += significant(r_plant)
+        equiv_fail += any(c["name"] in EQUIVALENCE_CHECKS and c["gating"] and not c["passed"] for c in r_plant.checks)
+        for n in r_plant.summary["failed_checks"]:
+            failed_names[n] = failed_names.get(n, 0) + 1
+        for ch in sp.channels:
+            deltas[ch].append(r_plant.summary["channels"][ch]["global_"]["rel"])
+            cc = r_ctrl.summary["channels"][ch]
+            mdb_g[ch].append(cc["global_"]["mdb"])
+            mdb_tmax[ch].append(cc["tiles"]["mdb_max"])
+            mdb_tmed[ch].append(cc["tiles"]["mdb_median"])
+    med = lambda v: float(np.median([x for x in v if x is not None])) if any(x is not None for x in v) else None  # noqa: E731
+    per_ch = {ch: dict(planted_global_rel_median=med(deltas[ch]), mdb_global_median=med(mdb_g[ch]),
+                       mdb_tile_max_median=med(mdb_tmax[ch]), mdb_tile_median_median=med(mdb_tmed[ch]))
+              for ch in sp.channels}
+    return dict(n_repeats=n_repeats, required=required, half_size=h, n_ref=ref.n, n_planted=planted.n,
+                gate_fail_count=fails, equivalence_fail_count=equiv_fail, control_pass_count=ctrl_pass,
+                significant_count=sig, gate_fail_rate=fails / n_repeats, control_pass_rate=ctrl_pass / n_repeats,
+                failed_checks_histogram=dict(sorted(failed_names.items(), key=lambda kv: -kv[1])),
+                channels=per_ch, mdb_global_median=per_ch[sp.channels[0]]["mdb_global_median"],
+                detected=fails >= required, powered=ctrl_pass >= required,
+                calibrated=bool(fails >= required and ctrl_pass >= required))

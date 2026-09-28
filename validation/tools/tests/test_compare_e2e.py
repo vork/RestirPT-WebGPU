@@ -172,6 +172,29 @@ def test_e2e_calibrate_mode(tmp_path):
     assert all(p["calibrated"] for p in cal["plants"])
 
 
+def test_e2e_calibrate_rendered_plant(tmp_path):
+    """--planted: an independently 'rendered' plant (fresh noise, disjoint seeds) is detected and the unplanted
+    control passes; a null 'plant' is not detected; overlapping seeds are an input error."""
+    rng = np.random.default_rng(21)
+    base = base_image(H, W)
+    r = write_ref(tmp_path / "ref", replicate_stack(rng, 16, base, 0.12), range(16))
+    p = write_ref(tmp_path / "plant", replicate_stack(rng, 16, base * 1.0075, 0.12), range(500, 516))
+    n = write_ref(tmp_path / "null", replicate_stack(rng, 16, base, 0.12), range(600, 616))
+    t = write_test(tmp_path, masks=[], calibration={"plants": []})
+    out = tmp_path / "cal"
+    assert run(["--calibrate", "--ref", r, "--planted", p, "--test", t, "--out", out]) == 0
+    rep = json.loads((out / "report.json").read_text())
+    assert rep["calibration"]["plants"] == []                     # explicit [] disables the synthetic plants
+    rp = rep["calibration"]["rendered_plant"]
+    assert rp["detected"] and rp["powered"] and rp["calibrated"] and rp["equivalence_fail_count"] >= 9
+    assert abs(rp["channels"]["Y"]["planted_global_rel_median"] - 0.0075) < 0.002
+    assert rep["inputs"]["planted"]["n"] == 16
+    assert run(["--calibrate", "--ref", r, "--planted", n, "--test", t, "--out", tmp_path / "null_out"]) == 1
+    assert not json.loads((tmp_path / "null_out" / "report.json").read_text())["calibration"]["rendered_plant"]["detected"]
+    o = write_ref(tmp_path / "overlap", replicate_stack(rng, 16, base, 0.12), range(8, 24))
+    assert run(["--calibrate", "--ref", r, "--planted", o, "--test", t, "--out", tmp_path / "ov"]) == 2
+
+
 def test_cli_subprocess_exit_codes(dirs):
     tmp, base, ours, ref = dirs
     o = write_ours(tmp / "ours", ours, range(100, 116))

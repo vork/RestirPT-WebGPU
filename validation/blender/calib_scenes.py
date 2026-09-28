@@ -77,6 +77,7 @@ def write_env_exr(path: Path, texels_bottom_up_rgba: np.ndarray) -> None:
     spec.channelnames = ("R", "G", "B", "A")
     spec.alpha_channel = 3
     spec.attribute("compression", "zip")
+    spec.attribute("DateTime", "")  # no capDate header: byte-identical regeneration (package hash = cache key)
     out = oiio.ImageOutput.create(str(path))
     if out is None or not out.open(str(path), spec) or not out.write_image(rgba):
         raise OSError(f"{path}: {oiio.geterror()}")

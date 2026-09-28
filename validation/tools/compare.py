@@ -5,6 +5,7 @@ Modes
   compare (default)  compare.py --ours DIR --ref DIR --test test.json --out DIR [--frame F] [--rerun-of report.json]
   curve              compare.py --curve --ours DIR --ref DIR --test test.json --out DIR
   calibrate (Gate 1) compare.py --calibrate --ref DIR --test test.json --out DIR [--splits 20] [--repeats 10]
+                     [--planted DIR]   (+ a rendered plant on disjoint seeds that must be detected vs --ref)
 
 Input directories (one replicate set each; the first matching layout wins):
   batch_###.{pfm,exr}  PT batch means (ours)             + meta.json
@@ -469,6 +470,28 @@ def default_plants(stage: str) -> list[dict]:
     return [dict(name="W x1.003", kind="scale", factor=1.003)]
 
 
+def rendered_plant(args, sr: Source, spec: S.GateSpec, stack: np.ndarray, masks, mask_names, frame) -> dict:
+    """--planted: a separately rendered planted scene (e.g. Cycles light x1.0075) vs --ref. The seed sets must be
+    known and disjoint (independent replicates; a shared seed would correlate the two sides and void Welch)."""
+    sp = discover(args.planted, frame)
+    rs, ps = seed_labels(sr), seed_labels(sp)
+    if rs is None or ps is None:
+        raise InputError("--planted: seeds unknown on one side (need seed_###/f*_s* names or meta 'seeds')")
+    common = sorted(set(rs) & set(ps))
+    if common:
+        raise InputError(f"--planted: seed sets overlap with --ref ({common[:8]}); render the plant on disjoint seeds")
+    pstack = load_stack(sp)
+    if pstack.shape[1:] != stack.shape[1:]:
+        raise InputError(f"--planted: image shape {pstack.shape[1:]} != ref {stack.shape[1:]}")
+    tiles = sorted({16, 32, 64, spec.tile})
+    ref_r = S.aggregate_stack(stack, spec.channels, tiles, masks, mask_names)
+    pl_r = S.aggregate_stack(pstack, spec.channels, tiles, masks, mask_names)
+    r = S.rendered_plant_detection(ref_r, pl_r, spec, n_repeats=args.repeats, rng=args.seed + 101)
+    r.update(name=args.plant_name or sp.meta.get("package_name") or sp.dir.name, seeds_ref=rs, seeds_planted=ps,
+             _source=sp.describe(), _provenance=provenance(sp))
+    return r
+
+
 def run_calibrate(args, test: dict, test_dir: Path, out: Path) -> int:
     from report import render_index
 
@@ -481,7 +504,9 @@ def run_calibrate(args, test: dict, test_dir: Path, out: Path) -> int:
     tiles = sorted({16, 32, 64, spec.tile})
     reps = S.aggregate_stack(stack, spec.channels, tiles, masks, mask_names)
     aa = S.aa_split(reps, spec, n_splits=args.splits, rng=args.seed)
-    plants_cfg = (test.get("calibration") or {}).get("plants") or default_plants(spec.stage)
+    cal = test.get("calibration") or {}
+    # an explicit "plants": [] disables the synthetic plants (e.g. a rendered-plant-only calibration)
+    plants_cfg = cal["plants"] if isinstance(cal.get("plants"), list) else default_plants(spec.stage)
     ymean = S.tile_means(S.channelize(stack.mean(axis=0), ("Y",)), 32)[..., 0]
     results = []
     ok = aa["ok"]
@@ -501,11 +526,19 @@ def run_calibrate(args, test: dict, test_dir: Path, out: Path) -> int:
         r.update(name=p.get("name", f"{kind} x{factor}"), kind=kind, factor=factor, region=region)
         results.append(r)
         ok &= r["calibrated"]
+    rendered = None
+    inputs, prov = dict(ref=sr.describe()), dict(ref=provenance(sr))
+    if args.planted is not None:
+        rendered = rendered_plant(args, sr, spec, stack, masks, mask_names, frame)
+        inputs["planted"], prov["planted"] = rendered.pop("_source"), rendered.pop("_provenance")
+        ok &= rendered["calibrated"]
     report = dict(tool="compare.py", version=1, mode="calibrate", created=_now(),
                   test=dict(test, path=str(args.test), sha256=_sha256(args.test)), notes=notes, spec=spec.to_json(),
-                  inputs=dict(ref=sr.describe()), provenance=dict(ref=provenance(sr)),
-                  calibration=dict(aa=aa, plants=results), gate_passed=bool(ok), status="pass" if ok else "fail",
-                  failed_checks=([] if aa["ok"] else ["aa_split"]) + [f"plant:{r['name']}" for r in results if not r["calibrated"]])
+                  inputs=inputs, provenance=prov,
+                  calibration=dict(aa=aa, plants=results, rendered_plant=rendered), gate_passed=bool(ok),
+                  status="pass" if ok else "fail",
+                  failed_checks=([] if aa["ok"] else ["aa_split"]) + [f"plant:{r['name']}" for r in results if not r["calibrated"]]
+                  + ([] if rendered is None or rendered["calibrated"] else [f"rendered_plant:{rendered['name']}"]))
     write_json(out / "report.json", report)
     render_index(jsonable(report), out)
     return 0 if ok else 1
@@ -522,6 +555,9 @@ def main(argv=None) -> int:
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument("--curve", action="store_true", help="convergence mode (prefix means at N = 2^k)")
     mode.add_argument("--calibrate", action="store_true", help="Gate 1: A/A re-splits + planted biases on --ref")
+    ap.add_argument("--planted", type=Path, default=None,
+                    help="calibrate: separately rendered planted replicates (disjoint seeds) that must be detected vs --ref")
+    ap.add_argument("--plant-name", default=None, help="label of the --planted plant in report.json")
     ap.add_argument("--splits", type=int, default=20, help="A/A re-splits (>= 20)")
     ap.add_argument("--repeats", type=int, default=10, help="plant repeats (detect >= 9/10)")
     ap.add_argument("--seed", type=int, default=0, help="RNG seed for re-splits")

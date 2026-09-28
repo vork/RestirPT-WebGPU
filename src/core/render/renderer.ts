@@ -86,7 +86,9 @@ interface TargetState {
 
 export class Renderer {
   readonly device: GPUDevice;
-  readonly options: RendererOptions = { textureMode: 'validation', watertight: false, accumulate: true, thrTau: THR_TAU };
+  /** Defaults are the validation path: exact textures and Woop watertight intersection (Möller–Trumbore leaks through
+   *  the shared diagonal of a quad; plan §1.3). The interactive app opts into MT explicitly (src/app/integration.ts). */
+  readonly options: RendererOptions = { textureMode: 'validation', watertight: true, accumulate: true, thrTau: THR_TAU };
   env!: EnvGpuResources;
   sceneData: SceneData | undefined;
   origin: [number, number, number] = [0, 0, 0];

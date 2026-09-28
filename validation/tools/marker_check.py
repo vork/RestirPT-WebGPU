@@ -2,6 +2,7 @@
 
   marker_check.py <render_dir> [--package DIR] [--tol-px 0.1] [--json]
   marker_check.py --image img.exr --package DIR --frame 0
+  marker_check.py --batch-dir validation/out/<run> --package DIR --frame 0   (run-batches.ts output; see check_batch_dir)
 
 <render_dir> is a render_reference.py output (manifest.json names the package and the EXRs); the renderer's
 own EXR/PFM outputs can be checked with --image. Expected answers live in the package's scene.json "expected"
@@ -41,7 +42,15 @@ def marker_centroid(img: np.ndarray, window: list[int], cls: list[float], thresh
     return {"mass": mass, "centroid_px": [float((w * xs).sum() / mass), float((w * ys).sum() / mass)], "class_cos": cos}
 
 
-def check_frame(img: np.ndarray, expected: dict[str, Any], frame_exp: dict[str, Any], tol_px: float | None = None) -> dict[str, Any]:
+MASS_TOL = 0.02  # |mass ratio - 1| (plus MASS_K standard errors when the image's noise is known)
+MASS_K = 3.0
+
+
+def check_frame(img: np.ndarray, expected: dict[str, Any], frame_exp: dict[str, Any], tol_px: float | None = None,
+                mass_se: dict[str, float] | None = None) -> dict[str, Any]:
+    """mass_se: per-marker standard error of the mass ratio of `img` (from replicate batches, see check_batch_dir);
+    the mass check then allows MASS_TOL + MASS_K·se (the ratio is a thresholded sum: pure Monte Carlo noise can move
+    it by several % at a few thousand spp for the small pole markers)."""
     kind = expected["kind"]
     H, W = img.shape[:2]
     rgb = img[..., :3].astype(np.float64)
@@ -78,8 +87,12 @@ def check_frame(img: np.ndarray, expected: dict[str, Any], frame_exp: dict[str, 
                     out["failures"].append(f"{m['name']}: centroid error {rec['err_px']:.4f} px > {tol}")
                 if r["class_cos"] < 0.99:
                     out["failures"].append(f"{m['name']}: colour {r['class_cos']:.3f} not along class {m['class']}")
-                if rec["mass_ratio"] is not None and abs(rec["mass_ratio"] - 1) > 0.02:
-                    out["failures"].append(f"{m['name']}: mass ratio {rec['mass_ratio']:.4f} (expected 1 ± 0.02)")
+                se = (mass_se or {}).get(m["name"])
+                mtol = MASS_TOL + (MASS_K * se if se is not None and np.isfinite(se) else 0.0)
+                if se is not None:
+                    rec["mass_se"], rec["mass_tol"] = se, mtol
+                if rec["mass_ratio"] is not None and abs(rec["mass_ratio"] - 1) > mtol:
+                    out["failures"].append(f"{m['name']}: mass ratio {rec['mass_ratio']:.4f} (expected 1 ± {mtol:.4f})")
             results.append(rec)
         out["markers"] = results
         out["max_err_px"] = max((r["err_px"] for r in results), default=None)
@@ -128,17 +141,58 @@ def check_render_dir(render_dir: Path, package: Path | None = None, tol_px: floa
             "failures": [f"{r['file']}: {f}" for r in per for f in r["failures"]], "per_render": per}
 
 
+def check_batch_dir(batch_dir: Path, package: Path, frame: int = 0, tol_px: float | None = None) -> dict[str, Any]:
+    """run-batches.ts output (batch_###.pfm + mean.pfm): the gating check is on mean.pfm (all batches), with the
+    mass-ratio tolerance widened by MASS_K standard errors estimated from the spread of the per-batch ratios
+    (se = sd/sqrt(B)). Every batch must also pass the noise-free parts exactly (constant images, probes).
+    Per-batch centroid spread is reported (centroid_se_px) but not gated: batches are noisier than the mean."""
+    sj = json.loads((package / "scene.json").read_text())
+    exp = sj["expected"]
+    fe = exp["frames"][str(frame)]
+    batches = sorted(batch_dir.glob("batch_*.pfm"))
+    per = [check_frame(read_image(b, drop_alpha=True), exp, fe, tol_px) for b in batches]
+    mass_se: dict[str, float] = {}
+    cen_se: dict[str, float] = {}
+    if len(per) >= 2 and exp["kind"] == "markers":
+        for name in {r["name"] for p in per for r in p.get("markers", [])}:
+            ratios = [r["mass_ratio"] for p in per for r in p["markers"] if r["name"] == name and r["mass_ratio"] is not None]
+            cents = [r["got_px"] for p in per for r in p["markers"] if r["name"] == name and r["got_px"] is not None]
+            if len(ratios) >= 2:
+                mass_se[name] = float(np.std(ratios, ddof=1) / np.sqrt(len(ratios)))
+            if len(cents) >= 2:
+                cen_se[name] = float(np.linalg.norm(np.std(np.asarray(cents), axis=0, ddof=1)) / np.sqrt(len(cents)))
+    res = check_frame(read_image(batch_dir / "mean.pfm", drop_alpha=True), exp, fe, tol_px, mass_se or None)
+    for r in res.get("markers", []):
+        if r["name"] in cen_se:
+            r["centroid_se_px"] = cen_se[r["name"]]
+    exact = ("constant:", "probe ")
+    for b, p in zip(batches, per):
+        res["failures"] += [f"{b.name}: {f}" for f in p["failures"] if f.startswith(exact)]
+    res["batches"] = len(batches)
+    res["batch_max_const_err"] = max((p.get("max_abs_err", 0.0) for p in per), default=None)
+    res["batch_max_probe_err"] = max((p["probe_max_err"] for p in per), default=None)
+    res["ok"] = not res["failures"]
+    res["package"] = sj.get("name")
+    res["frame"] = frame
+    return res
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("render_dir", nargs="?", type=Path)
     ap.add_argument("--package", type=Path)
     ap.add_argument("--image", type=Path)
+    ap.add_argument("--batch-dir", type=Path, help="run-batches.ts output dir (mean.pfm gated, noise from batch_*.pfm)")
     ap.add_argument("--frame", type=int, default=0)
     ap.add_argument("--tol-px", type=float)
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
     try:
-        if args.image:
+        if args.batch_dir:
+            if not args.package:
+                raise ValueError("--batch-dir needs --package")
+            res = check_batch_dir(args.batch_dir, args.package, args.frame, args.tol_px)
+        elif args.image:
             if not args.package:
                 raise ValueError("--image needs --package")
             sj = json.loads((args.package / "scene.json").read_text())

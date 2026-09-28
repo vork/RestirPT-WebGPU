@@ -1,0 +1,170 @@
+{
+ "format": "restir-scene-package",
+ "version": 1,
+ "name": "spot_c0d_blend0.16_512",
+ "source": {
+  "uri": "validation/scenes/make-spot-c0d.ts"
+ },
+ "buffers": {
+  "positions": {
+   "offset": 0,
+   "length": 48,
+   "dtype": "f32",
+   "components": 3
+  },
+  "normals": {
+   "offset": 48,
+   "length": 48,
+   "dtype": "f32",
+   "components": 3
+  },
+  "uv0": {
+   "offset": 96,
+   "length": 32,
+   "dtype": "f32",
+   "components": 2
+  },
+  "indices": {
+   "offset": 128,
+   "length": 24,
+   "dtype": "u32",
+   "components": 3
+  },
+  "triMaterial": {
+   "offset": 152,
+   "length": 8,
+   "dtype": "u32",
+   "components": 1
+  },
+  "triFlags": {
+   "offset": 160,
+   "length": 8,
+   "dtype": "u32",
+   "components": 1
+  }
+ },
+ "flatShaded": true,
+ "materials": [
+  {
+   "name": "floor",
+   "model": "v1",
+   "baseColorFactor": [
+    0.5,
+    0.5,
+    0.5,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 1,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 0,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.5,
+     0.5,
+     0.5
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  }
+ ],
+ "textures": [],
+ "lights": [
+  {
+   "id": 0,
+   "name": "spot",
+   "type": "spot",
+   "color": [
+    1,
+    1,
+    1
+   ],
+   "power": 100,
+   "exposure": 0,
+   "matrix": [
+    0.9396926164627075,
+    0.3420201539993286,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    0,
+    -0.3420201539993286,
+    0.9396926164627075,
+    0,
+    0,
+    0,
+    1,
+    0,
+    1
+   ],
+   "spotSize": 1.0471975511965976,
+   "spotBlend": 0.16,
+   "visibleToCamera": false
+  }
+ ],
+ "lightMode": "A",
+ "camera": {
+  "matrix": [
+   1,
+   0,
+   0,
+   0,
+   0,
+   0.5881716976750462,
+   -0.8087360843031886,
+   0,
+   0,
+   0.8087360843031886,
+   0.5881716976750462,
+   0,
+   0.45,
+   2.2,
+   1.6,
+   1
+  ],
+  "yfov": 0.7853981633974483,
+  "znear": 0.0001
+ },
+ "env": null,
+ "render": {
+  "width": 512,
+  "height": 512,
+  "maxBounces": 0
+ },
+ "plant": {
+  "of": "spot_c0d_512",
+  "what": "spotBlend 0.15 -> 0.16"
+ }
+}

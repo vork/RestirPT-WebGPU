@@ -79,7 +79,7 @@ interface Rig {
   W: number; H: number; origin: [number, number, number];
 }
 
-async function rig(scene: SceneData, W: number, H: number, watertight = false): Promise<Rig> {
+async function rig(scene: SceneData, W: number, H: number, watertight = true): Promise<Rig> {
   const { device, features, wgslLanguageFeatures } = await getTestGpu();
   const debug = new DebugResources(device);
   await debug.init();

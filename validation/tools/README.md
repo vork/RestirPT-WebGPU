@@ -17,7 +17,7 @@ Run the tests:
 validation/.venv/bin/python -m pytest validation/tools/tests -q
 ```
 
-The suite has 45 tests and runs in about 6 s.
+The suite has 46 tests and runs in about 6 s.
 
 ## CLI
 
@@ -33,6 +33,9 @@ compare.py --curve --ours OURS_DIR --ref REF_DIR --test test.json --out OUT_DIR
 
 # Gate 1 calibration on one replicate set: >= 20 A/A re-splits + delta-scale plants (detect >= 9/10)
 compare.py --calibrate --ref REF_DIR --test test.json --out OUT_DIR [--splits 20] [--repeats 10] [--seed 0]
+
+# ... plus a RENDERED plant (e.g. Cycles light power x1.0075) on seeds disjoint from REF_DIR
+compare.py --calibrate --ref REF_DIR --planted PLANT_DIR --test test.json --out OUT_DIR [--plant-name NAME]
 ```
 
 ### Input directory layouts
@@ -180,6 +183,15 @@ Stage defaults (plan §7.3):
   - A: ×1.0075, plus a +3% 32² block on the brightest 32-aligned block;
   - B/dyn: ×1.003.
   - The c_p+1 MIS plant needs the renderer, so it is out of scope here.
+  - `"calibration": {"plants": []}` (an explicit empty list) disables the synthetic plants.
+- **`--planted DIR`** (`rendered_plant_detection`) adds a plant that was *rendered*, e.g. the scene with light power
+  ×1.0075 or spot blend 0.16 rendered by Cycles:
+  - the seed sets of `--ref` and `--planted` must be known and **disjoint** (input error otherwise): a shared seed
+    would correlate the two sides and void Welch's independence assumption;
+  - each of the `--repeats` repeats splits `--ref` into halves A/B and draws a half-size subset P of the planted set;
+    P vs B must fail (`detected`) and A vs B must pass (`powered`), both in ≥ 9/10 repeats, as for synthetic plants;
+  - `report.json` → `calibration.rendered_plant` also records how many planted failures were equivalence (TOST)
+    failures, a histogram of the failed checks, the median planted Δ and the control MDBs (global, tile max/median).
 
 ## What the tests establish (synthetic data, known truth)
 

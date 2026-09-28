@@ -47,7 +47,8 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
       for (const [tag, name] of PRIMARY_PROBE_TAGS) registerProbeTag(tag, name);
       for (const v of EXTRA_VIEWS) if (!app.debug.registry.get(v.id)) app.registerDebugView(v);
       app.render.jitter = 'iid'; // plan §1.2: i.i.d. per-run/per-frame jitter; the panel offers R2 and pixel centre
-      const r = await Renderer.create({ device: gpu.device, debugLayout: app.debug.layout, features: gpu.features, wgslLanguageFeatures: gpu.wgslLanguageFeatures });
+      const r = await Renderer.create({ device: gpu.device, debugLayout: app.debug.layout, features: gpu.features, wgslLanguageFeatures: gpu.wgslLanguageFeatures },
+        { watertight: false }); // interactive default: MT (the panel toggles Woop; validation paths default to Woop)
       renderer = r;
       if (app.targets) r.resize(app.targets);
       addRendererPanel(app, r);

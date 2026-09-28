@@ -164,11 +164,12 @@ async function main(): Promise<number> {
       console.log(`     mean image ${mean.width}x${mean.height}, channel means ${ch.map((x) => x.toPrecision(7)).join(', ')}`);
       if (args.check && pkgDir) {
         if (!existsSync(PYTHON) || !existsSync(MARKER_CHECK)) { console.log('     SKIP marker_check.py (venv or tool missing)'); continue; }
-        for (const img of ['mean.pfm', 'batch_000.pfm']) {
-          const r = await run(PYTHON, [MARKER_CHECK, '--image', path.join(dir, img), '--package', pkgDir, '--frame', String(frame ?? 0)]);
-          console.log(`     marker_check ${img}: ${r.code === 0 ? 'PASS' : 'FAIL'}\n${r.out.trim().split('\n').map((l) => `       ${l}`).join('\n')}`);
-          if (r.code !== 0) failures++;
-        }
+        // mean.pfm is gated (centroids, probes, stray mass, and mass ratios with a noise-aware tolerance from the
+        // per-batch spread); every batch must match the exact parts (constant images, probes). One batch alone is
+        // too noisy for the thresholded pole-marker mass (marker_check.py check_batch_dir).
+        const r = await run(PYTHON, [MARKER_CHECK, '--batch-dir', dir, '--package', pkgDir, '--frame', String(frame ?? 0)]);
+        console.log(`     marker_check mean.pfm + ${args.batches} batches: ${r.code === 0 ? 'PASS' : 'FAIL'}\n${r.out.trim().split('\n').map((l) => `       ${l}`).join('\n')}`);
+        if (r.code !== 0) failures++;
       }
     }
   } finally {
