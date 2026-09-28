@@ -1,0 +1,481 @@
+#usda 1.0
+(
+    defaultPrim = "root"
+    doc = "Blender v5.1.2"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+def Xform "root" (
+    customData = {
+        dictionary Blender = {
+            bool generated = 1
+        }
+    }
+)
+{
+    float3 xformOp:rotateXYZ = (-90, -0, 0)
+    uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]
+
+    def Xform "Spot60"
+    {
+        custom string userProperties:blender:object_name = "Spot60"
+        float3 xformOp:rotateXYZ = (34.999996, 0.0000019141469, 44.999996)
+        float3 xformOp:scale = (0.99999994, 1, 1)
+        double3 xformOp:translate = (2, -2, 3.5)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        def SphereLight "Spot60" (
+            prepend apiSchemas = ["ShapingAPI"]
+        )
+        {
+            float3[] extent = [(-0, -0, -0), (0, 0, 0)]
+            bool inputs:enableColorTemperature = 1
+            float inputs:intensity = 95.492966
+            bool inputs:normalize = 1
+            float inputs:radius = 0
+            float inputs:shaping:cone:angle = 30.000002
+            float inputs:shaping:cone:softness = 0.15
+            bool treatAsPoint = 1
+            custom string userProperties:blender:data_name = "Spot60"
+        }
+    }
+
+    def Xform "BoxB"
+    {
+        custom string userProperties:blender:object_name = "BoxB"
+        float3 xformOp:rotateXYZ = (0, -0, 30.000002)
+        float3 xformOp:scale = (0.8, 1.1999999, 1.5)
+        double3 xformOp:translate = (1.2000000476837158, 0.30000001192092896, 0.75)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        def Mesh "Cube" (
+            active = true
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform bool doubleSided = 1
+            float3[] extent = [(-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)]
+            int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+            int[] faceVertexIndices = [0, 1, 3, 2, 2, 3, 7, 6, 6, 7, 5, 4, 4, 5, 1, 0, 2, 6, 4, 0, 7, 3, 1, 5]
+            rel material:binding = </root/_materials/M_Blue>
+            normal3f[] normals = [(-1, 0, 0), (-1, 0, 0), (-1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0), (0, -1, 0), (0, -1, 0), (0, -1, 0), (0, -1, 0), (0, 0, -1), (0, 0, -1), (0, 0, -1), (0, 0, -1), (0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+                interpolation = "faceVarying"
+            )
+            point3f[] points = [(-0.5, -0.5, -0.5), (-0.5, -0.5, 0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5), (0.5, -0.5, -0.5), (0.5, -0.5, 0.5), (0.5, 0.5, -0.5), (0.5, 0.5, 0.5)]
+            texCoord2f[] primvars:st = [(0.375, 0), (0.375, 1), (0.125, 0.75), (0.625, 0), (0.625, 1), (0.875, 0.75), (0.375, 0.25), (0.125, 0.5), (0.625, 0.25), (0.875, 0.5), (0.375, 0.75), (0.625, 0.75), (0.375, 0.5), (0.625, 0.5)] (
+                interpolation = "faceVarying"
+            )
+            int[] primvars:st:indices = [0, 3, 8, 6, 6, 8, 13, 12, 12, 13, 11, 10, 10, 11, 4, 1, 7, 12, 10, 2, 13, 9, 5, 11]
+            uniform token subdivisionScheme = "none"
+            custom string userProperties:blender:data_name = "Cube"
+        }
+    }
+
+    def Scope "_materials"
+    {
+        def Material "M_Blue"
+        {
+            token outputs:surface.connect = </root/_materials/M_Blue/Principled_BSDF.outputs:surface>
+            custom string userProperties:blender:data_name = "M_Blue"
+
+            def Shader "Principled_BSDF"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                float inputs:clearcoat = 0
+                float inputs:clearcoatRoughness = 0.03
+                color3f inputs:diffuseColor = (0.1, 0.2, 0.8)
+                float inputs:ior = 1.5
+                float inputs:metallic = 0.25
+                float inputs:opacity = 1
+                float inputs:roughness = 0.7
+                float inputs:specular = 0.5
+                token outputs:surface
+            }
+        }
+
+        def Material "M_Red"
+        {
+            token outputs:surface.connect = </root/_materials/M_Red/Principled_BSDF.outputs:surface>
+            custom string userProperties:blender:data_name = "M_Red"
+
+            def Shader "Principled_BSDF"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                float inputs:clearcoat = 0
+                float inputs:clearcoatRoughness = 0.03
+                color3f inputs:diffuseColor = (0.8, 0.1, 0.1)
+                float inputs:ior = 1.5
+                float inputs:metallic = 0
+                float inputs:opacity = 1
+                float inputs:roughness = 0.3
+                float inputs:specular = 0.5
+                token outputs:surface
+            }
+        }
+
+        def Material "M_Gold"
+        {
+            token outputs:surface.connect = </root/_materials/M_Gold/Principled_BSDF.outputs:surface>
+            custom string userProperties:blender:data_name = "M_Gold"
+
+            def Shader "Principled_BSDF"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                float inputs:clearcoat = 0
+                float inputs:clearcoatRoughness = 0.03
+                color3f inputs:diffuseColor = (1, 0.766, 0.336)
+                float inputs:ior = 1.5
+                float inputs:metallic = 1
+                float inputs:opacity = 1
+                float inputs:roughness = 0.2
+                float inputs:specular = 0.5
+                token outputs:surface
+            }
+        }
+
+        def Material "M_Floor"
+        {
+            token outputs:surface.connect = </root/_materials/M_Floor/Principled_BSDF.outputs:surface>
+            custom string userProperties:blender:data_name = "M_Floor"
+
+            def Shader "Principled_BSDF"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                float inputs:clearcoat = 0
+                float inputs:clearcoatRoughness = 0.03
+                color3f inputs:diffuseColor = (0.8, 0.8, 0.8)
+                float inputs:ior = 1.5
+                float inputs:metallic = 0
+                float inputs:opacity = 1
+                float inputs:roughness = 0.5
+                float inputs:specular = 0.5
+                token outputs:surface
+            }
+        }
+    }
+
+    def Xform "BoxA"
+    {
+        custom string userProperties:blender:object_name = "BoxA"
+        float3 xformOp:rotateXYZ = (0, -0, 0)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (-1, 0, 0.5)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        def Mesh "BoxMesh" (
+            active = true
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform bool doubleSided = 1
+            float3[] extent = [(-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)]
+            int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+            int[] faceVertexIndices = [0, 1, 3, 2, 2, 3, 7, 6, 6, 7, 5, 4, 4, 5, 1, 0, 2, 6, 4, 0, 7, 3, 1, 5]
+            rel material:binding = </root/_materials/M_Red>
+            normal3f[] normals = [(-1, 0, 0), (-1, 0, 0), (-1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0), (0, -1, 0), (0, -1, 0), (0, -1, 0), (0, -1, 0), (0, 0, -1), (0, 0, -1), (0, 0, -1), (0, 0, -1), (0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+                interpolation = "faceVarying"
+            )
+            point3f[] points = [(-0.5, -0.5, -0.5), (-0.5, -0.5, 0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5), (0.5, -0.5, -0.5), (0.5, -0.5, 0.5), (0.5, 0.5, -0.5), (0.5, 0.5, 0.5)]
+            texCoord2f[] primvars:st = [(0.375, 0), (0.375, 1), (0.125, 0.75), (0.625, 0), (0.625, 1), (0.875, 0.75), (0.375, 0.25), (0.125, 0.5), (0.625, 0.25), (0.875, 0.5), (0.375, 0.75), (0.625, 0.75), (0.375, 0.5), (0.625, 0.5)] (
+                interpolation = "faceVarying"
+            )
+            int[] primvars:st:indices = [0, 3, 8, 6, 6, 8, 13, 12, 12, 13, 11, 10, 10, 11, 4, 1, 7, 12, 10, 2, 13, 9, 5, 11]
+            uniform token subdivisionScheme = "none"
+            uniform token subsetFamily:materialBind:familyType = "nonOverlapping"
+            custom string userProperties:blender:data_name = "BoxMesh"
+
+            def GeomSubset "M_Red" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                uniform token elementType = "face"
+                uniform token familyName = "materialBind"
+                int[] indices = [0, 1, 2, 3, 4]
+                rel material:binding = </root/_materials/M_Red>
+            }
+
+            def GeomSubset "M_Gold" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                uniform token elementType = "face"
+                uniform token familyName = "materialBind"
+                int[] indices = [5]
+                rel material:binding = </root/_materials/M_Gold>
+            }
+        }
+    }
+
+    def Xform "Sun"
+    {
+        custom string userProperties:blender:object_name = "Sun"
+        float3 xformOp:rotateXYZ = (40.000004, -0.0000023550272, 120.00001)
+        float3 xformOp:scale = (1, 1, 0.99999994)
+        double3 xformOp:translate = (0, 0, 10)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        def DistantLight "Sun"
+        {
+            float inputs:angle = 1
+            color3f inputs:color = (1, 0.98, 0.95)
+            bool inputs:enableColorTemperature = 1
+            float inputs:intensity = 0.75
+            bool inputs:normalize = 1
+            custom string userProperties:blender:data_name = "Sun"
+        }
+    }
+
+    def Xform "AreaRect"
+    {
+        custom string userProperties:blender:object_name = "AreaRect"
+        float3 xformOp:rotateXYZ = (-20, 10.000002, -1.2345971e-7)
+        float3 xformOp:scale = (0.99999994, 0.99999994, 1)
+        double3 xformOp:translate = (0, 1.5, 2.5)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        def RectLight "AreaRect"
+        {
+            float3[] extent = [(-0.5, -0.25, -0), (0.5, 0.25, 0)]
+            color3f inputs:color = (1, 0.95, 0.9)
+            bool inputs:enableColorTemperature = 1
+            float inputs:height = 0.5
+            float inputs:intensity = 25.46479
+            bool inputs:normalize = 1
+            custom string userProperties:blender:data_name = "AreaRect"
+        }
+    }
+
+    def Xform "Floor"
+    {
+        custom string userProperties:blender:object_name = "Floor"
+
+        def Mesh "Plane" (
+            active = true
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform bool doubleSided = 1
+            float3[] extent = [(-5, -5, 0), (5, 5, 0)]
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 3, 2]
+            rel material:binding = </root/_materials/M_Floor>
+            normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+                interpolation = "faceVarying"
+            )
+            point3f[] points = [(-5, -5, 0), (5, -5, 0), (-5, 5, 0), (5, 5, 0)]
+            texCoord2f[] primvars:st = [(0, 0), (1, 0), (0, 1), (1, 1)] (
+                interpolation = "faceVarying"
+            )
+            int[] primvars:st:indices = [0, 1, 3, 2]
+            uniform token subdivisionScheme = "none"
+            custom string userProperties:blender:data_name = "Plane"
+        }
+    }
+
+    def Xform "AreaDisk"
+    {
+        custom string userProperties:blender:object_name = "AreaDisk"
+        float3 xformOp:rotateXYZ = (15.000002, -25.000004, -3.00253e-8)
+        float3 xformOp:scale = (0.99999994, 0.99999994, 1)
+        double3 xformOp:translate = (-1.5, -1.5, 2.200000047683716)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        def DiskLight "AreaDisk"
+        {
+            float3[] extent = [(-0.4, -0.4, -0), (0.4, 0.4, 0)]
+            color3f inputs:color = (0.9, 1, 0.9)
+            bool inputs:enableColorTemperature = 1
+            float inputs:intensity = 19.098593
+            float inputs:radius = 0.4
+            custom string userProperties:blender:data_name = "AreaDisk"
+        }
+    }
+
+    def Xform "PointR0"
+    {
+        custom string userProperties:blender:object_name = "PointR0"
+        float3 xformOp:rotateXYZ = (0, -0, 0)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0, -2, 3)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        def SphereLight "PointR0"
+        {
+            float3[] extent = [(-0, -0, -0), (0, 0, 0)]
+            color3f inputs:color = (1, 0.9, 0.8)
+            bool inputs:enableColorTemperature = 1
+            float inputs:intensity = 31.830988
+            bool inputs:normalize = 1
+            float inputs:radius = 0
+            bool treatAsPoint = 1
+            custom string userProperties:blender:data_name = "PointR0"
+        }
+    }
+
+    def Xform "IcoInstance1"
+    {
+        custom string userProperties:blender:object_name = "IcoInstance1"
+        float3 xformOp:rotateXYZ = (0, -0, 0)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (2.5, -0.5, 0.30000001192092896)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        def Xform "ProtoIco_0" (
+            instanceable = true
+            prepend references = </root/prototypes/ProtoIco_0>
+        )
+        {
+            custom string userProperties:blender:object_name = "ProtoIco"
+        }
+    }
+
+    def Xform "PointR025"
+    {
+        custom string userProperties:blender:object_name = "PointR025"
+        float3 xformOp:rotateXYZ = (0, -0, 0)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (-2.5, 1, 2)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        def SphereLight "PointR025"
+        {
+            float3[] extent = [(-0.25, -0.25, -0.25), (0.25, 0.25, 0.25)]
+            color3f inputs:color = (0.8, 0.9, 1)
+            bool inputs:enableColorTemperature = 1
+            float inputs:exposure = 1
+            float inputs:intensity = 15.915494
+            bool inputs:normalize = 1
+            float inputs:radius = 0.25
+            custom string userProperties:blender:data_name = "PointR025"
+        }
+    }
+
+    def Xform "IcoInstance0"
+    {
+        custom string userProperties:blender:object_name = "IcoInstance0"
+        float3 xformOp:rotateXYZ = (0, -0, 0)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (2.5, -1.5, 0.30000001192092896)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        def Xform "ProtoIco_0" (
+            instanceable = true
+            prepend references = </root/prototypes/ProtoIco_0>
+        )
+        {
+            custom string userProperties:blender:object_name = "ProtoIco"
+        }
+    }
+
+    def Xform "BoxA_Linked"
+    {
+        custom string userProperties:blender:object_name = "BoxA_Linked"
+        float3 xformOp:rotateXYZ = (0, -0, 45)
+        float3 xformOp:scale = (0.99999994, 0.99999994, 1)
+        double3 xformOp:translate = (-1, 2, 0.5)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        def Mesh "BoxMesh" (
+            active = true
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform bool doubleSided = 1
+            float3[] extent = [(-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)]
+            int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+            int[] faceVertexIndices = [0, 1, 3, 2, 2, 3, 7, 6, 6, 7, 5, 4, 4, 5, 1, 0, 2, 6, 4, 0, 7, 3, 1, 5]
+            rel material:binding = </root/_materials/M_Red>
+            normal3f[] normals = [(-1, 0, 0), (-1, 0, 0), (-1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0), (0, -1, 0), (0, -1, 0), (0, -1, 0), (0, -1, 0), (0, 0, -1), (0, 0, -1), (0, 0, -1), (0, 0, -1), (0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+                interpolation = "faceVarying"
+            )
+            point3f[] points = [(-0.5, -0.5, -0.5), (-0.5, -0.5, 0.5), (-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5), (0.5, -0.5, -0.5), (0.5, -0.5, 0.5), (0.5, 0.5, -0.5), (0.5, 0.5, 0.5)]
+            texCoord2f[] primvars:st = [(0.375, 0), (0.375, 1), (0.125, 0.75), (0.625, 0), (0.625, 1), (0.875, 0.75), (0.375, 0.25), (0.125, 0.5), (0.625, 0.25), (0.875, 0.5), (0.375, 0.75), (0.625, 0.75), (0.375, 0.5), (0.625, 0.5)] (
+                interpolation = "faceVarying"
+            )
+            int[] primvars:st:indices = [0, 3, 8, 6, 6, 8, 13, 12, 12, 13, 11, 10, 10, 11, 4, 1, 7, 12, 10, 2, 13, 9, 5, 11]
+            uniform token subdivisionScheme = "none"
+            uniform token subsetFamily:materialBind:familyType = "nonOverlapping"
+            custom string userProperties:blender:data_name = "BoxMesh"
+
+            def GeomSubset "M_Red" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                uniform token elementType = "face"
+                uniform token familyName = "materialBind"
+                int[] indices = [0, 1, 2, 3, 4]
+                rel material:binding = </root/_materials/M_Red>
+            }
+
+            def GeomSubset "M_Gold" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                uniform token elementType = "face"
+                uniform token familyName = "materialBind"
+                int[] indices = [5]
+                rel material:binding = </root/_materials/M_Gold>
+            }
+        }
+    }
+
+    def Xform "Cam"
+    {
+        custom string userProperties:blender:object_name = "Cam"
+        float3 xformOp:rotateXYZ = (65.00001, -0.0000025062018, 45.000008)
+        float3 xformOp:scale = (0.99999994, 1, 1)
+        double3 xformOp:translate = (6, -6, 4)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        def Camera "Cam"
+        {
+            float2 clippingRange = (0.1, 1000)
+            float focalLength = 0.5
+            float horizontalAperture = 0.36
+            token projection = "perspective"
+            custom string userProperties:blender:data_name = "Cam"
+            float verticalAperture = 0.2025
+        }
+    }
+
+    class "prototypes"
+    {
+        def Xform "ProtoIco_0"
+        {
+            custom string userProperties:blender:object_name = "ProtoIco"
+
+            def Mesh "Icosphere" (
+                active = true
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                uniform bool doubleSided = 1
+                float3[] extent = [(-0.2683275, -0.255192, -0.3), (0.2683275, 0.255192, 0.3)]
+                int[] faceVertexCounts = [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]
+                int[] faceVertexIndices = [0, 1, 2, 1, 0, 5, 0, 2, 3, 0, 3, 4, 0, 4, 5, 1, 5, 10, 2, 1, 6, 3, 2, 7, 4, 3, 8, 5, 4, 9, 1, 10, 6, 2, 6, 7, 3, 7, 8, 4, 8, 9, 5, 9, 10, 6, 10, 11, 7, 6, 11, 8, 7, 11, 9, 8, 11, 10, 9, 11]
+                rel material:binding = </root/prototypes/ProtoIco_0/_materials/M_Gold>
+                normal3f[] normals = [(0.18759662, -0.57735366, -0.794651), (0.18759662, -0.57735366, -0.794651), (0.18759662, -0.57735366, -0.794651), (0.60706466, 0, -0.79465246), (0.60706466, 0, -0.79465246), (0.60706466, 0, -0.79465246), (-0.49112213, -0.3568291, -0.7946523), (-0.49112213, -0.3568291, -0.7946523), (-0.49112213, -0.3568291, -0.7946523), (-0.49112213, 0.3568291, -0.7946523), (-0.49112213, 0.3568291, -0.7946523), (-0.49112213, 0.3568291, -0.7946523), (0.18759662, 0.57735366, -0.794651), (0.18759662, 0.57735366, -0.794651), (0.18759662, 0.57735366, -0.794651), (0.9822461, 0, -0.1875968), (0.9822461, 0, -0.1875968), (0.9822461, 0, -0.1875968), (0.30353564, -0.9341715, -0.18758926), (0.30353564, -0.9341715, -0.18758926), (0.30353564, -0.9341715, -0.18758926), (-0.7946492, -0.5773593, -0.18758695), (-0.7946492, -0.5773593, -0.18758695), (-0.7946492, -0.5773593, -0.18758695), (-0.7946492, 0.5773593, -0.18758695), (-0.7946492, 0.5773593, -0.18758695), (-0.7946492, 0.5773593, -0.18758695), (0.30353564, 0.9341715, -0.1875893), (0.30353564, 0.9341715, -0.1875893), (0.30353564, 0.9341715, -0.1875893), (0.7946492, -0.5773593, 0.18758695), (0.7946492, -0.5773593, 0.18758695), (0.7946492, -0.5773593, 0.18758695), (-0.30353564, -0.9341715, 0.1875893), (-0.30353564, -0.9341715, 0.1875893), (-0.30353564, -0.9341715, 0.1875893), (-0.9822461, 0, 0.1875968), (-0.9822461, 0, 0.1875968), (-0.9822461, 0, 0.1875968), (-0.30353564, 0.9341715, 0.1875893), (-0.30353564, 0.9341715, 0.1875893), (-0.30353564, 0.9341715, 0.1875893), (0.7946492, 0.5773593, 0.18758695), (0.7946492, 0.5773593, 0.18758695), (0.7946492, 0.5773593, 0.18758695), (0.49112213, -0.3568291, 0.7946523), (0.49112213, -0.3568291, 0.7946523), (0.49112213, -0.3568291, 0.7946523), (-0.18759662, -0.57735366, 0.7946511), (-0.18759662, -0.57735366, 0.7946511), (-0.18759662, -0.57735366, 0.7946511), (-0.60706466, 0, 0.79465246), (-0.60706466, 0, 0.79465246), (-0.60706466, 0, 0.79465246), (-0.18759662, 0.57735366, 0.794651), (-0.18759662, 0.57735366, 0.794651), (-0.18759662, 0.57735366, 0.794651), (0.49112213, 0.3568291, 0.7946523), (0.49112213, 0.3568291, 0.7946523), (0.49112213, 0.3568291, 0.7946523)] (
+                    interpolation = "faceVarying"
+                )
+                point3f[] points = [(0, 0, -0.3), (0.21708, -0.15771599, -0.1341645), (-0.0829155, -0.255192, -0.1341645), (-0.2683275, 0, -0.1341645), (-0.0829155, 0.255192, -0.1341645), (0.21708, 0.15771599, -0.1341645), (0.0829155, -0.255192, 0.1341645), (-0.21708, -0.15771599, 0.1341645), (-0.21708, 0.15771599, 0.1341645), (0.0829155, 0.255192, 0.1341645), (0.2683275, 0, 0.1341645), (0, 0, 0.3)]
+                texCoord2f[] primvars:st = [(0.181819, 0), (0.363637, 0), (0.909091, 0), (0.727273, 0), (0.545455, 0), (0.272728, 0.157461), (1, 0.157461), (0.09091, 0.157461), (0.818182, 0.157461), (0.636364, 0.157461), (0.454546, 0.157461), (0.181819, 0.314921), (0, 0.314921), (0.909091, 0.314921), (0.727273, 0.314921), (0.545455, 0.314921), (0.363637, 0.314921), (0.272728, 0.472382), (0.09091, 0.472382), (0.818182, 0.472382), (0.636364, 0.472382), (0.454546, 0.472382)] (
+                    interpolation = "faceVarying"
+                )
+                int[] primvars:st:indices = [0, 5, 7, 5, 1, 10, 2, 6, 8, 3, 8, 9, 4, 9, 10, 5, 10, 16, 7, 5, 11, 8, 6, 13, 9, 8, 14, 10, 9, 15, 5, 16, 11, 7, 11, 12, 8, 13, 14, 9, 14, 15, 10, 15, 16, 11, 16, 17, 12, 11, 18, 14, 13, 19, 15, 14, 20, 16, 15, 21]
+                uniform token subdivisionScheme = "none"
+                custom string userProperties:blender:data_name = "Icosphere"
+            }
+
+            def Scope "_materials"
+            {
+                def Material "M_Gold" (
+                    prepend references = </root/_materials/M_Gold>
+                )
+                {
+                }
+            }
+        }
+    }
+}
+

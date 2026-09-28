@@ -28,7 +28,8 @@ export default defineConfig({
             enabled: true,
             headless: true,
             provider: playwright({
-              launchOptions: { channel: 'chrome', args: ['--enable-unsafe-webgpu'] },
+              // No --enable-unsafe-webgpu: headless Chrome 154 exposes Metal WebGPU without it (M0 smoke).
+              launchOptions: { channel: 'chrome' },
             }),
             instances: [{ browser: 'chromium' }],
           },

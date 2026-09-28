@@ -1,0 +1,247 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    doc = "LightUSD spike: hand-authored (Y-up, centimetres)"
+    metersPerUnit = 0.01
+    upAxis = "Y"
+)
+
+def Xform "World"
+{
+    def Scope "Looks"
+    {
+        def Material "Red"
+        {
+            token outputs:surface.connect = </World/Looks/Red/PBR.outputs:surface>
+            def Shader "PBR"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.05, 0.05)
+                float inputs:roughness = 0.35
+                float inputs:metallic = 0
+                token outputs:surface
+            }
+        }
+
+        def Material "Steel"
+        {
+            token outputs:surface.connect = </World/Looks/Steel/PBR.outputs:surface>
+            def Shader "PBR"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.6, 0.6, 0.65)
+                float inputs:roughness = 0.15
+                float inputs:metallic = 1
+                float inputs:clearcoat = 0.4
+                float inputs:clearcoatRoughness = 0.1
+                color3f inputs:emissiveColor = (0, 0, 0)
+                token outputs:surface
+            }
+        }
+
+        def Material "Glow"
+        {
+            token outputs:surface.connect = </World/Looks/Glow/PBR.outputs:surface>
+            def Shader "PBR"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.1, 0.1, 0.1)
+                color3f inputs:emissiveColor = (2, 1.5, 0.5)
+                float inputs:opacity = 0.5
+                float inputs:opacityThreshold = 0.25
+                float inputs:ior = 1.45
+                token outputs:surface
+            }
+        }
+    }
+
+    def Xform "Geo" (
+        doc = "scale 2 on the parent, T*R*S child ops"
+    )
+    {
+        double3 xformOp:scale = (2, 2, 2)
+        uniform token[] xformOpOrder = ["xformOp:scale"]
+
+        # 2 quads + 1 triangle, faces 0,2 -> Red subset, face 1 -> Steel subset.
+        def Mesh "Strip" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double3 xformOp:translate = (10, 0, -5)
+            float xformOp:rotateY = 90
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateY"]
+            uniform token subdivisionScheme = "none"
+            int[] faceVertexCounts = [4, 4, 3]
+            int[] faceVertexIndices = [0, 1, 4, 3, 1, 2, 5, 4, 3, 4, 6]
+            point3f[] points = [(0, 0, 0), (50, 0, 0), (100, 0, 0), (0, 50, 0), (50, 50, 0), (100, 50, 0), (25, 100, 0)]
+            texCoord2f[] primvars:st = [(0, 0), (0.5, 0), (1, 0), (0, 0.5), (0.5, 0.5), (1, 0.5), (0.25, 1)] (
+                interpolation = "vertex"
+            )
+            rel material:binding = </World/Looks/Red>
+            uniform token subsetFamily:materialBind:familyType = "partition"
+
+            def GeomSubset "SubRed" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                uniform token elementType = "face"
+                uniform token familyName = "materialBind"
+                int[] indices = [0, 2]
+                rel material:binding = </World/Looks/Red>
+            }
+
+            def GeomSubset "SubSteel" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                uniform token elementType = "face"
+                uniform token familyName = "materialBind"
+                int[] indices = [1]
+                rel material:binding = </World/Looks/Steel>
+            }
+        }
+
+        def Mesh "GlowTri" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (-30, 20, 10, 1) )
+            uniform token[] xformOpOrder = ["xformOp:transform"]
+            uniform token subdivisionScheme = "none"
+            int[] faceVertexCounts = [3]
+            int[] faceVertexIndices = [0, 1, 2]
+            point3f[] points = [(0, 0, 0), (20, 0, 0), (0, 20, 0)]
+            rel material:binding = </World/Looks/Glow>
+        }
+    }
+
+    def Xform "Instancing"
+    {
+        double3 xformOp:translate = (0, 10, 0)
+        float xformOp:rotateY = 30
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateY"]
+
+        def PointInstancer "Scatter"
+        {
+            rel prototypes = [</World/Instancing/Scatter/Protos/Pebble>, </World/Instancing/Scatter/Protos/Slab>]
+            int[] protoIndices = [0, 1, 0]
+            point3f[] positions = [(0, 0, 100), (50, 0, 100), (100, 0, 100)]
+            quath[] orientations = [(1, 0, 0, 0), (0.7071068, 0, 0.7071068, 0), (0.9238795, 0.3826834, 0, 0)]
+            float3[] scales = [(1, 1, 1), (2, 1, 1), (0.5, 0.5, 0.5)]
+
+            def Scope "Protos"
+            {
+                def Mesh "Pebble" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    uniform token subdivisionScheme = "none"
+                    int[] faceVertexCounts = [3, 3, 3, 3]
+                    int[] faceVertexIndices = [0, 2, 1, 0, 1, 3, 1, 2, 3, 2, 0, 3]
+                    point3f[] points = [(0, 0, 0), (10, 0, 0), (0, 0, 10), (0, 10, 0)]
+                    rel material:binding = </World/Looks/Steel>
+                }
+
+                def Mesh "Slab" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    uniform token subdivisionScheme = "none"
+                    int[] faceVertexCounts = [4]
+                    int[] faceVertexIndices = [0, 1, 2, 3]
+                    point3f[] points = [(-5, 0, -5), (5, 0, -5), (5, 0, 5), (-5, 0, 5)]
+                    rel material:binding = </World/Looks/Red>
+                }
+            }
+        }
+    }
+
+    def Xform "Lights"
+    {
+        def RectLight "RectN" (
+            prepend apiSchemas = ["ShadowAPI"]
+        )
+        {
+            double3 xformOp:translate = (0, 250, 0)
+            float xformOp:rotateX = -90
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateX"]
+            float inputs:width = 50
+            float inputs:height = 25
+            float inputs:intensity = 40
+            float inputs:exposure = 1
+            color3f inputs:color = (1, 0.9, 0.8)
+            bool inputs:normalize = true
+        }
+
+        def DiskLight "DiskU"
+        {
+            double3 xformOp:translate = (-100, 200, 50)
+            float3 xformOp:rotateXYZ = (-60, 30, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+            float inputs:radius = 20
+            float inputs:intensity = 5
+            bool inputs:normalize = false
+            color3f inputs:color = (0.5, 0.7, 1)
+        }
+
+        def SphereLight "SphereR05"
+        {
+            double3 xformOp:translate = (80, 150, -40)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+            float inputs:radius = 0.5
+            float inputs:intensity = 1000
+            bool inputs:normalize = true
+            bool inputs:enableColorTemperature = true
+            float inputs:colorTemperature = 3000
+        }
+
+        def SphereLight "SpotShaped" (
+            prepend apiSchemas = ["ShapingAPI"]
+        )
+        {
+            double3 xformOp:translate = (0, 300, 200)
+            quatf xformOp:orient = (0.9238795, -0.3826834, 0, 0)
+            double3 xformOp:scale = (1, 1, 1)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+            float inputs:radius = 0
+            bool treatAsPoint = true
+            float inputs:intensity = 200
+            float inputs:shaping:cone:angle = 25
+            float inputs:shaping:cone:softness = 0.3
+            float inputs:shaping:focus = 2
+            color3f inputs:shaping:focusTint = (0.1, 0.2, 0.3)
+        }
+
+        def SphereLight "SpotR5" (
+            prepend apiSchemas = ["ShapingAPI"]
+        )
+        {
+            double3 xformOp:translate = (-150, 300, -100)
+            float xformOp:rotateX = -70
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateX"]
+            float inputs:radius = 5
+            float inputs:intensity = 50
+            bool inputs:normalize = true
+            float inputs:shaping:cone:angle = 40
+        }
+
+        def SphereLight "PointTAP" (
+            doc = "treatAsPoint with radius left at its 0.5 default"
+        )
+        {
+            double3 xformOp:translate = (150, 120, 60)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+            bool treatAsPoint = true
+            float inputs:intensity = 30
+        }
+
+        def DistantLight "Sun"
+        {
+            float3 xformOp:rotateXYZ = (-45, 30, 0)
+            uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]
+            float inputs:angle = 0.53
+            float inputs:intensity = 3
+            bool inputs:normalize = true
+        }
+    }
+}

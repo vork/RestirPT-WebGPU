@@ -32,6 +32,7 @@
     "@gltf-transform/extensions": "^4.5.1",
     "@gltf-transform/functions": "^4.5.1",
     "draco3dgltf": "^1.5.7",
+    "lightusd": "1.0.0-rc4",
     "meshoptimizer": "^1.3.0",
     "mikktspace": "^1.1.1",
     "three": "^0.186.1",

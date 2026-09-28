@@ -207,7 +207,7 @@ No previous-frame BVH is needed (gap-temporal §4.2).
 
 | Mode | Behaviour | Blender side | Notes |
 |---|---|---|---|
-| **A** (validation start) | Analytic lights are NEE-only | per-light MIS = False | **Not** equivalent to B when x_{d−1} is singular: smooth mirrors and smooth glass never show area lights, and there are no area-light caustics. The UI states this. |
+| **A** (validation start) | Analytic lights are NEE-only; **area lights must have visibleToCamera = False** (Cycles 5.1.2 only intersects lights for camera rays when some light has MIS on — M0 finding) | per-light MIS = False | **Not** equivalent to B when x_{d−1} is singular: smooth mirrors and smooth glass never show area lights, and there are no area-light caustics. The UI states this. |
 | **B** (product default once Gate 3.11 passes) | Area lights are hittable by BSDF rays, pass through, and use MIS. Each crossed light is its own candidate `(d, BSDF_ANALYTIC, lightId)` | `transparent_max_bounces = 1024` | |
 | **A′** (optional) | Area lights are hittable only by rays leaving a singular vertex, with MIS weight 1 | | Same expectation as B |
 

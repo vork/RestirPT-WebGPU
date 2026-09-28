@@ -1,0 +1,288 @@
+#usda 1.0
+(
+    defaultPrim = "root"
+    doc = "Blender v5.1.2"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "root" (
+    customData = {
+        dictionary Blender = {
+            bool generated = 1
+        }
+    }
+)
+{
+    def Xform "floor"
+    {
+        custom string userProperties:blender:object_name = "floor"
+
+        def Mesh "floor" (
+            active = true
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform bool doubleSided = 1
+            float3[] extent = [(-0.2775, -0.2775, 0), (0.2775, 0.2775, 0)]
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            rel material:binding = </root/_materials/white>
+            normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+                interpolation = "faceVarying"
+            )
+            point3f[] points = [(-0.2775, -0.2775, 0), (0.2775, -0.2775, 0), (0.2775, 0.2775, 0), (-0.2775, 0.2775, 0)]
+            uniform token subdivisionScheme = "none"
+            custom string userProperties:blender:data_name = "floor"
+        }
+    }
+
+    def Scope "_materials"
+    {
+        def Material "white"
+        {
+            token outputs:surface.connect = </root/_materials/white/Principled_BSDF.outputs:surface>
+            custom string userProperties:blender:data_name = "white"
+
+            def Shader "Principled_BSDF"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                float inputs:clearcoat = 0
+                float inputs:clearcoatRoughness = 0.03
+                color3f inputs:diffuseColor = (0.725, 0.71, 0.68)
+                float inputs:ior = 1.5
+                float inputs:metallic = 0
+                float inputs:opacity = 1
+                float inputs:roughness = 1
+                float inputs:specular = 0
+                token outputs:surface
+            }
+        }
+
+        def Material "green"
+        {
+            token outputs:surface.connect = </root/_materials/green/Principled_BSDF.outputs:surface>
+            custom string userProperties:blender:data_name = "green"
+
+            def Shader "Principled_BSDF"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                float inputs:clearcoat = 0
+                float inputs:clearcoatRoughness = 0.03
+                color3f inputs:diffuseColor = (0.14, 0.45, 0.091)
+                float inputs:ior = 1.5
+                float inputs:metallic = 0
+                float inputs:opacity = 1
+                float inputs:roughness = 1
+                float inputs:specular = 0
+                token outputs:surface
+            }
+        }
+
+        def Material "red"
+        {
+            token outputs:surface.connect = </root/_materials/red/Principled_BSDF.outputs:surface>
+            custom string userProperties:blender:data_name = "red"
+
+            def Shader "Principled_BSDF"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                float inputs:clearcoat = 0
+                float inputs:clearcoatRoughness = 0.03
+                color3f inputs:diffuseColor = (0.63, 0.065, 0.05)
+                float inputs:ior = 1.5
+                float inputs:metallic = 0
+                float inputs:opacity = 1
+                float inputs:roughness = 1
+                float inputs:specular = 0
+                token outputs:surface
+            }
+        }
+    }
+
+    def Xform "short_box"
+    {
+        custom string userProperties:blender:object_name = "short_box"
+        float3 xformOp:rotateXYZ = (0, 0, -16.999998)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.0925000011920929, -0.10849999636411667, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        def Mesh "short_box" (
+            active = true
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform bool doubleSided = 1
+            float3[] extent = [(-0.0825, -0.0825, 0), (0.0825, 0.0825, 0.165)]
+            int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+            int[] faceVertexIndices = [0, 3, 2, 1, 4, 5, 6, 7, 0, 1, 5, 4, 1, 2, 6, 5, 2, 3, 7, 6, 3, 0, 4, 7]
+            rel material:binding = </root/_materials/white>
+            normal3f[] normals = [(0, 0, -1), (0, 0, -1), (0, 0, -1), (0, 0, -1), (0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1), (0, -1, 0), (0, -1, 0), (0, -1, 0), (0, -1, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0), (-1, 0, 0), (-1, 0, 0), (-1, 0, 0), (-1, 0, 0)] (
+                interpolation = "faceVarying"
+            )
+            point3f[] points = [(-0.0825, -0.0825, 0), (0.0825, -0.0825, 0), (0.0825, 0.0825, 0), (-0.0825, 0.0825, 0), (-0.0825, -0.0825, 0.165), (0.0825, -0.0825, 0.165), (0.0825, 0.0825, 0.165), (-0.0825, 0.0825, 0.165)]
+            uniform token subdivisionScheme = "none"
+            custom string userProperties:blender:data_name = "short_box"
+        }
+    }
+
+    def Xform "camera"
+    {
+        custom string userProperties:blender:object_name = "camera"
+        float3 xformOp:rotateXYZ = (90, -0, 0)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0, -1.0774999856948853, 0.27300000190734863)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        def Camera "camera"
+        {
+            float2 clippingRange = (0.0001, 100000)
+            float focalLength = 0.33607078
+            float horizontalAperture = 0.24
+            token projection = "perspective"
+            custom string userProperties:blender:data_name = "camera"
+            float verticalAperture = 0.24
+        }
+    }
+
+    def Xform "back_wall"
+    {
+        custom string userProperties:blender:object_name = "back_wall"
+
+        def Mesh "back_wall" (
+            active = true
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform bool doubleSided = 1
+            float3[] extent = [(-0.2775, 0.2775, 0), (0.2775, 0.2775, 0.555)]
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            rel material:binding = </root/_materials/white>
+            normal3f[] normals = [(0, -1, 0), (0, -1, 0), (0, -1, 0), (0, -1, 0)] (
+                interpolation = "faceVarying"
+            )
+            point3f[] points = [(-0.2775, 0.2775, 0), (0.2775, 0.2775, 0), (0.2775, 0.2775, 0.555), (-0.2775, 0.2775, 0.555)]
+            uniform token subdivisionScheme = "none"
+            custom string userProperties:blender:data_name = "back_wall"
+        }
+    }
+
+    def Xform "ceiling_light"
+    {
+        custom string userProperties:blender:object_name = "ceiling_light"
+        float3 xformOp:rotateXYZ = (0, -0, 0)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0, 0, 0.5540000200271606)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        def RectLight "ceiling_light"
+        {
+            float3[] extent = [(-0.065, -0.0525, -0), (0.065, 0.0525, 0)]
+            bool inputs:enableColorTemperature = 1
+            float inputs:height = 0.105
+            float inputs:intensity = 1.2732395
+            bool inputs:normalize = 1
+            float inputs:width = 0.13
+            custom string userProperties:blender:data_name = "ceiling_light"
+        }
+    }
+
+    def Xform "right_wall"
+    {
+        custom string userProperties:blender:object_name = "right_wall"
+
+        def Mesh "right_wall" (
+            active = true
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform bool doubleSided = 1
+            float3[] extent = [(0.2775, -0.2775, 0), (0.2775, 0.2775, 0.555)]
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            rel material:binding = </root/_materials/green>
+            normal3f[] normals = [(-1, 0, 0), (-1, 0, 0), (-1, 0, 0), (-1, 0, 0)] (
+                interpolation = "faceVarying"
+            )
+            point3f[] points = [(0.2775, -0.2775, 0.555), (0.2775, 0.2775, 0.555), (0.2775, 0.2775, 0), (0.2775, -0.2775, 0)]
+            uniform token subdivisionScheme = "none"
+            custom string userProperties:blender:data_name = "right_wall"
+        }
+    }
+
+    def Xform "ceiling"
+    {
+        custom string userProperties:blender:object_name = "ceiling"
+
+        def Mesh "ceiling" (
+            active = true
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform bool doubleSided = 1
+            float3[] extent = [(-0.2775, -0.2775, 0.555), (0.2775, 0.2775, 0.555)]
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            rel material:binding = </root/_materials/white>
+            normal3f[] normals = [(0, 0, -1), (0, 0, -1), (0, 0, -1), (0, 0, -1)] (
+                interpolation = "faceVarying"
+            )
+            point3f[] points = [(-0.2775, 0.2775, 0.555), (0.2775, 0.2775, 0.555), (0.2775, -0.2775, 0.555), (-0.2775, -0.2775, 0.555)]
+            uniform token subdivisionScheme = "none"
+            custom string userProperties:blender:data_name = "ceiling"
+        }
+    }
+
+    def Xform "tall_box"
+    {
+        custom string userProperties:blender:object_name = "tall_box"
+        float3 xformOp:rotateXYZ = (0, -0, 16.999998)
+        float3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (-0.09000000357627869, 0.07349999994039536, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+        def Mesh "tall_box" (
+            active = true
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform bool doubleSided = 1
+            float3[] extent = [(-0.0825, -0.0825, 0), (0.0825, 0.0825, 0.33)]
+            int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+            int[] faceVertexIndices = [0, 3, 2, 1, 4, 5, 6, 7, 0, 1, 5, 4, 1, 2, 6, 5, 2, 3, 7, 6, 3, 0, 4, 7]
+            rel material:binding = </root/_materials/white>
+            normal3f[] normals = [(0, 0, -1), (0, 0, -1), (0, 0, -1), (0, 0, -1), (0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1), (0, -1, 0), (0, -1, 0), (0, -1, 0), (0, -1, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0), (-1, 0, 0), (-1, 0, 0), (-1, 0, 0), (-1, 0, 0)] (
+                interpolation = "faceVarying"
+            )
+            point3f[] points = [(-0.0825, -0.0825, 0), (0.0825, -0.0825, 0), (0.0825, 0.0825, 0), (-0.0825, 0.0825, 0), (-0.0825, -0.0825, 0.33), (0.0825, -0.0825, 0.33), (0.0825, 0.0825, 0.33), (-0.0825, 0.0825, 0.33)]
+            uniform token subdivisionScheme = "none"
+            custom string userProperties:blender:data_name = "tall_box"
+        }
+    }
+
+    def Xform "left_wall"
+    {
+        custom string userProperties:blender:object_name = "left_wall"
+
+        def Mesh "left_wall" (
+            active = true
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform bool doubleSided = 1
+            float3[] extent = [(-0.2775, -0.2775, 0), (-0.2775, 0.2775, 0.555)]
+            int[] faceVertexCounts = [4]
+            int[] faceVertexIndices = [0, 1, 2, 3]
+            rel material:binding = </root/_materials/red>
+            normal3f[] normals = [(1, 0, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0)] (
+                interpolation = "faceVarying"
+            )
+            point3f[] points = [(-0.2775, -0.2775, 0), (-0.2775, 0.2775, 0), (-0.2775, 0.2775, 0.555), (-0.2775, -0.2775, 0.555)]
+            uniform token subdivisionScheme = "none"
+            custom string userProperties:blender:data_name = "left_wall"
+        }
+    }
+}
+

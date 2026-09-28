@@ -1,0 +1,118 @@
+{
+  "blender": "5.1.2",
+  "device": "Apple M5 Pro (GPU - 16 cores) METAL",
+  "metal_first_compile_s": 99.86,
+  "metal_first_compile_this_run_s": 0.195,
+  "first_render_1spp_this_run_s": 0.461,
+  "measured_at": "2026-09-28T19:59:22+0200",
+  "method": "wall time of bpy.ops.render.render (no file write); seconds = T(n) - T(1 spp); s_per_4096spp = seconds/(n-1)*4096; s_per_4096spp_slope = (T(n_max)-T(n_min))/(n_max-n_min)*4096",
+  "scenes": {
+    "cornell": "make_cornell.build_cornell: 0.555 m box, 5 quads + 2 boxes (flat), V1 Diffuse BSDF, one-sided rect light 0.13x0.105 m 4.0 W, Mode B (MIS on), no world",
+    "sponza": "Khronos glTF-Sample-Assets Sponza (glTF, 262267 tris, 25 materials, 70 images), import_shading FLAT, sun 8 W/m2 angle 0, no world, vfov 60 deg"
+  },
+  "notes": [
+    "metal_first_compile_s = largest first-render excess over a warm 1-spp render seen so far (cold Metal shader cache: kernels compile in MTLCompilerService); with a warm cache the first render costs ~0.3 s",
+    "timings exclude EXR writing; 512x512, BOX filter, TABULATED_SOBOL, RR on (min_light_bounces 0), light tree on"
+  ],
+  "entries": [
+    {
+      "scene": "cornell",
+      "res": 512,
+      "max_bounces": 3,
+      "spp_measured": 128,
+      "seconds": 0.4025,
+      "s_per_4096spp": 12.981,
+      "wall_s": 0.6685,
+      "overhead_s": 0.266,
+      "s_per_4096spp_slope": 12.813
+    },
+    {
+      "scene": "cornell",
+      "res": 512,
+      "max_bounces": 3,
+      "spp_measured": 512,
+      "seconds": 1.6371,
+      "s_per_4096spp": 13.122,
+      "wall_s": 1.9031,
+      "overhead_s": 0.266,
+      "s_per_4096spp_slope": 12.813
+    },
+    {
+      "scene": "cornell",
+      "res": 512,
+      "max_bounces": 3,
+      "spp_measured": 2048,
+      "seconds": 6.4084,
+      "s_per_4096spp": 12.823,
+      "wall_s": 6.6745,
+      "overhead_s": 0.266,
+      "s_per_4096spp_slope": 12.813
+    },
+    {
+      "scene": "cornell",
+      "res": 512,
+      "max_bounces": 7,
+      "spp_measured": 128,
+      "seconds": 0.4736,
+      "s_per_4096spp": 15.274,
+      "wall_s": 0.7572,
+      "overhead_s": 0.2836,
+      "s_per_4096spp_slope": 14.969
+    },
+    {
+      "scene": "cornell",
+      "res": 512,
+      "max_bounces": 7,
+      "spp_measured": 512,
+      "seconds": 1.8571,
+      "s_per_4096spp": 14.886,
+      "wall_s": 2.1407,
+      "overhead_s": 0.2836,
+      "s_per_4096spp_slope": 14.969
+    },
+    {
+      "scene": "cornell",
+      "res": 512,
+      "max_bounces": 7,
+      "spp_measured": 2048,
+      "seconds": 7.4903,
+      "s_per_4096spp": 14.988,
+      "wall_s": 7.7739,
+      "overhead_s": 0.2836,
+      "s_per_4096spp_slope": 14.969
+    },
+    {
+      "scene": "sponza",
+      "res": 512,
+      "max_bounces": 3,
+      "spp_measured": 64,
+      "seconds": 0.4057,
+      "s_per_4096spp": 26.376,
+      "wall_s": 0.8099,
+      "overhead_s": 0.4042,
+      "s_per_4096spp_slope": 21.671
+    },
+    {
+      "scene": "sponza",
+      "res": 512,
+      "max_bounces": 3,
+      "spp_measured": 256,
+      "seconds": 1.3349,
+      "s_per_4096spp": 21.443,
+      "wall_s": 1.7392,
+      "overhead_s": 0.4042,
+      "s_per_4096spp_slope": 21.671
+    },
+    {
+      "scene": "sponza",
+      "res": 512,
+      "max_bounces": 3,
+      "spp_measured": 1024,
+      "seconds": 5.4848,
+      "s_per_4096spp": 21.961,
+      "wall_s": 5.889,
+      "overhead_s": 0.4042,
+      "s_per_4096spp_slope": 21.671
+    }
+  ]
+}

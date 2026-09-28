@@ -1,0 +1,81 @@
+{
+  "generator": "validation/blender/make_cornell.py",
+  "blender": "5.1.2",
+  "files": {
+    "glb": "validation/assets/cornell/cornell.glb",
+    "usda": "validation/assets/cornell/cornell.usda",
+    "usdc": "validation/assets/cornell/cornell.usdc",
+    "blend": "validation/assets/cornell/cornell.blend"
+  },
+  "units": "metres, glTF frame (+Y up), un-recentred",
+  "camera": {
+    "position": [
+      0.0,
+      0.273,
+      1.0775000000000001
+    ],
+    "forward": [
+      0.0,
+      0.0,
+      -1.0
+    ],
+    "up": [
+      0.0,
+      1.0,
+      0.0
+    ],
+    "vfov_deg": 39.3,
+    "sensor_fit": "VERTICAL"
+  },
+  "lights": [
+    {
+      "name": "ceiling_light",
+      "type": "rect",
+      "power_W": 4.0,
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "position": [
+        0.0,
+        0.554,
+        -0.0
+      ],
+      "normal": [
+        0.0,
+        -1.0,
+        0.0
+      ],
+      "size_x": 0.13,
+      "size_along_minus_z_gltf": 0.105,
+      "spread_deg": 180.0,
+      "one_sided": true,
+      "visible_camera": true
+    }
+  ],
+  "reflectance": {
+    "white": [
+      0.725,
+      0.71,
+      0.68
+    ],
+    "red": [
+      0.63,
+      0.065,
+      0.05
+    ],
+    "green": [
+      0.14,
+      0.45,
+      0.091
+    ]
+  },
+  "blend_manifest_entries": 122,
+  "notes": [
+    "glTF exporter drops AREA lights; use 'lights' above",
+    "GLB/USD materials: Principled roughness 1, metallic 0, Specular IOR Level 0 (glTF specular 0)",
+    "USD exported with Blender defaults: upAxis Z, metersPerUnit 1",
+    "blend saved in Mode B (light MIS on): Cycles 5.1.2 hides camera-visible area lights when no light has MIS"
+  ]
+}
