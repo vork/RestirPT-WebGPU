@@ -1,0 +1,115 @@
+{
+ "format": "restir-scene-package",
+ "version": 1,
+ "name": "c0b_512",
+ "source": {
+  "uri": "validation/blender/calib_scenes.py",
+  "sha256": null
+ },
+ "flatShaded": true,
+ "materials": [
+  {
+   "name": "emitter",
+   "model": "v1",
+   "v1": {
+    "diffuse": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "glossy": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "roughness": 0.5,
+    "mix": 0.0
+   },
+   "emission": {
+    "color": [
+     0.5,
+     0.25,
+     0.125
+    ],
+    "strength": 2.0
+   },
+   "emissionSampling": "FRONT_BACK"
+  }
+ ],
+ "textures": [],
+ "lights": [],
+ "lightMode": "A",
+ "camera": {
+  "matrix": [
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ],
+  "yfov": 0.6981317007977318,
+  "znear": 0.0001
+ },
+ "env": null,
+ "render": {
+  "width": 512,
+  "height": 512,
+  "maxBounces": 0
+ },
+ "expected": {
+  "kind": "constant",
+  "value": [
+   1.0,
+   0.5,
+   0.25
+  ],
+  "tolerance": 0.0001,
+  "note": "every pixel is fully covered by the emitter: pixel = strength*color exactly",
+  "frames": {
+   "0": {}
+  }
+ },
+ "buffers": {
+  "positions": {
+   "offset": 0,
+   "length": 48,
+   "dtype": "f32",
+   "components": 3
+  },
+  "normals": {
+   "offset": 48,
+   "length": 48,
+   "dtype": "f32",
+   "components": 3
+  },
+  "uv0": {
+   "offset": 96,
+   "length": 32,
+   "dtype": "f32",
+   "components": 2
+  },
+  "indices": {
+   "offset": 128,
+   "length": 24,
+   "dtype": "u32",
+   "components": 3
+  },
+  "triMaterial": {
+   "offset": 152,
+   "length": 8,
+   "dtype": "u32",
+   "components": 1
+  }
+ }
+}

@@ -1,0 +1,613 @@
+{
+ "format": "restir-scene-package",
+ "version": 1,
+ "name": "c0a_360x640",
+ "source": {
+  "uri": "validation/blender/calib_scenes.py",
+  "sha256": null
+ },
+ "flatShaded": true,
+ "materials": [
+  {
+   "name": "red_tl",
+   "model": "v1",
+   "v1": {
+    "diffuse": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "glossy": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "roughness": 0.5,
+    "mix": 0.0
+   },
+   "emission": {
+    "color": [
+     1.0,
+     0.0,
+     0.0
+    ],
+    "strength": 3.0
+   },
+   "emissionSampling": "FRONT_BACK"
+  },
+  {
+   "name": "green_tr",
+   "model": "v1",
+   "v1": {
+    "diffuse": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "glossy": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "roughness": 0.5,
+    "mix": 0.0
+   },
+   "emission": {
+    "color": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "strength": 2.0
+   },
+   "emissionSampling": "FRONT_BACK"
+  },
+  {
+   "name": "blue_bl",
+   "model": "v1",
+   "v1": {
+    "diffuse": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "glossy": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "roughness": 0.5,
+    "mix": 0.0
+   },
+   "emission": {
+    "color": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "strength": 4.0
+   },
+   "emissionSampling": "FRONT_BACK"
+  },
+  {
+   "name": "white_br",
+   "model": "v1",
+   "v1": {
+    "diffuse": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "glossy": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "roughness": 0.5,
+    "mix": 0.0
+   },
+   "emission": {
+    "color": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "strength": 1.5
+   },
+   "emissionSampling": "FRONT_BACK"
+  },
+  {
+   "name": "yellow",
+   "model": "v1",
+   "v1": {
+    "diffuse": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "glossy": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "roughness": 0.5,
+    "mix": 0.0
+   },
+   "emission": {
+    "color": [
+     1.0,
+     1.0,
+     0.0
+    ],
+    "strength": 2.5
+   },
+   "emissionSampling": "FRONT_BACK"
+  }
+ ],
+ "textures": [],
+ "lights": [],
+ "lightMode": "A",
+ "camera": {
+  "matrix": [
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ],
+  "yfov": 0.6981317007977318,
+  "znear": 0.0001
+ },
+ "env": null,
+ "render": {
+  "width": 360,
+  "height": 640,
+  "maxBounces": 0
+ },
+ "expected": {
+  "kind": "markers",
+  "tolerance_px": 0.1,
+  "probe_tolerance": 0.0001,
+  "background": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "note": "exact box-filtered coverage of the float32-stored squares; row 0 = top; pixel centre = +0.5",
+  "frames": {
+   "0": {
+    "markers": [
+     {
+      "name": "red_tl",
+      "class": [
+       1.0,
+       0.0,
+       0.0
+      ],
+      "threshold": 0.0,
+      "window": [
+       48,
+       68,
+       80,
+       100
+      ],
+      "partial": false,
+      "centroid_px": [
+       57.834150863042915,
+       90.20488188263396
+      ],
+      "center_px": [
+       57.83000462607634,
+       90.21000379709798
+      ],
+      "bounds_px": [
+       50.142504239762076,
+       65.5175050123906,
+       82.52250865118103,
+       97.89749894301494
+      ],
+      "mass": 709.1714628483073,
+      "L_e": [
+       3.0,
+       0.0,
+       0.0
+      ]
+     },
+     {
+      "name": "green_tr",
+      "class": [
+       0.0,
+       1.0,
+       0.0
+      ],
+      "threshold": 0.0,
+      "window": [
+       289,
+       309,
+       99,
+       119
+      ],
+      "partial": false,
+      "centroid_px": [
+       299.2048769481218,
+       108.92195496734224
+      ],
+      "center_px": [
+       299.2099988823778,
+       108.92000389203741
+      ],
+      "bounds_px": [
+       291.5224984960636,
+       306.89749926869206,
+       101.23250874612047,
+       116.60749903795437
+      ],
+      "mass": 472.7809752322031,
+      "L_e": [
+       0.0,
+       2.0,
+       0.0
+      ]
+     },
+     {
+      "name": "blue_bl",
+      "class": [
+       0.0,
+       0.0,
+       1.0
+      ],
+      "threshold": 0.0,
+      "window": [
+       55,
+       76,
+       534,
+       555
+      ],
+      "partial": false,
+      "centroid_px": [
+       65.57284351856799,
+       544.3334999641479
+      ],
+      "center_px": [
+       65.56999807214149,
+       544.340003972824
+      ],
+      "bounds_px": [
+       57.88249768582723,
+       73.25749845845574,
+       536.652508826907,
+       552.027499118741
+      ],
+      "mass": 945.5619504644159,
+      "L_e": [
+       0.0,
+       0.0,
+       4.0
+      ]
+     },
+     {
+      "name": "white_br",
+      "class": [
+       1.0,
+       1.0,
+       1.0
+      ],
+      "threshold": 0.0,
+      "window": [
+       299,
+       320,
+       515,
+       536
+      ],
+      "partial": false,
+      "centroid_px": [
+       309.65609987290446,
+       525.3751166727671
+      ],
+      "center_px": [
+       309.65000222915705,
+       525.3799950035115
+      ],
+      "bounds_px": [
+       301.9625018428428,
+       317.33750261547135,
+       517.6924998575945,
+       533.0674901494284
+      ],
+      "mass": 354.585731424154,
+      "L_e": [
+       1.5,
+       1.5,
+       1.5
+      ]
+     },
+     {
+      "name": "yellow",
+      "class": [
+       1.0,
+       1.0,
+       0.0
+      ],
+      "threshold": 0.0,
+      "window": [
+       98,
+       118,
+       387,
+       407
+      ],
+      "partial": false,
+      "centroid_px": [
+       108.00000145797061,
+       396.80487616257835
+      ],
+      "center_px": [
+       108.00000149441996,
+       396.79999805659224
+      ],
+      "bounds_px": [
+       100.3125011081057,
+       115.6875018807342,
+       389.112497670278,
+       404.4874984429065
+      ],
+      "mass": 590.9766218958166,
+      "L_e": [
+       2.5,
+       2.5,
+       0.0
+      ]
+     }
+    ],
+    "probes": [
+     {
+      "pixel": [
+       51,
+       83
+      ],
+      "value": [
+       3.0,
+       0.0,
+       0.0
+      ],
+      "what": "red_tl interior"
+     },
+     {
+      "pixel": [
+       64,
+       96
+      ],
+      "value": [
+       3.0,
+       0.0,
+       0.0
+      ],
+      "what": "red_tl interior"
+     },
+     {
+      "pixel": [
+       57,
+       89
+      ],
+      "value": [
+       3.0,
+       0.0,
+       0.0
+      ],
+      "what": "red_tl interior"
+     },
+     {
+      "pixel": [
+       292,
+       102
+      ],
+      "value": [
+       0.0,
+       2.0,
+       0.0
+      ],
+      "what": "green_tr interior"
+     },
+     {
+      "pixel": [
+       305,
+       115
+      ],
+      "value": [
+       0.0,
+       2.0,
+       0.0
+      ],
+      "what": "green_tr interior"
+     },
+     {
+      "pixel": [
+       298,
+       108
+      ],
+      "value": [
+       0.0,
+       2.0,
+       0.0
+      ],
+      "what": "green_tr interior"
+     },
+     {
+      "pixel": [
+       58,
+       537
+      ],
+      "value": [
+       0.0,
+       0.0,
+       4.0
+      ],
+      "what": "blue_bl interior"
+     },
+     {
+      "pixel": [
+       72,
+       551
+      ],
+      "value": [
+       0.0,
+       0.0,
+       4.0
+      ],
+      "what": "blue_bl interior"
+     },
+     {
+      "pixel": [
+       65,
+       544
+      ],
+      "value": [
+       0.0,
+       0.0,
+       4.0
+      ],
+      "what": "blue_bl interior"
+     },
+     {
+      "pixel": [
+       302,
+       518
+      ],
+      "value": [
+       1.5,
+       1.5,
+       1.5
+      ],
+      "what": "white_br interior"
+     },
+     {
+      "pixel": [
+       316,
+       532
+      ],
+      "value": [
+       1.5,
+       1.5,
+       1.5
+      ],
+      "what": "white_br interior"
+     },
+     {
+      "pixel": [
+       309,
+       525
+      ],
+      "value": [
+       1.5,
+       1.5,
+       1.5
+      ],
+      "what": "white_br interior"
+     },
+     {
+      "pixel": [
+       101,
+       390
+      ],
+      "value": [
+       2.5,
+       2.5,
+       0.0
+      ],
+      "what": "yellow interior"
+     },
+     {
+      "pixel": [
+       114,
+       403
+      ],
+      "value": [
+       2.5,
+       2.5,
+       0.0
+      ],
+      "what": "yellow interior"
+     },
+     {
+      "pixel": [
+       107,
+       396
+      ],
+      "value": [
+       2.5,
+       2.5,
+       0.0
+      ],
+      "what": "yellow interior"
+     },
+     {
+      "pixel": [
+       2,
+       2
+      ],
+      "value": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "what": "background"
+     },
+     {
+      "pixel": [
+       180,
+       213
+      ],
+      "value": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "what": "background"
+     }
+    ]
+   }
+  }
+ },
+ "buffers": {
+  "positions": {
+   "offset": 0,
+   "length": 240,
+   "dtype": "f32",
+   "components": 3
+  },
+  "normals": {
+   "offset": 240,
+   "length": 240,
+   "dtype": "f32",
+   "components": 3
+  },
+  "uv0": {
+   "offset": 480,
+   "length": 160,
+   "dtype": "f32",
+   "components": 2
+  },
+  "indices": {
+   "offset": 640,
+   "length": 120,
+   "dtype": "u32",
+   "components": 3
+  },
+  "triMaterial": {
+   "offset": 760,
+   "length": 40,
+   "dtype": "u32",
+   "components": 1
+  }
+ }
+}

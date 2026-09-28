@@ -2,6 +2,9 @@
 import { createGpuContext, describeContext, type GpuContext } from '../../src/core/gpu/device.ts';
 import { encodePFM, orientationPattern } from '../../src/core/io/pfm.ts';
 import { allocProbe, type AllocProbeOptions, type AllocProbeReport } from './alloc-probe.ts';
+import { renderBatches, type RenderBatchesOptions, type RenderBatchesReport } from './batch-run.ts';
+import { exportAndUpload } from './export-package.ts';
+import { fetchScenePackage, type ExportScenePackageOptions } from '../../src/core/scene/scene-package.ts';
 
 export interface SmokeReport {
   ok: boolean;
@@ -20,6 +23,10 @@ export interface Harness {
   allocProbe(opts: AllocProbeOptions): Promise<AllocProbeReport>;
   orientationUpload(run: string): Promise<void>;
   log(run: string, entry: Record<string, unknown>): Promise<void>;
+  /** M2: render `batches` × `spp` with a validation kernel; uploads batch_###.pfm + meta.json to validation/out/<run>/. */
+  renderBatches(opts: RenderBatchesOptions): Promise<RenderBatchesReport>;
+  /** M2: re-export a scene package (read from `packageUrl`) to validation/out/<run>/ (bridge round trip). */
+  reexportPackage(packageUrl: string, run: string, overrides?: Partial<ExportScenePackageOptions>): Promise<{ files: string[]; sha256: string }>;
 }
 
 declare global {
@@ -81,6 +88,20 @@ const harness: Harness = {
 
   async orientationUpload(run) {
     await upload(run, 'orientation.pfm', encodePFM(orientationPattern(64, 48)));
+  },
+
+  async renderBatches(opts) {
+    const ctx = await getContext();
+    return renderBatches(ctx, opts);
+  },
+
+  async reexportPackage(packageUrl, run, overrides = {}) {
+    const p = await fetchScenePackage(packageUrl);
+    const r = await exportAndUpload(p.scene, {
+      camera: p.camera, render: p.render, lightMode: p.lightMode, flatShaded: p.flatShaded, name: p.json.name,
+      frames: p.frames, envSampling: p.json.env?.sampling, ...overrides,
+    }, run);
+    return { files: r.files, sha256: r.sha256 };
   },
 
   async log(run, entry) {

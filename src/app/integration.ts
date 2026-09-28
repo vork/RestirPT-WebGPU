@@ -1,6 +1,9 @@
-// M1 integration: wires the real loaders (glTF Worker, HDRI Worker) and the Renderer (scene/BVH/textures/env upload
-// + primary pass) into the app shell through SceneLoader and AppHooks. The shell keeps its test pattern until the
-// first scene or environment is ready.
+// M1/M2 integration: wires the real loaders (glTF Worker, USD Worker, HDRI Worker) and the Renderer
+// (scene/BVH/textures/env upload + primary pass) into the app shell through SceneLoader and AppHooks. The shell keeps
+// its test pattern until the first scene or environment is ready.
+// Env load mode follows the renderer's texture path (validation: exact texels, lossless codecs, negatives rejected;
+// interactive: clamps/downsamples) unless IntegrationOptions.envMode pins it. Dev builds add "Export for Cycles"
+// (scene package → validation/out/export-<id>/ through the harness upload middleware).
 import type { GpuContext } from '../core/gpu/device.ts';
 import { registerProbeTag } from '../core/render/probe.ts';
 import { EXTRA_VIEWS, PRIMARY_PROBE_TAGS, Renderer } from '../core/render/renderer.ts';
@@ -9,6 +12,7 @@ import { boundsDiagonal } from '../core/render/frame-uniforms.ts';
 import { emptyScene } from '../core/render/scene-gpu.ts';
 import { loadEnvironment, type EnvLoadMode } from '../core/scene/env/load-env.ts';
 import { loadScene as loadGltfScene } from '../core/scene/load-scene.ts';
+import { loadUsd } from '../core/scene/usd/load-usd.ts';
 import type { EnvironmentData, SceneData } from '../core/scene/types.ts';
 import type { App, AppHooks } from './app.ts';
 import { DEG } from './camera-math.ts';
@@ -21,7 +25,11 @@ export interface Integration {
   renderer(): Renderer | undefined;
   /** Resolves when the first real scene (or env-only empty scene) has been uploaded and compiled. */
   sceneReady: Promise<void>;
+  /** Dev: export the current scene/camera/env as a scene package to validation/out/export-<id>/ (returns the dir). */
+  exportForCycles(app: App, cfg?: Partial<ExportConfig>): Promise<string | undefined>;
 }
+
+export interface ExportConfig { width: number; height: number; maxBounces: number; lightMode: 'A' | 'B'; status: string }
 
 export interface IntegrationOptions {
   envMode?: EnvLoadMode;
@@ -77,7 +85,16 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
   const loader: SceneLoader = {
     async loadScene(src, progress, signal) {
       const ext = extensionOf(src.name);
-      if (ext.startsWith('usd')) throw new Error('USD scenes are not wired yet (M2: UsdSceneSource, docs/decisions/usd.md)');
+      if (ext.startsWith('usd')) {
+        progress({ stage: 'parsing USD (LightUSD worker)' });
+        const res = await loadUsd(src.kind === 'url' ? src.url : src.main);
+        if (signal.aborted) throw new Error('aborted');
+        const ms = res.stats.ms;
+        console.info(`[scene] ${res.scene.name}: ${res.stats.triangles} tris, ${res.stats.draws} draws, upAxis ${res.stats.upAxis}, ` +
+          `metersPerUnit ${res.stats.metersPerUnit}, ${res.scene.lights.length} lights, total ${(ms.totalMs ?? 0).toFixed(0)} ms`);
+        progress({ stage: 'building BVH + uploading', fraction: 0.9 });
+        return res.scene;
+      }
       progress({ stage: 'parsing glTF (worker)' });
       const res = await loadGltfScene(src.kind === 'url' ? src.url : src.files);
       if (signal.aborted) throw new Error('aborted');
@@ -88,7 +105,9 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
     },
     async loadEnvironment(src, progress) {
       progress({ stage: 'decoding environment (worker)' });
-      const res = await loadEnvironment(src.kind === 'url' ? src.url : src.main, { mode: opts.envMode ?? 'interactive', name: src.name });
+      const mode: EnvLoadMode = opts.envMode ?? (renderer?.options.textureMode === 'interactive' ? 'interactive' : 'validation');
+      const res = await loadEnvironment(src.kind === 'url' ? src.url : src.main, { mode, name: src.name });
+      console.info(`[env] ${src.name}: ${mode} mode, ${res.env.width}x${res.env.height}`);
       for (const w of res.warnings) console.info(`[env] ${w}`);
       return res.env;
     },
@@ -116,7 +135,12 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
     hudLines: () => renderer?.hudLines() ?? [],
   };
 
-  return { loader, hooks, renderer: () => renderer, sceneReady };
+  return {
+    loader, hooks, renderer: () => renderer, sceneReady,
+    exportForCycles: async (app, cfg = {}) => (renderer
+      ? exportForCycles(app, renderer, { width: 512, height: 512, maxBounces: 3, lightMode: 'A', status: '', ...cfg })
+      : undefined),
+  };
 }
 
 /** 'Renderer' folder: texture path, watertight intersection, accumulation. */
@@ -130,4 +154,50 @@ function addRendererPanel(app: App, r: Renderer): void {
     .on('change', () => { if (r.sceneData) reupload(); });
   f.addBinding(o, 'watertight', { label: 'watertight (Woop)' }).on('change', () => { if (r.sceneData) reupload(); });
   f.addBinding(o, 'accumulate', { label: 'accumulate' }).on('change', () => app.resetHistory());
+  if (import.meta.env.DEV) addExportFolder(app, r);
+}
+
+/** Dev only: "Export for Cycles" → scene package in validation/out/export-<id>/ (docs/decisions/scene-bridge.md). */
+function addExportFolder(app: App, r: Renderer): void {
+  const pane = app.panel?.pane;
+  if (!pane) return;
+  const f = pane.addFolder({ title: 'Export for Cycles (dev)', expanded: false, index: 4 });
+  const cfg: ExportConfig = { width: 512, height: 512, maxBounces: 3, lightMode: 'A', status: '' };
+  f.addBinding(cfg, 'width', { min: 16, max: 8192, step: 1 });
+  f.addBinding(cfg, 'height', { min: 16, max: 8192, step: 1 });
+  f.addBinding(cfg, 'maxBounces', { label: 'max bounces', min: 0, max: 64, step: 1 });
+  f.addBinding(cfg, 'lightMode', { label: 'light mode', options: { 'A (NEE only)': 'A', 'B (MIS)': 'B' } });
+  f.addButton({ title: 'Export for Cycles' }).on('click', () => { void exportForCycles(app, r, cfg); });
+  f.addBinding(cfg, 'status', { readonly: true, multiline: true, rows: 3 });
+}
+
+export async function exportForCycles(app: App, r: Renderer, cfg: ExportConfig): Promise<string | undefined> {
+  const scene = r.sceneData ?? app.scene;
+  if (!scene) { cfg.status = 'no scene loaded'; app.panel?.refresh(); return undefined; }
+  app.loading.start('Export for Cycles');
+  try {
+    const { exportAndUpload } = await import('../../validation/harness/export-package.ts');
+    const p = app.envParams;
+    const env = app.env ? {
+      ...app.env, strength: p.strength, rotationZ: p.rotationDeg * DEG, tint: [p.tint.r, p.tint.g, p.tint.b] as [number, number, number],
+      visibleToCamera: p.visibleToCamera,
+    } : undefined;
+    const run = `export-${new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-')}`;
+    const res = await exportAndUpload({ ...scene, env }, {
+      camera: { matrix: app.camera.camToWorld(), yfov: app.camera.yfov, znear: 1e-4 },
+      render: { width: cfg.width, height: cfg.height, maxBounces: cfg.maxBounces },
+      lightMode: cfg.lightMode,
+      source: { uri: scene.name },
+    }, run);
+    cfg.status = `${res.dir}\n${res.files.length} files, ${(res.bytes / 1024).toFixed(0)} KiB\nsha256 ${res.sha256.slice(0, 16)}`;
+    app.loading.done(`exported ${res.dir}`);
+    console.info(`[export] ${res.dir}: ${res.files.join(', ')} (package sha256 ${res.sha256})`);
+    return res.dir;
+  } catch (e) {
+    cfg.status = `failed: ${e instanceof Error ? e.message : String(e)}`;
+    app.loading.error(`Export for Cycles failed: ${e instanceof Error ? e.message : String(e)}`);
+    return undefined;
+  } finally {
+    app.panel?.refresh();
+  }
 }

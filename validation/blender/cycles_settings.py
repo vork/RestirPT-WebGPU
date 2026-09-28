@@ -7,6 +7,7 @@ introspection in Blender 5.1.2 (factory startup).
 cfg keys (all optional except where noted; see DEFAULT_CFG):
   spp, max_bounces, seed, resolution (W, H), device ('GPU' = Metal only, or 'CPU'),
   min_light_bounces (0 keeps Cycles RR), emission_sampling ('FRONT_BACK' | 'NONE' ...),
+  material_emission_sampling {material name: value} (per-material override, scene bridge),
   light_mis (per-light MIS: False = plan Mode A, True = Mode B),
   light_defaults {visible_camera, exposure, spread}, lights {object name: overrides},
   camera {vfov_deg | vfov_rad, clip_start, clip_end} or None (then VERTICAL fit is only asserted),
@@ -30,6 +31,7 @@ DEFAULT_CFG: dict[str, Any] = {
     "device": "GPU",
     "min_light_bounces": 0,
     "emission_sampling": "FRONT_BACK",
+    "material_emission_sampling": {},
     "light_mis": False,
     "light_defaults": {"visible_camera": False, "exposure": 0.0, "spread": math.pi},
     "lights": {},
@@ -295,20 +297,24 @@ def _iter_node_trees() -> list[tuple[str, bpy.types.NodeTree]]:
     return out
 
 
-def material_object_rows(scene: bpy.types.Scene, emission_sampling: str) -> list[Row]:
-    """GGX everywhere, no bump correction, fixed emission sampling, Linear images, no terminator
-    offsets, no MNEE (plan §7.5 Materials and objects)."""
+def material_object_rows(scene: bpy.types.Scene, emission_sampling: str, per_material: dict[str, str] | None = None) -> list[Row]:
+    """GGX everywhere, no bump correction, fixed emission sampling (`per_material` overrides by material
+    name), Linear images, no terminator offsets, no MNEE (plan §7.5 Materials and objects).
+    An image node may carry the custom property "restir_interpolation" (e.g. 'Closest' for a glTF NEAREST
+    sampler, set by build_scene.py); it is asserted instead of 'Linear'."""
     rows: list[Row] = []
+    per_material = per_material or {}
     for m in bpy.data.materials:
         p = f"materials{_q(m.name)}.cycles"
-        rows += [Row(m.cycles, p, "use_bump_map_correction", False), Row(m.cycles, p, "emission_sampling", emission_sampling)]
+        es = per_material.get(m.name, emission_sampling)
+        rows += [Row(m.cycles, p, "use_bump_map_correction", False), Row(m.cycles, p, "emission_sampling", es)]
     for tp, tree in _iter_node_trees():
         for n in tree.nodes:
             np = f"{tp}.nodes{_q(n.name)}"
             if "distribution" in n.bl_rna.properties:
                 rows.append(Row(n, np, "distribution", "GGX"))
             if n.bl_idname in ("ShaderNodeTexImage", "ShaderNodeTexEnvironment"):
-                rows.append(Row(n, np, "interpolation", "Linear"))
+                rows.append(Row(n, np, "interpolation", str(n.get("restir_interpolation", "Linear"))))
     for o in scene.objects:
         if o.type in ("MESH", "CURVE", "SURFACE", "META", "FONT", "CURVES", "POINTCLOUD"):
             p = f"objects{_q(o.name)}"
@@ -400,7 +406,7 @@ def apply_settings(scene: bpy.types.Scene, cfg: dict[str, Any]) -> dict[str, Any
         if o.type == "LIGHT":
             spec = {"mis": cfg["light_mis"], **cfg["light_defaults"], **cfg["lights"].get(o.name, {})}
             rows += light_rows(o, spec)
-    rows += material_object_rows(scene, cfg["emission_sampling"])
+    rows += material_object_rows(scene, cfg["emission_sampling"], cfg.get("material_emission_sampling"))
     manifest.update(run_rows(rows))
     _assert_invariants(scene, cfg)
     return manifest

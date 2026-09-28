@@ -1,0 +1,147 @@
+{
+ "format": "restir-scene-package",
+ "version": 1,
+ "name": "c0p_hidden_512",
+ "source": {
+  "uri": "validation/blender/calib_scenes.py",
+  "sha256": null
+ },
+ "flatShaded": true,
+ "materials": [],
+ "textures": [],
+ "lights": [],
+ "lightMode": "A",
+ "camera": {
+  "matrix": [
+   0.0,
+   0.0,
+   1.0,
+   0.0,
+   0.0,
+   1.0,
+   0.0,
+   0.0,
+   -1.0,
+   -0.0,
+   -0.0,
+   0.0,
+   3.0,
+   1.0,
+   -2.0,
+   1.0
+  ],
+  "yfov": 1.7453292519943295,
+  "znear": 0.0001
+ },
+ "env": {
+  "file": "env.exr",
+  "strength": 1.0,
+  "tint": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "rotationZ": 0.0,
+  "visibleToCamera": false,
+  "sampling": "AUTOMATIC",
+  "width": 512,
+  "height": 256,
+  "sha256": "0afd01f8484bd3297641edd354cff81b2c9f96e500b5ab0e7cfddf794e4824e4"
+ },
+ "render": {
+  "width": 512,
+  "height": 512,
+  "maxBounces": 0
+ },
+ "frames": [
+  {
+   "frame": 0,
+   "label": "plusX gamma=+0deg",
+   "camera": {
+    "matrix": [
+     0.0,
+     0.0,
+     1.0,
+     0.0,
+     0.0,
+     1.0,
+     0.0,
+     0.0,
+     -1.0,
+     -0.0,
+     -0.0,
+     0.0,
+     3.0,
+     1.0,
+     -2.0,
+     1.0
+    ],
+    "yfov": 1.7453292519943295
+   },
+   "env": {
+    "rotationZ": 0.0,
+    "strength": 1.0
+   }
+  }
+ ],
+ "expected": {
+  "kind": "constant",
+  "value": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "tolerance": 0.0,
+  "frames": {
+   "0": {
+    "markers": [],
+    "probes": [
+     {
+      "pixel": [
+       256,
+       256
+      ],
+      "value": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "what": "hidden env"
+     }
+    ]
+   }
+  }
+ },
+ "buffers": {
+  "positions": {
+   "offset": 0,
+   "length": 0,
+   "dtype": "f32",
+   "components": 3
+  },
+  "normals": {
+   "offset": 0,
+   "length": 0,
+   "dtype": "f32",
+   "components": 3
+  },
+  "uv0": {
+   "offset": 0,
+   "length": 0,
+   "dtype": "f32",
+   "components": 2
+  },
+  "indices": {
+   "offset": 0,
+   "length": 0,
+   "dtype": "u32",
+   "components": 3
+  },
+  "triMaterial": {
+   "offset": 0,
+   "length": 0,
+   "dtype": "u32",
+   "components": 1
+  }
+ }
+}
