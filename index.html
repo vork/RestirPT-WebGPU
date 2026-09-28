@@ -6,16 +6,40 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ReSTIR PT</title>
     <style>
-      :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-      body { margin: 0; padding: 16px; }
-      pre { font: 12px/1.4 ui-monospace, monospace; white-space: pre-wrap; }
-      .err { color: #d33; }
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; --fg: #e8e8e8; --bg: #111; --accent: #6cf; --err: #f66; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); }
+      #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; touch-action: none; }
+      .panel { position: fixed; top: 8px; right: 8px; width: 300px; max-height: calc(100% - 16px); overflow-y: auto; z-index: 3; }
+      .hud { position: fixed; top: 8px; left: 8px; margin: 0; padding: 6px 8px; z-index: 2; pointer-events: none;
+             font: 11px/1.35 ui-monospace, Menlo, monospace; background: rgba(0,0,0,0.55); border-radius: 4px; white-space: pre; }
+      .hud.alarm { box-shadow: inset 0 0 0 1px var(--err); }
+      .probe-panel { position: fixed; left: 8px; bottom: 8px; z-index: 2; max-width: min(560px, calc(100% - 330px)); max-height: 40%;
+                     overflow: auto; background: rgba(0,0,0,0.7); border-radius: 4px; padding: 6px 8px; font: 11px/1.35 ui-monospace, Menlo, monospace; }
+      .probe-panel pre { margin: 4px 0 0; white-space: pre; }
+      .probe-head { color: var(--accent); }
+      .loading { position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 4; width: min(480px, calc(100% - 32px));
+                 background: rgba(20,20,20,0.95); border: 1px solid #333; border-radius: 6px; padding: 12px 14px; }
+      .loading.error { border-color: var(--err); }
+      .loading.error .loading-stage { color: var(--err); }
+      .loading-title { font-weight: 600; margin-bottom: 6px; }
+      .loading-stage { font-size: 12px; opacity: 0.85; margin-bottom: 8px; word-break: break-word; }
+      .loading-track { height: 4px; background: #333; border-radius: 2px; overflow: hidden; }
+      .loading-bar { height: 100%; width: 0; background: var(--accent); transition: width 0.15s; }
+      .loading-bar.indeterminate { animation: slide 1.2s infinite linear; }
+      @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+      .loading-warn-head { margin-top: 8px; font-size: 12px; color: #fc6; }
+      .loading-warn { max-height: 180px; overflow: auto; margin: 4px 0 0; padding-left: 18px; font-size: 11px; }
+      .loading-close { margin-top: 8px; }
+      #fatal { position: fixed; inset: 16px; z-index: 5; color: var(--err); font: 14px ui-monospace, monospace; white-space: pre-wrap; }
+      body.drop-hover::after { content: 'Drop .glb / .gltf (+ .bin, textures) / .usd* / .hdr / .exr'; position: fixed; inset: 12px; z-index: 6;
+        border: 2px dashed var(--accent); border-radius: 8px; display: grid; place-items: center; background: rgba(0,0,0,0.5); font-size: 18px; }
+      @media (max-width: 700px) { .panel { width: calc(100% - 16px); max-height: 45%; top: auto; bottom: 8px; } .probe-panel { display: none; } }
     </style>
   </head>
   <body>
-    <h1>ReSTIR PT</h1>
-    <p id="status">Initializing WebGPU...</p>
-    <pre id="info"></pre>
+    <canvas id="view" tabindex="0"></canvas>
+    <div id="ui"></div>
+    <pre id="fatal" hidden></pre>
     <script type="module" src="/src/app/main.ts"></script>
   </body>
 </html>

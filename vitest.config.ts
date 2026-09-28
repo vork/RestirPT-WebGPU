@@ -20,6 +20,14 @@ export default defineConfig({
         },
       },
       {
+        // Pre-bundle the loader dependencies (reached from Workers / dynamic imports) so a cold cache does not make
+        // Vite reload the page in the middle of a test ("Vite unexpectedly reloaded a test").
+        optimizeDeps: {
+          include: [
+            '@gltf-transform/core', '@gltf-transform/extensions', '@gltf-transform/functions', 'meshoptimizer', 'meshoptimizer/decoder',
+            'draco3dgltf', 'three', 'three/examples/jsm/loaders/EXRLoader.js',
+          ],
+        },
         test: {
           name: 'chrome',
           include: ['validation/gpu-tests/**/*.gpu.test.ts'],

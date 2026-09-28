@@ -1,0 +1,55 @@
+{
+  "source": "https://polyhaven.com",
+  "license": "CC0",
+  "resolution": "1k",
+  "files": [
+    {
+      "id": "kloofendal_48d_partly_cloudy_puresky",
+      "ext": "exr",
+      "file": "kloofendal_48d_partly_cloudy_puresky_1k.exr",
+      "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/exr/1k/kloofendal_48d_partly_cloudy_puresky_1k.exr",
+      "bytes": 5498182,
+      "sha256": "e56328a09baa9c2569e9ab5d91234fc39e91fb2c4b36d27e190c9c3c4f2b26ad"
+    },
+    {
+      "id": "kloofendal_48d_partly_cloudy_puresky",
+      "ext": "hdr",
+      "file": "kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+      "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+      "bytes": 1435119,
+      "sha256": "fd94c84997b8a3c353b62c2125a9b44e19509956986a126e472684432a02d798"
+    },
+    {
+      "id": "overcast_soil_puresky",
+      "ext": "exr",
+      "file": "overcast_soil_puresky_1k.exr",
+      "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/exr/1k/overcast_soil_puresky_1k.exr",
+      "bytes": 5028556,
+      "sha256": "31eb41af3704dd896106968355bfa4ba26edb2eb313716a919520e08bb5210d2"
+    },
+    {
+      "id": "overcast_soil_puresky",
+      "ext": "hdr",
+      "file": "overcast_soil_puresky_1k.hdr",
+      "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/overcast_soil_puresky_1k.hdr",
+      "bytes": 1195816,
+      "sha256": "2dbbbbb1323a8e8989db2e8306bd13099b215539e5adba41b85738a250a7904e"
+    },
+    {
+      "id": "studio_small_09",
+      "ext": "exr",
+      "file": "studio_small_09_1k.exr",
+      "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/exr/1k/studio_small_09_1k.exr",
+      "bytes": 1319434,
+      "sha256": "44dcbed056512ecd8afd2a3d7ba73d2dd4c24694d0c72005fafcb2469bbc8fd4"
+    },
+    {
+      "id": "studio_small_09",
+      "ext": "hdr",
+      "file": "studio_small_09_1k.hdr",
+      "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr",
+      "bytes": 1615248,
+      "sha256": "e7cfda5f4e98e623db12b8bfd0184e048488e4855d9c83e2751fb44a32e80c45"
+    }
+  ]
+}
