@@ -16,12 +16,25 @@ cfg keys (all optional except where noted; see DEFAULT_CFG):
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass
 from typing import Any
 
 import bpy
 
 WORKING_SPACE = "Linear Rec.709"
+
+# The reference renderer is pinned (a silent upgrade changes Cycles; the reference cache key also includes it).
+BLENDER_VERSION = (5, 2, 2)
+
+# Metal crash workaround (cycles-deviations.md D7): Cycles' util/path.cpp path_cache_get() lazily writes a static
+# std::string without synchronisation, and up to maximumConcurrentCompilationTaskCount−1 Metal compile threads reach it
+# through MetalKernelPipeline::compile → binary-archive path (kernel.mm). Unchanged in 5.1.2 and 5.2.2; intermittently
+# aborts in -[NSURL fileURLWithPath:] (nil path) or corrupts the heap. Disabling binary archives skips every such call;
+# getenv() is read per pipeline compile, so setting it here (before the first render) is early enough.
+# CYCLES_METAL_PROFILING / CYCLES_METAL_DEBUG reach path_cache_get from device init and must stay unset.
+METAL_ENV = {"CYCLES_METAL_DISABLE_BINARY_ARCHIVES": "1"}
+METAL_ENV_FORBIDDEN = ("CYCLES_METAL_PROFILING", "CYCLES_METAL_DEBUG")
 
 DEFAULT_CFG: dict[str, Any] = {
     "spp": 128,
@@ -118,8 +131,19 @@ def run_rows(rows: list[Row]) -> dict[str, Any]:
 
 
 def enable_metal() -> dict[str, Any]:
-    """Enable only METAL devices. --factory-startup prefs are not saved, so call this every run."""
+    """Enable only METAL devices. --factory-startup prefs are not saved, so call this every run.
+    Also pins the Blender version, applies the Metal crash workaround (METAL_ENV) and turns scene-specialised kernel
+    compilation off (kernel_optimization_level OFF: generic kernels only, no background recompiles mid-render)."""
+    if tuple(bpy.app.version) != BLENDER_VERSION:
+        raise SettingsError(f"Blender {bpy.app.version_string} is not the pinned reference version {BLENDER_VERSION}")
+    bad_env = [k for k in METAL_ENV_FORBIDDEN if os.environ.get(k)]
+    if bad_env:
+        raise SettingsError(f"unset {bad_env}: they reach the racy Cycles path_cache_get from Metal device init")
+    os.environ.update(METAL_ENV)
     cp = bpy.context.preferences.addons["cycles"].preferences
+    cp.kernel_optimization_level = "OFF"
+    if cp.kernel_optimization_level != "OFF":
+        raise SettingsError(f"kernel_optimization_level read back {cp.kernel_optimization_level!r}")
     cp.compute_device_type = "METAL"
     cp.refresh_devices()
     used: list[str] = []
@@ -130,7 +154,9 @@ def enable_metal() -> dict[str, Any]:
     if not used or cp.compute_device_type != "METAL" or not cp.has_active_device():
         raise SettingsError(f"no METAL device available: {[(d.name, d.type) for d in cp.devices]}")
     p = "preferences.addons['cycles'].preferences"
-    m: dict[str, Any] = {f"{p}.compute_device_type": cp.compute_device_type}
+    m: dict[str, Any] = {"bpy.app.version": list(bpy.app.version), f"{p}.compute_device_type": cp.compute_device_type,
+                         f"{p}.kernel_optimization_level": cp.kernel_optimization_level,
+                         **{f"env.{k}": os.environ.get(k) for k in METAL_ENV}}
     for d in cp.devices:
         m[f"{p}.devices{_q(d.name)}.use"] = bool(d.use)
     return m

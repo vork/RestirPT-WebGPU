@@ -165,6 +165,38 @@ the value from the cfg (default True, pinned as before), and `build_scene.py` ac
 the light tree. With a single emitter (every other env scene) the tree selects that emitter with probability 1, so it
 cannot bias there.
 
+## D7. Metal kernel binary archives off, kernel optimization OFF, Blender pinned to 5.2.2 (reference-setting fix)
+
+**Symptom.** Blender aborted intermittently during a reference render (4 crashes on 2026-09-29: 00:18, 05:41, 08:40,
+08:53; macOS reports `~/Library/Logs/DiagnosticReports/Blender-2026-09-29-*.ips`). The main thread was always inside
+`ccl::Session::wait()` (mid-render), and the crashing thread was one of 13 `ccl::ShaderCache::compile_thread_func` →
+`MetalKernelPipeline::compile()` threads. There were two signatures:
+- `-[NSURL initFileURLWithPath:]` raised on a nil path, which led to SIGABRT (3 crashes);
+- `BUG IN CLIENT OF LIBMALLOC: memory corruption of free block` inside the AGX compiler (1 crash).
+
+Each abort skipped `atexit`, which left `/tmp/restirpt-gpu.lock` behind and stalled every GPU job.
+
+**Cause.** In `intern/cycles/util/path.cpp`, `path_cache_get()` lazily assigns a file-static `std::string`
+(`cached_xdg_cache_path`) with no synchronisation. `MetalKernelPipeline::compile()` (`device/metal/kernel.mm`) calls it
+for every pipeline that uses a binary archive, from up to `maximumConcurrentCompilationTaskCount − 1` threads at once:
+- concurrent assignment corrupts the heap;
+- a torn read yields a path that is not valid UTF-8, so `@(path.c_str())` is nil and `fileURLWithPath:nil` throws at
+  archive serialisation.
+
+The code is identical in v5.1.2, v5.2.2 and main.
+
+**Fix** (`cycles_settings.enable_metal`, read back into manifest.json):
+- `CYCLES_METAL_DISABLE_BINARY_ARCHIVES=1` makes `should_use_binary_archive()` false, so no worker thread reaches
+  `path_cache_get`. It is set via `os.environ` before the first render; `getenv` is read per pipeline compile.
+- `CYCLES_METAL_PROFILING` and `CYCLES_METAL_DEBUG` must stay unset: they reach the same function from device init.
+- `kernel_optimization_level = 'OFF'` drops the per-scene specialised kernels, so the whole render uses one kernel
+  set with no mid-render switch.
+- The Blender version is asserted to be 5.2.2, the reference version since 2026-09-29 by the user's decision. The
+  reference cache key already includes the version string.
+
+**Effect on the gates.** None on the expectation; both changes only affect how kernels are compiled. All references
+re-render under 5.2.2 anyway.
+
 ## Deferred
 
 - **C0o visibleToCamera** (M3a): Mode B only. In Mode A Cycles 5.1.2 does not show camera-visible area lights when no
