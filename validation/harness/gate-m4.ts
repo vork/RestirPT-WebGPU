@@ -17,8 +17,10 @@
 //   Plants  (1) omitted spatial Jacobian (RSF_PLANT_NO_J, rung 3.2) on (i) and (v) V1; (2) marginal pdfs in J
 //           (RSF_PLANT_MARGINAL_J) on (v) V2: each detected in ≥ 9/10 half-size repeats (compare.py --calibrate
 //           --planted; the PT A/A control ≥ 9/10) and failing the full comparison; (3) synthetic W × 1.003 (compare.py
-//           stage-B default plant) on the (i) rung-3.2 ReSTIR run, whose --calibrate A/A re-splits must also pass.
-//   A/A     two ReSTIR seed sets (4002 vs 5002) on (i) rung 3.2 must pass Stage B.
+//           stage-B default plant) on a (i) rung-3.2 ReSTIR run, whose --calibrate A/A re-splits must also pass.
+//   A/A     two ReSTIR seed sets (5002 vs 5003) on (i) rung 3.2 must pass Stage B. Calibration sides that are split or
+//           compared at equal size are rendered at CALIB_FACTOR (4) × the unit size: the A/A pair, and the PT
+//           references of the rendered plants (seed 4201).
 //   T15/T16 per run: NaN/Inf = 0, negatives = 0, BVH overflow = 0, RSC error counters = 0, queue overflow = 0, no submit
 //           over the hard cap; config: unbiased preset (plants only where named), internal scale 1, no denoiser,
 //           linear-accumulation readback, jitter iid-per-run, maxBounces = the PT reference's, Mode A, same scene
@@ -40,7 +42,14 @@ const ENV_SCENES = 'validation/out/m3c/scenes';
 const M4_OUT = 'validation/out/m4';
 const PTREFS = `${M4_OUT}/ptrefs`;
 const PILOTS = `${M4_OUT}/pilots`;
-export const SEEDS = { pt: 4001, ptRerun: 104001, restir: 4002, restirRerun: 104002, aa: 5002, ptPilot: 4011, restirPilot: 4012, plantBase: 4101 } as const;
+export const SEEDS = { pt: 4001, ptRerun: 104001, restir: 4002, restirRerun: 104002, aa: 5002, aa2: 5003, ptCalib: 4201, ptPilot: 4011, restirPilot: 4012, plantBase: 4101 } as const;
+/**
+ * Calibration runs compare HALF-size replicate sets (compare.py --calibrate) or two ReSTIR sets of equal size (A/A):
+ * the side(s) they split are rendered at CALIB_FACTOR × the unit's size so the half-size A/A control is powered like a
+ * full Stage-B unit (a unit sized to SE_Δ ≈ target leaves its halves ~1.3–1.6× above target and TOST then fails at the
+ * worst of 256 tiles). The planted runs themselves stay at 1× (P = a half of them).
+ */
+export const CALIB_FACTOR = 4;
 export const NUM_EPS = 1e-4;
 const NUM_EPS_NOTE = 'two f32 implementations (cycles-deviations.md D2; restir-api.md §6.3)';
 /** Per-side GPU time above which a unit's tiles are enlarged to 64² (restir-api.md §6.3). */
@@ -114,7 +123,7 @@ export const GPU_SUITES: [string, string][] = [
 ];
 
 /** Suite FWER units: every scene × rung + ensemble + 2022 + the rendered plants + the synthetic plant + A/A, × {Y,R,G,B}. */
-export function nUnits(): number { return 4 * (M4_SCENES.length * M4_RUNGS.length + 2 + PLANTS.length + 1 + 1); }
+export function nUnits(): number { return 4 * (M4_SCENES.length * M4_RUNGS.length + 2 + PLANTS.length + 1 + 1); }   // A/A and W×1.003 count once each
 
 // ------------------------------------------------------------------------------------------------ statistics helpers
 
@@ -540,17 +549,18 @@ export function milestoneM4(record: Rec, o: M4Options = {}): void {
       for (const p of PLANTS) {
         const s = M4_SCENES.find((x) => x.pkg === p.pkg)!;
         const z = sizing[p.pkg] ?? pilotAndSize(s, dir, add);
-        const ref = z && ptRef(s, z, SEEDS.pt, add);
+        const ref = z && ptRef(s, { ...z, ptSpp: z.ptSpp * CALIB_FACTOR }, SEEDS.ptCalib, add);
         if (z && ref) results.push(plantDetection(s, p, z, ref, dir, runId, N_UNITS, add));
       }
       const s = M4_SCENES.find((x) => x.pkg === AA_PKG)!;
-      const z = sizing[AA_PKG];
+      const z = sizing[AA_PKG] ?? pilotAndSize(s, dir, add);
       const ref = z && ptRef(s, z, SEEDS.pt, add);
-      const base = firstRuns[`${AA_PKG}@3.2`];
-      if (z && ref && base) {
-        results.push(syntheticPlant(s, base, z, dir, N_UNITS, add));
-        results.push(restirAA(s, base, z, ref, dir, runId, N_UNITS, add));
-      } else add(`A/A and synthetic W x1.003 on ${AA_PKG} rung 3.2`, false, 0, undefined, 'the (i) rung-3.2 run is missing (ladder stopped earlier)');
+      if (z && ref) {
+        const aa = restirAA(s, z, ref, dir, runId, N_UNITS, add);
+        results.push(aa.result);
+        if (aa.base) results.push(syntheticPlant(s, aa.base, z, dir, N_UNITS, add));
+        else add(`synthetic W x1.003 plant on ${AA_PKG}`, false, 0, undefined, 'the A/A ReSTIR run failed');
+      } else add(`A/A and synthetic W x1.003 on ${AA_PKG} rung 3.2`, false, 0, undefined, 'no sizing / PT reference');
     }
   }
 
@@ -825,28 +835,31 @@ function syntheticPlant(s: M4Scene, base: Run, z: SceneSizing, dir: string, nU: 
     aa: aa && { ok: aa.ok, splits: aa.n_splits, fpr_tile: aa.per_tile, gate_pass_rate: aa.gate_pass_rate, tost_pass_rate: aa.tost_pass_rate },
     detected: pl && `${pl.gate_fail_count}/${pl.n_repeats}`, control_pass: pl && `${pl.control_pass_count}/${pl.n_repeats}`, mdb_global_median: pl && r4(pl.mdb_global_median),
   };
-  add(`synthetic W x1.003 plant + calibrate A/A re-splits on the ReSTIR ${s.pkg} rung-3.2 run`, ok, (performance.now() - t0) / 1000, data,
+  add(`synthetic W x1.003 plant + calibrate A/A re-splits on the ReSTIR ${s.pkg} rung-3.2 run (x${CALIB_FACTOR}, seed ${SEEDS.aa})`, ok, (performance.now() - t0) / 1000, data,
     rep ? `A/A ${aa?.ok ? 'ok' : 'FAIL'} (gate pass ${Math.round((aa?.gate_pass_rate ?? 0) * 20)}/20); W x1.003 detected ${pl?.gate_fail_count}/10, control ${pl?.control_pass_count}/10, MDB ${pct(pl?.mdb_global_median, 3)}` : `exit ${r.code} ${r.out.slice(-300)}`);
   return data;
 }
 
-function restirAA(s: M4Scene, base: Run, z: SceneSizing, ref: Run, dir: string, runId: string, nU: number, add: Add): Record<string, any> {
+function restirAA(s: M4Scene, z: SceneSizing, ref: Run, dir: string, runId: string, nU: number, add: Add): { result: Record<string, any>; base?: Run } {
   const unit = `aa-restir-${s.pkg}`;
   const t0 = performance.now();
   const rz = z.rungs['3.2'];
-  const run = restirRun(s, 'offline', rz.framesPerBatch, z.B, SEEDS.aa, `${runId}-${unit}`, path.join(dir, 'restir', unit));
-  let data: Record<string, any> = { unit, kind: 'aa', scene: s.pkg, rung: '3.2', ok: false, status: `run exit ${run.code}` };
-  if (run.dir && run.meta) {
-    const t16 = t16Problems(run.meta, ref.meta, { rounds: 3 });
+  const frames = rz.framesPerBatch * CALIB_FACTOR;
+  const runs = [SEEDS.aa, SEEDS.aa2].map((seed) => restirRun(s, 'offline', frames, z.B, seed, `${runId}-${unit}-${seed}`, path.join(dir, 'restir', `${unit}-${seed}`)));
+  let data: Record<string, any> = { unit, kind: 'aa', scene: s.pkg, rung: '3.2', ok: false, status: `run exit ${runs.map((r) => r.code).join('/')}`, restir: `${frames}x${z.B} (x${CALIB_FACTOR})` };
+  let base: Run | undefined;
+  if (runs.every((r) => r.dir && r.meta)) {
+    const t16 = runs.flatMap((r) => t16Problems(r.meta!, ref.meta, { rounds: 3 }));
+    base = { dir: runs[0].dir!, meta: runs[0].meta!, seconds: runs[0].seconds };
     const out = path.join(dir, 'compare', unit);
-    const c = compare(run.dir, base.dir, writeTest(dir, unit, nU, s, rz.tile), out);
+    const c = compare(runs[1].dir!, runs[0].dir!, writeTest(dir, unit, nU, s, rz.tile), out);
     const rep = tryJson(path.join(out, 'report.json'));
     const sum = rep && summarize(rep);
-    data = { ...data, ...(sum ?? { status: `compare exit ${c.code}` }), ok: rep?.status === 'pass' && t16.length === 0, t16, report: path.join(out, 'report.json'), seeds: `${SEEDS.restir} vs ${SEEDS.aa}` };
+    data = { ...data, ...(sum ?? { status: `compare exit ${c.code}` }), ok: rep?.status === 'pass' && t16.length === 0, t16, report: path.join(out, 'report.json'), seeds: `${SEEDS.aa2} vs ${SEEDS.aa}` };
   }
-  add(`A/A: two ReSTIR seed sets on ${s.pkg} rung 3.2 (${SEEDS.restir} vs ${SEEDS.aa})`, data.ok, (performance.now() - t0) / 1000, data,
+  add(`A/A: two ReSTIR seed sets on ${s.pkg} rung 3.2 (${SEEDS.aa} vs ${SEEDS.aa2}, ${frames} frames x ${z.B})`, data.ok, (performance.now() - t0) / 1000, data,
     `${data.status}: Δ_Y ${pct(data.global_rel_Y, 4)} (MDB ${pct(data.mdb_global_Y, 4)}), tile MDB max ${pct(data.mdb_tile_max_Y, 2)}`);
-  return data;
+  return { result: data, base };
 }
 
 // ------------------------------------------------------------------------------------------------ budget + reports
