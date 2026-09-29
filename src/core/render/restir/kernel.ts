@@ -530,9 +530,12 @@ export class RestirFramePass {
     if (!t || !this.accum) return false;
     this.kernel.beginSubmit();
     const units = this.kernel.frameUnits(0, { accum: this.accum, counters: this.counters, colorTarget: t.color, interactive: frame });
-    if (timestampWrites) encoder.beginComputePass({ label: 'rs-ts-begin', timestampWrites: { querySet: timestampWrites.querySet, beginningOfPassWriteIndex: timestampWrites.beginningOfPassWriteIndex } }).end();
+    // No timestamp writes on (or around) the ReSTIR passes (restir-api.md Changelog C8): with timestampWrites on the
+    // bracketing passes, Chrome 154 / Metal silently dropped the frame's ReSTIR work in some page loads (no WebGPU error;
+    // arena header 0, q0 capacity 0, image ≈ L1; app smoke, plain Cornell and Cornell + HDRI alike). The parameter is
+    // kept for signature stability and ignored.
+    void timestampWrites;
     for (const u of units) u.encode(encoder);
-    if (timestampWrites) encoder.beginComputePass({ label: 'rs-ts-end', timestampWrites: { querySet: timestampWrites.querySet, endOfPassWriteIndex: timestampWrites.endOfPassWriteIndex } }).end();
     return true;
   }
 

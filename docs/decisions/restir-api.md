@@ -1478,3 +1478,16 @@ touching a shared interface. "WP-A" entries were made while landing P0 / A1.
 - **D6 Debug off.** Validation pipelines (no G3, `DEBUG_NO_BINDINGS`) compile every hook to an empty body (tested). With
   debug resources bound, views/probe on vs off give bitwise-identical finalize output; the debug-enabled pipelines
   may differ from the validation pipelines by f32 contraction only (measured: 1 word of 2304 by 7e-8 rel).
+- **C8 No timestamp writes on the ReSTIR passes** (affects WP-A: `kernel.ts` `RestirFramePass.encode`, edited by WP-C;
+  WP-D: the HUD's `restir` GPU timing line; A13's "timestamps bracket all ReSTIR passes" is withdrawn). The app smoke
+  bug "spatial reuse produces nothing" (accepted 0, q0 0/0, view 460 unwritten, image ≈ L1, plain Cornell or
+  Cornell + HDRI depending on the run) was not in the spatial stage: in some page loads (typically not the first page of
+  a fresh browser) Chrome 154 / Metal silently lost the frame's ReSTIR effects whenever the ReSTIR passes were
+  bracketed by the app's timestamp writes (the two empty `rs-ts-begin` / `rs-ts-end` passes, and equally when the
+  writes rode on the first / last real pass). No WebGPU validation, internal or OOM error was raised; the frame's GPU
+  time halved. Measured in failing pages (same kernel, bind groups, ring slots and pipelines): every frame encoded
+  without ReSTIR timestamp writes ran correctly (hand-encoded frames, app frames with the timestamp ring disabled,
+  timestamps on the M1 primary pass only), frames with them lost the work. `RestirFramePass.encode` now ignores its
+  `timestampWrites` argument (signature kept); 10/10 app page loads and the app smoke pass. Batch / validation paths
+  never used timestamps. A GPU test asserts that the interactive pass encodes no compute pass with `timestampWrites`
+  and renders identically with and without the argument.
