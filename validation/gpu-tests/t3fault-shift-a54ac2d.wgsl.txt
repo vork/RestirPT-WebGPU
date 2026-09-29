@@ -157,14 +157,7 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
     xk = vertex_from_ids(src.rc.x, bitcast<f32>(src.rc.y), bitcast<f32>(src.rc.z), yPrev.pos);
     wP = normalize(xk.pos - yPrev.pos);
   }
-  // NEE end term and its visibility data, reduced to a few registers inside the iteration that evaluates the light
-  // sample (the full LightSample is not kept live across the rest of the shift and the visibility traversal:
-  // docs/decisions/platform-lanes.md "Metal quirks", M4 T3 control-flow fault)
-  var neeT = vec3f(0.0);                                 // (ω1/q)·(f_all ⊙ Λ); 0 for an invalid / same-triangle / Λ = 0 sample
-  var visPos = vec3f(0.0);
-  var visN = vec3f(0.0);
-  var visPrim = BVH_MISS;
-  var visInf = false;
+  var ls = light_sample_none();
   var yV = RcVertex(yPrev.pos, yPrev.ng, RCK_SURFACE, 0u);
   var eY = rc_event_none();
   var fY = vec3f(0.0);  var pY = 0.0;  var pYm = 0.0;  var suppY = true;
@@ -177,9 +170,7 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
     var L = wP;
     var lobe = lkm1;
     if (!atY) { s = xk; V = -wP; L = src.rcWi; lobe = lk; }
-    let neeHere = (atY && neeAtY) || (!atY && cs == SH_N1);
-    var ls = light_sample_none();
-    if (neeHere) {
+    if ((atY && neeAtY) || (!atY && cs == SH_N1)) {
       ls = nee_eval(s.pos, ep);
       L = ls.dir;
       lobe = LOBE_NEE;
@@ -189,13 +180,6 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
     }
     let m = material_eval(s, V);
     let q = bsdf_query(m, V, L, lobe);
-    if (neeHere) {                                       // (a)/(f) at y_{d−1}, (b) at x_{d−1}: p2 = this vertex's p̄
-      if (ls.valid && (!atY || ls.prim != yPrevPrim) && any(ls.Lambda > vec3f(0.0))) {
-        let w1 = nee_mis_w1(ls, q.p_marg, B);
-        neeT = (w1 / ls.q) * (q.f_all * ls.Lambda);
-      }
-      visPos = ls.pos; visN = ls.nz; visPrim = ls.prim; visInf = ls.isInf; wP = select(wP, ls.dir, atY);
-    }
     if (atY) {
       if (neeAtY && (m.flags & MATEVAL_HAS_NON_DELTA) == 0u) { return shift_fail(SC_O0_LOBE, RCT_NONE, k - 1u, 0.0); }
       yV = rc_vertex(yPrev, m);
@@ -263,7 +247,10 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
   var F = vec3f(0.0);
   switch cs {
     case SH_FORCED: {                                    // (a)/(f): ω1 and p2 recomputed at y_{d−1}
-      F = Tp * neeT;
+      if (ls.valid && ls.prim != yPrevPrim && any(ls.Lambda > vec3f(0.0))) {
+        let w1 = nee_mis_w1(ls, pYm, B);
+        F = Tp * ((w1 / ls.q) * (fY * ls.Lambda));
+      }
     }
     case SH_EMIT: {                                      // (d): ω2 with p1 recomputed at y_{d−1}
       let w2 = mis_w2(tri_light_p1(yPrev.pos, xk.pos, xk.ng, xkPrim), pYm, B);
@@ -274,7 +261,10 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
       F = Tp * (fY / pY) * (w2 * envRadiance(envUV(wP, envParams.cg, envParams.sg)));
     }
     case SH_N1: {                                        // (b): NEE end term re-evaluated at x_{d−1} (D6), p2 changes
-      F = Tp * (fY / pY) * neeT;
+      if (ls.valid && any(ls.Lambda > vec3f(0.0))) {
+        let w1 = nee_mis_w1(ls, pKm, B);
+        F = Tp * (fY / pY) * ((w1 / ls.q) * (fK * ls.Lambda));
+      }
     }
     case SH_B1: {                                        // (c): emitter / env end term re-evaluated at x_{d−1} (D6)
       var endT = vec3f(0.0);
@@ -290,7 +280,7 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
       F = Tp * (fY / pY) * (fK / pK) * src.rcRad;
     }
   }
-  return shift_finish_vis(F, J, jNum, cs, yPrev, yPrevPrim, xk, xkPrim, wP, visPos, visN, visPrim, visInf);
+  return shift_finish_vis(F, J, jNum, cs, yPrev, yPrevPrim, xk, xkPrim, wP, ls);
 }
 
 /// Steps 4–5 for ∅ (no reconnection segment): J guard, plants, NONFINITE, ZERO.
@@ -310,14 +300,11 @@ fn shift_finish(F: vec3f, J: f32, jNum: f32, visible: bool) -> ShiftOut {
 
 /// Steps 4–5 with the reconnection visibility (traced only when F > 0 and the shift is defined).
 fn shift_finish_vis(F: vec3f, J: f32, jNum: f32, cs: u32, y: SurfaceHit, yPrim: u32, xk: SurfaceHit, xkPrim: u32, wP: vec3f,
-                    visPos: vec3f, visN: vec3f, visPrim: u32, visInf: bool) -> ShiftOut {
+                    ls: LightSample) -> ShiftOut {
   var o = shift_finish(F, J, jNum, true);
   if (rs_slot_code_sc(o.code) != SC_OK) { return o; }
   var vis = true;
-  if (cs == SH_FORCED) {                                 // = nee_visible(y, yPrim, ls) (endpoint.wgsl), from the kept fields
-    if (visInf) { vis = visibleInf(y.pos, y.ng, yPrim, wP); }
-    else { vis = visible(y.pos, y.ng, yPrim, visPos, visN, visPrim); }
-  }
+  if (cs == SH_FORCED) { vis = nee_visible(y, yPrim, ls); }
   else if (cs == SH_ENV) { vis = visibleInf(y.pos, y.ng, yPrim, wP); }
   else { vis = visible(y.pos, y.ng, yPrim, xk.pos, xk.ng, xkPrim); }
   if (!vis) { return shift_finish(F, J, jNum, false); }

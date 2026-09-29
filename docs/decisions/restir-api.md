@@ -1433,6 +1433,12 @@ touching a shared interface. "WP-A" entries were made while landing P0 / A1.
   restriction (such pairs fall back to replay / a later pair). The B-4 "tangent" exemption of the dual is removed: a
   dual disagreement is FP-BOUNDARY only by the margin rule or when it flips under an ulp-scale (16 ulp) perturbation
   of the vertex positions; U-11 J disagreements within the f32 conditioning `32·2⁻²³·(1/|cos|min + 3·|p|max/t)` are FP.
+- **B-7 Platform fault in the T3 kernel; compact NEE state in the shift** (no interface change; affects nobody's call
+  sites). A rare, nondeterministic Metal control-flow fault in the T3 test kernel (docs/decisions/platform-lanes.md
+  "Metal quirks" Q2) made a few forced-NEE lanes take the wrong branch after `shift_hybrid`. `shift_hybrid` now keeps
+  only the NEE end term and the visibility data of a light sample (not the full `LightSample`) across the rest of the
+  shift; the forced visibility is `nee_visible()`'s body on those fields. The T3 harness separates a PLATFORM class
+  (sentinels, then/else counts, accounting invariants) from LOGIC; production passes were stress-tested clean.
 
 ### WP-D amendments (debug views, inspector, interactive integration)
 

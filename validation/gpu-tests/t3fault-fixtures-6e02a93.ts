@@ -1,3 +1,5 @@
+// FROZEN COPY (evidence for docs/decisions/platform-lanes.md "Metal quirks"): the T3 kernel of commit 6e02a93, used only by the
+// T3 PLATFORM discriminator (VITE_DISC build "*-oldharness") in restir-shift.gpu.test.ts. Do not edit.
 // WP-B helpers for the shift GPU tests (restir-shift.gpu.test.ts; restir-api.md §1.2, §6.1–§6.2): custom test
 // pipelines on top of RestirKernel (G0/G1 of the kernel, a test G2 of storage buffers), f32 bit helpers.
 import { readBuffer } from '../../src/core/gpu/readback.ts';
@@ -25,14 +27,14 @@ export interface TestPipeline {
  * env, RestirParams, lights, records, RsDispatch) and G1 (scene). No debug group (DEBUG_NO_BINDINGS).
  */
 export async function testPipeline(k: RestirKernel, name: string, src: string, entry: string, nBuffers: number,
-  defines: Defines = {}, textures: GPUTextureSampleType[] = [], extraSources: Record<string, string> = {}): Promise<TestPipeline> {
+  defines: Defines = {}, textures: GPUTextureSampleType[] = []): Promise<TestPipeline> {
   const c = GPUShaderStage.COMPUTE;
   const entries: GPUBindGroupLayoutEntry[] = [];
   for (let i = 0; i < nBuffers; i++) entries.push({ binding: i, visibility: c, buffer: { type: 'storage' } });
   textures.forEach((t, j) => entries.push({ binding: nBuffers + j, visibility: c, texture: { sampleType: t } }));
   const layout = k.device.createBindGroupLayout({ label: `${name}-g2`, entries });
   const file = `${name}.wgsl`;
-  const pipeline = await k.compile(file, entry, k.customDefines(defines, true), k.customLayout(layout, true), name, { ...extraSources, [file]: src });
+  const pipeline = await k.compile(file, entry, k.customDefines(defines, true), k.customLayout(layout, true), name, { [file]: src });
   return {
     pipeline, layout,
     async run(buffers, work, d = {}, texViews = []) {
@@ -67,7 +69,7 @@ export const T3S = {
 } as const;
 export const T3_HIST_BINS = 64;
 /** Global regions after the log2 J histogram: chain (T3-5) counters and per-endpoint-type (U5) counters. */
-export const T3_CHAIN = { trials: 0, both: 1, jViol: 2, defMismatch: 3, fViol: 4, platform: 5 } as const;
+export const T3_CHAIN = { trials: 0, both: 1, jViol: 2, defMismatch: 3, fViol: 4 } as const;
 export const T3_EP_WORDS = 3;   // per endpoint type LT_* (8): fwdOk, rtOk, logic
 /** Path-class table (dense PSS sweep): key = flags bits 0–21 | (ℓ₁ | ℓ₂ << 3 | ℓ₃ << 6) << 22, count. */
 export const T3_CLASS_SLOTS = 4096;
@@ -76,7 +78,7 @@ export const DENSE_OFF = 64;
 export const T3_VIOL_WORDS = 16;
 export const T3_VIOL_CAP = 4096;
 /** Violation kinds (viol record word 1 high byte). */
-export const T3V = { invUndefined: 1, invZero: 2, sig: 3, J: 4, F: 5, selfUndefined: 6, selfJ: 7, selfF: 8, selfSig: 9, selfZero: 10, platform: 20 } as const;
+export const T3V = { invUndefined: 1, invZero: 2, sig: 3, J: 4, F: 5, selfUndefined: 6, selfJ: 7, selfF: 8, selfSig: 9, selfZero: 10 } as const;
 
 /**
  * T3-0 / T3-1 / T4 kernel. One thread per trial = (atlas pixel p, dumped candidate di, partner j):
@@ -316,11 +318,8 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
   let ep = rf_ep(f);
   st(bin, ${T3S.trials}u);
   let F0 = src.F;
-  // sentinels (a forward result that was never assigned must not read as "OK, J = 0"; SC_OK == 0)
-  var J0 = -1.0;
-  var c0 = 0xFFFFFFFFu;
-  var nThen = 0u;                                      // executions of the ps == 0 / ps != 0 branches (PLATFORM check)
-  var nElse = 0u;
+  var J0 = 0.0;
+  var c0 = 0u;
   var nPass = 1u;
   if (mode == 1u) { nPass = 2u; } else if (mode == 3u) { nPass = 3u; }
   var J1 = 0.0;
@@ -337,9 +336,7 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
       if (r < ${T3_DUAL_CAP}u) { trSlot = 4u + r * DW; }
     }
     let o = shift_hybrid(s, dst);
-    let oc = o.code;                                   // captured right after the call, before any branch on ps
-    let oJ = o.J;
-    let sc = rs_slot_code_sc(oc);
+    let sc = rs_slot_code_sc(o.code);
     if (mode == 2u) {                                  // T5 census values: side A J·h(F_q(ȳ)), side B h(F_p(x̄))
       let ok = sc == SC_OK;
       let sideB = (rsDispatch.flags & 0x80000000u) != 0u;
@@ -398,8 +395,7 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
     let last = ps + 1u == nPass;
     var edge = 1.0;
     if (ps == 0u) {
-      nThen++;
-      J0 = oJ; c0 = oc;
+      J0 = o.J; c0 = o.code;
       atomicAdd(&stats[bin * SW + ${T3S.fwdCodes}u + sc], 1u);
       if (!undefined_sc(sc)) { st(bin, ${T3S.fwdDefined}u); }
       if (sc == SC_OK) {
@@ -409,17 +405,10 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
         atomicAdd(&stats[NB * SW + u32(lb)], 1u);
       }
     } else {
-      nElse++;
       atomicAdd(&stats[bin * SW + ${T3S.invCodes}u + sc], 1u);
       if (!undefined_sc(sc)) { st(bin, ${T3S.invDefined}u); }
     }
     if (last) {
-      // PLATFORM: the branch on the uniform-per-thread loop counter must have run exactly once per pass, ps == 0 once
-      if (nThen != 1u || nThen + nElse != ps + 1u || c0 == 0xFFFFFFFFu) {
-        stg(${T3_CHAIN.platform}u);
-        t3_viol(${T3V.platform}u, bin, trial, c0, oc, ps | (nPass << 4u) | (mode << 8u) | (nThen << 12u) | (nElse << 16u), 0.0, J0, oJ, f, ai, q.y * W + q.x, 0.0);
-        return;
-      }
       let sig = t3_sig(base, f, &edge);
       let selfM = mode == 0u;
       if (undefined_sc(sc)) {

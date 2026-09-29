@@ -119,6 +119,8 @@ describe('U-RC-1: rcPairTest (Enhanced and 2022) ≡ the f64 dual on random pair
 
 interface T3RunOptions {
   mode: 0 | 1 | 3; partners: number; frames: number; frameBase?: number; maxTrialsPerDispatch?: number;
+  /** Initial bin skip mask (bit b = skip case bin b). */
+  skipMask?: number;
   /** Stop a bin once it has this many forward-OK trials (round trips); stop the run when every bin with ≥ minSeen
    *  trials in the first frames reached it, or after `frames` frames / `maxMs`. */
   target?: number; maxMs?: number;
@@ -126,7 +128,7 @@ interface T3RunOptions {
   dual?: DualScene; dualStride?: number;
 }
 interface DualSummary { records: number; pairs: number; logic: number; fp: number; tangentFp: number; jChecked: number; jBad: number; skipped: Record<string, number>; details: string[] }
-interface T3Result { stats: T3Stats; viol: Uint32Array; nViol: number; frames: number; ms: number; dual?: DualSummary }
+interface T3Result { stats: T3Stats; viol: Uint32Array; nViol: number; frames: number; ms: number; dual?: DualSummary; mode?: number }
 
 /** Render frames with the candidate dump and run the T3 kernel over every dumped candidate × partners. */
 async function runT3(rig: RestirRig, tp: TestPipeline, o: T3RunOptions): Promise<T3Result> {
@@ -155,7 +157,7 @@ async function runT3(rig: RestirRig, tp: TestPipeline, o: T3RunOptions): Promise
   const chunk = o.maxTrialsPerDispatch ?? (1 << 20);
   const res = k.resources;
   const t0 = Date.now();
-  let mask = 0, frames = 0;
+  let mask = o.skipMask ?? 0, frames = 0;
   for (let f = 0; f < o.frames; f++) {
     const t = (o.frameBase ?? 0) + f;
     await rig.frames(1, t);
@@ -170,7 +172,7 @@ async function runT3(rig: RestirRig, tp: TestPipeline, o: T3RunOptions): Promise
     frames++;
     if (o.target) {
       const w = await readU32(dev, stats, T3_NBINS * T3S.words * 4);
-      mask = 0;
+      mask = o.skipMask ?? 0;
       let open = 0;
       for (let b = 0; b < T3_NBINS; b++) {
         const ok = w[b * T3S.words + T3S.fwdOk];
@@ -183,10 +185,10 @@ async function runT3(rig: RestirRig, tp: TestPipeline, o: T3RunOptions): Promise
   const s = decodeT3Stats(await readU32(dev, stats));
   const v = await readU32(dev, viol);
   stats.destroy(); viol.destroy(); dualBuf.destroy();
-  return { stats: s, viol: v, nViol: v[0], frames, ms: Date.now() - t0, dual: o.dual ? dualSum : undefined };
+  return { stats: s, viol: v, nViol: v[0], frames, ms: Date.now() - t0, dual: o.dual ? dualSum : undefined, mode: o.mode };
 }
 
-function t3Report(tag: string, r: T3Result): { logic: number; fp: number; rt: number; jBad: number } {
+function t3Report(tag: string, r: T3Result): { logic: number; fp: number; rt: number; jBad: number; platform: number } {
   let logic = 0, fp = 0, rt = 0;
   const rows: string[] = [];
   for (const [n, b] of Object.entries(r.stats.bins)) {
@@ -209,12 +211,23 @@ function t3Report(tag: string, r: T3Result): { logic: number; fp: number; rt: nu
     console.log(`[${tag} T3-D] records=${r.dual.records} pairs=${r.dual.pairs} LOGIC=${r.dual.logic} FP=${r.dual.fp} (tangent ${r.dual.tangentFp}) U-11 J: ${r.dual.jChecked} checked, ${r.dual.jBad} bad; skipped=${JSON.stringify(r.dual.skipped)}${r.dual.details.length ? '\n  ' + r.dual.details.join('\n  ') : ''}`);
     logic += r.dual.logic;
   }
+  // accounting invariants (modes 0/1): every trial has one forward code; self shifts have no inverse; round trips run
+  // the inverse exactly for the forward-OK trials. A break is a PLATFORM fault (control flow), counted apart from LOGIC.
+  let platform = r.stats.chain.platform ?? 0;
+  if (r.mode === 0 || r.mode === 1) {
+    for (const [n, b] of Object.entries(r.stats.bins)) {
+      const fwd = r.stats.fwdCodes[n].reduce((a, x) => a + x, 0), inv = r.stats.invCodes[n].reduce((a, x) => a + x, 0);
+      const bad = fwd !== b.trials || (r.mode === 0 ? inv !== 0 : inv !== b.fwdOk) || b.rtOk > b.fwdOk;
+      if (bad) { platform++; console.log(`[${tag} PLATFORM] ${n}: trials=${b.trials} Σfwd=${fwd} fwdOk=${b.fwdOk} Σinv=${inv} rtOk=${b.rtOk}`); }
+    }
+  }
+  if (platform) console.log(`[${tag} PLATFORM] total=${platform} (kernel records ${r.stats.chain.platform ?? 0})`);
   const c = r.stats.chain;
   if (c.trials) console.log(`[${tag} T3-5] chains=${c.trials} both=${c.both} J>1e-4=${c.jViol} F>1e-4=${c.fViol} definedness mismatch=${c.defMismatch}`);
   logic += c.jViol + c.fViol + c.defMismatch;
   const epN = ['tri', 'point', 'spot', 'rect', 'disk', 'sun', '-', 'env'];
   console.log(`[${tag} U5] ` + r.stats.ep.map((e, i) => (e.fwdOk ? `${epN[i]}: fwdOk=${e.fwdOk} rtOk=${e.rtOk} LOGIC=${e.logic}` : '')).filter(Boolean).join(' · '));
-  return { logic, fp, rt, jBad: r.dual?.jBad ?? 0 };
+  return { logic, fp, rt, jBad: r.dual?.jBad ?? 0, platform };
 }
 
 describe('T3-0 / T3-1 smoke on the all-lights box (allLightsScene, 128², maxBounces 4)', () => {
@@ -246,6 +259,14 @@ function dualScene(rig: RestirRig, scene: SceneData, params: { alphaMin: number;
 }
 const T3_DEFINES = { RS_REPLAY: 1, RS_SHIFT_TRACE: 1, RS_VBUF_BINDING: '4u', RS_GEO_BINDING: '5u' };
 
+/** PLATFORM events (a control-flow fault of the T3 kernel itself, docs/decisions/platform-lanes.md "Metal quirks") are
+ *  reported apart from LOGIC; a rate above 1e-8 per shift means something systematic and fails the test. */
+function expectPlatformRare(...rs: { platform: number; rt: number }[]): void {
+  const p = rs.reduce((a, r) => a + r.platform, 0), n = rs.reduce((a, r) => a + r.rt, 0);
+  if (p) console.warn(`[T3 PLATFORM] ${p} control-flow fault(s) of the test kernel in ${n} shifts (rate ${(p / Math.max(n, 1)).toExponential(2)})`);
+  expect(p / Math.max(n, 1)).toBeLessThanOrEqual(1e-8);
+}
+
 // Gate-0 budgets (per variant and mode): stop a case bin at T3_TARGET forward-OK round trips; wall-clock cap per run.
 const T3_TARGET = 10_000_000;
 const T3_MS = Number(import.meta.env?.VITE_T3_MS ?? 8 * 60_000);
@@ -267,6 +288,7 @@ describe('T3-0 / T2 / T3-1 / T4 / T3-D / U5 / T3-ENV / U-12 on the t3 fixtures (
       expect(self.logic).toBe(0);
       expect(rt.logic).toBe(0);
       expect(rt.jBad).toBe(0);
+      expectPlatformRare(self, rt);
       rig.destroy();
     }, 3_600_000);
   }
@@ -534,6 +556,7 @@ describe('T3-1 / T4 / T3-D / T3-ENV on the Stage-B scenes', () => {
       }));
       expect(rt.logic).toBe(0);
       expect(rt.jBad).toBe(0);
+      expectPlatformRare(rt);
       rig.destroy();
     }, 3_600_000);
   }
@@ -567,4 +590,67 @@ describe('T3 single-trial repro (debugging aid)', () => {
     }
     stats.destroy(); viol.destroy(); dual.destroy(); rig.destroy();
   }, 600_000);
+});
+
+// ------------------------------------------------------------------------------------------------ PLATFORM discriminator
+
+/** VITE_DISC = "variant[,variant…]:frames:reps": T3-0 self shifts, a fresh kernel + pipelines per rep, fixed frame count
+ *  (frame bases differ per rep); reports PLATFORM events (control-flow faults of the test kernel) per run. */
+describe('T3 PLATFORM discriminator (VITE_DISC)', () => {
+  it('repeated T3-0 runs', async () => {
+    const spec = String(import.meta.env?.VITE_DISC ?? '');
+    if (!spec) return;
+    const [vs, fStr, rStr, build = 'new', maskSpec = 'all'] = spec.split(':');
+    // 'forced': only the forced-NEE bins (a-*, f-env) stay active, as in the late phase of a targeted run
+    const skipMask = maskSpec === 'forced' ? ((2 ** T3_NBINS - 1) & ~0x3FF) >>> 0 : 0;
+    const frames = Number(fStr), reps = Number(rStr);
+    const summary: string[] = [];
+    // builds of the shift pipeline: 'new' (tree), 'legacy' = shift.wgsl before the compact-NEE-state restructure,
+    // 'oldharness' (anywhere in the name) = the T3 kernel of 6e02a93 (no sentinels / PLATFORM counters),
+    // '*-noguard' = + rc.wgsl before the |cos| guard (c807aac). Frozen copies: validation/gpu-tests/t3fault-*.
+    const extra: Record<string, string> = {};
+    if (build.startsWith('legacy')) extra['restir/shift.wgsl'] = (await import('./t3fault-shift-a54ac2d.wgsl.txt?raw')).default;
+    if (build.endsWith('noguard')) extra['restir/rc.wgsl'] = (await import('./t3fault-rc-c807aac.wgsl.txt?raw')).default;
+    for (const variant of vs.split(',') as T3Variant[]) {
+      for (let rep = 0; rep < reps; rep++) {
+        const rig = await t3Rig(variant);
+        const kernelSrc = build.includes('oldharness') ? (await import('./t3fault-fixtures-6e02a93.ts')).T3_WGSL : T3_WGSL;
+        const tp = await testPipeline(rig.kernel, `t3-${rep}`, kernelSrc + `\n// rep ${rep}\n`, 't3_main', 4, T3_DEFINES, ['uint', 'unfilterable-float'], extra);
+        const r = t3Report(`DISC ${build} ${variant} #${rep}`, await runT3(rig, tp, { mode: 0, partners: 1, frames, frameBase: 100000 * rep, skipMask }));
+        summary.push(`${build}/${maskSpec} ${variant} #${rep}: fwdOk=${r.rt} PLATFORM=${r.platform} LOGIC=${r.logic}`);
+        rig.destroy();
+      }
+    }
+    console.log(`[DISC summary]\n  ${summary.join('\n  ')}`);
+  }, 3_600_000);
+});
+
+/** VITE_STRESS = "variant[,variant…]:frames": production passes (rs_spatial_replay / rs_spatial_shift / resample,
+ *  3 rounds × 6 slots, 1 tree) on the T3 fixtures; the arena counters of a slot-index / control-flow fault
+ *  (RSC_PENDING_LEFT, RSC_SLOT_MISMATCH, RSC_SHIFT_NONFINITE) must stay 0. */
+describe('Production shift passes: platform-fault stress (VITE_STRESS)', () => {
+  it('arena counters', async () => {
+    const spec = String(import.meta.env?.VITE_STRESS ?? '');
+    if (!spec) return;
+    const [vs, fStr] = spec.split(':');
+    const frames = Number(fStr);
+    for (const variant of vs.split(',') as T3Variant[]) {
+      const env = variant === 't3_cases_256_noenv' ? undefined : (await loadHdri(`${T3_ENV_ID}_1k.hdr`)) ?? synthEnvData(256, 128);
+      const t = t3Scene(variant, env);
+      const rig = await restirRig(t.scene, 256, 256, {
+        preset: 'offline', cam: { camToWorld: t.camera.matrix, yfov: t.camera.yfov },
+        settings: { maxBounces: t.maxBounces, trees: 1, rounds: 3, slots: 6, diskRadius: 10 },
+      });
+      const tot = { pendingLeft: 0, slotMismatch: 0, shiftNonFinite: 0, accepted: 0, queued: 0 };
+      const codes = new Array(16).fill(0);
+      for (let f = 0; f < frames; f += 20) {
+        const r = await rig.frames(Math.min(20, frames - f), 7000 + f);
+        for (const k of Object.keys(tot) as (keyof typeof tot)[]) tot[k] += r.arena.rsc[k];
+        r.arena.codes.forEach((c, i) => { codes[i] += c; });
+      }
+      console.log(`[STRESS ${variant}] frames=${frames} ${JSON.stringify(tot)} codes=${codes.map((c, i) => (c ? `${SC_NAMES[i]}:${c}` : '')).filter(Boolean).join(' ')}`);
+      expect(tot.pendingLeft + tot.slotMismatch + tot.shiftNonFinite).toBe(0);
+      rig.destroy();
+    }
+  }, 3_600_000);
 });
