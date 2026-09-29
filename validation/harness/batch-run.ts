@@ -6,7 +6,7 @@ import { encodePFM } from '../../src/core/io/pfm.ts';
 import { sha256Hex } from '../../src/core/io/zlib.ts';
 import { BatchAccumulator, type SubmitBudget } from '../../src/core/render/batch-accumulator.ts';
 import { EMISSION_COUNTERS, EmissionKernel } from '../../src/core/render/emission-kernel.ts';
-import { PT_COUNTERS, PtKernel, type PtPlant, type PtTechnique } from '../../src/core/render/pt-kernel.ts';
+import { PT_COUNTERS, PtKernel, type PtEnvOptions, type PtPlant, type PtTechnique } from '../../src/core/render/pt-kernel.ts';
 import { createEnvResources, destroyEnvResources, writeEnvParams } from '../../src/core/render/env-gpu.ts';
 import { computeRenderOrigin } from '../../src/core/render/frame-uniforms.ts';
 import { SceneGpu } from '../../src/core/render/scene-gpu.ts';
@@ -16,7 +16,7 @@ import type { SceneData } from '../../src/core/scene/types.ts';
 import { isUsdName, loadUsd } from '../../src/core/scene/usd/load-usd.ts';
 import { packageSha256, uploadFile } from './export-package.ts';
 
-/** 'emission': M2 length-1 kernel; 'pt': the M3a reference path tracer (Mode A, env BSDF-only). */
+/** 'emission': M2 length-1 kernel; 'pt': the reference path tracer (Mode A; env NEE + MIS since M3c). */
 export type ValidationKernel = 'emission' | 'pt';
 
 export interface RenderBatchesOptions {
@@ -49,6 +49,11 @@ export interface RenderBatchesOptions {
   technique?: PtTechnique;
   /** kernel 'pt': Gate-1 planted bias (emitter scale / path drop); recorded in meta.json and the config hash. */
   plant?: PtPlant;
+  /**
+   * kernel 'pt' (M3c): env sampling options. `nee` defaults to the package's env.sampling (NONE → off). `strengthScale`
+   * is the planted bias "env strength ×s" (applied to the rendered env only). Recorded in meta.json and the config hash.
+   */
+  env?: PtEnvOptions & { strengthScale?: number };
 }
 
 export interface RenderBatchesReport {
@@ -62,7 +67,7 @@ export interface RenderBatchesReport {
 const stable = (v: unknown): string => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x)
   ? Object.fromEntries(Object.entries(x as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
 
-interface FrameOverride { env?: { rotationZ?: number; strength?: number } }
+interface FrameOverride { env?: { rotationZ?: number; strength?: number; tint?: [number, number, number] } }
 
 async function loadSource(o: RenderBatchesOptions): Promise<{ scene: SceneData; camera: { camToWorld: ArrayLike<number>; yfov: number }; size?: [number, number]; source: Record<string, unknown>; frame?: FrameOverride }> {
   if (o.package) {
@@ -85,7 +90,8 @@ async function loadSource(o: RenderBatchesOptions): Promise<{ scene: SceneData; 
     }
     return {
       scene, camera, size: [p.render.width, p.render.height], frame,
-      source: { kind: 'package', url: o.package, name: p.json.name, packageSha256: hash.sha256, files: hash.files, lightMode: p.lightMode, maxBounces: p.render.maxBounces, frame: o.frame ?? null },
+      source: { kind: 'package', url: o.package, name: p.json.name, packageSha256: hash.sha256, files: hash.files, lightMode: p.lightMode, maxBounces: p.render.maxBounces, frame: o.frame ?? null,
+        ...(p.json.env ? { envSampling: p.json.env.sampling } : {}) },
     };
   }
   if (!o.sceneUrl) throw new Error('renderBatches: need package or sceneUrl');
@@ -111,17 +117,26 @@ export async function renderBatches(ctx: GpuContext, o: RenderBatchesOptions): P
   const gpu = await SceneGpu.create(device, src.scene, origin, { textureMode: 'validation', watertight, features, wgslLanguageFeatures });
   const env = await createEnvResources(device, src.scene.env);
   if (src.frame?.env) writeEnvParams(device, env, src.frame.env);
+  if (o.env?.strengthScale !== undefined) writeEnvParams(device, env, { strength: env.params.strength * o.env.strengthScale });
+  const pkgEnvSampling = (src.source.envSampling as string | undefined) ?? 'AUTOMATIC';
+  const envOpts: PtEnvOptions = { ...o.env, nee: o.env?.nee ?? pkgEnvSampling !== 'NONE' };
   const view = { camera: { camToWorld: src.camera.camToWorld as number[], yfov: src.camera.yfov }, width: W, height: H, runSeed: o.seed };
   const pkgBounces = typeof src.source.maxBounces === 'number' ? src.source.maxBounces : undefined;
   const maxBounces = o.maxBounces ?? pkgBounces ?? 3;
   const lightMode = src.source.lightMode === 'B' ? 'B' : 'A';
   if (o.kernel === 'pt' && lightMode !== 'A') errors.push('kernel pt: Mode B is M3b (rendering as Mode A)');
   const kernel = o.kernel === 'pt'
-    ? await PtKernel.create(device, gpu, env, { features, wgslLanguageFeatures, maxBounces, rr: o.rr ?? false, technique: o.technique ?? 'mis', lightMode: 'A', plant: o.plant })
+    ? await PtKernel.create(device, gpu, env, { features, wgslLanguageFeatures, maxBounces, rr: o.rr ?? false, technique: o.technique ?? 'mis', lightMode: 'A', plant: o.plant, env: envOpts })
     : await EmissionKernel.create(device, gpu, env, { features, wgslLanguageFeatures });
   kernel.setView(view);
+  const envTable = kernel instanceof PtKernel ? kernel.lights.state.env : undefined;
+  const envInfo = kernel instanceof PtKernel && env.present ? {
+    nee: kernel.lights.summary().env, pEnv: kernel.lights.state.envPmf(), strength: env.params.strength, tint: env.params.tint, rotationZ: env.params.rotationZ,
+    ...(envTable ? { importance: { Wm: envTable.Wm, Hm: envTable.Hm, cap: envTable.options.cap, floors: envTable.options.floors, buildMs: Math.round(envTable.buildMs) } } : {}),
+    ...(o.env?.misPower ? { misPower: true } : {}), ...(o.env?.plant ? { plant: o.env.plant } : {}), ...(o.env?.strengthScale !== undefined ? { strengthScale: o.env.strengthScale } : {}),
+  } : undefined;
   const ptInfo = kernel instanceof PtKernel
-    ? { maxBounces, rr: kernel.settings.rr, technique: kernel.settings.technique, lightMode, lights: kernel.lights.summary(), ...(o.plant ? { plant: o.plant } : {}) }
+    ? { maxBounces, rr: kernel.settings.rr, technique: kernel.settings.technique, lightMode, lights: kernel.lights.summary(), ...(o.plant ? { plant: o.plant } : {}), ...(envInfo ? { env: envInfo } : {}) }
     : undefined;
   const acc = new BatchAccumulator(device, W, H, o.budget);
   const tSetup = performance.now();
@@ -159,7 +174,10 @@ export async function renderBatches(ctx: GpuContext, o: RenderBatchesOptions): P
   const config = {
     kernel: o.kernel, sppPerBatch: o.spp, width: W, height: H, jitter: 'iid-per-run', filter: 'box-1px',
     scene: src.source.packageSha256 ?? src.source.fileSha256, frame: o.frame ?? null, textureMode: 'validation', intersector: watertight ? 'woop-watertight' : 'moller-trumbore',
-    ...(ptInfo ? { maxBounces: ptInfo.maxBounces, rr: ptInfo.rr, technique: ptInfo.technique, lightMode: 'A', env: 'bsdf-only (sampling_method NONE equivalent)', ...(o.plant ? { plant: o.plant } : {}) } : {}),
+    ...(ptInfo ? {
+      maxBounces: ptInfo.maxBounces, rr: ptInfo.rr, technique: ptInfo.technique, lightMode: 'A', ...(o.plant ? { plant: o.plant } : {}),
+      env: envInfo ? { nee: envInfo.nee, importance: envInfo.importance ?? null, misPower: !!envInfo.misPower, plant: envInfo.plant ?? null, strengthScale: envInfo.strengthScale ?? null } : 'none',
+    } : {}),
   };
   const configHash = await sha256Hex(new TextEncoder().encode(stable(config)));
   const info = describeContext(ctx) as { vendor?: string; architecture?: string; description?: string };

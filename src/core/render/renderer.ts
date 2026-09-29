@@ -17,9 +17,12 @@ import { shaderSources } from '../shaders/index.ts';
 import type { EnvironmentData, SceneData } from '../scene/types.ts';
 import type { DebugViewDef } from './debug-views.ts';
 import {
-  createEnvResources, destroyEnvResources, envBindGroupEntries, envBindGroupLayoutEntries, envDefines, envMemoryReport,
+  createEnvResources, destroyEnvResources, envBindGroupEntries, envBindGroupLayoutEntries, envDefines, envImportanceKey, envMemoryReport,
   writeEnvParams, type EnvGpuResources, type EnvParamsCpu,
 } from './env-gpu.ts';
+import { EnvDebugPass, isEnvDebugView } from './env-debug.ts';
+import { buildEnvImportanceAsync } from '../scene/env/env-importance-client.ts';
+import { ENV_IMPORTANCE_CAP_INTERACTIVE, envImportanceBytes } from '../scene/env/env-importance.ts';
 import { SceneGpu, type BvhBuilder } from './scene-gpu.ts';
 import type { LightData } from '../scene/types.ts';
 import type { LightsUpdate } from './lights-gpu.ts';
@@ -59,6 +62,10 @@ export interface RendererOptions {
   maxBounces: number;
   /** PT: Russian roulette (unbiased; off by default, plan §2 rule 11). */
   rr: boolean;
+  /** Env NEE (M3c; ≡ Cycles world sampling_method AUTOMATIC). Off = BSDF-only env (NONE). */
+  envNee: boolean;
+  /** Env importance resolution cap (W_m ≤ cap; plan §1.4b: 2048 interactively, 4096 in validation). */
+  envImportanceCap: number;
 }
 
 export interface RendererTargets {
@@ -88,6 +95,9 @@ interface SceneState {
   group: GPUBindGroup;
   pipelines: Map<string, GPUComputePipeline>;
   pending: Map<string, Promise<GPUComputePipeline | undefined>>;
+  /** Env sampling debug views (M3c), compiled on first use. */
+  envDebug?: EnvDebugPass;
+  envDebugPending?: Promise<EnvDebugPass | undefined>;
 }
 
 interface TargetState {
@@ -103,7 +113,10 @@ export class Renderer {
   readonly device: GPUDevice;
   /** Defaults are the validation path: exact textures and Woop watertight intersection (Möller–Trumbore leaks through
    *  the shared diagonal of a quad; plan §1.3). The interactive app opts into MT explicitly (src/app/integration.ts). */
-  readonly options: RendererOptions = { textureMode: 'validation', watertight: true, accumulate: true, thrTau: THR_TAU, renderMode: 'albedo', maxBounces: 3, rr: false };
+  readonly options: RendererOptions = {
+    textureMode: 'validation', watertight: true, accumulate: true, thrTau: THR_TAU, renderMode: 'albedo', maxBounces: 3, rr: false,
+    envNee: true, envImportanceCap: ENV_IMPORTANCE_CAP_INTERACTIVE,
+  };
   env!: EnvGpuResources;
   sceneData: SceneData | undefined;
   origin: [number, number, number] = [0, 0, 0];
@@ -167,6 +180,7 @@ export class Renderer {
       this.sceneData = scene;
       this.origin = origin;
       old?.pt?.destroy();
+      old?.envDebug?.destroy();
       old?.gpu.destroy();
       this.lastError = undefined;
       return gpu;
@@ -203,6 +217,7 @@ export class Renderer {
       try {
         const pt = await PtFramePass.create(this.device, state.gpu, this.env, colorFormat, {
           maxBounces: this.options.maxBounces, rr: this.options.rr, features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures,
+          env: { nee: this.options.envNee, importanceCap: this.options.envImportanceCap },
         });
         const tg = this.targets;
         if (tg) pt.setTargets({ width: tg.t.width, height: tg.t.height, color: tg.t.color, frameUniforms: tg.t.frameUniforms });
@@ -290,6 +305,7 @@ export class Renderer {
 
   async setEnvironment(env: EnvironmentData | undefined): Promise<void> {
     const next = await createEnvResources(this.device, env, 'env');
+    await this.attachImportance(next);   // Worker-built tables (plan §1.4b) before the PT sees the env
     const old = this.env;
     this.env = next;
     this.state?.pt?.setEnvironment(next);
@@ -297,7 +313,32 @@ export class Renderer {
     destroyEnvResources(old);
   }
 
-  setEnvParams(p: Partial<EnvParamsCpu>): void { writeEnvParams(this.device, this.env, p); }
+  /** Env rotation/strength/tint/visibility (UI or timeline). Strength/tint rebuild the pmf (P(env)); rotation never does. */
+  setEnvParams(p: Partial<EnvParamsCpu>): void {
+    writeEnvParams(this.device, this.env, p);
+    this.state?.pt?.setEnvOptions();
+  }
+
+  /** Build the importance tables of `res` for the current cap in the Worker (no-op when cached). */
+  private async attachImportance(res: EnvGpuResources): Promise<void> {
+    if (!res.present || !res.source) return;
+    const o = { cap: this.options.envImportanceCap };
+    const key = envImportanceKey(o);
+    if (res.importanceKey === key) return;
+    const s = res.source;
+    res.importance = await buildEnvImportanceAsync(s.texels, s.width, s.height, o);
+    res.importanceKey = key;
+  }
+
+  /** Env NEE on/off and the importance resolution (a config change: the caller resets the accumulation). */
+  async setEnvSampling(o: { nee?: boolean; importanceCap?: number }): Promise<void> {
+    if (o.importanceCap !== undefined && o.importanceCap !== this.options.envImportanceCap) {
+      this.options.envImportanceCap = o.importanceCap;
+      await this.attachImportance(this.env);
+    }
+    if (o.nee !== undefined) this.options.envNee = o.nee;
+    this.state?.pt?.setEnvOptions({ nee: this.options.envNee, importanceCap: this.options.envImportanceCap });
+  }
 
   // ---- targets --------------------------------------------------------------------------------------------------
 
@@ -386,7 +427,17 @@ export class Renderer {
     if (this.options.renderMode === 'pt' && s.pt && !frame.noPt && !isBvhStatsView(frame.debugMode)) {
       s.pt.encode(encoder, { advanced: frame.advanced, accumulate: this.options.accumulate }, ptTimestamps?.());
     }
+    if (isEnvDebugView(frame.debugMode) && s.pt) {
+      if (!s.envDebug) void this.compileEnvDebug(s);
+      else s.envDebug.encode(encoder, { mode: frame.debugMode, env: this.env, lights: s.pt.lights, frameUniforms: tg.t.frameUniforms, width: tg.t.width, height: tg.t.height, debugGroup: frame.debugGroup, reset: false });
+    }
     return true;
+  }
+
+  private compileEnvDebug(s: SceneState): Promise<EnvDebugPass | undefined> {
+    s.envDebugPending ??= EnvDebugPass.create(this.device, s.gpu, this.ctx.debugLayout, { features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures })
+      .then((p) => { s.envDebug = p; return p; }, (e: unknown) => { this.lastError = `env debug: ${e instanceof Error ? e.message : String(e)}`; console.error(e); return undefined; });
+    return s.envDebugPending;
   }
 
   /**
@@ -426,6 +477,18 @@ export class Renderer {
     }
     out.push(envMemoryReport(this.env).text + (this.env.present ? `  γ ${(this.env.params.rotationZ * 180 / Math.PI).toFixed(1)}° s ${this.env.params.strength}` : ''));
     const pt = this.state?.pt;
+    if (this.env.present && pt) {
+      const l = pt.lights.summary();
+      const t = pt.lights.state.env;
+      out.push(l.env
+        ? `env NEE on  P(env) ${l.pEnv.toFixed(4)}  importance ${t?.Wm}x${t?.Hm} (${((t ? envImportanceBytes(t) : 0) / 2 ** 20).toFixed(1)} MiB, built ${t?.buildMs.toFixed(0)} ms)`
+        : 'env NEE off (BSDF-only env, ≡ Cycles sampling_method NONE)');
+      const ed = this.state?.envDebug;
+      if (ed) {
+        void ed.updateChi2(pt.lights);
+        if (ed.chi2) out.push(`env splat χ² ${ed.chi2.chi2.toFixed(0)} / dof ${ed.chi2.dof}  p ${ed.chi2.p.toExponential(2)}  (${(ed.chi2.total / 1e6).toFixed(0)} M samples)`);
+      }
+    }
     if (this.options.renderMode === 'pt') {
       const l = pt?.lights.summary();
       out.push(pt
@@ -439,6 +502,7 @@ export class Renderer {
 
   destroy(): void {
     this.state?.pt?.destroy();
+    this.state?.envDebug?.destroy();
     this.state?.gpu.destroy();
     if (this.targets) { this.targets.gbuf.destroy(); this.targets.accum.destroy(); this.targets.vbuf.destroy(); }
     destroyEnvResources(this.env);

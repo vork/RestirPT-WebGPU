@@ -1,5 +1,7 @@
 // NEE in the product measure μ and the NEE/BSDF MIS weights (plan §2 rules 1–2; math.md#measure, math.md#mis).
-//   μ = Σ_{area ∪ tri} δ_L ⊗ A_L + Σ_{delta ∪ sun} δ_(L, c_L) (+ δ_ENV ⊗ σ_env, M3c)
+//   μ = Σ_{area ∪ tri} δ_L ⊗ A_L + Σ_{delta ∪ sun} δ_(L, c_L) + δ_ENV ⊗ σ_env
+//   (the env component, its sampler, p1Env and its MIS weights live in lights/env-sample.wgsl; nee_sample() there
+//    dispatches the ENV alias entry and calls light_sample_entry() below for every other entry)
 //   q  = P(L)/A_L (area, triangle) | P(L) (point, spot, sun)          P = realized pmf (select.wgsl)
 //   F_NEE = T ⊙ ω1·f_cos ⊙ Λ·V/q;   p1 = q·r²/|cosθ_z| appears ONLY inside ω1/ω2
 //   ω1 = M(B)p1/(M(B)p1 + p2), ω2 = p2/(M(B)p1 + p2), p2 = marginal BSDF pdf over non-delta lobes at x_{d−1}
@@ -32,10 +34,15 @@ fn mis_w2(p1: f32, p2: f32, B: u32) -> f32 {
 }
 
 /// One NEE light sample at shading point x (math.md#measure). hSel/hSel2: slots u_sel/u_sel2, u: (h_l0, h_l1).
+/// Analytic lights and emissive triangles only (the env entry is handled by env-sample.wgsl nee_sample()).
 fn light_sample(x: vec3f, hSel: u32, hSel2: u32, u: vec2f) -> LightSample {
   let slot = lightsParams.cur;
   if (slot.nEntries == 0u) { return light_sample_none(); }
-  let entry = alias_sample(slot, hSel, hSel2);
+  return light_sample_entry(x, slot, alias_sample(slot, hSel, hSel2), u);
+}
+
+/// NEE sample of a selected analytic / emissive-triangle alias entry (entry < nAnalytic + triCount).
+fn light_sample_entry(x: vec3f, slot: LightSlot, entry: u32, u: vec2f) -> LightSample {
   let pmf = light_pmf(slot, entry);
   var s: LightSample;
   if (entry < slot.nAnalytic) {
@@ -72,13 +79,6 @@ fn tri_light_p1(x: vec3f, z: vec3f, ngz: vec3f, primId: u32) -> f32 {
   if (!(cosZ > 0.0)) { return 0.0; }
   let q = light_pmf(slot, slot.nAnalytic + i) / bitcast<f32>(emissive_tri(i).y);
   return q * dist2 / cosZ;
-}
-
-/// Env MIS weight of a BSDF escape (math.md#mis rule 5). M3a: env NEE is not implemented, so the escape is the only
-/// technique (= Cycles world sampling_method NONE) and ω2 = 1. M3c hook: with LP_ENV_NEE,
-/// ω2 = p2/(M(B)·p1Env(uv) + p2), and 1 after a delta lobe.
-fn env_bsdf_mis_weight(dir: vec3f, p2: f32, B: u32, afterDelta: bool) -> f32 {
-  return 1.0;
 }
 
 /// p1 of a BSDF-sampled crossing of analytic area light `entry` (rect/disk) at z, seen from x (Mode B, M3b: the

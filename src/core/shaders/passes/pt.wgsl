@@ -1,5 +1,7 @@
 // Reference path tracer (plan §3 mode PT, §5 M3a; math.md#bounces, #raster, #rng-layout, #measure, #mis, #path-tree,
-// #visibility, #env-mapping). Mode A (analytic lights NEE-only), no glass (M3b), env BSDF-only (M3c adds env NEE).
+// #visibility, #env-mapping, #env-sampling). Mode A (analytic lights NEE-only), no glass (M3b). The env is one entry of
+// the global alias table (NEE_ENV) and BSDF escapes use MIS against it (lights/env-sample.wgsl); with env NEE off (no
+// entry) escapes have ω2 = 1 (≡ Cycles world sampling_method NONE).
 //
 // Per sample (pixel p, sample/frame index t):
 //   initSeed = pcg3d(runSeed ⊕ member·φ, t, p).x  (rng-path.wgsl); jitter = rand2(initSeed, 0, STREAM_JITTER) (JITTER_IID)
@@ -8,11 +10,11 @@
 //   (or before FLT_MAX on a miss), L_e of an emissive x₁, and on a miss visibleToCamera·L_env.
 //   Bounce loop, Cycles max_bounces = N semantics: scattering vertices x_B, B = 1 … N+1 (≤ N+1 of them), NEE at each;
 //   emission (BSDF hit / escape) collected at x₂ … x_{N+2}; no NEE and no continuation at x_{N+2}.
-//   At x_B:  NEE      F = β ⊙ ω1·f_cos ⊙ Λ·V/q     (light_sample in μ; ω1 ≡ 1 for delta / Mode-A analytic)
+//   At x_B:  NEE      F = β ⊙ ω1·f_cos ⊙ Λ·V/q     (nee_sample in μ; ω1 ≡ 1 for delta / Mode-A analytic)
 //            RR       optional (PT_RR): q = min(sqrt(max_c β_c), 1) on the RR-free β, only for B > rrMinBounces
 //            BSDF     bsdf_sample(u_lobe, u_h1, u_h2, u_rt) → β ⊙= weight (joint pdf), trace the closest triangle
 //            hit on an emissive triangle: + β ⊙ L_e·ω2, ω2 = p2/(M p1 + p2) with p1 recomputed from x_B (1 after a
-//            delta lobe); escape: + β ⊙ L_env·ω2_env (M3a: 1, Cycles sampling_method NONE) and stop.
+//            delta lobe); escape: + β ⊙ L_env·ω2_env, ω2_env = p2/(M p1Env + p2) (1 after a delta lobe) and stop.
 //   Analytic lights are never hit by BSDF rays in Mode A and never occlude (math.md#visibility).
 // Accumulation in f32 per batch (accum[p] += Σ samples); NaN/Inf samples are counted and dropped (T15).
 //
@@ -28,6 +30,7 @@
 #include "geom/visible.wgsl"
 #include "lights/env.wgsl"
 #include "lights/measure.wgsl"
+#include "lights/env-sample.wgsl"
 #include "material/material-eval.wgsl"
 
 
@@ -99,13 +102,13 @@ fn pt_trace(o: vec3f, d: vec3f, seed: u32) -> PtResult {
     let m = material_eval(s, V);
     // ---- NEE at x_B (not at a delta-only vertex) ------------------------------------------------------------------
     if ((m.flags & 1u) != 0u && !bsdfOnly) {
-      let ls = light_sample(s.pos, path_hash(seed, B, SLOT_SEL), path_hash(seed, B, SLOT_SEL2),
-                            vec2f(path_u01(seed, B, SLOT_L0), path_u01(seed, B, SLOT_L1)));
+      let ls = nee_sample(s.pos, path_hash(seed, B, SLOT_SEL), path_hash(seed, B, SLOT_SEL2),
+                          vec3u(path_hash(seed, B, SLOT_L0), path_hash(seed, B, SLOT_L1), path_hash(seed, B, SLOT_L2)));
       // same-triangle skip (Cycles shade_surface.h:345-351): a sample on the shading triangle itself has cosθ_z = 0
       if (ls.valid && ls.prim != prim && any(ls.Lambda > vec3f(0.0))) {
         let ev = bsdf_eval(m, V, ls.dir);
         if (any(ev.f_cos > vec3f(0.0))) {
-          let w1 = select(mis_w1(ls, ev.pdf_marginal, B), 1.0, neeOnly);
+          let w1 = select(nee_mis_w1(ls, ev.pdf_marginal, B), 1.0, neeOnly);
           var vis: bool;
           if (ls.isInf) { vis = visibleInf(s.pos, s.ng, prim, ls.dir); }
           else { vis = visible(s.pos, s.ng, prim, ls.pos, ls.nz, ls.prim); }
@@ -130,7 +133,7 @@ fn pt_trace(o: vec3f, d: vec3f, seed: u32) -> PtResult {
     let h = trace_closest_ex(org, bs.L, FLT_MAX, prim, BVH_MISS);
     if (h.primId == BVH_MISS) {
       if (pt_env_present() && !neeOnly) {
-        let w2 = env_bsdf_mis_weight(bs.L, bs.pdf_marginal, B, bs.is_delta);
+        let w2 = select(env_bsdf_mis_weight(bs.L, bs.pdf_marginal, B, bs.is_delta), 1.0, bsdfOnly);
         L += (rrScale * w2) * beta * envRadiance(envUV(bs.L, envParams.cg, envParams.sg));
       }
       break;

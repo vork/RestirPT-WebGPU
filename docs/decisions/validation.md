@@ -89,3 +89,45 @@ Stage B (ReSTIR vs PT) arrives with M4.
 | position / rotation tracks | ix-a, ix-b, ix-c, ix-f, ix-g (camera: ix-d, ix-f) |
 | power tracks (step / linear) | ix-e, ix-f |
 | visibleToCamera | C0o, **deferred to M3b** (Mode B only) |
+
+---
+
+# M3c: environment lighting (plan §5 M3c, §7.2 env scenes, §7.4 M3c)
+
+`npm run validate -- --milestone M3c` runs `validation/harness/gate-m3c.ts`:
+- **Gate 0.** Typecheck, cpu lane (`tests/env/env-importance.test.ts`: ENV-U3 CPU part, ENV-U5, ENV-U8, env as a light),
+  python stats tests, scene-package determinism (`make-m3c.ts` twice, byte-identical), Chrome GPU tests
+  (`validation/gpu-tests/env-sampling.gpu.test.ts`: ENV-U3 χ² + realized-pdf identity, ENV-U4, ENV-U6; regressions
+  env/lights/pt), `budget.json` env rows (`validation/tools/budget_env.py`) and the app smoke
+  (`validation/harness/m3c-app-smoke.ts`: env panel, Worker tables, env debug views, splat χ²).
+- **Gate 2, Stage A** (our PT ≡ Cycles, δ 0.5% global / 2% per 32² tile, Y/R/G/B, suite FWER) on the scenes below,
+  Mode A. Analytic expectations (`validation/tools/env-expected.ts`: f64 ray casting + midpoint quadrature of the
+  8-bit-fraction bilinear map, 16×16 subsamples per pixel) are checked on **both** renderers with
+  `analytic_check.py --expected-image`.
+- **Env plants** (compare.py `--calibrate --planted`, ≥ 9/10 half-size repeats, Cycles A/A control ≥ 9/10, and the full
+  comparison must fail) and **negative controls** (must pass Stage A), plus an A/A of two of our seed sets on C0r.
+
+Scenes are generated (not committed) into `validation/out/m3c/scenes/` by `validation/scenes/make-m3c.ts`, because the
+HDRI scenes embed the downloaded Poly Haven texels (`validation/assets/fetch_hdris.ts`, pinned SHA-256). Cycles
+references are cached in `validation/out/m3c/refs/`. `--light-mode B` and `--glass` write the Mode-B and glass variants
+(after the M3b merge).
+
+| Unit | Content | b | Res | Cycles spp×K | PT spp×B | Tier |
+|---|---|---|---|---|---|---|
+| C0q lambert ×3 (+ `_bg`) | Lambert sphere ρ 0.8, constant L = 1 (64×32 texture; `_bg`: Blender constant Background) | 0/1/3 | 256² | 1024×16 | 1024×16 | tight |
+| C0q quad (+ `_bg`) | Lambert quad seen from above | 1 | 256² | 1024×16 | 1024×16 | tight |
+| C0q ggx02 / ggx05 (+ `_bg`) | V1 GGX sphere F ≡ 1, α 0.2 / 0.5 (L·E_ss by quadrature) | 1 | 256² | 1024×16 | 1024×16 | tight |
+| C0q openbox (+ `_bg`) | ρ = 1 open box (no closed form) | 13 | 256² | 1024×16 | 1024×16 | tight |
+| C0r irradiance / mirror | overcast_soil_puresky γ 0.6: Lambert sphere, mirror sphere (V1 r = 0) | 1 | 256² | 1024×16 | 1024×16 | tight |
+| C0s 45 / seam / top, NEE | 512×256 map, texel 1e4 at 45° / on the u seam / in the top row; Lambert plane ρ 0.5 | 1 | 256² | 1024×16 | 1024×16 | tight |
+| C0s …, NONE | same, env NEE off (Cycles sampling_method NONE) | 1 | 256² | 16384×16 | 16384×16 | tight |
+| (xiii) | V1 GGX r 0/0.05/0.15/0.19/0.21/0.3/0.5 + Principled gold r 0.25, studio_small_09 γ 0.3 | 3 | 512×256 | 1024×32 | 1024×32 | heavy-tail |
+| (xiv) overcast b 1/3/7, + rect b 3 | Cornell without ceiling, overcast_soil_puresky γ 0.9 (+ the 4 W rect light) | 1/3/7 | 512² | 1024×16 | 1024×16 | tight |
+| (xiv) kloofendal, + rect | same under kloofendal_48d_partly_cloudy_puresky, sun turned to shine in | 3 | 512² | 1024×32 | 1024×32 | heavy-tail |
+
+Extra units: the two Cycles C0q world variants against each other (texture + NEE vs constant Background, BSDF-only;
+the `_bg` references use seeds 200.. so the two are independent).
+
+**Sizing.** The C0s NONE units use 16× the spp of the NEE units: at 4096 spp the pilot had a tile MDB of 2.0% and a
+replicate multiplier of 2.7 (BSDF-only hits the 1.06e-4 sr texel with p ≈ 2.4e-5). Heavy-tail units double K and B
+(plan §7.2). No δ is loosened and no aggregate is enlarged.

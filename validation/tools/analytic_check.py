@@ -5,6 +5,8 @@
 
 REPLICATES is any compare.py input directory (our PT batches or Cycles seeds). Supported "expected" kinds:
   constant      every pixel = value (C0f furnace L_e(1 - rho^(b+2))/(1 - rho)): image mean per channel.
+  env-analytic  (M3c) the image written by validation/tools/env-expected.ts, passed with --expected-image FILE.pfm
+                (f64 ray casting + env quadrature of the package; C0q/C0r/C0s).
   direct-plane  b = 0 direct lighting of the Lambert floor y = 0 (the only geometry) by one light: the exact
                 box-filtered image is built by f64 supersampling (8x8 per pixel) of the closed form
                 point: rho/pi * Phi/(4 pi) * h/d^3; rect/disk: rho/pi * L_e * E_polygon (disk = 512-gon, area
@@ -148,6 +150,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--package", required=True, type=Path)
     ap.add_argument("--frame", type=int)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--expected-image", type=Path, help="expected image (PFM/EXR) for expected.kind 'env-analytic'")
     a = ap.parse_args(argv)
     sj = json.loads((a.package / "scene.json").read_text())
     exp = sj.get("expected") or {}
@@ -156,6 +159,15 @@ def main(argv: list[str]) -> int:
     if exp.get("kind") == "constant":
         E = np.broadcast_to(np.asarray(exp["value"], float), reps.shape[1:]).copy()
         res = check(reps, E, tile=max(reps.shape[1:3]))  # one "tile" = the image: the constant must hold on average
+    elif exp.get("kind") == "env-analytic":
+        if a.expected_image is None:
+            print(json.dumps({"ok": None, "skipped": "env-analytic needs --expected-image"}) if a.json else "skipped: --expected-image")
+            return 2
+        E = C.read_image(a.expected_image)[..., :3].astype(np.float64)
+        if E.shape != reps.shape[1:]:
+            raise SystemExit(f"expected image {E.shape} != replicates {reps.shape[1:]}")
+        res = check(reps, E)
+        res["expected_image"] = str(a.expected_image)
     elif exp.get("kind") == "direct-plane":
         try:
             E = direct_plane_image(sj)

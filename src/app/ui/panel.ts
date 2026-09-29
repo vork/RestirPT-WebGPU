@@ -108,6 +108,10 @@ export function buildPanel(app: App): PanelHandle {
   eF.addBinding(env, 'rotationDeg', { label: 'rotation Z (deg)', min: -180, max: 180, step: 0.1 }).on('change', envChanged);
   eF.addBinding(env, 'tint', { color: { type: 'float' } }).on('change', envChanged);
   eF.addBinding(env, 'visibleToCamera', { label: 'visible to camera' }).on('change', envChanged);
+  // M3c env sampling: NEE on/off (≡ Cycles world sampling_method AUTOMATIC / NONE) and the importance resolution.
+  eF.addBinding(env, 'nee', { label: 'env NEE' }).on('change', envChanged);
+  eF.addBinding(env, 'importanceRes', { label: 'importance res', options: { 256: 256, 512: 512, 1024: 1024, 2048: 2048, 4096: 4096 } }).on('change', envChanged);
+  eF.addBinding(env, 'info', { readonly: true, multiline: true, rows: 3, label: 'info' });
 
   // ---- Debug ----
   const dF = pane.addFolder({ title: 'Debug' });

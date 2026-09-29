@@ -47,9 +47,12 @@ export function aliasLog2(count: number): number {
 
 /**
  * Build the integer alias table for non-negative weights. Returns undefined when Σw = 0 (nothing can be sampled).
- * `minLog2` pads further (e.g. to keep the table size fixed across rebuilds).
+ * `minLog2` pads further (e.g. to keep the table size fixed across rebuilds). `qMinReal` is the lower clamp of a
+ * positive-weight small bucket's threshold: 1 for the global light table (see the header), 0 for the env tables
+ * (math.md#env-sampling: clamp(round(p·65536), 0, 65535); their floors keep every cell ≥ 64 anyway).
  */
-export function buildAliasTable(weights: ArrayLike<number>, minLog2 = 1): AliasTable | undefined {
+export function buildAliasTable(weights: ArrayLike<number>, minLog2 = 1, opts: { qMinReal?: number } = {}): AliasTable | undefined {
+  const qMin = opts.qMinReal ?? 1;
   const count = weights.length;
   let sum = 0;
   for (let i = 0; i < count; i++) {
@@ -72,7 +75,7 @@ export function buildAliasTable(weights: ArrayLike<number>, minLog2 = 1): AliasT
     const s = small.pop()!;
     const l = large[large.length - 1];
     const real = s < count && weights[s] > 0;
-    const qs = real ? Math.min(ALIAS_Q_MAX, Math.max(1, Math.round(p[s] * ALIAS_ONE))) : 0;
+    const qs = real ? Math.min(ALIAS_Q_MAX, Math.max(qMin, Math.round(p[s] * ALIAS_ONE))) : 0;
     q[s] = qs;
     alias[s] = l;
     p[l] -= (ALIAS_ONE - qs) / ALIAS_ONE; // debit exactly the donated (quantized) mass

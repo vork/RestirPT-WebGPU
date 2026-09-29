@@ -7,6 +7,7 @@
 import type { GpuContext } from '../core/gpu/device.ts';
 import { registerProbeTag } from '../core/render/probe.ts';
 import { EXTRA_VIEWS, PRIMARY_PROBE_TAGS, Renderer } from '../core/render/renderer.ts';
+import { ENV_DEBUG_VIEWS } from '../core/render/env-debug.ts';
 import { DBG } from '../core/render/debug-views.ts';
 import { boundsDiagonal } from '../core/render/frame-uniforms.ts';
 import { emptyScene } from '../core/render/scene-gpu.ts';
@@ -52,7 +53,7 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
   const ensure = (app: App): Promise<Renderer> => {
     rendererP ??= (async () => {
       for (const [tag, name] of PRIMARY_PROBE_TAGS) registerProbeTag(tag, name);
-      for (const v of EXTRA_VIEWS) if (!app.debug.registry.get(v.id)) app.registerDebugView(v);
+      for (const v of [...EXTRA_VIEWS, ...ENV_DEBUG_VIEWS]) if (!app.debug.registry.get(v.id)) app.registerDebugView(v);
       app.render.jitter = 'iid'; // plan §1.2: i.i.d. per-run/per-frame jitter; the panel offers R2 and pixel centre
       const r = await Renderer.create({ device: gpu.device, debugLayout: app.debug.layout, features: gpu.features, wgslLanguageFeatures: gpu.wgslLanguageFeatures },
         { watertight: false, renderMode: 'pt' }); // interactive default: MT (the panel toggles Woop; validation paths default to Woop); PT beauty (M3a)
@@ -145,9 +146,22 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
     },
     onEnvironmentParams(p, app) {
       renderer?.setEnvParams({ rotationZ: p.rotationDeg * DEG, strength: p.strength, tint: [p.tint.r, p.tint.g, p.tint.b], visibleToCamera: p.visibleToCamera });
+      const r = renderer;
+      if (r && (r.options.envNee !== p.nee || r.options.envImportanceCap !== p.importanceRes)) {
+        // Config change (plan §2 rule 10: env-NEE toggle / importance resolution reset history); tables built in the Worker.
+        void r.setEnvSampling({ nee: p.nee, importanceCap: p.importanceRes }).then(() => app.resetHistory());
+      }
       app.resetHistory();
     },
-    hudLines: () => renderer?.hudLines() ?? [],
+    hudLines: (app) => {
+      const lines = renderer?.hudLines() ?? [];
+      const env = renderer?.env;
+      if (env) {
+        const l = lines.find((x) => x.startsWith('env NEE'));
+        app.envParams.info = env.present ? `${env.width}x${env.height} rgba32float ${(env.width * env.height * 16 / 2 ** 20).toFixed(1)} MiB\n${l ?? ''}` : 'no environment';
+      }
+      return lines;
+    },
   };
 
   return {
@@ -206,7 +220,7 @@ export async function exportForCycles(app: App, r: Renderer, cfg: ExportConfig):
     const res = await exportAndUpload({ ...scene, env }, {
       camera: { matrix: app.camera.camToWorld(), yfov: app.camera.yfov, znear: 1e-4 },
       render: { width: cfg.width, height: cfg.height, maxBounces: cfg.maxBounces },
-      lightMode: cfg.lightMode,
+      lightMode: cfg.lightMode, envSampling: p.nee ? 'AUTOMATIC' : 'NONE',
       source: { uri: scene.name },
     }, run);
     cfg.status = `${res.dir}\n${res.files.length} files, ${(res.bytes / 1024).toFixed(0)} KiB\nsha256 ${res.sha256.slice(0, 16)}`;

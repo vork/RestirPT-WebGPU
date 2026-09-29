@@ -6,6 +6,7 @@
 // Without an env map a 1×1 black placeholder is bound and flags.PRESENT = 0.
 import type { EnvironmentData } from '../scene/types.ts';
 import type { Defines } from '../gpu/wgsl-composer.ts';
+import { buildEnvImportance, type EnvImportance, type EnvImportanceOptions } from '../scene/env/env-importance.ts';
 
 export const ENV_UNIFORM_SIZE = 32;
 export const ENV_FLAG_PRESENT = 1;
@@ -28,6 +29,11 @@ export interface EnvGpuResources {
   height: number;
   present: boolean;
   params: EnvParamsCpu;
+  /** The CPU texels this texture was made from (M3c: importance tables are built from them). */
+  source?: EnvironmentData;
+  /** Importance tables for `importanceKey` (built by envImportanceFor, or attached by the app's Worker build). */
+  importance?: EnvImportance;
+  importanceKey?: string;
 }
 
 export interface EnvMemoryReport { width: number; height: number; format: 'rgba32float'; textureBytes: number; uniformBytes: number; totalBytes: number; text: string }
@@ -70,7 +76,7 @@ export async function createEnvResources(device: GPUDevice, env?: EnvironmentDat
     magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'nearest',
   });
   const res: EnvGpuResources = {
-    texture, view: texture.createView({ label: `${label}.view` }), sampler, uniform, width, height, present: !!env,
+    texture, view: texture.createView({ label: `${label}.view` }), sampler, uniform, width, height, present: !!env, source: env,
     params: env
       ? { rotationZ: env.rotationZ, strength: env.strength, tint: [...env.tint], visibleToCamera: env.visibleToCamera }
       : { rotationZ: 0, strength: 0, tint: [0, 0, 0], visibleToCamera: false },
@@ -96,6 +102,22 @@ export function packEnvParams(p: EnvParamsCpu, present: boolean): ArrayBuffer {
 export function writeEnvParams(device: GPUDevice, res: EnvGpuResources, p: Partial<EnvParamsCpu>): void {
   res.params = { ...res.params, ...p, tint: [...(p.tint ?? res.params.tint)] as [number, number, number] };
   device.queue.writeBuffer(res.uniform, 0, packEnvParams(res.params, res.present));
+}
+
+/** Cache key of the importance-table options (defaults filled in). */
+export function envImportanceKey(o: EnvImportanceOptions = {}): string {
+  return JSON.stringify({ cap: o.cap ?? 4096, floors: o.floors ?? true, plantPdfFromTargets: o.plantPdfFromTargets ?? false });
+}
+
+/** The importance tables of `res` for options `o`, built synchronously if not cached (validation / tests). */
+export function envImportanceFor(res: EnvGpuResources, o: EnvImportanceOptions = {}): EnvImportance | undefined {
+  if (!res.present || !res.source) return undefined;
+  const key = envImportanceKey(o);
+  if (res.importance && res.importanceKey === key) return res.importance;
+  const s = res.source;
+  res.importance = buildEnvImportance(s.texels, s.width, s.height, o);
+  res.importanceKey = key;
+  return res.importance;
 }
 
 /** Defines for env.wgsl bindings: uniform at `base`, texture at base+1, sampler at base+2. */
