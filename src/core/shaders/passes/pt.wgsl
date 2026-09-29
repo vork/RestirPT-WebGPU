@@ -4,7 +4,7 @@
 // entry) escapes have ω2 = 1 (≡ Cycles world sampling_method NONE).
 //
 // Per sample (pixel p, sample/frame index t):
-//   initSeed = pcg3d(runSeed ⊕ member·φ, t, p).x  (rng-path.wgsl); jitter = rand2(initSeed, 0, STREAM_JITTER) (JITTER_IID)
+//   initSeed = pcg3d(runSeed ⊕ member·φ, t, p).xy (64-bit PathSeed, rng-path.wgsl); jitter = rand2(initSeed.x, 0, STREAM_JITTER)
 //   camera ray (frame.wgsl frame_camera_ray, pixel ↔ Cycles raster, BOX 1 px) → closest TRIANGLE x₁ (alpha MASK in
 //   traversal). Length-1 terms outside the path loop, weight 1: camera-visible analytic area lights crossed before x₁
 //   (or before FLT_MAX on a miss), L_e of an emissive x₁, and on a miss visibleToCamera·L_env.
@@ -81,7 +81,7 @@ fn pt_camera_lights(o: vec3f, d: vec3f, tMax: f32) -> vec3f {
 fn pt_env_present() -> bool { return (envParams.flags & ENV_FLAG_PRESENT) != 0u; }
 
 /// One path sample for camera ray (o, d) with path seed `seed`.
-fn pt_trace(o: vec3f, d: vec3f, seed: u32) -> PtResult {
+fn pt_trace(o: vec3f, d: vec3f, seed: PathSeed) -> PtResult {
   bvh_stats_reset();
   let hit0 = trace_closest(o, d, FLT_MAX);
   var L = pt_camera_lights(o, d, select(FLT_MAX, hit0.t, hit0.primId != BVH_MISS));
@@ -171,7 +171,7 @@ fn pt_batch(@builtin(global_invocation_id) gid: vec3u) {
     let t = pt.sampleBase + k;
     let seed = path_init_seed(frame.runSeed, pt.member, t, idx);
     var jit = frame.jitter;
-    if (frame.jitterMode == JITTER_IID) { jit = rand2(seed, 0u, STREAM_JITTER); }
+    if (frame.jitterMode == JITTER_IID) { jit = rand2(seed.x, 0u, STREAM_JITTER); }
     let ray = frame_camera_ray(pixel, jit);
     let r = pt_trace(ray.o, ray.d, seed);
     flags |= r.bvhFlags;
@@ -196,7 +196,7 @@ fn pt_frame(@builtin(global_invocation_id) gid: vec3u) {
   let pixel = gid.xy;
   if (any(pixel >= frame.resolution)) { return; }
   let idx = pixel.y * frame.resolution.x + pixel.x;
-  // Same jitter and seed as the primary pass (frame_pixel_seed = path_init_seed(runSeed, 0, seedIndex, p)).
+  // Same jitter and seed as the primary pass (frame_pixel_seed = path_init_seed(runSeed, 0, seedIndex, p).x).
   let seed = path_init_seed(frame.runSeed, pt.member, frame.seedIndex, idx);
   let ray = frame_camera_ray(pixel, frame_pixel_jitter(pixel));
   let r = pt_trace(ray.o, ray.d, seed);

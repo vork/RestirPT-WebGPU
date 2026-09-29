@@ -122,7 +122,7 @@ references are cached in `validation/out/m3c/refs/`. `--light-mode B` and `--gla
 | C0s 45 / seam / top, NEE | 512×256 map, texel 1e4 at 45° / on the u seam / in the top row; Lambert plane ρ 0.5 | 1 | 256² | 1024×16 | 1024×16 | tight |
 | C0s …, NONE | same, env NEE off (Cycles sampling_method NONE) | 1 | 256² | 16384×16 | 16384×16 | tight |
 | (xiii) | V1 GGX r 0/0.05/0.15/0.19/0.21/0.3/0.5 + Principled gold r 0.25, studio_small_09 γ 0.3 | 3 | 512×256 | 1024×32 | 1024×32 | heavy-tail |
-| (xiv) overcast b 1/3/7, + rect b 3 | Cornell without ceiling, overcast_soil_puresky γ 0.9 (+ the 4 W rect light) | 1/3/7 | 512² | 1024×16 | 1024×16 | tight |
+| (xiv) overcast b 1/3/7, + rect b 3 | Cornell without ceiling, overcast_soil_puresky γ 0.9 (+ the 4 W rect light; b = 1: strength 1.3, tint (1, 0.9, 0.75)) | 1/3/7 | 512² | 1024×16 | 1024×16 | tight |
 | (xiv) kloofendal, + rect | same under kloofendal_48d_partly_cloudy_puresky, sun turned to shine in | 3 | 512² | 1024×32 | 1024×32 | heavy-tail |
 
 Extra units: the two Cycles C0q world variants against each other (texture + NEE vs constant Background, BSDF-only;
@@ -131,3 +131,27 @@ the `_bg` references use seeds 200.. so the two are independent).
 **Sizing.** The C0s NONE units use 16× the spp of the NEE units: at 4096 spp the pilot had a tile MDB of 2.0% and a
 replicate multiplier of 2.7 (BSDF-only hits the 1.06e-4 sr texel with p ≈ 2.4e-5). Heavy-tail units double K and B
 (plan §7.2). No δ is loosened and no aggregate is enlarged.
+
+**Findings while closing M3c.**
+- **Path RNG seed was 32 bits** (our defect, fixed): C0s seam with env NEE off was −0.107% / −0.084% vs the f64
+  quadrature (z ≈ −3.6 on both runs) while Cycles and our NEE variants matched. A GPU probe of the same BSDF-only
+  estimator reproduced −0.13% (z −9) for the seam texel and −0.07% for a texel at +X, but was unbiased when the BSDF
+  dims came from a 96-bit-input hash. With a 32-bit `initSeed` all paths are one of 2³² dimension vectors: a fixed
+  quadrature, whose error for a single-sample σ_rel ≈ 36 is ≈ 0.05%. `initSeed` is now 64 bits (pcg3d(...).xy) and the
+  slot hash is pcg4d (math.md#rng-layout); the jitter keeps initSeed.x, so camera rays are unchanged.
+- **Cycles light tree** biases env + analytic-light scenes by ~7e-5 (cycles-deviations.md D4); the (xiv) rect-light
+  references use the light distribution.
+
+## Coverage: environment features → Stage-A scenes (M3c)
+
+| Feature | Stage-A scenes |
+|---|---|
+| NEE_ENV + BSDF_ENV MIS (env alone, P(env) = 1) | C0q (texture), C0r, C0s NEE, (xiii), (xiv) without light |
+| env NEE off (sampling_method NONE) | C0s NONE (×3), C0q `_bg` (Cycles side BSDF-only) |
+| P(env) proxy + clamp with other emitters | (xiv) rect variants; app smoke (point light) |
+| seam / pole-wrap rows | C0s seam, C0s top; ENV-U4 |
+| rotation γ | C0r (0.6), (xiii) (0.3), (xiv) (0.9 / sun-aligned) |
+| delta lobe after env (ω2 = 1) | C0r mirror, (xiii) r = 0 |
+| V2 metal under an HDRI | (xiii) |
+| strength / tint | (xiv) overcast b = 1 (strength 1.3, tint (1, 0.9, 0.75)); strength ×1.0075 plant; ENV-U8 (pmf) |
+| Mode B / glass with env | deferred to the post-M3b merge (`make-m3c.ts --light-mode B`, `--glass`) |

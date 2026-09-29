@@ -282,14 +282,46 @@ function packagesDeterministic(dir: string, add: Add, only?: Set<string>): void 
 
 function cyclesRef(s: G2E, out: string, seeds: string, add: Add): string | undefined {
   console.log(`\n--- Cycles reference ${s.pkg}: ${s.cyclesSpp} spp × seeds ${seeds}`);
-  const r = sh(BLENDER, ['-b', '--factory-startup', '--python-exit-code', '1', '-P', 'validation/blender/render_reference.py', '--',
+  let r = renderRef(s, out, seeds);
+  if (r.code !== 0 && !r.out.includes('[render_reference] RESULT ')) {
+    // Blender 5.1.2 occasionally aborts in Metal ShaderCache::load_kernel (NSException, no Python traceback); the
+    // abort skips its atexit, so the GPU lock it held is released here if its holder file names a dead process.
+    console.log('  Blender aborted without a result; retrying once');
+    releaseAbortedLock();
+    r = renderRef(s, out, seeds);
+    r.out = `[retried after a Blender abort]\n${r.out}`;
+  }
+  return refResult(s, seeds, r, add);
+}
+
+/** Remove the GPU lock iff render_reference.py's holder file inside it names a process that no longer exists. */
+function releaseAbortedLock(): void {
+  if (!existsSync(GPU_LOCK)) return;
+  for (const f of readdirSync(GPU_LOCK)) {
+    const m = /^render_reference-(\d+)$/.exec(f);
+    if (!m) continue;
+    let alive = true;
+    try { process.kill(Number(m[1]), 0); } catch { alive = false; }
+    if (!alive) {
+      console.log(`  removing the GPU lock left by aborted Blender pid ${m[1]}`);
+      rmSync(GPU_LOCK, { recursive: true, force: true });
+    }
+  }
+}
+
+function renderRef(s: G2E, out: string, seeds: string): { code: number; out: string; seconds: number } {
+  return sh(BLENDER, ['-b', '--factory-startup', '--python-exit-code', '1', '-P', 'validation/blender/render_reference.py', '--',
     '--package', `${SCENES}/${s.pkg}`, '--out', out, '--spp', String(s.cyclesSpp), '--seeds', seeds],
   (l) => l.startsWith('[render_reference]') && (l.includes('RESULT') || l.includes('cache') || l.includes('waited')) || /Error|Traceback/.test(l));
+}
+
+function refResult(s: G2E, seeds: string, r: { code: number; out: string; seconds: number }, add: Add): string | undefined {
+  const retried = r.out.startsWith('[retried');
   const line = r.out.split('\n').reverse().find((l) => l.startsWith('[render_reference] RESULT '));
   const res = line ? JSON.parse(line.slice('[render_reference] RESULT '.length)) as { dir: string; cache_hit: boolean; renders: number; renders_total_s?: number } : undefined;
   add(`Cycles reference ${s.pkg} (${s.cyclesSpp} spp × ${seeds})`, r.code === 0 && !!res, r.seconds,
     res && { dir: path.relative(ROOT, res.dir), cache_hit: res.cache_hit, renders: res.renders, renders_total_s: res.renders_total_s ?? 0 },
-    res ? (res.cache_hit ? 'cache hit' : `rendered ${res.renders} in ${res.renders_total_s} s`) : `exit ${r.code} ${r.out.slice(-400)}`);
+    res ? `${res.cache_hit ? 'cache hit' : `rendered ${res.renders} in ${res.renders_total_s} s`}${retried ? ' (after one retry of a Blender abort)' : ''}` : `exit ${r.code} ${r.out.slice(-400)}`);
   return res ? path.relative(ROOT, res.dir) : undefined;
 }
 

@@ -831,5 +831,10 @@ def settings_cfg(built: dict[str, Any], **overrides: Any) -> dict[str, Any]:
             "visible_camera": bool(env.get("visibleToCamera", True)),
         },
     }
+    # Per-package Cycles overrides (scene-bridge.md "cycles"): only the documented deviation D4 (light tree) so far.
+    for k, v in (sj.get("cycles") or {}).items():
+        if k != "use_light_tree":
+            raise BridgeError(f"scene.json cycles.{k}: unsupported override")
+        cfg[k] = bool(v)
     cfg.update(overrides)
     return cfg

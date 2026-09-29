@@ -84,7 +84,7 @@ fn mis_partition(@builtin(global_invocation_id) gid: vec3u) {
   var sN = vec3f(0.0);
   var sB = vec3f(0.0);
   for (var k = 0u; k < pp.K; k++) {
-    let seed = pcg3d(vec3u(pp.seed, t, k)).x;
+    let seed = pcg3d(vec3u(pp.seed, t, k)).xy;
     let ls = nee_sample(vec3f(0.0), path_hash(seed, 1u, SLOT_SEL), path_hash(seed, 1u, SLOT_SEL2),
                         vec3u(path_hash(seed, 1u, SLOT_L0), path_hash(seed, 1u, SLOT_L1), path_hash(seed, 1u, SLOT_L2)));
     if (ls.valid && ls.kind == LT_ENV) {

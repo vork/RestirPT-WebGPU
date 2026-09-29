@@ -271,11 +271,18 @@ for (const x of XIV) {
     const lights: LightData[] = x.rect ? [light('rect', c.rect.matrix, c.rect.power, { sizeX: c.rect.sizeX, sizeY: c.rect.sizeY })] : [];
     const gamma = x.id === 'overcast_soil_puresky' ? 0.9 : sunTowardCamera(x.id);
     const name = `${x.name}${GLASS ? '_glass' : ''}`;
-    const scene = withEnv(sceneOf(name, mb, mats, lights), hdri(x.id, gamma));
+    // b = 1 overcast also carries a tint and strength ≠ 1 (bridge: Background strength, VectorMath tint).
+    const e = x.name === 'xiv_overcast_b1_512' ? { ...hdri(x.id, gamma), strength: 1.3, tint: [1, 0.9, 0.75] as [number, number, number] } : hdri(x.id, gamma);
+    const scene = withEnv(sceneOf(name, mb, mats, lights), e);
     await write(scene, {
       name: `${name}${SUFFIX}`, camera: c.camera, render: { width: 512, height: 512, maxBounces: x.b },
       source: { uri: `validation/assets/cornell/cornell.glb without ceiling + ${x.id} 1k (validation/scenes/make-m3c.ts (xiv))`, sha256: c.glbSha },
-      extra: { tier: GLASS ? 'heavy-tail' : x.tier, notes: `${x.id} gamma ${gamma.toFixed(6)}${x.rect ? ' + interior rect light 4 W (P(env) clamp)' : ''}` },
+      extra: {
+        tier: GLASS ? 'heavy-tail' : x.tier, notes: `${x.id} gamma ${gamma.toFixed(6)}${x.rect ? ' + interior rect light 4 W (P(env) clamp)' : ''}`,
+        // env + an analytic light: Cycles' light tree is biased by ~7e-5 here; the reference uses the light
+        // distribution instead (docs/decisions/cycles-deviations.md D4).
+        ...(x.rect ? { cycles: { use_light_tree: false } } : {}),
+      },
     });
   });
 }

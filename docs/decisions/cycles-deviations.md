@@ -1,4 +1,4 @@
-# Cycles reference: deviations from plan §7.5 and documented Cycles behaviour (M3a)
+# Cycles reference: deviations from plan §7.5 and documented Cycles behaviour (M3a, M3c)
 
 Gate 2 (Stage A, our PT ≡ Cycles) found the items below while closing M3a. Each has its evidence and its effect on
 the gate. None of them loosens δ.
@@ -76,6 +76,32 @@ off) had tile MDB up to 17% at 16×1024 spp. Both renderers are unbiased, but a 
 **emissive quads** with the same front radiance. Their highlights are then sampled by BSDF MIS in both renderers.
 Mode-A analytic NEE with glossy lobes stays covered by the r ≥ 0.2 scene and the V2 sweep. Mode B (light MIS on) is
 M3b.
+
+## D4. `use_light_tree`: off for env + analytic-light scenes (M3c, reference-setting fix)
+
+**Symptom.** (xiv) Cornell open to the sky under kloofendal_48d_partly_cloudy_puresky **with** the interior 4 W rect
+light (Mode A, b = 3, 32 × 1024 spp both sides) failed only the rejection checks (mean-t, KS/AD on Y/R/G/B), on the
+first run and on the confirmatory re-run with disjoint seeds: Δ_Y = +0.0071% and +0.0069% (ours brighter), global MDB
+0.005%. TOST passed (δ is 0.5%). The same scene without the rect light passed (Δ_Y +0.0013%), and so did the overcast
+variant with the rect light (+0.0024%, not significant).
+
+**Localisation.** A diagnostic Cycles render of the same package with `scene.cycles.use_light_tree = False` (seeds
+300–331, otherwise identical settings):
+- ours vs Cycles (light tree off): **pass**, Δ_Y +0.0007% (MDB 0.005%);
+- Cycles (light tree off) vs Cycles (light tree on): Δ_Y +0.0072%, MDB 0.003%, mean-t/KS rejected.
+
+So the shift is between Cycles' two light-selection methods, not between the renderers: with a world light and an
+analytic light, Cycles' light tree is about 7·10⁻⁵ darker than its light distribution. The rect-only contribution
+(scene with rect − scene without) differs by about +0.018% in the tree reference. The light tree splits between the
+distant (world) and local subtrees per shading point. A plausible cause is that the selection pdf used in the world's
+MIS weights (`light_tree_pdf`) does not exactly match the realized selection, so ω1 + ω2 ≠ 1 by a tiny amount. This was
+not traced further in the kernel. The plan's pin ("use_light_tree True — only noise") does not hold at this resolution.
+
+**Fix.** A scene package may set `"cycles": {"use_light_tree": false}` (scene-bridge.md). `cycles_settings.py` takes
+the value from the cfg (default True, pinned as before), and `build_scene.py` accepts only this one override.
+`make-m3c.ts` sets it on the (xiv) rect-light variants, the only env + analytic-light scenes. All other references keep
+the light tree. With a single emitter (every other env scene) the tree selects that emitter with probability 1, so it
+cannot bias there.
 
 ## Deferred
 

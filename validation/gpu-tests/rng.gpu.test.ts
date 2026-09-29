@@ -1,6 +1,8 @@
 // T1 RNG (validation-harness T1; math.md#rng-layout) and T13b jitter i.i.d. (plan §1.2), both GPU lanes, on the
 // production common/rng-path.wgsl + frame jitter stream:
-//   - determinism: two dispatches bitwise identical, and GPU ≡ a CPU pcg3d mirror bit for bit (so both lanes agree);
+//   - determinism: two dispatches bitwise identical, and GPU ≡ a CPU pcg3d/pcg4d mirror bit for bit (so both lanes agree);
+//   - 64-bit PathSeed (M3c): pixels whose 32-bit jitter seed (initSeed.x) collides still get different path dims (a
+//     32-bit initSeed made every path one of 2^32 dimension vectors: a fixed-quadrature bias, math.md#rng-layout);
 //   - χ² uniformity: 1D (100 bins) and 2D (32×32) at 10^7 draws, Šidák-style strict critical values;
 //   - Pearson |r| < 4/√N across slots of one vertex, across vertices, across frames (t, t+1) and across pixels;
 //   - T13b: jitter uniform over the pixel, independent across samples/frames and of the path stream; negative controls
@@ -30,11 +32,11 @@ fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) li: u
     outv[16u * i + 10u] = path_hash(seed, 2u, SLOT_H1);                                   // next vertex
     let seedNext = path_init_seed(p.runSeed, 0u, p.t0 + 1u, i);
     outv[16u * i + 11u] = path_hash(seedNext, 1u, SLOT_H1);                               // next frame
-    let j = pcg3d(vec3u(seed, 0u, STREAM_JITTER));                                         // rand2(seed, 0, JITTER)
+    let j = pcg3d(vec3u(seed.x, 0u, STREAM_JITTER));                                       // rand2(seed.x, 0, JITTER)
     outv[16u * i + 12u] = j.x;
     outv[16u * i + 13u] = j.y;
-    outv[16u * i + 14u] = pcg3d(vec3u(seedNext, 0u, STREAM_JITTER)).x;                    // jitter, next frame
-    outv[16u * i + 15u] = seed;
+    outv[16u * i + 14u] = pcg3d(vec3u(seedNext.x, 0u, STREAM_JITTER)).x;                  // jitter, next frame
+    outv[16u * i + 15u] = seed.x;
     return;
   }
   if (p.mode == 1u) {
@@ -54,6 +56,15 @@ function pcg3d(x: number, y: number, z: number): [number, number, number] {
   a ^= a >>> 16; b ^= b >>> 16; c ^= c >>> 16;
   a = (a + Math.imul(b, c)) >>> 0; b = (b + Math.imul(c, a)) >>> 0; c = (c + Math.imul(a, b)) >>> 0;
   return [a >>> 0, b >>> 0, c >>> 0];
+}
+// CPU mirror of rng.wgsl pcg4d.
+function pcg4d(x: number, y: number, z: number, w: number): [number, number, number, number] {
+  let a = (Math.imul(x, 1664525) + 1013904223) >>> 0, b = (Math.imul(y, 1664525) + 1013904223) >>> 0;
+  let c = (Math.imul(z, 1664525) + 1013904223) >>> 0, d = (Math.imul(w, 1664525) + 1013904223) >>> 0;
+  a = (a + Math.imul(b, d)) >>> 0; b = (b + Math.imul(c, a)) >>> 0; c = (c + Math.imul(a, b)) >>> 0; d = (d + Math.imul(b, c)) >>> 0;
+  a ^= a >>> 16; b ^= b >>> 16; c ^= c >>> 16; d ^= d >>> 16;
+  a = (a + Math.imul(b, d)) >>> 0; b = (b + Math.imul(c, a)) >>> 0; c = (c + Math.imul(a, b)) >>> 0; d = (d + Math.imul(b, c)) >>> 0;
+  return [a >>> 0, b >>> 0, c >>> 0, d >>> 0];
 }
 const STREAM_PATH = 0x9e3779b9, STREAM_JITTER = 0xc2b2ae35;
 const u01 = (h: number): number => (h >>> 8) / 16777216;
@@ -104,13 +115,31 @@ describe('T1 path RNG (common/rng-path.wgsl)', () => {
     expect(diff).toBe(0);
     let bad = 0;
     for (let i = 0; i < N; i += 997) {
-      const seed = pcg3d(0xdeadbeef, 5, i)[0];
-      if (a[16 * i + 15] !== seed) bad++;
-      for (let s = 0; s < 10; s++) if (a[16 * i + s] !== pcg3d(seed, 16 + s, STREAM_PATH)[0]) bad++;
-      if (a[16 * i + 10] !== pcg3d(seed, 32 + 1, STREAM_PATH)[0]) bad++;
-      if (a[16 * i + 12] !== pcg3d(seed, 0, STREAM_JITTER)[0]) bad++;
+      const [sx, sy] = pcg3d(0xdeadbeef, 5, i);
+      if (a[16 * i + 15] !== sx) bad++;
+      for (let s = 0; s < 10; s++) if (a[16 * i + s] !== pcg4d(sx, sy, 16 + s, STREAM_PATH)[0]) bad++;
+      if (a[16 * i + 10] !== pcg4d(sx, sy, 32 + 1, STREAM_PATH)[0]) bad++;
+      if (a[16 * i + 12] !== pcg3d(sx, 0, STREAM_JITTER)[0]) bad++;
     }
     expect(bad).toBe(0);
+  });
+
+  it('64-bit PathSeed: pixels with colliding 32-bit initSeed.x still draw different path dims', async () => {
+    const a = await dispatch(0, N, 0x1234567, 3);
+    const seen = new Map<number, number>();
+    let collisions = 0, sameDims = 0;
+    for (let i = 0; i < N; i++) {
+      const x = a[16 * i + 15];
+      const j = seen.get(x);
+      if (j === undefined) { seen.set(x, i); continue; }
+      collisions++;
+      let eq = true;
+      for (let s = 0; s < 10; s++) if (a[16 * i + s] !== a[16 * j + s]) eq = false;
+      if (eq) sameDims++;
+    }
+    // ~N²/2^33 = 128 expected birthday collisions of the 32-bit word; with a 32-bit seed every one would repeat its path.
+    expect(collisions).toBeGreaterThan(50);
+    expect(sameDims).toBe(0);
   });
 
   it('χ² uniformity: 1D 100 bins and 2D 32×32 at 10^7 draws', async () => {

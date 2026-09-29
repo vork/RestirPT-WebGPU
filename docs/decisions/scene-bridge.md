@@ -58,6 +58,7 @@ A **scene package** is the exact scene our renderer draws, exported so that Blen
                   "sha256": "<hex>" },   // ENV-U9: SHA-256 of env.exr's pixels as written = little-endian float32,
                                           // RGBA interleaved, rows TOP-DOWN (Blender: foreach_get rows are bottom-up → flip)
   "render": { "width": 512, "height": 512, "maxBounces": 3 },
+  "cycles": { "use_light_tree": false },          // optional reference-setting override (only this key; cycles-deviations D4)
   "frames": [                                    // optional: resolved per-frame states for animations
     { "frame": 0, "camera": { "matrix": [16], "yfov": rad }, "lights": { "<id>": { "matrix": [16], "power": P } },
       "env": { "rotationZ": rad, "strength": s } }
