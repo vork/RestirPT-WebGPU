@@ -21,6 +21,8 @@ export const RCT = { NONE: 0, D: 1, R: 2, F: 3, I: 4, GUARD: 5 } as const;
 /** Margin of a discrete failure (delta event, G_T lobe, failed guard): never an FP-boundary flip (rc.wgsl). */
 export const RC_MARGIN_DISCRETE = -1024;
 export const RC_MARGIN_MAX = 1024;
+/** |cos| guard of the pair segment at both vertices (rc.wgsl RC_COS_MIN, Changelog B-6). */
+export const RC_COS_MIN = 1e-5;
 /** LOGIC threshold on |margin| (log2 units) and on |α − α_min| (gap-rc §10.3). */
 export const MARGIN_LOGIC = 2 ** -16;
 export const ALPHA_LOGIC = 1e-6;
@@ -50,14 +52,16 @@ export function pairTestF64(a: RcVertexD, ea: RcEventD, b: RcVertexD, eb: RcEven
   if (!(t2 > 1e-12) || !Number.isFinite(t2)) { r.margin = RC_MARGIN_DISCRETE; return r; }
   const t = Math.sqrt(t2);
   const cb = Math.abs(dot(b.ng, dl)) / t;
-  if (!(cb > 0) || !(ea.pMarg > 0) || !Number.isFinite(ea.pMarg)) { r.margin = RC_MARGIN_DISCRETE; return r; }
+  if (!(ea.pMarg > 0) || !Number.isFinite(ea.pMarg)) { r.margin = RC_MARGIN_DISCRETE; return r; }
+  if (!(cb >= RC_COS_MIN)) { r.margin = Math.min(r.margin, log2Ratio(cb, RC_COS_MIN)); return r; }
   const rayFP = t2 / (ea.pMarg * cb);
   r.margin = Math.min(r.margin, log2Ratio(rayFP, thr));
   if (!(rayFP >= thr)) { r.term = RCT.F; return r; }
   if (b.kind === RCK.LIGHT || b.diffuseOnly) return { ok: true, margin: r.margin, term: RCT.NONE };
   if (eb.delta || eb.lobe === LOBE.GT) return { ok: false, margin: RC_MARGIN_DISCRETE, term: RCT.D };
   const ca = Math.abs(dot(a.ng, dl)) / t;
-  if (!(ca > 0) || !(eb.pMarg > 0) || !Number.isFinite(eb.pMarg)) return { ok: false, margin: RC_MARGIN_DISCRETE, term: RCT.GUARD };
+  if (!(eb.pMarg > 0) || !Number.isFinite(eb.pMarg)) return { ok: false, margin: RC_MARGIN_DISCRETE, term: RCT.GUARD };
+  if (!(ca >= RC_COS_MIN)) return { ok: false, margin: Math.min(r.margin, log2Ratio(ca, RC_COS_MIN)), term: RCT.GUARD };
   const invFP = t2 / (eb.pMarg * ca);
   r.margin = Math.min(r.margin, log2Ratio(invFP, thr));
   if (!(invFP >= thr)) { r.term = RCT.I; return r; }
@@ -381,8 +385,8 @@ export function dualCheckRecord(s: DualScene, w: Uint32Array, o: number): DualRe
     if (!e.sup) { r.skipped = 'material'; return r; }
     r.checked++;
     if (e.res.ok === gOk) continue;
-    let fp = !isLogic(e.res) || e.tang < TANGENCY_FP;
-    if (e.tang < TANGENCY_FP) r.tangentFp++;
+    let fp = !isLogic(e.res);
+    if (e.tang < TANGENCY_FP) r.tangentFp++;   // diagnostic only (B-6: coplanar pairs now fail the |cos| guard)
     for (let t = 1; !fp && t <= SENS_TRIALS; t++) fp = evalPair(geom(t), j).res?.ok === gOk;
     if (fp) { r.fp++; continue; }
     r.logic++;
@@ -421,7 +425,15 @@ export function dualCheckRecord(s: DualScene, w: Uint32Array, o: number): DualRe
         const wP = nrm(sub(g.xk.pos, g.yk1.pos));
         cmin = Math.min(Math.abs(dot(g.yk1.ng, wP)), Math.abs(dot(g.xk.ng, wP)), Math.abs(dot(g.xk.ng, rcWi)));
       } else if (g.yk1) cmin = Math.abs(dot(g.yk1.ng, rcWi));
-      const tol = Math.max(1e-3, 32 * 2 ** -23 / Math.max(cmin, 1e-12));
+      // … and G = |cos|/t² carries the f32 position rounding of both ends relative to the segment length t
+      let dist = 0;
+      if (g.yk1 && g.xk) {
+        const dl = sub(g.xk.pos, g.yk1.pos);
+        const t = Math.hypot(dl[0], dl[1], dl[2]);
+        const pmax = Math.max(...g.yk1.pos.map(Math.abs), ...g.xk.pos.map(Math.abs), 2 ** -6);
+        dist = 3 * pmax / t;
+      }
+      const tol = Math.max(1e-3, 32 * 2 ** -23 * (1 / Math.max(cmin, 1e-12) + dist));
       const close = (n: number | undefined) => n !== undefined && Math.abs(n / jDen / gpuJ - 1) < tol;
       let ok = close(jNum);
       for (let t = 1; !ok && t <= SENS_TRIALS; t++) ok = close(jOf(geom(t)));

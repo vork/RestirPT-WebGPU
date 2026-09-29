@@ -1424,6 +1424,15 @@ touching a shared interface. "WP-A" entries were made while landing P0 / A1.
   of case (d) — and does not stream the candidate when it fails (F := 0). The env rc (e) needs no extra test
   (`visibleInf` traces the identical ray). The ReSTIR integrand thus carries the shift's visibility term on its rc
   segment; it differs from the PT's on a set of measure ~1e-6 (below every Stage-B tolerance).
+- **B-6 |cos| guard of the pair predicate** (affects every caller of `rcPairTest`; decisions change only for pairs whose
+  segment lies within |cos| < 1e-5 of a vertex plane). The dual found ~9e-4 of the recorded shifts contained a pair
+  whose two vertices lie on the SAME flat wall (a shifted y_{k−1} next to the base x_k): exactly coplanar, so the f64
+  cos is 0 (guard fails) while the f32 cos is rounding noise (~1e-7) and the GPU passed the pair on a huge footprint.
+  Base and shifts agreed (the same f32 code), but the decision was rounding noise. `rcPairTest` now fails F / I when
+  `|cos| < RC_COS_MIN = 1e-5` (term GUARD) with the continuous margin `log2(|cos|/1e-5)`; an unbiased domain
+  restriction (such pairs fall back to replay / a later pair). The B-4 "tangent" exemption of the dual is removed: a
+  dual disagreement is FP-BOUNDARY only by the margin rule or when it flips under an ulp-scale (16 ulp) perturbation
+  of the vertex positions; U-11 J disagreements within the f32 conditioning `32·2⁻²³·(1/|cos|min + 3·|p|max/t)` are FP.
 
 ### WP-D amendments (debug views, inspector, interactive integration)
 

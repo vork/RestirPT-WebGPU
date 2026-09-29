@@ -14,6 +14,9 @@
 
 const RC_MARGIN_DISCRETE: f32 = -1024.0;
 const RC_MARGIN_MAX: f32 = 1024.0;
+/// Guard on the pair cosines (Changelog B-6): a segment within |cos| < 1e-5 of a vertex's plane fails the pair, with a
+/// continuous margin log2(|cos|/1e-5), so exactly coplanar vertex pairs (f32 cos = rounding noise) fail robustly.
+const RC_COS_MIN: f32 = 1e-5;
 
 struct RcVertex { pos: vec3f, ng: vec3f, kind: u32, diffuseOnly: u32 }   // kind RCK_*
 struct RcEvent  { lobe: u32, delta: u32, alpha: f32, pMarg: f32 }         // alpha = perceptual roughness of the event
@@ -52,7 +55,7 @@ fn rc_log2_ratio(num: f32, den: f32) -> f32 {
 ///   R  r(ℓ_{k−1}) ≥ α_min (perceptual; D = 1, delta = 0)
 ///   F  kind(b) = ENV ⇒ pass; else t²/(p̄_a·|cos_b|) ≥ thr   (tested as t² ≥ thr·(p̄_a·|cos_b|), same decision)
 ///   I  skipped for LIGHT / ENV / diffuseOnly(b); else e_b not delta and not G_T, t²/(p̄_b·|cos_a|) ≥ thr
-/// Guards t² > 1e-12, p̄ finite > 0, cos finite > 0: a failed guard fails the pair (term RCT_GUARD).
+/// Guards t² > 1e-12, p̄ finite > 0 (discrete), |cos| ≥ 1e-5 (continuous margin): a failed guard fails the pair (RCT_GUARD).
 fn rcPairTest(a: RcVertex, ea: RcEvent, b: RcVertex, eb: RcEvent, thr: f32) -> RcResult {
   if ((rsParams.flags & RSF_CRIT_2022) != 0u) { return rc_pair_2022(a, ea, b, eb); }
   var r = RcResult(false, RC_MARGIN_DISCRETE, RCT_D);
@@ -69,14 +72,16 @@ fn rcPairTest(a: RcVertex, ea: RcEvent, b: RcVertex, eb: RcEvent, thr: f32) -> R
   }
   let t = sqrt(t2);
   let cb = abs(dot(b.ng, dl)) / t;                                                          // cos at the receiving b
-  if (!rs_pos_finite(cb) || !rs_pos_finite(ea.pMarg)) { r.margin = RC_MARGIN_DISCRETE; return r; }
+  if (!rs_pos_finite(ea.pMarg)) { r.margin = RC_MARGIN_DISCRETE; return r; }
+  if (!rs_pos_finite(cb) || !rs_geq_pos(cb, RC_COS_MIN)) { r.margin = min(r.margin, rc_log2_ratio(cb, RC_COS_MIN)); return r; }
   let rhsF = thr * (ea.pMarg * cb);
   r.margin = min(r.margin, rc_log2_ratio(t2, rhsF));
   if (!rs_geq_pos(t2, rhsF)) { r.term = RCT_F; return r; }                                  // F
   if (b.kind == RCK_LIGHT || b.diffuseOnly != 0u) { r.ok = true; r.term = RCT_NONE; return r; }   // fn. 6
   if (eb.delta != 0u || eb.lobe == LOBE_GT) { r.margin = RC_MARGIN_DISCRETE; r.term = RCT_D; return r; }
   let ca = abs(dot(a.ng, dl)) / t;                                                          // cos at a
-  if (!rs_pos_finite(ca) || !rs_pos_finite(eb.pMarg)) { r.margin = RC_MARGIN_DISCRETE; return r; }
+  if (!rs_pos_finite(eb.pMarg)) { r.margin = RC_MARGIN_DISCRETE; return r; }
+  if (!rs_pos_finite(ca) || !rs_geq_pos(ca, RC_COS_MIN)) { r.margin = min(r.margin, rc_log2_ratio(ca, RC_COS_MIN)); return r; }
   let rhsI = thr * (eb.pMarg * ca);
   r.margin = min(r.margin, rc_log2_ratio(t2, rhsI));
   if (!rs_geq_pos(t2, rhsI)) { r.term = RCT_I; return r; }                                  // I
