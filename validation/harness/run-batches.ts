@@ -10,7 +10,9 @@
 //      (M3b glass plants, pt-kernel.ts GlassPlant: B-η 1/η² BTDF scaling, R/T chosen with 0.5 instead of P_R without
 //      pdf compensation, B-tint C instead of √C, B-side η not inverted on backfaces, B-shadow glass does not occlude),
 //      Gate-1 planted biases: --plant-emit-scale 1.01 (every emitter ×s), --plant-drop 0.01@2 (terminate 1% of the
-//      paths at vertex 2, no compensation))
+//      paths at vertex 2, no compensation); M3c env options: --env-nee on|off (default: the package's env.sampling),
+//      --env-cap N (importance resolution), --env-no-floors, --env-mis-power, --env-plant
+//      missingSin|w2WithoutPmf|doubleCount|pdfFromTargets, --env-strength-scale 1.0075)
 // If the package directory is missing and --make-c0b is given, an equivalent C0b package (calib_scenes.py make_c0b:
 // 100 m emissive quad at z = −2, L_e = (0.5, 0.25, 0.125)·2, vfov 40°, 512²) is written with exportScenePackage to
 // validation/out/tmp-c0b/ and rendered instead.
@@ -27,7 +29,7 @@ import { decodePFM } from '../../src/core/io/pfm.ts';
 import { exportScenePackage } from '../../src/core/scene/scene-package.ts';
 import type { SceneData } from '../../src/core/scene/types.ts';
 import type { RenderBatchesReport, ValidationKernel } from './batch-run.ts';
-import type { GlassPlant, PtPlant, PtTechnique } from '../../src/core/render/pt-kernel.ts';
+import type { GlassPlant, PtEnvOptions, PtEnvPlant, PtPlant, PtTechnique } from '../../src/core/render/pt-kernel.ts';
 
 const GLASS_PLANTS: readonly GlassPlant[] = ['eta2', 'pr-half', 'tint', 'side', 'shadow'];   // pt-kernel.ts order
 
@@ -58,6 +60,12 @@ const { values: args } = parseArgs({
     'plant-drop': { type: 'string' },
     'light-mode': { type: 'string' },
     'plant-glass': { type: 'string' },
+    'env-nee': { type: 'string' },
+    'env-cap': { type: 'string' },
+    'env-no-floors': { type: 'boolean', default: false },
+    'env-mis-power': { type: 'boolean', default: false },
+    'env-plant': { type: 'string' },
+    'env-strength-scale': { type: 'string' },
   },
 });
 
@@ -154,6 +162,22 @@ async function main(): Promise<number> {
       plant.dropProb = Number(m[1]); plant.dropBounce = Number(m[2]);
     }
   }
+  let env: (PtEnvOptions & { strengthScale?: number }) | undefined;
+  if (args['env-nee'] || args['env-cap'] || args['env-no-floors'] || args['env-mis-power'] || args['env-plant'] || args['env-strength-scale']) {
+    env = {};
+    if (args['env-nee']) {
+      if (!['on', 'off'].includes(args['env-nee'])) { console.error('--env-nee on|off'); return 2; }
+      env.nee = args['env-nee'] === 'on';
+    }
+    if (args['env-cap']) env.importanceCap = Number(args['env-cap']);
+    if (args['env-no-floors']) env.floors = false;
+    if (args['env-mis-power']) env.misPower = true;
+    if (args['env-plant']) {
+      if (!['missingSin', 'w2WithoutPmf', 'doubleCount', 'pdfFromTargets'].includes(args['env-plant'])) { console.error(`--env-plant ${args['env-plant']}?`); return 2; }
+      env.plant = args['env-plant'] as PtEnvPlant;
+    }
+    if (args['env-strength-scale']) env.strengthScale = Number(args['env-strength-scale']);
+  }
   const port = await freePort();
   const vite: ViteDevServer = await createServer({
     root: ROOT, configFile: path.join(ROOT, 'vite.config.ts'), server: { port, strictPort: true, host: '127.0.0.1' }, logLevel: 'warn',
@@ -178,7 +202,7 @@ async function main(): Promise<number> {
         rep = await page.evaluate((o) => window.__harness!.renderBatches(o), {
           run: runId, package: pkgUrl, sceneUrl: args.scene, kernel: args.kernel as ValidationKernel, spp: Number(args.spp), batches: Number(args.batches),
           maxBounces: args['max-bounces'] !== undefined ? Number(args['max-bounces']) : undefined, rr: args.rr,
-          technique: args.technique as PtTechnique | undefined, plant, lightMode: args['light-mode'],
+          technique: args.technique as PtTechnique | undefined, plant, lightMode: args['light-mode'], env,
           width: args.width ? Number(args.width) : undefined, height: args.height ? Number(args.height) : undefined, seed, chromeVersion, frame,
         });
       } finally {

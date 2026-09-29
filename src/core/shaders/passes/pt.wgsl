@@ -1,21 +1,23 @@
-// Reference path tracer (plan §3 mode PT, §5 M3a/M3b; math.md#bounces, #raster, #rng-layout, #measure, #mis, #path-tree,
-// #visibility, #env-mapping, #glass). Light modes A / B / A′ (path/crossings.wgsl), glass lobe G (material/glass.wgsl:
-// each interface is a scattering vertex and a bounce), env BSDF-only (M3c adds env NEE).
+// Reference path tracer (plan §3 mode PT, §5 M3a/M3b/M3c; math.md#bounces, #raster, #rng-layout, #measure, #mis,
+// #path-tree, #visibility, #env-mapping, #env-sampling, #glass). Light modes A / B / A′ (path/crossings.wgsl), glass
+// lobe G (material/glass.wgsl: each interface is a scattering vertex and a bounce). The env is one entry of the global
+// alias table (NEE_ENV) and BSDF escapes use MIS against it (lights/env-sample.wgsl); with env NEE off (no entry)
+// escapes have ω2 = 1 (≡ Cycles world sampling_method NONE).
 //
 // Per sample (pixel p, sample/frame index t):
-//   initSeed = pcg3d(runSeed ⊕ member·φ, t, p).x  (rng-path.wgsl); jitter = rand2(initSeed, 0, STREAM_JITTER) (JITTER_IID)
+//   initSeed = pcg3d(runSeed ⊕ member·φ, t, p).xy (64-bit PathSeed, rng-path.wgsl); jitter = rand2(initSeed.x, 0, STREAM_JITTER)
 //   camera ray (frame.wgsl frame_camera_ray, pixel ↔ Cycles raster, BOX 1 px) → closest TRIANGLE x₁ (alpha MASK in
 //   traversal). Length-1 terms outside the path loop, weight 1: camera-visible analytic area lights crossed before x₁
 //   (or before FLT_MAX on a miss), L_e of an emissive x₁, and on a miss visibleToCamera·L_env.
 //   Bounce loop, Cycles max_bounces = N semantics: scattering vertices x_B, B = 1 … N+1 (≤ N+1 of them), NEE at each;
 //   emission (BSDF hit / escape) collected at x₂ … x_{N+2}; no NEE and no continuation at x_{N+2}.
-//   At x_B:  NEE      F = β ⊙ ω1·f_cos ⊙ Λ·V/q     (light_sample in μ; ω1 ≡ 1 for delta / Mode-A analytic)
+//   At x_B:  NEE      F = β ⊙ ω1·f_cos ⊙ Λ·V/q     (nee_sample in μ; ω1 ≡ 1 for delta / Mode-A analytic)
 //            RR       optional (PT_RR): q = min(sqrt(max_c β_c), 1) on the RR-free β, only for B > rrMinBounces
 //            BSDF     bsdf_sample(u_lobe, u_h1, u_h2, u_rt) → β ⊙= weight (joint pdf), trace the closest triangle
 //            Mode B / A′: + β ⊙ Σ_crossed L_e·ω2 for the analytic area lights the BSDF ray passes before the first
 //            triangle (pass-through: no vertex, no bounce, no RNG, no RR; path/crossings.wgsl)
 //            hit on an emissive triangle: + β ⊙ L_e·ω2, ω2 = p2/(M p1 + p2) with p1 recomputed from x_B (1 after a
-//            delta lobe); escape: + β ⊙ L_env·ω2_env (M3a: 1, Cycles sampling_method NONE) and stop.
+//            delta lobe); escape: + β ⊙ L_env·ω2_env, ω2_env = p2/(M p1Env + p2) (1 after a delta lobe) and stop.
 //   Analytic lights never occlude (math.md#visibility); in Mode A they are never crossed.
 //   PT_PROBE (tests, gap-light U10): pt_batch writes (hash of the vertex/lobe sequence, number of crossing candidates,
 //   number of scattering vertices) instead of radiance.
@@ -33,6 +35,7 @@
 #include "geom/visible.wgsl"
 #include "lights/env.wgsl"
 #include "lights/measure.wgsl"
+#include "lights/env-sample.wgsl"
 #include "material/material-eval.wgsl"
 #include "path/crossings.wgsl"
 
@@ -84,7 +87,7 @@ fn pt_camera_lights(o: vec3f, d: vec3f, tMax: f32) -> vec3f {
 fn pt_env_present() -> bool { return (envParams.flags & ENV_FLAG_PRESENT) != 0u; }
 
 /// One path sample for camera ray (o, d) with path seed `seed`.
-fn pt_trace(o: vec3f, d: vec3f, seed: u32) -> PtResult {
+fn pt_trace(o: vec3f, d: vec3f, seed: PathSeed) -> PtResult {
   bvh_stats_reset();
   let hit0 = trace_closest(o, d, FLT_MAX);
   var L = pt_camera_lights(o, d, select(FLT_MAX, hit0.t, hit0.primId != BVH_MISS));
@@ -107,13 +110,13 @@ fn pt_trace(o: vec3f, d: vec3f, seed: u32) -> PtResult {
     let m = material_eval(s, V);
     // ---- NEE at x_B (not at a delta-only vertex) ------------------------------------------------------------------
     if ((m.flags & 1u) != 0u && !bsdfOnly) {
-      let ls = light_sample(s.pos, path_hash(seed, B, SLOT_SEL), path_hash(seed, B, SLOT_SEL2),
-                            vec2f(path_u01(seed, B, SLOT_L0), path_u01(seed, B, SLOT_L1)));
+      let ls = nee_sample(s.pos, path_hash(seed, B, SLOT_SEL), path_hash(seed, B, SLOT_SEL2),
+                          vec3u(path_hash(seed, B, SLOT_L0), path_hash(seed, B, SLOT_L1), path_hash(seed, B, SLOT_L2)));
       // same-triangle skip (Cycles shade_surface.h:345-351): a sample on the shading triangle itself has cosθ_z = 0
       if (ls.valid && ls.prim != prim && any(ls.Lambda > vec3f(0.0))) {
         let ev = bsdf_eval(m, V, ls.dir);
         if (any(ev.f_cos > vec3f(0.0))) {
-          let w1 = select(mis_w1(ls, ev.pdf_marginal, B), 1.0, neeOnly);
+          let w1 = select(nee_mis_w1(ls, ev.pdf_marginal, B), 1.0, neeOnly);
           var vis: bool;
           if (ls.isInf) { vis = visibleInf(s.pos, s.ng, prim, ls.dir); }
           else { vis = visible(s.pos, s.ng, prim, ls.pos, ls.nz, ls.prim); }
@@ -144,7 +147,7 @@ fn pt_trace(o: vec3f, d: vec3f, seed: u32) -> PtResult {
 #endif
     if (h.primId == BVH_MISS) {
       if (pt_env_present() && !neeOnly) {
-        let w2 = env_bsdf_mis_weight(bs.L, bs.pdf_marginal, B, bs.is_delta);
+        let w2 = select(env_bsdf_mis_weight(bs.L, bs.pdf_marginal, B, bs.is_delta), 1.0, bsdfOnly);
         L += (rrScale * w2) * beta * envRadiance(envUV(bs.L, envParams.cg, envParams.sg));
       }
       break;
@@ -182,7 +185,7 @@ fn pt_batch(@builtin(global_invocation_id) gid: vec3u) {
     let t = pt.sampleBase + k;
     let seed = path_init_seed(frame.runSeed, pt.member, t, idx);
     var jit = frame.jitter;
-    if (frame.jitterMode == JITTER_IID) { jit = rand2(seed, 0u, STREAM_JITTER); }
+    if (frame.jitterMode == JITTER_IID) { jit = rand2(seed.x, 0u, STREAM_JITTER); }
     let ray = frame_camera_ray(pixel, jit);
     let r = pt_trace(ray.o, ray.d, seed);
     flags |= r.bvhFlags;
@@ -211,7 +214,7 @@ fn pt_frame(@builtin(global_invocation_id) gid: vec3u) {
   let pixel = gid.xy;
   if (any(pixel >= frame.resolution)) { return; }
   let idx = pixel.y * frame.resolution.x + pixel.x;
-  // Same jitter and seed as the primary pass (frame_pixel_seed = path_init_seed(runSeed, 0, seedIndex, p)).
+  // Same jitter and seed as the primary pass (frame_pixel_seed = path_init_seed(runSeed, 0, seedIndex, p).x).
   let seed = path_init_seed(frame.runSeed, pt.member, frame.seedIndex, idx);
   let ray = frame_camera_ray(pixel, frame_pixel_jitter(pixel));
   let r = pt_trace(ray.o, ray.d, seed);

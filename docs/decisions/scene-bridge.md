@@ -54,9 +54,11 @@ A **scene package** is the exact scene our renderer draws, exported so that Blen
   "camera": { "matrix": [16], "yfov": rad, "znear": 1e-4 },
   "env": null | { "file": "env.exr", "strength": s, "tint": [r,g,b], "rotationZ": rad,
                   "visibleToCamera": true, "sampling": "AUTOMATIC" | "NONE",
+                  "blenderWorld": "texture" | "constant",   // optional (M3c C0q); default "texture"
                   "sha256": "<hex>" },   // ENV-U9: SHA-256 of env.exr's pixels as written = little-endian float32,
                                           // RGBA interleaved, rows TOP-DOWN (Blender: foreach_get rows are bottom-up → flip)
   "render": { "width": 512, "height": 512, "maxBounces": 3 },
+  "cycles": { "use_light_tree": false },          // optional reference-setting override (only this key; cycles-deviations D6)
   "frames": [                                    // optional: resolved per-frame states for animations
     { "frame": 0, "camera": { "matrix": [16], "yfov": rad }, "lights": { "<id>": { "matrix": [16], "power": P } },
       "env": { "rotationZ": rad, "strength": s } }
@@ -73,3 +75,10 @@ A **scene package** is the exact scene our renderer draws, exported so that Blen
 - The env EXR is written from the exact float32 texels our GPU samples. Blender asserts the image-pixel hash
   (ENV-U9, `math.md#env-mapping`).
 - Anything the bridge cannot represent exactly (e.g. KTX2 textures, BLEND alpha) is a hard error, not a warning.
+- **env.sampling** is the env-NEE switch on both sides: Blender `world.cycles.sampling_method` and our env alias entry
+  (`NONE` = no env NEE, BSDF escapes with ω2 = 1; math.md#env-sampling).
+- **env.blenderWorld = "constant"** (M3c C0q only): env.exr must be one constant colour c. Blender builds a plain
+  Background node with Color = c·tint and the package strength instead of the texture graph, so Cycles has no background
+  light (a constant world is not spatially varying) and samples the env by BSDF only. Our renderer still samples the
+  constant texture. Frames with env overrides are refused for this variant.
+

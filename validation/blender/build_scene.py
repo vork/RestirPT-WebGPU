@@ -681,6 +681,34 @@ def build_env(scene: bpy.types.Scene, env: dict[str, Any], pkg: Path) -> tuple[b
     return w, info
 
 
+def build_env_constant(scene: bpy.types.Scene, env: dict[str, Any], pkg: Path) -> tuple[bpy.types.World, dict[str, Any]]:
+    """M3c C0q variant (env "blenderWorld": "constant"): the package's env texture must be one constant colour c; Blender
+    gets a plain Background node with Color = c * tint and the package strength. Cycles then has NO background light
+    (a constant world is not spatially varying, light.cpp:280-300): BSDF-only env, weight 1. Our renderer samples the
+    same constant texture (with env NEE unless env.sampling is NONE); both must agree (plan §7.2 C0q)."""
+    import OpenImageIO as oiio
+
+    path = pkg / env["file"]
+    inp = oiio.ImageInput.open(str(path))
+    if inp is None:
+        raise BridgeError(f"{path}: {oiio.geterror()}")
+    spec = inp.spec()
+    px = np.asarray(inp.read_image(0, 0, 0, spec.nchannels, "float"), np.float32).reshape(-1, spec.nchannels)[:, :3]
+    inp.close()
+    if not np.all(px == px[0]):
+        raise BridgeError("blenderWorld 'constant' needs a constant env texture")
+    tint = _v3(env.get("tint", [1, 1, 1]), "env.tint")
+    color = tuple(float(px[0][k]) * float(tint[k]) for k in range(3))
+    w = cs.build_world(scene, {"color": color, "strength": float(env.get("strength", 1.0))})
+    w.cycles.sampling_method = env.get("sampling", "AUTOMATIC")
+    w.cycles_visibility.camera = bool(env.get("visibleToCamera", True))
+    file_hash, (fw, fh) = exr_file_sha256(path)
+    if env.get("sha256") and file_hash != env["sha256"]:
+        raise BridgeError(f"ENV-U9: EXR pixel hash {file_hash} != package env.sha256 {env['sha256']}")
+    return w, {"file": env["file"], "size": [fw, fh], "blenderWorld": "constant", "color": list(color), "exr_file_sha256": file_hash,
+               "declared_sha256": env.get("sha256"), "hash_ok": True}
+
+
 def _world_nodes(w: bpy.types.World) -> tuple[Any, Any, Any]:
     nodes = w.node_tree.nodes
     mp = next(n for n in nodes if n.bl_idname == "ShaderNodeMapping")
@@ -729,7 +757,8 @@ def build_from_package(package_dir: str | Path, *, reset: bool = True) -> dict[s
 
     world, env_info = None, None
     if sj.get("env"):
-        world, env_info = build_env(scene, sj["env"], pkg)
+        builder = build_env_constant if sj["env"].get("blenderWorld") == "constant" else build_env
+        world, env_info = builder(scene, sj["env"], pkg)
     else:
         scene.world = None
 
@@ -788,7 +817,10 @@ def apply_frame(built: dict[str, Any], frame: dict[str, Any] | None) -> None:
     unknown = set(map(str, flights)) - set(map(str, built["lights"]))
     if unknown:
         raise BridgeError(f"frame {frame.get('frame') if frame else None}: unknown light ids {sorted(unknown)}")
-    if built["world"] is not None:
+    if built["world"] is not None and sj["env"].get("blenderWorld") == "constant":
+        if (frame or {}).get("env"):
+            raise BridgeError("blenderWorld 'constant' does not support per-frame env parameters")
+    elif built["world"] is not None:
         env = sj["env"]
         fe = (frame or {}).get("env") or {}
         mp, bg, tint = _world_nodes(built["world"])
@@ -807,7 +839,10 @@ def frame_state(built: dict[str, Any]) -> dict[str, Any]:
         "camera": {"matrix_world": [list(r) for r in built["camera"].matrix_world], "angle_y": built["camera"].data.angle_y},
         "lights": {str(k): {"energy": o.data.energy, "matrix_world": [list(r) for r in o.matrix_world]} for k, o in built["lights"].items()},
     }
-    if built["world"] is not None:
+    if built["world"] is not None and built["package"]["env"].get("blenderWorld") == "constant":
+        bg = next(n for n in built["world"].node_tree.nodes if n.bl_idname == "ShaderNodeBackground")
+        out["env"] = {"constant": list(bg.inputs["Color"].default_value), "strength": bg.inputs["Strength"].default_value}
+    elif built["world"] is not None:
         mp, bg, tint = _world_nodes(built["world"])
         out["env"] = {"rotation": list(mp.inputs["Rotation"].default_value), "strength": bg.inputs["Strength"].default_value,
                       "tint": list(tint.inputs[1].default_value)}
@@ -832,5 +867,10 @@ def settings_cfg(built: dict[str, Any], **overrides: Any) -> dict[str, Any]:
             "visible_camera": bool(env.get("visibleToCamera", True)),
         },
     }
+    # Per-package Cycles overrides (scene-bridge.md "cycles"): only the documented deviation D6 (light tree) so far.
+    for k, v in (sj.get("cycles") or {}).items():
+        if k != "use_light_tree":
+            raise BridgeError(f"scene.json cycles.{k}: unsupported override")
+        cfg[k] = bool(v)
     cfg.update(overrides)
     return cfg

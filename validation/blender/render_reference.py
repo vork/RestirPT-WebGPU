@@ -46,9 +46,14 @@ MASK64 = (1 << 64) - 1
 # --- GPU lock -----------------------------------------------------------------------------------
 
 
+HOLDER = LOCK / f"render_reference-{os.getpid()}"  # lets a supervisor detect a lock left by an aborted Blender
+
+
 def _release_lock() -> None:
     global _lock_held
     if _lock_held:
+        with contextlib.suppress(OSError):
+            HOLDER.unlink()
         with contextlib.suppress(OSError):
             LOCK.rmdir()
         _lock_held = False
@@ -66,6 +71,8 @@ def gpu_lock() -> Iterator[float]:
         except FileExistsError:
             time.sleep(5)
     _lock_held = True
+    with contextlib.suppress(OSError):
+        HOLDER.touch()
     waited = time.perf_counter() - t0
     if waited > 1:
         print(f"[render_reference] waited {waited:.0f} s for the GPU lock", flush=True)

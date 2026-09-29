@@ -65,6 +65,12 @@ export interface EnvParams {
   rotationDeg: number;
   tint: { r: number; g: number; b: number };
   visibleToCamera: boolean;
+  /** Env NEE (M3c; ≡ Cycles world sampling_method AUTOMATIC; off = NONE, BSDF-only). */
+  nee: boolean;
+  /** Importance resolution cap: W_m = largest power of two ≤ min(W, cap). */
+  importanceRes: number;
+  /** Readout (resolution, memory, P(env)), filled by the integration. */
+  info: string;
 }
 
 export interface AppHooks {
@@ -141,7 +147,7 @@ export class App {
   };
   readonly present: PresentSettings = { exposureEV: 0, tonemap: 'standard', filter: 'bilinear', highlightNonFinite: true };
   readonly debugSettings: DebugSettings = defaultDebugSettings();
-  readonly envParams: EnvParams = { url: '', strength: 1, rotationDeg: 0, tint: { r: 1, g: 1, b: 1 }, visibleToCamera: true };
+  readonly envParams: EnvParams = { url: '', strength: 1, rotationDeg: 0, tint: { r: 1, g: 1, b: 1 }, visibleToCamera: true, nee: true, importanceRes: 2048, info: 'no environment' };
   hudVisible = true;
 
   frameIndex = 0;

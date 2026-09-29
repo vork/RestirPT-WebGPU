@@ -38,6 +38,9 @@ DEFAULT_CFG: dict[str, Any] = {
     "camera": None,
     "world": None,
     "output_path": None,
+    # Pinned True (plan §7.5). A package may set False through scene.json "cycles": {"use_light_tree": false}: the
+    # light tree biases env + analytic-light scenes by ~7e-5 (docs/decisions/cycles-deviations.md D6).
+    "use_light_tree": True,
 }
 
 
@@ -174,7 +177,7 @@ def _sampling_rows(scene: bpy.types.Scene, cfg: dict[str, Any]) -> list[Row]:
         ("seed", int(cfg["seed"])),
         ("use_animated_seed", False),
         ("film_exposure", 1.0),
-        ("use_light_tree", True),
+        ("use_light_tree", bool(cfg["use_light_tree"])),
         ("texture_limit_render", "OFF"),
         ("use_sample_subset", False),
         ("shading_system", False),  # SVM, not OSL

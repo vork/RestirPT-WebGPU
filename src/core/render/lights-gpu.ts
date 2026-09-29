@@ -7,15 +7,21 @@
 //   primMap  : primId → emissive entry index or 0xffffffff                              static per scene
 //   slot 0/1 : cur/prev double buffer, each { lights (LIGHT_REC_WORDS per light, stable-id order) | alias (q, alias)
 //              pairs | realized pmf (f32 per entry) | curToPrev | prevToCur }
+//   env      : the env importance tables (M3c, static per env map + importance resolution): rowAlias (H_m u32),
+//              colAlias (H_m·W_m u32), pdfUV (H_m·W_m f32 bits); offsets + log2 W_m in LightsParams (plan §1.8)
 // Global alias entries (math.md#light-selection): analytic lights in stable-id order, then emissive triangles in primId
-// order, then (reserved, M3c) ENV. Table size n = 2^m (power-of-two padding with zero-weight entries that always alias
-// to real ones, math.md open item 5); the realized pmf is computed from the stored u16 thresholds (alias.ts).
+// order, then ENV (entry nA + nT, when an env with env NEE on is set). Table size n = 2^m (power-of-two padding with
+// zero-weight entries that always alias to real ones, math.md open item 5); the realized pmf is computed from the
+// stored u16 thresholds (alias.ts). With the env present and other emitters: P(env) = clamp(Φ_env/ΣΦ̃, 0.1, 0.9), the
+// others share 1 − P(env) in proportion to Φ̃; env alone: P(env) = 1. Env rotation never changes the pmf; strength,
+// tint or the env-NEE toggle rebuild it (radiometric / config change).
 // update(lights) writes the next state into the non-current slot and flips: `prev` is the last frame's slot, so the
 // maps and pmf_{t−1} stay available for temporal reuse (M5). The alias table and pmf are rebuilt ONLY when a light's
 // power proxy or the set of lights changes (deterministic: identical inputs → identical bits); otherwise they are
 // copied bitwise (pmf_t ≡ pmf_{t−1}, J_P = 1 exactly). Rigid motion never rebuilds.
 import type { LightData, SceneData } from '../scene/types.ts';
 import { buildAliasTable, packAliasEntries, type AliasTable } from './alias.ts';
+import { envImportanceBytes, envPowerProxy, type EnvImportance } from '../scene/env/env-importance.ts';
 import { spreadNormalization } from './emission-kernel.ts';
 import { collectEmissiveTriangles, NO_ENTRY, type EmissiveTriangles } from './emissive-tris.ts';
 import { LUT_LAYOUT, lutFloats } from './luts/lut-layout.ts';
@@ -35,11 +41,14 @@ export const LF_VISIBLE_CAMERA = 1;
 export const LF_DELTA = 2;
 /** LightsParams.flags. */
 export const LP_MODE_A = 1;   // analytic area lights are NEE-only (ω1 ≡ 1), never hit by BSDF rays
-export const LP_ENV_NEE = 2;  // reserved (M3c): env is an alias entry and uses MIS
+export const LP_ENV_NEE = 2;  // the env is an alias entry (env NEE on); escapes use MIS with p1Env
 export const LP_CROSS_ALL = 4;    // Mode B: every BSDF ray crosses the analytic area lights (pass-through, MIS)
 export const LP_CROSS_DELTA = 8;  // Mode A′: only rays leaving a delta lobe cross them (weight 1)
 export const LIGHT_SLOT_WORDS = 12;
-export const LIGHTS_PARAMS_SIZE = 112; // 2 × 48 B slots + 16 B
+export const LIGHTS_PARAMS_SIZE = 128; // 2 × 48 B slots + 16 B + 16 B env tables
+/** P(env) clamp when other emitters exist (math.md#light-selection). */
+export const P_ENV_MIN = 0.1;
+export const P_ENV_MAX = 0.9;
 export const NO_ENV_ENTRY = 0xffffffff;
 
 const lum = (c: readonly number[]): number => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
@@ -170,6 +179,15 @@ export interface LightsUpdate {
   reallocated: boolean;
 }
 
+/** The environment as a light (M3c): importance tables + the radiometric parameters that enter Φ_env. */
+export interface EnvLightInput {
+  table: EnvImportance;
+  strength: number;
+  tint: readonly [number, number, number] | readonly number[];
+  /** Env NEE on (≡ Cycles world sampling_method AUTOMATIC); off = BSDF-only env (sampling_method NONE). */
+  nee: boolean;
+}
+
 export interface LightsGpuOptions {
   lightMode?: LightMode;
   label?: string;
@@ -191,6 +209,12 @@ export class LightsState {
   cur = 0;
   slots: [SlotState | undefined, SlotState | undefined] = [undefined, undefined];
   records = new Uint32Array(0);
+  /** Env tables in `records` (static section; 0 when no env table is set). */
+  envRowOff = 0;
+  envColOff = 0;
+  envPdfOff = 0;
+  envLog2W = 0;
+  private envTable: EnvImportance | undefined;
   private dirtyAll = true;
   /** Word ranges written by the last update (for partial uploads). */
   dirty: [number, number][] = [];
@@ -208,12 +232,12 @@ export class LightsState {
   /** Alias entry index of emissive-triangle entry i. */
   triEntry(i: number): number { return this.curSlot.nAnalytic + i; }
 
-  private layout(nLights: number, nEntries: number): boolean {
+  private layout(nLights: number, nEntries: number, envTable: EnvImportance | undefined): boolean {
     let capLights = Math.max(8, this.capLights);
     while (capLights < nLights) capLights *= 2;
     let capLog2 = Math.max(this.capLog2, 1);
-    while (2 ** capLog2 < Math.max(2, nEntries + 1)) capLog2++; // +1: the reserved env entry (M3c)
-    if (capLights === this.capLights && capLog2 === this.capLog2 && this.records.length) return false;
+    while (2 ** capLog2 < Math.max(2, nEntries + 1)) capLog2++; // +1: the env entry
+    if (capLights === this.capLights && capLog2 === this.capLog2 && envTable === this.envTable && this.records.length) return false;
     this.capLights = capLights;
     this.capLog2 = capLog2;
     const nTri = this.tris.primIds.length;
@@ -222,7 +246,15 @@ export class LightsState {
     this.primMapOff = this.triOff + 2 * nTri;
     const capN = 2 ** capLog2;
     this.slotWords = capLights * LIGHT_REC_WORDS + 2 * capN + capN + 2 * capLights;
-    const s0 = this.primMapOff + Math.max(1, nPrim);
+    // Env tables (static): rowAlias | colAlias | pdfUV.
+    this.envTable = envTable;
+    const envBase = this.primMapOff + Math.max(1, nPrim);
+    const cells = envTable ? envTable.Wm * envTable.Hm : 0;
+    this.envRowOff = envBase;
+    this.envColOff = envBase + (envTable?.Hm ?? 0);
+    this.envPdfOff = this.envColOff + cells;
+    this.envLog2W = envTable?.log2W ?? 0;
+    const s0 = this.envPdfOff + cells;
     this.slotBase = [s0, s0 + this.slotWords];
     this.totalWords = s0 + 2 * this.slotWords;
     this.records = new Uint32Array(this.totalWords);
@@ -230,16 +262,23 @@ export class LightsState {
     f.set(lutFloats(), LUT_RECORDS_BASE);
     for (let i = 0; i < nTri; i++) { this.records[this.triOff + 2 * i] = this.tris.primIds[i]; f[this.triOff + 2 * i + 1] = this.tris.areas[i]; }
     this.records.set(this.tris.primToEntry, this.primMapOff);
+    if (envTable) {
+      this.records.set(envTable.rowAlias, this.envRowOff);
+      this.records.set(envTable.colAlias, this.envColOff);
+      f.set(envTable.pdfUV, this.envPdfOff);
+    }
     this.slots = [undefined, undefined];
     this.dirtyAll = true;
     return true;
   }
 
-  /** Pack `lights` into the next slot and flip. Returns what changed. */
-  update(lightsIn: readonly LightData[]): LightsUpdate {
+  /** Pack `lights` (and the env, when given) into the next slot and flip. Returns what changed. */
+  update(lightsIn: readonly LightData[], env?: EnvLightInput): LightsUpdate {
     const lights = [...lightsIn].sort((a, b) => a.id - b.id);
     const nA = lights.length, nT = this.tris.primIds.length;
-    const reallocated = this.layout(nA, nA + nT);
+    const phiEnv = env?.nee ? envPowerProxy(env.table, env.strength, env.tint, this.sceneRadius) : 0;
+    const hasEnvEntry = phiEnv > 0;
+    const reallocated = this.layout(nA, nA + nT + (hasEnvEntry ? 1 : 0), env?.table);
     const prev = this.slots[this.cur];
     const first = !prev;
     const next = first ? this.cur : this.cur ^ 1;
@@ -257,10 +296,22 @@ export class LightsState {
     for (let i = 0; i < nA; i++) packLightRecord(lights[i], this.origin, dv, 4 * (lightOff + i * LIGHT_REC_WORDS));
     const ids = lights.map((l) => l.id);
 
-    // Selection weights: analytic (stable-id order) then emissive triangles.
-    const weights = new Float64Array(nA + nT);
+    // Selection weights: analytic (stable-id order), emissive triangles, then the env (P(env) clamp, f64).
+    const nE = nA + nT + (hasEnvEntry ? 1 : 0);
+    const weights = new Float64Array(nE);
     for (let i = 0; i < nA; i++) weights[i] = lightPowerProxy(lights[i], this.sceneRadius);
     weights.set(this.tris.power, nA);
+    if (hasEnvEntry) {
+      let others = 0;
+      for (let i = 0; i < nA + nT; i++) others += weights[i];
+      if (others > 0) {
+        const pEnv = Math.min(P_ENV_MAX, Math.max(P_ENV_MIN, phiEnv / (others + phiEnv)));
+        for (let i = 0; i < nA + nT; i++) weights[i] = ((1 - pEnv) * weights[i]) / others;
+        weights[nA + nT] = pEnv;
+      } else {
+        weights[nA + nT] = 1;
+      }
+    }
     const sameSet = !!prev && prev.ids.length === nA && prev.ids.every((x, i) => x === ids[i]);
     const sameWeights = sameSet && prev.weights.length === weights.length && prev.weights.every((x, i) => Object.is(x, weights[i]));
     const table = sameWeights ? prev.table : buildAliasTable(weights, 1);
@@ -277,8 +328,8 @@ export class LightsState {
     for (let i = 0; i < prevIds.length; i++) this.records[prevToCurOff + i] = curIndex.get(prevIds[i]) ?? NO_ENTRY;
 
     const cpu: LightSlotCpu = {
-      lightOff, lightCount: nA, aliasOff, aliasLog2: log2, pmfOff, nAnalytic: nA, nEntries: table ? nA + nT : 0,
-      envEntry: NO_ENV_ENTRY, curToPrevOff, prevToCurOff,
+      lightOff, lightCount: nA, aliasOff, aliasLog2: log2, pmfOff, nAnalytic: nA, nEntries: table ? nE : 0,
+      envEntry: table && hasEnvEntry ? nA + nT : NO_ENV_ENTRY, curToPrevOff, prevToCurOff,
     };
     this.slots[next] = { cpu, ids, weights, table };
     this.cur = next;
@@ -294,8 +345,8 @@ export class LightsState {
     return { lightsChanged, pmfChanged: first || !sameWeights, reallocated };
   }
 
-  /** LightsParams uniform (lights.wgsl): cur slot, prev slot, tri/primMap offsets, flags. */
-  paramsBytes(flags = lightModeFlags(this.lightMode)): ArrayBuffer {
+  /** LightsParams uniform (lights.wgsl): cur slot, prev slot, tri/primMap offsets, flags, env table offsets. */
+  paramsBytes(flags = lightModeFlags(this.lightMode) | (this.curSlot.envEntry !== NO_ENV_ENTRY ? LP_ENV_NEE : 0)): ArrayBuffer {
     const buf = new ArrayBuffer(LIGHTS_PARAMS_SIZE);
     const u = new Uint32Array(buf);
     const put = (o: number, s: LightSlotCpu) => {
@@ -306,11 +357,18 @@ export class LightsState {
     put(0, cur);
     put(LIGHT_SLOT_WORDS, prev);
     u.set([this.triOff, this.tris.primIds.length, this.primMapOff, flags], 2 * LIGHT_SLOT_WORDS);
+    u.set([this.envRowOff, this.envColOff, this.envPdfOff, this.envLog2W], 2 * LIGHT_SLOT_WORDS + 4);
     return buf;
   }
 
   /** Realized pmf of alias entry e in the current slot (f32 as stored). */
   pmf(e: number): number { return new Float32Array(this.records.buffer)[this.curSlot.pmfOff + e]; }
+
+  /** Realized P(env) of the current slot (0 without an env entry). */
+  envPmf(): number { const e = this.curSlot.envEntry; return e === NO_ENV_ENTRY ? 0 : this.pmf(e); }
+
+  /** The env table currently stored in `records`. */
+  get env(): EnvImportance | undefined { return this.envTable; }
 }
 
 /** GPU side: the `records` storage buffer + the LightsParams uniform. */
@@ -320,9 +378,13 @@ export class LightsGpu {
   /** Bumps when `records` is reallocated (bind groups must be rebuilt). */
   version = 0;
   readonly state: LightsState;
+  /** The env as a light (M3c), applied on every update(). */
+  private envInput: EnvLightInput | undefined;
+  private lastLights: readonly LightData[];
 
   constructor(readonly device: GPUDevice, scene: SceneData, origin: readonly number[], recentredPositions: Float32Array, private readonly opts: LightsGpuOptions = {}) {
     this.state = new LightsState(scene, origin, recentredPositions, opts.lightMode ?? 'A');
+    this.lastLights = scene.lights;
     this.state.update(scene.lights);
     this.params = device.createBuffer({ label: `${opts.label ?? 'lights'}.params`, size: LIGHTS_PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.records = this.createRecords();
@@ -348,7 +410,8 @@ export class LightsGpu {
 
   /** New light list for this frame (sorted by stable id internally). */
   update(lights: readonly LightData[]): LightsUpdate {
-    const res = this.state.update(lights);
+    this.lastLights = lights;
+    const res = this.state.update(lights, this.envInput);
     if (res.reallocated) {
       this.records.destroy();
       this.records = this.createRecords();
@@ -360,10 +423,22 @@ export class LightsGpu {
     return res;
   }
 
+  /** Set (or clear) the env as a light and re-pack the current light list (table change → reallocation). */
+  setEnvironment(env: EnvLightInput | undefined): LightsUpdate {
+    this.envInput = env;
+    return this.update(this.lastLights);
+  }
+
+  get environment(): EnvLightInput | undefined { return this.envInput; }
+
   /** HUD / meta summary. */
-  summary(): { analytic: number; emissiveTriangles: number; aliasEntries: number; aliasLog2: number; recordsBytes: number } {
+  summary(): { analytic: number; emissiveTriangles: number; aliasEntries: number; aliasLog2: number; recordsBytes: number; env: boolean; pEnv: number; envGrid?: [number, number]; envTableBytes?: number } {
     const s = this.state.curSlot;
-    return { analytic: s.nAnalytic, emissiveTriangles: this.state.tris.primIds.length, aliasEntries: s.nEntries, aliasLog2: s.aliasLog2, recordsBytes: this.records.size };
+    const t = this.state.env;
+    return {
+      analytic: s.nAnalytic, emissiveTriangles: this.state.tris.primIds.length, aliasEntries: s.nEntries, aliasLog2: s.aliasLog2, recordsBytes: this.records.size,
+      env: s.envEntry !== NO_ENV_ENTRY, pEnv: this.state.envPmf(), ...(t ? { envGrid: [t.Wm, t.Hm] as [number, number], envTableBytes: envImportanceBytes(t) } : {}),
+    };
   }
 
   destroy(): void { this.records.destroy(); this.params.destroy(); }

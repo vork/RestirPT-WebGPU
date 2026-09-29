@@ -22,7 +22,7 @@ const LF_VISIBLE_CAMERA: u32 = 1u;
 const LF_DELTA: u32 = 2u;
 
 const LP_MODE_A: u32 = 1u;    // analytic area lights are NEE-only: ω1 ≡ 1, never hit by BSDF rays
-const LP_ENV_NEE: u32 = 2u;   // reserved (M3c): env alias entry + env MIS
+const LP_ENV_NEE: u32 = 2u;   // the env is an alias entry (env NEE on); BSDF escapes use MIS with p1Env
 
 const LIGHT_REC_WORDS: u32 = 28u;
 const LIGHT_NONE: u32 = 0xffffffffu;
@@ -55,7 +55,7 @@ struct LightSlot {
   pmfOff: u32,         // realized pmf per alias entry (f32 bits)
   nAnalytic: u32,      // entries [0, nAnalytic) are analytic lights, then emissive triangles
   nEntries: u32,       // 0 ⇒ nothing to sample (no lights, or all zero power)
-  envEntry: u32,       // reserved (M3c): alias entry of ENV_ID, LIGHT_NONE when absent
+  envEntry: u32,       // alias entry of ENV_ID (env NEE on), LIGHT_NONE when absent
   curToPrevOff: u32,
   prevToCurOff: u32,
   pad0: u32,
@@ -69,6 +69,10 @@ struct LightsParams {
   triCount: u32,
   primMapOff: u32,     // primId → emissive-triangle entry index or LIGHT_NONE
   flags: u32,          // LP_*
+  envRowOff: u32,      // env importance tables (lights/env-sample.wgsl): row alias (H_m entries alias<<16 | q)
+  envColOff: u32,      //   column alias per row (H_m·W_m)
+  envPdfOff: u32,      //   realized pdfUV per cell (f32 bits)
+  envLog2W: u32,       //   log2 W_m (0: no tables); H_m = W_m/2
 }
 
 @group($LIGHTS_GROUP) @binding($LIGHTS_BINDING) var<uniform> lightsParams: LightsParams;

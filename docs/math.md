@@ -905,9 +905,17 @@ are pinned here; see open items 4 and 5.
 ```
 u32 h(seed, i) = hash(seed, i)                     (PCG-style integer hash; bitwise identical in every lane)
 f32 u01(h)     = f32(h >> 8) · 2⁻²⁴                ∈ [0, 1)
-path stream:   slot value = h(initSeed, vertex·D + slot),   D = 16,  vertex = index b of the scattering vertex x_b (b ≥ 1)
-initSeed       = h(runSeed, member, frame t, pixel p)       unique per pixel per frame (dupmap identity)
+path stream:   slot value = pcg4d(initSeed.x, initSeed.y, vertex·D + slot, PATH).x,   D = 16,  vertex = index b of x_b (b ≥ 1)
+initSeed       = pcg3d(runSeed ⊕ member·φ, frame t, pixel p).xy    64 bits, unique per pixel per frame (dupmap identity)
+jitter seed    = initSeed.x                                           (the jitter stream hashes 32 bits, never a path input)
 ```
+- **initSeed must be ≥ 64 bits** (M3c finding). With a 32-bit initSeed every path of every pixel, sample and frame is
+  one of only 2³² dimension vectors, so the estimator's expectation is a fixed 2³²-point quadrature rather than the
+  integral. Its error is ≈ σ_rel/√2³² for a single-sample relative standard deviation σ_rel. That is invisible for
+  smooth integrands but reached 0.05–0.13% of the pixel value for BSDF-only sampling of a 1.06·10⁻⁴ sr texel of 10⁴
+  (σ_rel ≈ 36; C0s NONE, env §5.2). The error was reproducible across run seeds and changed sign with the 32-bit hash
+  used (a 96-bit-input hash of the same draws was unbiased). T1 checks that colliding 32-bit words still give different
+  path dims.
 
 | Slot | Name | Used by | Replayed? |
 |---|---|---|---|
