@@ -224,6 +224,7 @@ fn t3_viol(kind: u32, bin: u32, trial: u32, c0: u32, c1: u32, sig: u32, edge: f3
   atomicStore(&viol[o + 3u], c1); atomicStore(&viol[o + 4u], sig); atomicStore(&viol[o + 5u], bitcast<u32>(edge));
   atomicStore(&viol[o + 6u], bitcast<u32>(J0)); atomicStore(&viol[o + 7u], bitcast<u32>(J1)); atomicStore(&viol[o + 8u], flags);
   atomicStore(&viol[o + 9u], ai); atomicStore(&viol[o + 10u], q); atomicStore(&viol[o + 11u], bitcast<u32>(fr));
+  atomicStore(&viol[o + 12u], rsDispatch.t); atomicStore(&viol[o + 13u], trial);
 }
 
 /// σ check of the replayed prefix against the base's dumped ids / lobes: 0 = equal, else (b | kind << 8), kind 1 prim,

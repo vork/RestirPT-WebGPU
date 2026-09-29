@@ -267,7 +267,9 @@ function perturb(p: V3, seed: number, ulps: number): V3 {
   if (seed === 0) return p;
   const out: V3 = [0, 0, 0];
   for (let c = 0; c < 3; c++) {
-    let h = Math.imul(seed * 3 + c + 1, 0x9e3779b1) ^ Math.imul(Math.floor(p[c] * 1e7) | 0, 0x85ebca6b);
+    // hash of ALL coordinates: two vertices on the same axis-aligned plane must move independently
+    let h = Math.imul(seed * 3 + c + 1, 0x9e3779b1) ^ Math.imul(Math.floor(p[0] * 1e7) | 0, 0x85ebca6b)
+      ^ Math.imul(Math.floor(p[1] * 1e7) | 0, 0xc2b2ae35) ^ Math.imul(Math.floor(p[2] * 1e7) | 0, 0x27d4eb2f);
     h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d); h ^= h >>> 12;
     const u = ((h >>> 0) / 4294967296) * 2 - 1;
     out[c] = p[c] + u * ulps * Math.max(Math.abs(p[c]), 2 ** -6) * 2 ** -23;
@@ -390,7 +392,8 @@ export function dualCheckRecord(s: DualScene, w: Uint32Array, o: number): DualRe
     for (let t = 1; !fp && t <= SENS_TRIALS; t++) fp = evalPair(geom(t), j).res?.ok === gOk;
     if (fp) { r.fp++; continue; }
     r.logic++;
-    r.details.push(`pair ${j}: gpu ok=${gOk} term=${gTerm} m=${bf(w[o + 55 + 2 * i]).toExponential(3)}, f64 ${JSON.stringify(e.res)} (d=${d} k=${k} tech=${tech} lkm1=${lkm1} lk=${lk} sc=${sc})`);
+    const words = Array.from(w.subarray(o, o + 80)).map((x) => x.toString(16)).join(',');
+    r.details.push(`pair ${j}: gpu ok=${gOk} term=${gTerm} m=${bf(w[o + 55 + 2 * i]).toExponential(3)}, f64 ${JSON.stringify(e.res)} tang=${e.tang.toExponential(2)} (d=${d} k=${k} tech=${tech} lkm1=${lkm1} lk=${lk} sc=${sc}) rec=[${words}]`);
   }
   // U-11: J = jNum/jDen with JOINT pdfs of the copied lobes (math.md#jacobian), recomputed in f64
   const jOf = (g: Geom): number | undefined => {

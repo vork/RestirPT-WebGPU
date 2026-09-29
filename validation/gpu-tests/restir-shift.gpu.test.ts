@@ -202,7 +202,7 @@ function t3Report(tag: string, r: T3Result): { logic: number; fp: number; rt: nu
     const o = 4 + i * T3_VIOL_WORDS;
     const w = r.viol;
     const f = rfUnpack(w[o + 8]);
-    ex.push(`  kind=${w[o] & 255} bin=${T3_BIN_NAMES[w[o] >> 8]} fwd=${SC_NAMES[w[o + 2] & 255]}(t${(w[o + 2] >> 8) & 15},p${(w[o + 2] >> 12) & 15}) inv=${SC_NAMES[w[o + 3] & 255]}(t${(w[o + 3] >> 8) & 15},p${(w[o + 3] >> 12) & 15}) sig=${w[o + 4].toString(16)} edge=${bitsToF32(w[o + 5]).toExponential(2)} J=${bitsToF32(w[o + 6]).toPrecision(6)}/${bitsToF32(w[o + 7]).toPrecision(6)} m|fr=${bitsToF32(w[o + 11]).toExponential(3)} ai=${w[o + 9]} q=${w[o + 10]} f=${JSON.stringify(f)}`);
+    ex.push(`  kind=${w[o] & 255} bin=${T3_BIN_NAMES[w[o] >> 8]} fwd=${SC_NAMES[w[o + 2] & 255]}(t${(w[o + 2] >> 8) & 15},p${(w[o + 2] >> 12) & 15}) inv=${SC_NAMES[w[o + 3] & 255]}(t${(w[o + 3] >> 8) & 15},p${(w[o + 3] >> 12) & 15}) sig=${w[o + 4].toString(16)} edge=${bitsToF32(w[o + 5]).toExponential(2)} J=${bitsToF32(w[o + 6]).toPrecision(6)}/${bitsToF32(w[o + 7]).toPrecision(6)} m|fr=${bitsToF32(w[o + 11]).toExponential(3)} ai=${w[o + 9]} q=${w[o + 10]} t=${w[o + 12]} trial=${w[o + 13]} J0bits=${w[o + 6].toString(16)} f=${JSON.stringify(f)}`);
   }
   if (ex.length) console.log(ex.join('\n'));
   if (r.dual) {
@@ -537,4 +537,34 @@ describe('T3-1 / T4 / T3-D / T3-ENV on the Stage-B scenes', () => {
       rig.destroy();
     }, 3_600_000);
   }
+});
+
+// ------------------------------------------------------------------------------------------------ debugging aid
+
+/** Replay one recorded T3 violation: VITE_T3_REPRO = "<variant>,<frame t>,<trial>,<mode>" (skipped otherwise). */
+describe('T3 single-trial repro (debugging aid)', () => {
+  it('re-runs one trial with the dual trace on every shift', async () => {
+    const spec = String(import.meta.env?.VITE_T3_REPRO ?? '');
+    if (!spec) return;
+    const [variant, tStr, trialStr, modeStr] = spec.split(',');
+    const t = Number(tStr), trial = Number(trialStr), mode = Number(modeStr ?? 1);
+    const rig = await t3Rig(variant as T3Variant);
+    const tp = await testPipeline(rig.kernel, 't3', T3_WGSL, 't3_main', 4, T3_DEFINES, ['uint', 'unfilterable-float']);
+    const dev = rig.g.device, res = rig.kernel.resources;
+    const stats = storageBuffer(dev, T3_STATS_WORDS * 4), viol = storageBuffer(dev, (4 + T3_VIOL_CAP * T3_VIOL_WORDS) * 4);
+    const dual = storageBuffer(dev, (4 + 8 * T3_DUAL_WORDS) * 4);
+    await rig.frames(1, t);
+    for (let rep = 0; rep < 3; rep++) {
+      const enc = dev.createCommandEncoder(); enc.clearBuffer(dual); enc.clearBuffer(viol); dev.queue.submit([enc.finish()]);
+      await tp.run([res.candDump!, stats, viol, dual], [1, 1], { t, treeBase: trial, treeCount: 1, round: mode, flags: 16, rowBase: 1 }, [res.views.vbuf, res.views.geo]);
+      const w = await readU32(dev, dual), v = await readU32(dev, viol);
+      const n = w[0];
+      for (let r = 0; r < n; r++) {
+        const o = 4 + r * T3_DUAL_WORDS;
+        console.log(`[repro ${rep}] shift ${r}: code=${SC_NAMES[w[o] & 255]}(${w[o].toString(16)}) flags=${JSON.stringify(rfUnpack(w[o + 1]))} J=${bitsToF32(w[o + 77])} jDen=${bitsToF32(w[o + 78])} dst=${w[o + 3]} light=${[16, 17, 18, 19, 20, 21, 22].map((i) => bitsToF32(w[o + i]).toPrecision(5))}`);
+      }
+      console.log(`[repro ${rep}] violations=${v[0]} kind=${v[4] & 255}`);
+    }
+    stats.destroy(); viol.destroy(); dual.destroy(); rig.destroy();
+  }, 600_000);
 });
