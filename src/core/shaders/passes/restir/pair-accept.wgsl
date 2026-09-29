@@ -1,0 +1,86 @@
+// rs_pair_accept (restir-api.md §3.9, §2.6, D8; math.md#paired-mis "Acceptance"; PLAN §2 rule 8, §3 step 5): the
+// acceptance of every pair of every slot of this round, evaluated ONCE per pair by the thread of the smaller atlas index
+// from the G-buffer only (A never depends on reservoir contents), writing the J words and codes of BOTH slots:
+//   no partner / not reciprocal → own slot NOT_ACCEPTED;  A0 false → both NOT_ACCEPTED;
+//   A0 true → per side: empty source → FAILED (SC_EMPTY_SRC); source needs replay → PENDING + queue item (ai << 3 | s);
+//   else PENDING (handled by rs_spatial_shift).
+// Every slot is written exactly once per round (the map is an involution). One thread per atlas pixel, background
+// pixels included (A0 rejects them). Counters are aggregated per workgroup (RSC_ACCEPTED, RSC_QUEUED, SC histogram).
+// G2: 0 resIn ro · 1 shiftArena rw · 2 rsVbuf · 3 rsGeo · 4 pairTex.
+#include "restir/frame.wgsl"
+#include "restir/reservoir.wgsl"
+#include "restir/queue.wgsl"
+#include "restir/pairing.wgsl"
+
+/// Same predicate as shift.wgsl res_needs_replay (non-empty ∧ (k > 2 ∨ k = ∅)); shift.wgsl cannot be included here
+/// (no scene group). A divergence leaves PENDING slots (RSC_PENDING_LEFT) and is covered by restir-spatial's
+/// replay-predicate test.
+fn pa_needs_replay(flags: u32) -> bool {
+  let k = rf_k(flags);
+  return !res_empty(flags) && (k > 2u || k == 0u);
+}
+
+// workgroup counter aggregation: 0 accepted, 1 queued, 2 SC_NOT_ACCEPTED, 3 SC_EMPTY_SRC, 4 slot mismatch
+var<workgroup> paCnt: array<atomic<u32>, 5>;
+
+/// Accepted slot (ai, s) of a source with reservoir flags `flags`.
+fn pa_accept_slot(ai: u32, s: u32, flags: u32) {
+  if (res_empty(flags)) {
+    arena_slot_write(ai, s, vec3f(0.0), JW_FAILED, rs_slot_code(SC_EMPTY_SRC, RCT_NONE, 0u, 0.0));
+    atomicAdd(&paCnt[3], 1u);
+    return;
+  }
+  arena_slot_write(ai, s, vec3f(0.0), JW_PENDING, rs_slot_code(SC_PENDING, RCT_NONE, 0u, 0.0));
+  if (pa_needs_replay(flags)) {
+    queue_append(0u, queue_item_word(ai, s));
+    atomicAdd(&paCnt[1], 1u);
+  }
+}
+
+fn pa_not_accepted(ai: u32, s: u32) {
+  arena_slot_write(ai, s, vec3f(0.0), JW_NOT_ACCEPTED, rs_slot_code(SC_NOT_ACCEPTED, RCT_NONE, 0u, 0.0));
+  atomicAdd(&paCnt[2], 1u);
+}
+
+fn pa_pixel(p: RsPix) {
+  let t = rs_t();
+  let r = rsDispatch.round;
+  let vbP = rs_vbuf(p.px);
+  let geoP = rs_geo(p.px);
+  for (var s = 0u; s < rsParams.numSlots; s++) {
+    let pr = pair_partner(p.local, p.member, t, r, s);
+    if (!pr.valid) { pa_not_accepted(p.ai, s); continue; }
+    // Reciprocity (true by construction for an involution map; checked so that every slot is still written once).
+    let back = pair_partner(pr.partner, p.member, t, r, s);
+    if (!back.valid || back.partner.x != p.local.x || back.partner.y != p.local.y) {
+      pa_not_accepted(p.ai, s);
+      atomicAdd(&paCnt[4], 1u);
+      continue;
+    }
+    let qpx = pair_atlas_px(p, pr.partner);
+    let qai = pair_atlas_index(qpx);
+    if (p.ai > qai) { continue; }                 // the partner's thread owns the pair
+    if (!pair_A0(vbP, geoP, rs_vbuf(qpx), rs_geo(qpx))) {   // canonical order: G[min], G[max]
+      pa_not_accepted(p.ai, s);
+      pa_not_accepted(qai, s);
+      continue;
+    }
+    atomicAdd(&paCnt[0], 2u);
+    pa_accept_slot(p.ai, s, resin_plane(p.ai, RP_SEED).z);
+    pa_accept_slot(qai, s, resin_plane(qai, RP_SEED).z);
+  }
+}
+
+@compute @workgroup_size(8, 8, 1)
+fn rs_pair_accept(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_index) li: u32) {
+  let p = rs_pix(vec2u(gid.x, gid.y + rsDispatch.rowBase));
+  if (p.valid) { pa_pixel(p); }
+  workgroupBarrier();
+  if (li == 0u) {
+    rs_count(RSC_ACCEPTED, atomicLoad(&paCnt[0]));
+    rs_count(RSC_QUEUED, atomicLoad(&paCnt[1]));
+    rs_count(RSC_CODE_BASE + SC_NOT_ACCEPTED, atomicLoad(&paCnt[2]));
+    rs_count(RSC_CODE_BASE + SC_EMPTY_SRC, atomicLoad(&paCnt[3]));
+    rs_count(RSC_SLOT_MISMATCH, atomicLoad(&paCnt[4]));
+  }
+}

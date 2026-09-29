@@ -1310,3 +1310,32 @@ touching a shared interface. "WP-A" entries were made while landing P0 / A1.
   `t²/(p̄·|cos|) ≥ thr`, with no division by a tiny product and no Inf); the margin is `log2(t²) − log2(thr·p̄·|cos|)`.
   PLAN rule 5 "v1: G_T never passes" is enforced in `rcPairTest` itself: `ℓ_{k−1} = G_T` fails D, `ℓ_k = G_T` fails
   the I branch (also in 2022 mode).
+
+### WP-C amendments (paired spatial reuse, queues, ensemble)
+
+- **C1 Arena write access of `rs_args` and `rs_spatial_resample`; queue clear** (affects WP-A: `resources.ts`
+  `RS_PASSES` edited by WP-C, two entries; WP-D/WP-E: header semantics). §2.7 makes `rs_args` write `hdr.n` and the
+  overflow flag, and §3.8 makes the resample count `RSC_PENDING_LEFT` / `RSC_SLOT_MISMATCH`, but §4.2 bound the arena
+  read-only in both passes. Both now bind it `rw` (`RS_ARENA_RW: true`; storage-buffer counts unchanged: 4 and 5).
+  The per-round queue clear is `clearBuffer(arena, 0, 8)` (counter and n only): the overflow flag is **sticky** until
+  `readCounters(true)`, so an overflow in an early round cannot be erased by a later one; `rs_args` writes
+  `hdr.capacity`. `rs_args` handles q0 only (M5 adds its queues).
+- **C2 Reciprocity check in `rs_pair_accept`.** The thread also evaluates `partner(partner(p))`; if it is not p (never
+  for an involution map) its own slot is NOT_ACCEPTED and `RSC_SLOT_MISMATCH` is incremented, so every slot is still
+  written exactly once. Counters of the spatial passes are aggregated per workgroup before the global atomics.
+- **C3 `res_needs_replay` in `rs_pair_accept`** (affects WP-B). pair-accept has no scene group and cannot include
+  `shift.wgsl`; it carries a copy `pa_needs_replay` of the flags predicate (non-empty ∧ (k > 2 ∨ k = ∅)). A
+  divergence would leave PENDING slots (`RSC_PENDING_LEFT`); restir-spatial checks both predicates agree on all
+  flags. WP-B: if `res_needs_replay` changes, tell WP-C (or move the predicate to `reservoir.wgsl`).
+- **C4 W-scale plant reaches the image.** The final-round `rsShade` is multiplied by `rsParams.wScale` as well as W
+  (finalize reads rsShade when rounds > 0, so scaling W alone would change nothing visible in the last round).
+- **C5 T14-M4 radial KS reference** (§2.8, §6.1): the KS distance is measured against the **lattice-uniform** radial
+  CDF of `{0 < |d|² ≤ R²}` (the exact target of the generator). The continuous uniform-disk CDF r²/R² is not attainable
+  by integer offsets: discretisation alone gives 0.045 at R = 10 and 0.011 at R = 30 (reported, not gated). Measured:
+  unmatched 0.59–0.74%, lattice KS 0.0025–0.0067 over all 6 layers × R ∈ {10, 30}. The generator's PCG32 stream of
+  layer s is `pcg32_srandom(state = (0x9e3779b9 ^ s) << 32 | R << 16 | W_s, seq = STREAM_PAIRING + s)`.
+- **C6 Ensemble stats entry points** (§2.10). `passes/restir/ensemble-stats.wgsl` has two entry points with the
+  `rs_ensemble_stats` bindings: `rs_ensemble_stats` (16×16 workgroups, dispatch (⌈W/16⌉, ⌈H/16⌉·E): 16² tile sums by a
+  shared-memory tree, and per-pixel Σx/Σx² over members into ensPixel) and `rs_ensemble_reduce` (1D: 32²/64² tiles by
+  fixed 2×2 trees, global by cascade summation of the 64² tiles, mask sums = 0 since M = 0 in M4). The second is
+  compiled by `EnsembleStage.prepare` via `k.compile(..., k.pipelineLayout('rs_ensemble_stats'))`.

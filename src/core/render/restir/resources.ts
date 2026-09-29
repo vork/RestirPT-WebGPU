@@ -64,8 +64,8 @@ export const RS_PASSES: Record<RsPassName, RsPassDef> = {
   },
   rs_args: {
     file: 'passes/restir/args.wgsl', entry: 'rs_args', scene: false, debug: true,
-    g2: [RO, RW],
-    defines: { RS_ARENA_BINDING: b(0), RS_ARENA_RW: false, RS_ARGS_BINDING: b(1) },
+    g2: [RW, RW],   // Changelog C1: rs_args writes hdr.n / capacity / overflow
+    defines: { RS_ARENA_BINDING: b(0), RS_ARENA_RW: true, RS_ARGS_BINDING: b(1) },
   },
   rs_spatial_replay: {
     file: 'passes/restir/spatial-replay.wgsl', entry: 'rs_spatial_replay', scene: true, debug: true,
@@ -79,8 +79,8 @@ export const RS_PASSES: Record<RsPassName, RsPassDef> = {
   },
   rs_spatial_resample: {
     file: 'passes/restir/spatial-resample.wgsl', entry: 'rs_spatial_resample', scene: false, debug: true,
-    g2: [RO, RW, RO, TEX_PAIR, ST_F, TEX_U],
-    defines: { RS_RES_IN_BINDING: b(0), RS_RES_OUT_BINDING: b(1), RS_ARENA_BINDING: b(2), RS_ARENA_RW: false, RS_PAIRTEX_BINDING: b(3), RS_SHADE_W_BINDING: b(4), RS_VBUF_BINDING: b(5) },
+    g2: [RO, RW, RW, TEX_PAIR, ST_F, TEX_U],   // Changelog C1: the resample counts RSC_PENDING_LEFT etc.
+    defines: { RS_RES_IN_BINDING: b(0), RS_RES_OUT_BINDING: b(1), RS_ARENA_BINDING: b(2), RS_ARENA_RW: true, RS_PAIRTEX_BINDING: b(3), RS_SHADE_W_BINDING: b(4), RS_VBUF_BINDING: b(5) },
   },
   rs_finalize: {
     file: 'passes/restir/finalize.wgsl', entry: 'rs_finalize', scene: false, debug: true,
