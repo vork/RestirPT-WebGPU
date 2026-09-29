@@ -3,6 +3,7 @@ import { playwright } from '@vitest/browser-playwright';
 
 // Three lanes (plan §1.1): CPU tests, dawn.node fast pre-check, and Chrome 154 (authoritative for gates).
 export default defineConfig({
+  cacheDir: '.vite',  // see vite.config.ts (worktrees share node_modules through a symlink)
   test: {
     projects: [
       {
