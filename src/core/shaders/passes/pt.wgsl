@@ -38,6 +38,7 @@
 #include "lights/env-sample.wgsl"
 #include "material/material-eval.wgsl"
 #include "path/crossings.wgsl"
+#include "path/length1.wgsl"
 
 
 struct PtParams {
@@ -73,24 +74,13 @@ const PT_CNT_NEGATIVE: u32 = 3u;
 
 struct PtResult { L: vec3f, bvhFlags: u32, probe: vec3f }
 
-/// Σ radiance of camera-visible analytic area lights crossed by the camera ray before tMax (length-1, weight 1).
-fn pt_camera_lights(o: vec3f, d: vec3f, tMax: f32) -> vec3f {
-  var L = vec3f(0.0);
-  let slot = lightsParams.cur;
-  for (var i = 0u; i < slot.lightCount; i++) {
-    let r = light_load(slot, i);
-    if ((r.flags & LF_VISIBLE_CAMERA) != 0u && (r.kind == LT_RECT || r.kind == LT_DISK)) { L += area_light_crossing(r, o, d, tMax); }
-  }
-  return L;
-}
-
 fn pt_env_present() -> bool { return (envParams.flags & ENV_FLAG_PRESENT) != 0u; }
 
 /// One path sample for camera ray (o, d) with path seed `seed`.
 fn pt_trace(o: vec3f, d: vec3f, seed: PathSeed) -> PtResult {
   bvh_stats_reset();
   let hit0 = trace_closest(o, d, FLT_MAX);
-  var L = pt_camera_lights(o, d, select(FLT_MAX, hit0.t, hit0.primId != BVH_MISS));
+  var L = l1_camera_lights(o, d, select(FLT_MAX, hit0.t, hit0.primId != BVH_MISS));
   if (hit0.primId == BVH_MISS) {
     L += envBackground(d);
     return PtResult(L, bvh_stats().w, vec3f(0.0));

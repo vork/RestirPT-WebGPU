@@ -1204,3 +1204,79 @@ struct ShiftArenaRO { hdr: array<u32, 64>, words: array<u32> }
 // slots at words[4·(ai·NS + s) .. +3]; codes at words[4·P·NS + ai·NS + s]; items at words[5·P·NS + i]
 // queue q header at hdr[4q .. 4q+3] = {counter, n, capacity, overflow}
 ```
+
+---
+
+## Changelog
+
+Amendments made while implementing the contract. Numbering is append-only; every WP reads this section before
+touching a shared interface. "WP-A" entries were made while landing P0 / A1.
+
+### Coordinator decisions on §7 (2026-09-29)
+
+- **Q1** WP-A lands P0 (this changelog's P0 entries).
+- **Q2** (vi)-A and (xii) gate in M4, in Mode A (D13 stands).
+- **Q3** The weekly-tier Gate-3 budget is accepted. 64² aggregate tiles are allowed for the heaviest units only if the
+  pilot demands it, recorded in `report.json`; δ is never loosened.
+- **Q4** Pairing radii R = 10 px (offline) and 30 px (interactive) are accepted (D9).
+- **Q5** The RR survival formula is pinned for ReSTIR (D11).
+- **Q6** The 2022-criteria unit gates M4.
+
+### P0 amendments (WP-A)
+
+- **A1 Interactive finalize bits.** `RsDispatch.flags` of the `rs_finalize_frame` dispatch carries
+  `RSD_ACCUMULATE = 8` and `RSD_ADVANCED = 16` (progressive mean, as `PtFramePass`). Appended to B.1 / `layout.ts`.
+- **A2 Suffix flag names.** `SFX_BSDF_END = 1, SFX_ESCAPE = 2, SFX_VALID = 4` (word 27, §2.2). Appended to B.1.
+- **A3** `RS_HIST_NONE = 0xFFFFFFFF` (lobeHist with no event). Appended to B.1.
+- **A4 Binding defines are `'<n>u'` strings.** The composer's `#if` treats the number 0 as false, so
+  `#if RS_RES_IN_BINDING` (B.2) would drop a binding at slot 0 (`rs_pair_accept`, `rs_finalize`, `rs_args`).
+  All binding defines (`RS_RES_IN_BINDING`, `RS_RES_OUT_BINDING`, `RS_ARENA_BINDING`, `RS_VBUF_BINDING`, …) are
+  strings such as `'0u'` (truthy, and `@binding(0u)` is valid WGSL). **Always** build defines with
+  `resources.ts` `restirDefines(name, …)` / `restirPassDefines(name)` / `RestirKernel.defines()`; never pass numbers.
+  B.2 stays verbatim.
+- **A5 `RestirParams.memberBase`** (offset 100, was `pad0`): member id of atlas member 0, so a sequential run can
+  render member m (U-ENS-1). `rs_pix().member = memberBase + atlas member index`; seeds and the pairing hash use it.
+- **A6 Finalize estimate source.** `rs_finalize` uses `rsShade` iff the spatial stage emitted work units for the
+  frame; the finalize dispatch's `RsDispatch.round` = number of executed rounds and it reads `res[executed % 2]`.
+  With the P0 stub stage (`frameUnits → []`) the output is the canonical `F·W` of `res[0]` (unbiased). WP-C's stage
+  must emit all rounds or none.
+- **A7 `RcResult.pass` → `RcResult.ok`.** `pass` is a reserved word in WGSL. §3.4's struct is
+  `struct RcResult { ok: bool, margin: f32, term: u32 }`.
+- **A8 `rs_t()`** returns `frame.seedIndex` when `RSF_INTERACTIVE` is set (the renderer owns the frame uniforms),
+  else `RsDispatch.t`. Every pass (incl. pairing) must use `rs_t()`, never `rsDispatch.t` directly.
+- **A9 Stage interface and kernel API for stages / tests** (`kernel.ts`):
+  `interface RestirStage { frameUnits(k, t): WorkUnit[]; prepare?(k): Promise<void>; destroy?(): void }` —
+  `prepare` compiles the stage's pipelines; `RestirKernel.create()` / `prepare()` calls it only when the settings
+  need the stage (spatial: rounds > 0; ensemble: E > 1), so a half-written stage never breaks rung-3.1 users.
+  Helpers: `k.pipeline(name, extraDefines?, colorFormat?)` (async, cached), `k.pipelineSync(name)`,
+  `k.resources.g2(name, inIdx, {accum, counters, colour})` (ping-pong: resample reads `res[inIdx]`, writes the other),
+  `k.encodePass(enc, name, pipeline, g2, dispatch, [x, y] | {indirect, offset})` (takes a ring slot),
+  `k.perPixelWorkgroups(r0, r1)`, `k.rowBands()`, `k.dispatchSlot(d)`. Tests / tools: `k.compile(file, entry,
+  defines, layout, label, extraSources)`, `k.customLayout(g2Layout, scene)`, `k.customDefines(extra, scene)`,
+  `k.encodeCustom(...)`. The pass table (`resources.ts RS_PASSES`) holds file, entry, G1/G3 use, the G2 layout and
+  binding defines of every pass of §4.2; `rs_initial_dump` (test variant, no G3) and `rs_finalize_frame`
+  (interactive, `RS_INTERACTIVE`, G2 binding 7 = colour) are pass names of their own.
+- **A10 Queue details** (`queue.wgsl`, real in P0): the arena variable is `rsArena`; the capacity of every queue is
+  `P·NS` computed from `rsParams` (the per-round `clearBuffer(arena, 0, 16)` also zeroes the header's capacity
+  word, so it cannot be the source); `rs_count(c, n)` adds to an `RSC_*` counter; `queue_item` returns the item
+  **index** (read the word with `arena_word(arena_item_word(i))`); helpers `slot_index`, `arena_slot_word`,
+  `arena_code_word`, `arena_item_word`, `queue_capacity`. `rs_slot_code(sc, term, pair, margin)` packs §2.6's code
+  word (types.wgsl).
+- **A11 G-buffer texture declarations** live in `restir/frame.wgsl`, one define each: sampled `rsVbuf`, `rsGeo`,
+  `rsL1`, `rsShade`, `rsFrame`, `pairTex` (`RS_*_BINDING`, `RS_PAIRTEX_BINDING`) and storage `rsVbufOut`,
+  `rsGeoOut`, `rsL1Out`, `rsShadeOut`, `rsFrameOut` (`RS_*_W_BINDING`); `rs_vbuf(px)`, `rs_geo(px)` load texels.
+- **A12 P0 bodies beyond §1.4.** `rc.wgsl`: `vertex_from_ids`, `rc_vertex`, `rc_event_*`, `rc_G` and
+  `primaryThreshold` are real; `kstar_nee` / `kstar_tree_pair` / `kstar_bsdf_end` are real **in terms of
+  `rcPairTest`** (which is the failing stub), so WP-B's B1 only has to replace `rcPairTest` (it may refine the rest).
+  `pairing.wgsl`: `dihedral_apply(_t)` and `pair_A0` real; `mis.wgsl`: the two MIS term functions and
+  `res_select_shifted` real; `endpoint.wgsl` is complete.
+- **A13 Interactive API.** `RestirKernel.interactive(device, scene, env, colorFormat, o)` → `RestirFramePass` with
+  `setTargets({width, height, color, frameUniforms})`, `encode(encoder, {advanced, accumulate}, timestampWrites?)`
+  (one submit per frame: it resets the RsDispatch ring; timestamps bracket all ReSTIR passes), `setLights`,
+  `setEnvironment`, `envParamsChanged`, `setEnvOptions`, `setSettings` + `await prepare()` when rounds go 0 → > 0.
+  `RestirFrameOut` gains `interactive?: { advanced, accumulate }`.
+- **A14** `pass-primary.ts`, `pass-initial.ts`, `pass-finalize.ts` are folded into `kernel.ts frameUnits` (no
+  separate files).
+- **A15** `res_write_empty(i, seed, bg)` (reservoir.wgsl) writes the empty / background record (all ten planes;
+  endpoint triple and endpointId `RC_NONE`, lobeHist `RS_HIST_NONE`, jDen 1). The candidate dump binding
+  (`candDump`, G2 binding 4) is declared in `path/pathtree.wgsl`.
