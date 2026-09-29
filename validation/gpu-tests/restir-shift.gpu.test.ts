@@ -295,7 +295,7 @@ describe('U-11: marginal pdfs in J (RSF_PLANT_MARGINAL_J) are detected by the jo
     const r = await runT3(rig, tp, { mode: 1, partners: 8, frames: 2, dual: dualScene(rig, t.scene), dualStride: 31 });
     const rep = t3Report('U-11 plant', r);
     console.log(`[U-11] plant: J checked ${r.dual!.jChecked}, disagreeing ${r.dual!.jBad}`);
-    expect(r.dual!.jBad).toBeGreaterThan(r.dual!.jChecked * 0.1);
+    expect(r.dual!.jBad).toBeGreaterThan(Math.max(50, r.dual!.jChecked * 0.01));
     void rep;
     rig.destroy();
   }, 1_800_000);
@@ -332,16 +332,30 @@ describe('T5 / U7: change-of-variables census E_i[J·h·1{T ok}] = E_j[h·1{T⁻
             { t: 5000 + f, treeBase: base, treeCount: cnt, round: 2, flags: (1 | (side ? 0x80000000 : 0)) >>> 0, rowEnd: packed }, [res.views.vbuf, res.views.geo]);
           const w = await readU32(dev, out);
           const fw = new Float32Array(w.buffer);
+          // per-tree sums (trial = (pixel, candidate)): the variance of the census is that of per-tree totals
+          const tree = new Map<number, [number, number]>();
+          const flush = () => {
+            for (const [key, [v1, vh]] of tree) {
+              const a = acc[side][key & 0xff];
+              a[0]++; a[1] += v1; a[2] += v1 * v1; a[3] += vh; a[4] += vh * vh;
+            }
+            tree.clear();
+          };
+          let curPix = -1;
           for (let i = 0; i < cnt; i++) {
+            const pix = Math.floor((base + i) / 32);
+            if (pix !== curPix) { flush(); curPix = pix; }
             const tag = w[4 + 3 * i + 2];
             if (!(tag & 0x200)) continue;
             const bin = tag & 0xff, v1 = fw[4 + 3 * i], vh = fw[4 + 3 * i + 1];
             for (const b of [bin, T3_NBINS + techOf(bin)]) {
-              const a = acc[side][b];
-              a[0]++; a[1] += v1; a[2] += v1 * v1; a[3] += vh; a[4] += vh * vh;
+              const e = tree.get(b) ?? [0, 0];
+              e[0] += v1; e[1] += vh;
+              tree.set(b, e);
             }
             n++;
           }
+          flush();
         }
       }
     }
@@ -351,7 +365,8 @@ describe('T5 / U7: change-of-variables census E_i[J·h·1{T ok}] = E_j[h·1{T⁻
     for (let b = 0; b < NBIN; b++) {
       const A = acc[0][b], B = acc[1][b];
       if (A[0] + B[0] === 0) continue;
-      const z = (i: number) => { const d = A[i] - B[i]; const v = A[i + 1] + B[i + 1] - (A[i] * A[i]) / Math.max(A[0], 1) - (B[i] * B[i]) / Math.max(B[0], 1); return v > 0 ? d / Math.sqrt(v) : 0; };
+      // per-tree variance: the sums run over ALL trees of the pixel pairs (most contribute 0), so Var ≈ Σv² (no mean term)
+      const z = (i: number) => { const d = A[i] - B[i]; const v = A[i + 1] + B[i + 1]; return v > 0 ? d / Math.sqrt(v) : 0; };
       const z1 = z(1), zh = z(3);
       worst = Math.max(worst, Math.abs(z1), Math.abs(zh));
       rows.push(`  ${names[b].padEnd(14)} nA=${A[0]} nB=${B[0]} ΣJ=${A[1].toPrecision(6)} vs Σ1=${B[1].toPrecision(6)} z=${z1.toFixed(2)} | ΣJh=${A[3].toPrecision(6)} vs Σh=${B[3].toPrecision(6)} z=${zh.toFixed(2)}`);

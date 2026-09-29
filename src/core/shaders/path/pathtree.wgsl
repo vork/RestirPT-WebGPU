@@ -116,6 +116,11 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
     var prevV = RcVertex(camPos, vec3f(0.0), RCK_SURFACE, 0u);
     var prevE = rc_event_none();
     var prevPJoint = 1.0;
+    var prevPrim = BVH_MISS;
+    // Changelog B-5: the rc segment of a candidate is also tested with the shift's visible() (the closest-hit ray along
+    // the SAMPLED direction and the shadow segment between the stored vertices can disagree on a measure ~1e-6 set);
+    // a candidate whose rc segment fails it is not streamed (F := 0), so base and shifts share one visibility term
+    var treeVis = true;
 #if RS_DUMP_CANDIDATES
     for (var b = 0u; b < 8u; b++) { ptDumpPrims[b] = 0xFFFFFFFFu; }
 #endif
@@ -155,7 +160,10 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
               rc = treeIds; rcWi = treeWi; jDen = treeJDen; lkm1 = treeL.x; lk = treeL.y; margin = treeMargin;
               rcRad = betaPost * (w1 / ls.q) * qn.f_all * ls.Lambda;
             }
-            let w = luminance(F) * rrInv;
+            var visOk = true;
+            if (k == B) { visOk = visible(prevV.pos, prevV.ng, prevPrim, cur.pos, cur.ng, curPrim); }
+            else if (k <= B - 1u) { visOk = treeVis; }
+            let w = select(0.0, luminance(F) * rrInv, visOk);
             let counter = (s << 20u) | (B << 12u);
             let wBefore = wSum;
             var sel = false;
@@ -211,6 +219,7 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
           treeL = vec2u(prevE.lobe | (prevE.delta << 3u), eB.lobe | (eB.delta << 3u));
           treeJDen = prevPJoint * rc_G(prevV.pos, cur.pos, cur.ng) * pt_jpdf(qb);
           betaPost = vec3f(1.0);
+          treeVis = visible(prevV.pos, prevV.ng, prevPrim, cur.pos, cur.ng, curPrim);
         }
       }
       let wq = rs_path_weight(qb, bs.weight, bs.is_delta);   // D3 / Changelog B-2: the shift's own factor formula
@@ -266,7 +275,10 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
           if (k == B) { rcRad = endLe; aux = endP1; }
           else { rcRad = betaPost * endW2 * endLe; }
         }
-        let w = luminance(endF) * rrInv;
+        var visOk = true;                            // B-5 (env rc: the same ray as visibleInf, no extra test)
+        if (k == B + 1u && isHit) { visOk = visible(cur.pos, cur.ng, curPrim, nxt.pos, nxt.ng, h.primId); }
+        else if (k != 0u && k <= B) { visOk = treeVis; }
+        let w = select(0.0, luminance(endF) * rrInv, visOk);
         let counter = (s << 20u) | (B << 12u) | 1u;
         let wBefore = wSum;
         var sel = false;
@@ -291,6 +303,7 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
       prevV = curV;
       prevE = eB;
       prevPJoint = pt_jpdf(qb);
+      prevPrim = curPrim;
       cur = nxt;
       curPrim = h.primId;
       curIds = vec3u(h.primId, bitcast<u32>(h.u), bitcast<u32>(h.v));

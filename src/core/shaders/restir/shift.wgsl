@@ -239,7 +239,9 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
   var J = 1.0;
   if (cs != SH_FORCED) { J = jNum / src.jDen; }
 #if RS_SHIFT_TRACE
-  rs_trace_recon(abs(dot(yPrev.ng, wP)), select(1.0, abs(dot(xk.ng, src.rcWi)), cs == SH_B1 || cs == SH_DEEP));
+  rs_trace_recon(min(abs(dot(yPrev.ng, wP)), select(1.0, abs(dot(xk.ng, wP)), xkPrim != BVH_MISS)),
+                 select(1.0, abs(dot(xk.ng, src.rcWi)), cs == SH_B1 || cs == SH_DEEP), length(xk.pos - yPrev.pos),
+                 min(min(bitcast<f32>(src.rc.y), bitcast<f32>(src.rc.z)), 1.0 - bitcast<f32>(src.rc.y) - bitcast<f32>(src.rc.z)));
 #endif
   // ---- 5. integrand F(ȳ) in the destination domain ---------------------------------------------------------------------
   var F = vec3f(0.0);

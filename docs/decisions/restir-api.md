@@ -1414,6 +1414,16 @@ touching a shared interface. "WP-A" entries were made while landing P0 / A1.
 - **E8 Gate-3 T16 extras**: a rung-3.2 / 2022 / ensemble unit fails T16 unless `spatialRoundsExecuted = 3` (a stubbed
   spatial stage cannot pass the final gate); ReSTIR and PT must agree on scene bytes, resolution, env NEE and
   maxBounces; plants must be named and are exempt from the unbiased-preset check.
+- **B-5 One visibility term for the rc segment** (affects **WP-A** `path/pathtree.wgsl`, minimal change by WP-B). The base
+  path accepts a segment through the closest-hit ray along the SAMPLED direction, every shift re-tests the rc segment
+  with `visible(x_{k−1}, x_k)` (offset endpoints, shadow segment between the stored positions). The two disagree on a
+  measure ~2e-6 set (a silhouette or triangle within ~1e-5 of the ray; not grazing, not near edges: measured |cos|
+  0.2–0.6, segment length 0.6–3), which made T3-0 self shifts and T3-1 inverses OCCLUDED (VIS class). The path tree
+  now also evaluates `visible()` for the rc segment of every candidate that owns one — the tree rc pair when it is
+  set (`treeVis`, inherited by deep / (c) candidates), the N1 pair (x_{B−1}, x_B) of case (b) and the emitter segment
+  of case (d) — and does not stream the candidate when it fails (F := 0). The env rc (e) needs no extra test
+  (`visibleInf` traces the identical ray). The ReSTIR integrand thus carries the shift's visibility term on its rc
+  segment; it differs from the PT's on a set of measure ~1e-6 (below every Stage-B tolerance).
 
 ### WP-D amendments (debug views, inspector, interactive integration)
 

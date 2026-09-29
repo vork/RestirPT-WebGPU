@@ -195,7 +195,9 @@ fn rs_trace_light(dir: vec3f, pos: vec3f, inf: bool) {
 fn rs_trace_escape(dir: vec3f) {
   if (trSlot != 0u) { dw(23u, bitcast<u32>(dir.x)); dw(24u, bitcast<u32>(dir.y)); dw(25u, bitcast<u32>(dir.z)); }
 }
-fn rs_trace_recon(cosY: f32, cosK: f32) { trCos = min(cosY, cosK); }
+var<private> trDist: f32;
+var<private> trEdgeK: f32;
+fn rs_trace_recon(cosY: f32, cosK: f32, dist: f32, edgeK: f32) { trCos = min(cosY, cosK); trDist = dist; trEdgeK = edgeK; }
 
 fn t3_case(f: u32) -> u32 {
   let d = rf_d(f); let k = rf_k(f); let tech = rf_tech(f); let ep = rf_ep(f);
@@ -268,7 +270,11 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
 #if T3_DENSE
   latIdx = atomicLoad(&dual[${DENSE_OFF - 2}u]) + ai;
   let p = vec2u(0u);
-  if (j == 0u) { stClass((f & 0x3FFFFFu) | ((dump[base + 23u] & 7u) | (((dump[base + 23u] >> 4u) & 7u) << 3u) | (((dump[base + 23u] >> 8u) & 7u) << 6u)) << 22u); }
+  if (j == 0u) {
+    let hh = dump[base + 23u];
+    let lob = (hh & 7u) | (((hh >> 4u) & 7u) << 3u) | (((hh >> 8u) & 7u) << 6u);
+    stClass((f & 0x3FFFFFu) | (lob << 22u));
+  }
 #else
   let p = vec2u(ai % W, ai / W);
 #endif
@@ -319,7 +325,7 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
   var dst = dq;
   for (var ps = 0u; ps < nPass; ps++) {
     for (var b = 0u; b < 8u; b++) { trPrim[b] = 0xFFFFFFFEu; trLobe[b] = 0xFFu; trEdge[b] = 1.0; }
-    trCos = 1.0;
+    trCos = 1.0; trDist = 0.0; trEdgeK = 1.0;
     trSlot = 0u;
     trNP = 0u;
     if (rsDispatch.rowBase != 0u && (trial % rsDispatch.rowBase) == 0u) {
@@ -416,7 +422,9 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
       }
       if (sc != SC_OK) {
         st(bin, ${T3S.visZero}u);
-        t3_viol(select(${T3V.invZero}u, ${T3V.selfZero}u, selfM), bin, trial, c0, o.code, sig, edge, J0, o.J, f, ai, q.y * W + q.x, 0.0);
+        // diagnostics: J0 slot ← |cos| of the reconnection segment (min over both ends), edge ← bary edge distance of x_k,
+        // fr ← segment length
+        t3_viol(select(${T3V.invZero}u, ${T3V.selfZero}u, selfM), bin, trial, c0, o.code, sig, trEdgeK, trCos, o.J, f, ai, q.y * W + q.x, trDist);
         return;
       }
       st(bin, ${T3S.rtOk}u);
