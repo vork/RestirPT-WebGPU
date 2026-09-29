@@ -1339,3 +1339,8 @@ touching a shared interface. "WP-A" entries were made while landing P0 / A1.
   shared-memory tree, and per-pixel Σx/Σx² over members into ensPixel) and `rs_ensemble_reduce` (1D: 32²/64² tiles by
   fixed 2×2 trees, global by cascade summation of the 64² tiles, mask sums = 0 since M = 0 in M4). The second is
   compiled by `EnsembleStage.prepare` via `k.compile(..., k.pipelineLayout('rs_ensemble_stats'))`.
+- **A19 U-SFX-1 fixture.** `t3_cases` (WP-B's `make-m4.ts`) is not needed for U-SFX-1: it runs on
+  `restir-fixtures.ts allLightsScene()` (every endpoint type, V1/V2/mirror, env) twice, once with the production
+  `rc.wgsl` and once with `TEST_RC_DR` (a test replacement of `rc.wgsl` whose `rcPairTest` is D ∧ R only, passed via
+  `extraSources`), so every case (b), (c) tri/env, (d), (e), deep NEE/TRI/ENV occurs independently of the predicate.
+  Other WPs may reuse `TEST_RC_DR` and `restirRig()` (`frames(n, base, perSubmit)`).

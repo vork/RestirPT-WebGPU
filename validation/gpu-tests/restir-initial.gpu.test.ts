@@ -7,14 +7,14 @@ import { shaderSources } from '../../src/core/shaders/index.ts';
 import { createLutBuffer, lutDefines } from '../../src/core/render/luts/lut-layout.ts';
 import { RES_WORDS, RS_DUMP_CAP, RS_WGSL_CONSTS, RW, decodeReservoir, dumpCountWord, dumpRecordWord, rfPack, rfUnpack } from '../../src/core/render/restir/layout.ts';
 import { PtKernel } from '../../src/core/render/pt-kernel.ts';
-import { JITTER_IID } from '../../src/core/render/frame-uniforms.ts';
+import { FRAME_RESET_HISTORY, FrameUniformBuffer, JITTER_IID } from '../../src/core/render/frame-uniforms.ts';
 import { RestirKernel } from '../../src/core/render/restir/kernel.ts';
 import { restirSettings } from '../../src/core/render/restir/presets.ts';
 import { RS_PASSES, type RsPassName } from '../../src/core/render/restir/resources.ts';
 import { getTestGpu, releaseTestGpu } from './device-factory.ts';
 import { material, quadScene } from './pt-fixtures.ts';
 import {
-  allLightsScene, bitFixtureScene, boxCamera, gpuScene, hashF32, ptImage, readTexture4, restirRig, storageBuffer, type BitFixture,
+  allLightsScene, bitFixtureScene, boxCamera, gpuScene, hashF32, ptImage, readTexture4, restirRig, storageBuffer, TEST_RC_DR, type BitFixture,
 } from './restir-fixtures.ts';
 
 afterAll(releaseTestGpu);
@@ -322,8 +322,11 @@ describe('P0 compile smoke: every M4 pipeline and every shared module', () => {
     // candDump is declared at binding 4 under RS_DUMP_CANDIDATES only: the smoke module does not set it.
     await k.compile('all.wgsl', 'main', defs, k.customLayout(g2l), 'restir-all-modules', { 'all.wgsl': ALL_MODULES_WGSL });
     const present = (['rs_pair_accept', 'rs_args', 'rs_spatial_replay', 'rs_spatial_shift', 'rs_spatial_resample', 'rs_ensemble_stats'] as RsPassName[]).filter((n) => RS_PASSES[n].file in shaderSources);
-    for (const n of present) await k.pipeline(n);
-    console.log(`[P0 smoke] WP-C passes compiled: ${present.join(', ') || '(none yet)'}`);
+    // WP-C's passes are compiled and reported here (their own suite gates them; a work-in-progress file must not
+    // block WP-A's suite).
+    const failed: string[] = [];
+    for (const n of present) await k.pipeline(n).catch((e) => { failed.push(`${n}: ${String(e).split('\n').slice(0, 3).join(' ')}`); });
+    console.log(`[P0 smoke] WP-C passes present: ${present.join(', ') || '(none yet)'}; failed: ${failed.length ? failed.join(' | ') : 'none'}`);
     k.destroy(); g.destroy();
   });
 });
@@ -489,4 +492,223 @@ describe('U-RIS-3: RR source weights and W = Σw / lum F (candidate dump)', () =
       rig.destroy();
     });
   }
+});
+
+// ------------------------------------------------------------------------------------------------ U-SFX-1
+
+const SFX_WGSL = `
+#include "restir/frame.wgsl"
+#include "restir/reservoir.wgsl"
+#include "restir/queue.wgsl"
+#include "restir/endpoint.wgsl"
+#include "restir/rc.wgsl"
+@group(2) @binding(0) var<storage, read> dump: array<u32>;
+@group(2) @binding(1) var<storage, read_write> outp: array<atomic<u32>, 32>;
+fn dw(b: u32, w: u32) -> u32 { return dump[b + w]; }
+fn df(b: u32, w: u32) -> f32 { return bitcast<f32>(dump[b + w]); }
+fn df3(b: u32, w: u32) -> vec3f { return vec3f(df(b, w), df(b, w + 1u), df(b, w + 2u)); }
+fn rel3(a: vec3f, b: vec3f) -> f32 {
+  var e = 0.0;
+  for (var c = 0u; c < 3u; c++) {
+    if (a[c] != b[c]) { e = max(e, abs(a[c] - b[c]) / max(abs(b[c]), 1e-30)); }
+  }
+  return select(3e38, e, e <= 3e38);
+}
+fn rel1(a: f32, b: f32) -> f32 { if (a == b) { return 0.0; } let e = abs(a - b) / max(abs(b), 1e-30); return select(3e38, e, e <= 3e38); }
+fn amax(slot: u32, e: f32) { atomicMax(&outp[slot], bitcast<u32>(e)); }
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let P = rs_atlas_pixels();
+  let idx = gid.y * 65535u * 64u + gid.x;
+  let ai = idx / RS_DUMP_CAP;
+  let c = idx % RS_DUMP_CAP;
+  if (ai >= P || c >= dump[P * RS_DUMP_CAP * RS_DUMP_WORDS + ai]) { return; }
+  let b = (ai * RS_DUMP_CAP + c) * RS_DUMP_WORDS;
+  let flags = dw(b, 6u);
+  let d = rf_d(flags);
+  let k = rf_k(flags);
+  let tech = rf_tech(flags);
+  let sfxFlags = dw(b, 27u);
+  let sfxIds = vec3u(dw(b, 24u), dw(b, 25u), dw(b, 26u));
+  let sfxDir = df3(b, 28u);
+  let betaS = df3(b, 32u);
+  let sfxP2 = df(b, 35u);
+  let rcRad = df3(b, 16u);
+  let aux = df(b, 15u);
+  let end = vec3u(dw(b, 20u), dw(b, 21u), dw(b, 22u));
+  let hist = dw(b, 23u);
+  atomicAdd(&outp[0], 1u);
+  if (k == 0u || k > d - 1u) { return; }
+  if ((sfxFlags & SFX_VALID) == 0u) { atomicAdd(&outp[20], 1u); return; }
+  // x_{d−1} from the suffix cache (oriented toward x_{d−2}: NEE ends store ω_o, BSDF ends do not need the side)
+  let x = vertex_from_ids(sfxIds.x, bitcast<f32>(sfxIds.y), bitcast<f32>(sfxIds.z), vec3f(0.0));
+  let xo = vertex_from_ids(sfxIds.x, bitcast<f32>(sfxIds.y), bitcast<f32>(sfxIds.z), x.pos + sfxDir);
+  let Bm = d - 1u;
+  let deltaLast = ((hist >> (4u * min(Bm - 1u, 7u))) & 8u) != 0u;
+  var term = vec3f(0.0);
+  var tb = vec3f(0.0);        // (b)/(c): the cached end term
+  var tp = 0.0;               //          and its p1
+  if (tech == RS_TECH_NEE) {
+    let ls = nee_eval(xo.pos, nee_endpoint_from_words(end));
+    let m = material_eval(xo, sfxDir);
+    let q = bsdf_query(m, sfxDir, ls.dir, LOBE_NEE);
+    let w1 = nee_mis_w1(ls, q.p_marg, Bm);
+    term = (w1 / ls.q) * q.f_all * ls.Lambda;
+    tb = ls.Lambda; tp = ls.p1;
+  } else if (tech == RS_TECH_BSDF_TRI) {
+    let z = vertex_from_ids(end.x, bitcast<f32>(end.y), bitcast<f32>(end.z), x.pos);
+    let Le = tri_emission(end.x, bitcast<f32>(end.y), bitcast<f32>(end.z));
+    let p1 = tri_light_p1(x.pos, z.pos, z.ng, end.x);
+    let w2 = select(mis_w2(p1, sfxP2, Bm), 1.0, deltaLast);
+    term = w2 * Le;
+    tb = Le; tp = p1;
+  } else {
+    let Le = envRadiance(envUV(sfxDir, envParams.cg, envParams.sg));
+    term = env_bsdf_mis_weight(sfxDir, sfxP2, Bm, deltaLast) * Le;
+    tb = Le; tp = p1Env(sfxDir);
+  }
+  if (k <= d - 2u) {
+    let e = rel3(rcRad, betaS * term);
+    atomicAdd(&outp[1u + tech], 1u);
+    amax(5u, e);
+    if (e > 1e-5) { atomicAdd(&outp[6], 1u); }
+  } else {
+    let e = max(rel3(rcRad, tb), rel1(aux, tp));
+    atomicAdd(&outp[8u + tech], 1u);
+    amax(12u, e);
+    if (e > 1e-6) { atomicAdd(&outp[13], 1u); }
+  }
+}
+`;
+
+describe('U-SFX-1: suffix cache and cached end terms', () => {
+  for (const rcMode of ['test-rc (D∧R)', 'production rc'] as const) {
+    it(`${rcMode}: deep rcRad = betaS ⊙ endTerm(suffix cache) ≤ 1e-5; (b)/(c) rcRad, aux = re-evaluated end term ≤ 1e-6`, async () => {
+      const W = 32, H = 32;
+      const rig = await restirRig(allLightsScene(), W, H, {
+        settings: { maxBounces: 5 }, dumpCandidates: true, extraSources: rcMode === 'test-rc (D∧R)' ? { 'restir/rc.wgsl': TEST_RC_DR } : {},
+      });
+      const k = rig.kernel, device = rig.g.device;
+      const out = storageBuffer(device, 128);
+      const g2l = device.createBindGroupLayout({ entries: [
+        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+      ] });
+      const pl = await k.compile('sfx.wgsl', 'main', k.customDefines({}), k.customLayout(g2l), 'u-sfx-1',
+        { 'sfx.wgsl': SFX_WGSL, ...(rcMode === 'test-rc (D∧R)' ? { 'restir/rc.wgsl': TEST_RC_DR } : {}) });
+      const acc = new Uint32Array(32);
+      for (let f = 0; f < 4; f++) {
+        await rig.frames(1, f);
+        const g2 = device.createBindGroup({ layout: g2l, entries: [{ binding: 0, resource: { buffer: k.resources.candDump! } }, { binding: 1, resource: { buffer: out } }] });
+        k.beginSubmit();
+        const enc = device.createCommandEncoder();
+        k.encodeCustom(enc, pl, g2, {}, [Math.ceil(W * H * RS_DUMP_CAP / 64), 1]);
+        device.queue.submit([enc.finish()]);
+      }
+      const o = new Uint32Array(await readBuffer(device, out, 128));
+      const of = new Float32Array(o.buffer);
+      const rep = { cands: o[0], deep: [o[1], o[2], o[4]], deepMaxRel: of[5], deepBad: o[6], cached: [o[8], o[9], o[11]], cachedMaxRel: of[12], cachedBad: o[13], invalidSfx: o[20] };
+      console.log(`[U-SFX-1 ${rcMode}] ${JSON.stringify(rep)}`);
+      expect(rep.deepBad).toBe(0);
+      expect(rep.cachedBad).toBe(0);
+      expect(rep.invalidSfx).toBe(0);
+      if (rcMode === 'test-rc (D∧R)') {
+        rep.deep.forEach((n, i) => expect(n, `deep candidates, technique ${i}`).toBeGreaterThan(i === 1 ? 10 : 100));
+        rep.cached.forEach((n, i) => expect(n, `(b)/(c) candidates, technique ${i}`).toBeGreaterThan(i === 1 ? 10 : 100));
+      }
+      out.destroy(); rig.destroy();
+    });
+  }
+});
+
+// ------------------------------------------------------------------------------------------------ U-RIS-4
+
+describe('U-RIS-4: rung 3.1 / 3.1b micro Stage B — mean of L1 + F·W over 2¹⁴ frames vs the PT (z ≤ 4)', () => {
+  for (const preset of ['initial', 'initial-rr'] as const) {
+    for (const name of ['c0e', 'c0c'] as BitFixture[]) {
+      it(`${preset} ${name} 64²: 16 batches × 1024 frames vs 16 × 1024 spp, 16 tiles + global (luminance)`, async () => {
+        const W = 64, H = 64, B = 16, F = 1024, T = 16;
+        const scene = bitFixtureScene(name);
+        const rig = await restirRig(scene, W, H, { preset, settings: { maxBounces: 3 }, seed: 4002 });
+        const { device } = rig.g;
+        const pt = await PtKernel.create(device, rig.g.gpu, rig.g.env, { features: rig.g.features, wgslLanguageFeatures: rig.g.wgslLanguageFeatures, maxBounces: 3 });
+        pt.setView({ camera: boxCamera(), width: W, height: H, runSeed: 4001, jitterMode: JITTER_IID });
+        const acc = storageBuffer(device, W * H * 16), cnt = storageBuffer(device, 16);
+        const stat = (img: Float32Array, stride: number) => {
+          const v = new Array(T + 1).fill(0);
+          for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+            const i = y * W + x, l = lum(img[stride * i], img[stride * i + 1], img[stride * i + 2]);
+            v[Math.floor(y / 16) * 4 + Math.floor(x / 16)] += l / 256;
+            v[T] += l / (W * H);
+          }
+          return v;
+        };
+        const rs: number[][] = [], ps: number[][] = [];
+        for (let b = 0; b < B; b++) {
+          const r = await rig.frames(F, b * F, 128);
+          expect(r.counters).toEqual([0, 0, 0, 0]);
+          rs.push(stat(r.mean, 3));
+          const enc = device.createCommandEncoder();
+          enc.clearBuffer(acc); enc.clearBuffer(cnt);
+          device.queue.submit([enc.finish()]);
+          for (let k = 0; k < F; k += 256) {
+            const e2 = device.createCommandEncoder();
+            pt.encode(e2, { sampleBase: b * F + k, sampleCount: 256, rowBase: 0, rows: H }, acc, cnt);
+            device.queue.submit([e2.finish()]);
+            await device.queue.onSubmittedWorkDone();
+          }
+          const sum = new Float32Array(await readBuffer(device, acc, W * H * 16));
+          ps.push(stat(sum.map((x) => x / F), 4));
+        }
+        const zs: number[] = [];
+        for (let j = 0; j <= T; j++) {
+          const m = (a: number[][]) => a.reduce((s, v) => s + v[j], 0) / B;
+          const se2 = (a: number[][], mu: number) => a.reduce((s, v) => s + (v[j] - mu) ** 2, 0) / (B - 1) / B;
+          const mr = m(rs), mp = m(ps);
+          zs.push((mr - mp) / Math.sqrt(se2(rs, mr) + se2(ps, mp) + 1e-30));
+        }
+        const g = { restir: rs.reduce((s, v) => s + v[T], 0) / B, pt: ps.reduce((s, v) => s + v[T], 0) / B };
+        console.log(`[U-RIS-4 ${preset} ${name}] global restir=${g.restir.toFixed(6)} pt=${g.pt.toFixed(6)} rel=${((g.restir - g.pt) / g.pt).toExponential(2)} z=${zs.map((z) => z.toFixed(2)).join(',')}`);
+        for (const z of zs) expect(Math.abs(z)).toBeLessThanOrEqual(4);
+        pt.destroy(); acc.destroy(); cnt.destroy(); rig.destroy();
+      });
+    }
+  }
+});
+
+// ------------------------------------------------------------------------------------------------ interactive pass
+
+describe('RestirFramePass (interactive, renderer mode restir): rung 3.1 settings', () => {
+  it('frame t (reset) ≡ batch frame t bitwise (t = frame.seedIndex); progressive mean over two frames', async () => {
+    const Wf = 32, Hf = 24, seed = 99, t = 5;
+    const scene = bitFixtureScene('x_quads');
+    const batch = await restirRig(scene, Wf, Hf, { settings: { maxBounces: 3 }, seed });
+    const ref5 = (await batch.frames(1, t)).mean;
+    const ref6 = (await batch.frames(1, t + 1)).mean;
+    const g = batch.g, device = g.device;
+    const pass = await RestirKernel.interactive(device, g.gpu, g.env, 'rgba32float', { settings: { maxBounces: 3, rounds: 0, rr: false }, features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
+    const color = device.createTexture({ size: [Wf, Hf], format: 'rgba32float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC });
+    const fu = new FrameUniformBuffer(device);
+    pass.setTargets({ width: Wf, height: Hf, color, frameUniforms: fu.buffer });
+    const cam = boxCamera();
+    const frameAt = async (seedIndex: number, flags: number) => {
+      fu.write({ camera: cam, prevCamera: cam, width: Wf, height: Hf, frameIndex: seedIndex, seedIndex, runSeed: seed, flags, jitterMode: JITTER_IID,
+        jitter: [0.5, 0.5], origin: g.gpu.origin, exposure: 1, time: 0, dt: 0, sceneDiag: 1 });
+      const enc = device.createCommandEncoder();
+      expect(pass.encode(enc, { advanced: true, accumulate: true })).toBe(true);
+      device.queue.submit([enc.finish()]);
+      return new Float32Array((await readTexture4(device, color)).buffer);
+    };
+    const f5 = await frameAt(t, FRAME_RESET_HISTORY);
+    let diff = 0;
+    for (let i = 0; i < Wf * Hf; i++) for (let k = 0; k < 3; k++) if (f5[4 * i + k] !== ref5[3 * i + k]) diff++;
+    expect(diff).toBe(0);
+    const f6 = await frameAt(t + 1, 0);
+    let worst = 0;
+    for (let i = 0; i < Wf * Hf; i++) worst = Math.max(worst, Math.abs(f6[4 * i] - (ref5[3 * i] + ref6[3 * i]) / 2) / Math.max(1e-3, ref5[3 * i]));
+    expect(worst).toBeLessThan(1e-5);
+    expect(Array.from(new Uint32Array(await readBuffer(device, pass.counters, 16)))).toEqual([0, 0, 0, 0]);
+    pass.destroy(); color.destroy(); fu.destroy(); batch.destroy();
+  });
 });

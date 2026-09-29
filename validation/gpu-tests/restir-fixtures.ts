@@ -153,7 +153,7 @@ export interface RestirRig {
   g: GpuScene; kernel: RestirKernel; W: number; H: number; accum: GPUBuffer; counters: GPUBuffer;
   /** Render frames t = base … base+n−1 (one submit each) into a cleared accumulator: mean image (RGB, row 0 = top),
    *  the finalize counters (nonFinite, bvhOverflow, bvhItercap, negative) and the arena counters. */
-  frames(n: number, base?: number): Promise<{ mean: Float32Array; counters: number[]; arena: RestirCounters }>;
+  frames(n: number, base?: number, perSubmit?: number): Promise<{ mean: Float32Array; counters: number[]; arena: RestirCounters }>;
   destroy(): void;
 }
 
@@ -170,16 +170,16 @@ export async function restirRig(scene: SceneData, W: number, H: number, o: Resti
   const counters = device.createBuffer({ label: 'rig-counters', size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
   return {
     g, kernel, W, H, accum, counters,
-    async frames(n: number, base = 0) {
+    async frames(n: number, base = 0, perSubmit = 1) {
       const clear = device.createCommandEncoder();
       clear.clearBuffer(accum);
       clear.clearBuffer(counters);
       clear.clearBuffer(kernel.resources.arena, 0, 256);
       device.queue.submit([clear.finish()]);
-      for (let f = 0; f < n; f++) {
+      for (let f = 0; f < n; f += perSubmit) {
         kernel.beginSubmit();
         const enc = device.createCommandEncoder({ label: `rig-frame-${base + f}` });
-        for (const u of kernel.frameUnits(base + f, { accum, counters })) u.encode(enc);
+        for (let j = f; j < Math.min(n, f + perSubmit); j++) for (const u of kernel.frameUnits(base + j, { accum, counters })) u.encode(enc);
         device.queue.submit([enc.finish()]);
         await device.queue.onSubmittedWorkDone();
       }
@@ -215,3 +215,47 @@ export function storageBuffer(device: GPUDevice, data: ArrayBufferView | number,
   if (typeof data !== 'number') device.queue.writeBuffer(b, 0, data.buffer, data.byteOffset, data.byteLength);
   return b;
 }
+
+/**
+ * Test replacement of restir/rc.wgsl (pass it through `extraSources: { 'restir/rc.wgsl': TEST_RC_DR }`): the contract
+ * signatures of §3.4 with rcPairTest = D ∧ R only (e_a non-delta with α ≥ α_min; e_b non-delta unless the vertex is
+ * a light/env), so the path tree produces every rc case (b, c, d, e, deep) independently of WP-B's predicate.
+ */
+export const TEST_RC_DR = `
+#include "restir/types.wgsl"
+#include "material/material-eval.wgsl"
+struct RcVertex { pos: vec3f, ng: vec3f, kind: u32, diffuseOnly: u32 }
+struct RcEvent  { lobe: u32, delta: u32, alpha: f32, pMarg: f32 }
+struct RcResult { ok: bool, margin: f32, term: u32 }
+fn vertex_from_ids(prim: u32, u: f32, v: f32, fromPos: vec3f) -> SurfaceHit {
+  var s = scene_surface(prim, u, v, vec3f(0.0));
+  if (dot(s.ng, fromPos - s.pos) < 0.0) { s.ng = -s.ng; s.ns = -s.ns; s.backfacing = true; }
+  return s;
+}
+fn rc_vertex(s: SurfaceHit, m: MatEval) -> RcVertex { return RcVertex(s.pos, s.ng, RCK_SURFACE, select(0u, 1u, (m.flags & MATEVAL_DIFFUSE_ONLY) != 0u)); }
+fn rc_event_bsdf(m: MatEval, lobe: u32, isDelta: bool, pMarg: f32) -> RcEvent { return RcEvent(lobe, select(0u, 1u, isDelta), select(lobe_roughness(m, lobe), 0.0, isDelta), pMarg); }
+fn rc_event_nee(m: MatEval, pMarg: f32) -> RcEvent { return RcEvent(LOBE_NEE, 0u, lobe_roughness(m, LOBE_NEE), pMarg); }
+fn rc_event_none() -> RcEvent { return RcEvent(LOBE_NONE, 0u, FLT_MAX, 0.0); }
+fn rcPairTest(a: RcVertex, ea: RcEvent, b: RcVertex, eb: RcEvent, thr: f32) -> RcResult {
+  let okA = ea.delta == 0u && ea.lobe != LOBE_GT && ea.alpha >= rsParams.alphaMin && ea.lobe != LOBE_NONE;
+  let okB = b.kind != RCK_SURFACE || (eb.delta == 0u && eb.lobe != LOBE_GT);
+  return RcResult(okA && okB, ea.alpha - rsParams.alphaMin, select(RCT_R, RCT_NONE, okA && okB));
+}
+fn primaryThreshold(camPos: vec3f, x1: vec3f, ng1: vec3f, tau: f32) -> f32 {
+  let d = camPos - x1;
+  return tau * dot(d, d) * 4.0 * PI / max(abs(dot(ng1, normalize(d))), 1e-6);
+}
+fn rc_G(a: vec3f, b: vec3f, ngB: vec3f) -> f32 { let d = a - b; let t2 = dot(d, d); return abs(dot(ngB, d)) / (t2 * sqrt(t2)); }
+fn kstar_nee(treeRc: u32, B: u32, prevV: RcVertex, prevE: RcEvent, curV: RcVertex, eNee: RcEvent, thr: f32) -> vec2u {
+  if (treeRc != 0u) { return vec2u(treeRc, 0u); }
+  if (B >= 2u) { let r = rcPairTest(prevV, prevE, curV, eNee, thr); if (r.ok) { return vec2u(B, bitcast<u32>(r.margin)); } }
+  return vec2u(B + 1u, 0u);
+}
+fn kstar_tree_pair(prevV: RcVertex, prevE: RcEvent, curV: RcVertex, eB: RcEvent, thr: f32) -> RcResult { return rcPairTest(prevV, prevE, curV, eB, thr); }
+fn kstar_bsdf_end(treeRc: u32, B: u32, curV: RcVertex, eB: RcEvent, endV: RcVertex, thr: f32) -> vec2u {
+  if (treeRc != 0u) { return vec2u(treeRc, 0u); }
+  let r = rcPairTest(curV, eB, endV, rc_event_none(), thr);
+  if (r.ok) { return vec2u(B + 1u, bitcast<u32>(r.margin)); }
+  return vec2u(0u, 0u);
+}
+`;
