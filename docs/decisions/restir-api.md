@@ -1344,3 +1344,42 @@ touching a shared interface. "WP-A" entries were made while landing P0 / A1.
   `rc.wgsl` and once with `TEST_RC_DR` (a test replacement of `rc.wgsl` whose `rcPairTest` is D ∧ R only, passed via
   `extraSources`), so every case (b), (c) tri/env, (d), (e), deep NEE/TRI/ENV occurs independently of the predicate.
   Other WPs may reuse `TEST_RC_DR` and `restirRig()` (`frames(n, base, perSubmit)`).
+
+### WP-E amendments (Gate 3 harness)
+
+- **E1 `runBatchUnits` options** (§4.4; affects nobody else): `BatchAccumulator.runBatchUnits(src, frames, index?, o?)`
+  takes an optional 4th argument `{ maxUnitsPerSubmit (64), rates (Map kind → ms per costHint, carried across batches),
+  onSubmit }`. The unit kind is the label up to the first `[`/`(`/`:` (`rs_initial[0+32][0]` → `rs_initial`); **unit
+  labels must start with a stable kind name** (WP-A/WP-C units already do). A unit of an unknown kind is estimated at
+  the submit target, so it runs alone until measured. At most 64 units share a submit (RsDispatch ring: 512 slots).
+- **E2 Chunking probe** (§4.4 "start from costHint and adapt"): before batch 0 `RestirBatchRunner` renders one
+  **discarded** frame `t = 0x7FFFFFF0` (scratch accum/counters, outside every run's frame range) with 128-row bands and
+  1 tree per unit, learns ms/costHint per kind, then sets `kernel.treeChunk` / `kernel.rowBand` so one rs_initial unit
+  is ≤ ½ the 50 ms target; a batch with a submit above the 100 ms budget halves the tree chunk (then the row band).
+  Results are chunking-invariant (U-RIS-2). The arena counters are reset after the probe.
+- **E3 Ensemble readback** (§2.10): the runner appends a unit `ens_copy[t]` after every frame that copies
+  `ensStats` (levels + global; masks unused, M = 0) into a per-batch staging slot, so frames of one submit do not
+  overwrite each other's stats; rows are decoded per batch (r = t·E + m, seeds `${runSeed}:${t}:${m}`) and `ensPixel`
+  is read and cleared per batch. `ensemble.npz` omits `masks`/`mask_pixels` (M = 0) and `channels` (default R,G,B).
+  WP-C's `EnsembleCollector` in `ensemble.ts` reads ensStats per frame instead; both decode the same §2.10 layout.
+- **E4 `BASE_JDEN_INVALID / nCand ≤ 1e-5`** is checked against the proxy denominator pixels × frames × S (nCand is a
+  per-reservoir field, not a counter); the ratio is written to meta.json `restir.baseJdenInvalidRate`.
+- **E5 run-batches `--kernel restir`**: `--spp` (alias `--frames-per-batch`) is the number of frames per batch;
+  `--preset`, `--members`, `--plant no-j|marginal-j`, `--w-scale`, `--max-bounces`, `--env-nee`. The Vite server of
+  run-batches runs without HMR / file watching (an edit anywhere in the tree reloaded the harness page mid-run) and,
+  when `node_modules` is a symlink (git worktree), with a worktree-local `cacheDir` (`.vite-cache-<wt>-harness`).
+  `batch-run.ts` exports `loadSource` and `stable` (shared by `restir-batch-run.ts`; no behaviour change).
+- **E6 Seeds and caches** (§6.3): PT reference 4001 / re-run 104001, ReSTIR 4002 / re-run 104002, ReSTIR A/A second
+  set 5002, rendered plants 4101–4103, pilots PT 4011 / ReSTIR 4012. PT references are cached in
+  `validation/out/m4/ptrefs/<pkg>-s<seed>-<spp>x<B>-<key>` with key = sha256 of {package bytes, spp, B, seed, RR off,
+  hash of the TS import closure of `batch-run.ts` + the WGSL include closure of `passes/pt.wgsl`}; pilots in
+  `validation/out/m4/pilots` (ReSTIR key: TS closure of `restir-batch-run.ts` + every WGSL file).
+- **E7 Sizing** (§6.3): pilots PT 128 spp × B and ReSTIR 128 frames (3.1/3.1b) / 8 frames (3.2) × B (B = 16,
+  heavy-tail 32); per-sample SDs of every 32² tile and the global mean of Y/R/G/B; the PT total N_R (shared by the
+  rungs) and each rung's N_k minimise GPU time subject to u_R(a)/N_R + u_k(a)/N_k ≤ 1 on every aggregate
+  (u = per-sample variance / (D·δ/(t_{0.99,B−1} + z_{1−0.005/m}))², D = max(R̄, 0.05·R̄_image)), × 1.25 margin, per-batch
+  sizes rounded up to m·2^k (m ∈ 4…7) so cached references are reused. A side above 60 min switches that rung (PT:
+  all rungs) to 64² tiles (`tile: 64` + `aggregate_note` in test.json → `aggregate_enlarged` in report.json).
+- **E8 Gate-3 T16 extras**: a rung-3.2 / 2022 / ensemble unit fails T16 unless `spatialRoundsExecuted = 3` (a stubbed
+  spatial stage cannot pass the final gate); ReSTIR and PT must agree on scene bytes, resolution, env NEE and
+  maxBounces; plants must be named and are exempt from the unbiased-preset check.
