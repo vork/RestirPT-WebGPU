@@ -122,6 +122,12 @@ export const GPU_SUITES: [string, string][] = [
   ['pt-glass', 'M3 regression: C0h/G1, U9, U10'],
 ];
 
+/**
+ * Per-suite environment. restir-shift: T3 wall-clock cap per variant run 18 min (default 8): at the committed 8 min
+ * the ∅-TRI bins of t3_rare_256 reach only 9.6 M / 7.2 M of the 10⁷ round trips (WP-B final report).
+ */
+export const GPU_SUITE_ENV: Record<string, Record<string, string>> = { 'restir-shift': { VITE_T3_MS: String(18 * 60_000) } };
+
 /** Suite FWER units: every scene × rung + ensemble + 2022 + the rendered plants + the synthetic plant + A/A, × {Y,R,G,B}. */
 export function nUnits(): number { return 4 * (M4_SCENES.length * M4_RUNGS.length + 2 + PLANTS.length + 1 + 1); }   // A/A and W×1.003 count once each
 
@@ -420,9 +426,9 @@ const pct = (x: number | undefined | null, d = 3) => (typeof x === 'number' ? `$
 const readJson = <T = Record<string, any>>(p: string): T => JSON.parse(readFileSync(path.join(ROOT, p), 'utf8')) as T;
 const tryJson = (p: string): Record<string, any> | undefined => { try { return readJson(p); } catch { return undefined; } };
 
-function sh(cmd: string, argv: string[], echo: (l: string) => boolean = () => true): { code: number; out: string; seconds: number } {
+function sh(cmd: string, argv: string[], echo: (l: string) => boolean = () => true, env?: Record<string, string>): { code: number; out: string; seconds: number } {
   const t0 = performance.now();
-  const r = spawnSync(cmd, argv, { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 28, timeout: TIMEOUT_MS });
+  const r = spawnSync(cmd, argv, { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 28, timeout: TIMEOUT_MS, ...(env ? { env: { ...process.env, ...env } } : {}) });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   for (const l of out.split('\n')) if (l && echo(l)) console.log(`  ${l}`);
   return { code: r.status ?? 1, out, seconds: (performance.now() - t0) / 1000 };
@@ -469,10 +475,14 @@ export function milestoneM4(record: Rec, o: M4Options = {}): void {
     steps.push({ name, ok, seconds: Math.round(seconds * 10) / 10, data, detail });
     record(name, ok, `${detail ? `${detail}, ` : ''}${seconds.toFixed(1)} s`);
   };
-  const runStep = (name: string, cmd: string, argv: string[], echo?: (l: string) => boolean) => {
-    console.log(`\n--- ${name}: ${cmd} ${argv.join(' ')}`);
-    const r = sh(cmd, argv, echo);
-    add(name, r.code === 0, r.seconds, undefined, `exit ${r.code}`);
+  const runStep = (name: string, cmd: string, argv: string[], echo?: (l: string) => boolean, env?: Record<string, string>) => {
+    console.log(`\n--- ${name}: ${env ? `${Object.entries(env).map(([k, v]) => `${k}=${v}`).join(' ')} ` : ''}${cmd} ${argv.join(' ')}`);
+    const r = sh(cmd, argv, echo, env);
+    // full output kept (T3 violation records carry frame/trial for VITE_T3_REPRO)
+    const log = path.join(dir, 'logs', `${name.replace(/[^\w.-]+/g, '_').slice(0, 80)}.log`);
+    mkdirSync(path.join(ROOT, dir, 'logs'), { recursive: true });
+    writeFileSync(path.join(ROOT, log), r.out);
+    add(name, r.code === 0, r.seconds, { log, ...(env ? { env } : {}) }, `exit ${r.code}`);
     return r;
   };
   const full = !o.only && !o.pilotOnly && !o.prerenderPtRefs;
@@ -490,15 +500,15 @@ export function milestoneM4(record: Rec, o: M4Options = {}): void {
     runStep('vitest cpu (tests/restir: layout, rc-dual, mis, pairing, queue, npz, gate-m4-config + regressions)', 'npx',
       ['vitest', 'run', ...vitestConfigArgs(), '--project', 'cpu'], (l) => /Test Files|Tests |FAIL|✗|×/.test(l));
     runStep('python stats tests (validation/tools/tests)', PY, ['-m', 'pytest', 'validation/tools/tests', '-q'], (l) => /passed|failed|error/i.test(l));
-    withGpuLockSync('gate-m4', () => {
-      for (const [file, what] of GPU_SUITES) {
-        const rel = `validation/gpu-tests/${file}.gpu.test.ts`;
-        if (!existsSync(path.join(ROOT, rel))) { add(`${file} (chrome): ${what}`, false, 0, undefined, `missing ${rel}`); continue; }
+    // one GPU-lock hold per suite file (other jobs interleave between suites; a suite cannot be split from here)
+    for (const [file, what] of GPU_SUITES) {
+      const rel = `validation/gpu-tests/${file}.gpu.test.ts`;
+      if (!existsSync(path.join(ROOT, rel))) { add(`${file} (chrome): ${what}`, false, 0, undefined, `missing ${rel}`); continue; }
+      withGpuLockSync(`gate-m4-${file}`, () => {
         runStep(`${file} (chrome): ${what}`, 'npx', ['vitest', 'run', ...vitestConfigArgs(), '--project', 'chrome', '--reporter=verbose', rel],
-          (l) => /Tests |FAIL|✗|×|AssertionError|LOGIC|FP-BOUNDARY/.test(l));
-      }
-    });
-    budgetRowsPresent(add);
+          (l) => /Tests |FAIL|✗|×|AssertionError|LOGIC|FP-BOUNDARY|violation/.test(l), GPU_SUITE_ENV[file]);
+      });
+    }
     if (existsSync(path.join(ROOT, 'validation/harness/m4-app-smoke.ts'))) {
       runStep('M4 app smoke (ReSTIR mode on Cornell + HDRI, every M4 view, inspector dump, HUD f_r)', 'npx',
         ['tsx', 'validation/harness/m4-app-smoke.ts', '--run', `${runId}-app-smoke`], (l) => /^(PASS|FAIL)\s/.test(l));
@@ -515,6 +525,7 @@ export function milestoneM4(record: Rec, o: M4Options = {}): void {
   const budget = budgetRows(scenes, sizing);
   writeFileSync(path.join(ROOT, dir, 'budget-m4.json'), `${JSON.stringify(budget, null, 1)}\n`);
   if (o.writeBudget) mergeBudget(budget, runId, add);
+  if (full) budgetRowsPresent(add);   // after the sizing, so --write-budget in the same run satisfies it
 
   const results: Record<string, any>[] = [];
   if (o.prerenderPtRefs) {

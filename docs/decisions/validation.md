@@ -229,3 +229,57 @@ replicate multiplier of 2.7 (BSDF-only hits the 1.06e-4 sr texel with p ≈ 2.4e
 | V2 metal under an HDRI | (xiii) |
 | strength / tint | (xiv) overcast b = 1 (strength 1.3, tint (1, 0.9, 0.75)); strength ×1.0075 plant; ENV-U8 (pmf) |
 | Mode B / glass with env | deferred to the post-M3b merge (`make-m3c.ts --light-mode B`, `--glass`) |
+
+---
+
+# M4: ReSTIR PT core, Gate 3 Stage B (restir-api.md §6.3/§6.4, PLAN §5 M4, §7.1, §7.3, §7.4 M4)
+
+`npm run validate -- --milestone M4` runs `validation/harness/gate-m4.ts`:
+- **Gate 0.** Typecheck; cpu lane (`tests/restir/*`: U-RES-1 layout, rc-dual / T3-D CPU part, MIS / pairing / queue /
+  npz, `gate-m4-config.test.ts`, plus every M1–M3 test); python stats tests; `make-m4.ts` determinism (twice,
+  byte-identical); the Chrome GPU suites `restir-initial` (WP-A), `restir-shift` (WP-B), `restir-spatial` (WP-C),
+  `restir-debug` (WP-D) and the M3 regressions `pt`, `bsdf`, `lights`, `env-sampling`, `glass`, `pt-glass` (the
+  `length1.wgsl` / env-sample refactors are bit-identical); `budget.json` M4 rows; the M4 app smoke
+  (`validation/harness/m4-app-smoke.ts`).
+- **Gate 3, Stage B (our ReSTIR ≡ our PT).** compare.py stage B: TOST α = 0.01, δ 0.2% global / 1% per 32² tile,
+  Y/R/G/B, Šidák tiles, χ²_red, mean-t and KS/AD at the suite FWER α_u = 1 − 0.99^{1/n_units} (n_units = 280),
+  `num_eps` 1e-4 (two f32 implementations), `min_replicates` 16 (heavy-tail 32). Per scene the **ladder** runs rung 3.1
+  (preset `initial`: S = 1, no RR) → 3.1b (`initial-rr`: RR from bounce 1, D11) → 3.2 (`offline`: S = 32, 3 rounds ×
+  6 slots, R = 10 px, RR off); it stops at the first rung that fails after its re-run and the later rungs are "not run".
+  A failed unit is re-run once on disjoint seeds on both sides (compare.py `--rerun-of`). Mode A everywhere; env NEE
+  per package; maxBounces = the package's on both sides.
+- **Special units.** The **ensemble unit**: C0q(d) rung 3.2 in ensemble mode (E = 16 members of 256² in one atlas,
+  `ensemble.npz` rows r = t·E + m) against the same PT reference. The **2022-criteria unit**: (i) with preset
+  `criteria2022`.
+- **Planted controls** (compare.py `--calibrate --planted`: ≥ 9/10 half-size repeats detected, the PT A/A control
+  ≥ 9/10, and the full comparison must fail): omitted spatial Jacobian (`RSF_PLANT_NO_J`, rung 3.2) on (i) and (v) V1;
+  marginal pdfs in J (`RSF_PLANT_MARGINAL_J`, the U-11 negative control) on (v) V2. The synthetic **W × 1.003** plant
+  (compare.py stage-B default) runs with `--calibrate` on a (i) rung-3.2 ReSTIR run, whose A/A re-splits must also
+  pass at the nominal rate. **A/A**: two ReSTIR seed sets (5002 vs 5003) on (i) rung 3.2 must pass Stage B.
+  Calibration sides that are split into halves or compared at equal size are rendered at 4× the unit's size (the A/A
+  pair; the rendered plants' PT references, seed 4201): halves of a set sized to SE_Δ ≈ target are 1.3–1.6× above the
+  target and the half-size A/A control would then fail TOST at the worst of 256 tiles. The planted runs stay 1×.
+- **T15/T16 per run** (restir-batch-run.ts errors + gate-m4.ts `t16Problems`): NaN/Inf = 0, negatives = 0, BVH
+  overflow / itercap = 0, `RSC_CAND_NONFINITE = SHIFT_NONFINITE = PENDING_LEFT = SLOT_MISMATCH = W_NONFINITE = 0`,
+  every queue overflow = 0, `BASE_JDEN_INVALID` ≤ 1e-5 of the candidates, no submit above 200 ms; unbiased preset
+  (plants only where named), internal scale 1, no denoiser / upscaler, readback of the linear radiance, jitter
+  iid-per-run, maxBounces = the PT reference's, same scene bytes / resolution / env NEE, rung 3.2 executed all 3
+  spatial rounds.
+
+**Stage-B runs** are sequential independent frames (D14): a ReSTIR batch is the mean of F frames `t ∈ [b·F, (b+1)·F)`
+(`run-batches.ts --kernel restir --preset <rung> --spp F`), packed into submits by `BatchAccumulator.runBatchUnits`
+(target 50 ms, learned ms per costHint; the chunking probe sets the tree chunk / row band, Changelog E2). The PT side
+is `--kernel pt` (RR off), seed 4001 (re-run 104001); ReSTIR seed 4002 (re-run 104002).
+
+**PT references are cached** in `validation/out/m4/ptrefs/`, keyed by package bytes + spp × B + seed + a hash of the
+PT's TS import closure (`batch-run.ts`) and WGSL include closure (`passes/pt.wgsl`); one reference serves all rungs of
+a scene, so re-runs with unchanged PT code render only the ReSTIR side. Pilots are cached in `validation/out/m4/pilots/`.
+
+**Sizing** (PLAN §7.3; Changelog E7). Per scene a pilot of the PT (128 spp × B) and of each rung (128 frames, 3.2: 8
+frames, × B; B = 16, heavy-tail 32) gives the per-sample SD of every 32² tile and of the global mean of Y/R/G/B. The
+PT sample count (shared by the three rungs) and each rung's frame count minimise GPU time subject to
+`SE_Δ ≤ δ·D/(t_{0.99,B−1} + z_{1−0.005/m})` on every aggregate (D = max(R̄, 0.05·R̄_image), the dark-tile rule), then
+× 1.25 and rounded per batch to m·2^k, with floors of 256 spp (PT), 128 frames (3.1/3.1b) and 8 frames (3.2) per
+batch so every batch mean averages enough samples (the smooth env scenes otherwise size down to 1 frame per batch). A side needing more than 60 min would switch that unit to 64² tiles (recorded
+as `aggregate_enlarged` in report.json); δ is never loosened. `gate-m4 --pilot-only --write-budget` writes the sizes
+to `budget.json` `m4_entries`.
