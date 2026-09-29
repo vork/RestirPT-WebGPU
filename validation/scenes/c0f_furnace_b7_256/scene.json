@@ -1,0 +1,153 @@
+{
+ "format": "restir-scene-package",
+ "version": 1,
+ "name": "c0f_furnace_b7_256",
+ "source": {
+  "uri": "validation/scenes/make-m3a.ts (C0f closed emissive Lambert cube, b = 7)"
+ },
+ "buffers": {
+  "positions": {
+   "offset": 0,
+   "length": 288,
+   "dtype": "f32",
+   "components": 3
+  },
+  "normals": {
+   "offset": 288,
+   "length": 288,
+   "dtype": "f32",
+   "components": 3
+  },
+  "uv0": {
+   "offset": 576,
+   "length": 192,
+   "dtype": "f32",
+   "components": 2
+  },
+  "indices": {
+   "offset": 768,
+   "length": 144,
+   "dtype": "u32",
+   "components": 3
+  },
+  "triMaterial": {
+   "offset": 912,
+   "length": 48,
+   "dtype": "u32",
+   "components": 1
+  },
+  "triFlags": {
+   "offset": 960,
+   "length": 48,
+   "dtype": "u32",
+   "components": 1
+  }
+ },
+ "flatShaded": true,
+ "materials": [
+  {
+   "name": "furnace",
+   "model": "v1",
+   "baseColorFactor": [
+    0.7,
+    0.5,
+    0.3,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0.5,
+     0.5,
+     0.5
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.7,
+     0.5,
+     0.3
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  }
+ ],
+ "textures": [],
+ "lights": [],
+ "lightMode": "A",
+ "camera": {
+  "matrix": [
+   0.7327934916262993,
+   0,
+   -0.6804510993672779,
+   0,
+   -0.20388063809552084,
+   0.9540568321136551,
+   -0.2195637641028686,
+   0,
+   0.649189020270599,
+   0.2996257016633534,
+   0.6991266372144912,
+   0,
+   0.3,
+   0.1,
+   0.4,
+   1
+  ],
+  "yfov": 1.3089969389957472,
+  "znear": 0.0001
+ },
+ "env": null,
+ "render": {
+  "width": 256,
+  "height": 256,
+  "maxBounces": 7
+ },
+ "expected": {
+  "kind": "constant",
+  "value": [
+   1.5994106549999998,
+   0.998046875,
+   0.714271655
+  ],
+  "formula": "L_e (1 - rho^(b+2)) / (1 - rho)",
+  "rho": [
+   0.7,
+   0.5,
+   0.3
+  ],
+  "Le": [
+   0.5,
+   0.5,
+   0.5
+  ],
+  "maxBounces": 7,
+  "statistic": "every pixel (and the image mean)"
+ }
+}

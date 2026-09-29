@@ -10,6 +10,7 @@ This directory holds `compare.py` and `stats.py`. They implement plan §7.3,
 | `report/` | `plots.py` (matplotlib figures), `template.html` and `render_index()` (the static HTML report). |
 | `tests/` | pytest suite on synthetic data with known truth. |
 | `imageio_util.py` | PFM/EXR IO. Arrays are float64 HxWxC with row 0 at the top. Not owned by M2. |
+| `analytic_check.py` | (M3a) A replicate set (ours or Cycles) vs a package's analytic `expected`: C0f constant, or a supersampled f64 image for b = 0 point/rect/disk light on a plane. |
 
 Run the tests:
 
@@ -17,7 +18,7 @@ Run the tests:
 validation/.venv/bin/python -m pytest validation/tools/tests -q
 ```
 
-The suite has 46 tests and runs in about 6 s.
+The suite has 47 tests and runs in about 6 s.
 
 ## CLI
 
@@ -88,6 +89,9 @@ The sums are divided by the pixel counts on load. Per-run values stay separate, 
   "tier": "tight",              // or "heavy-tail"; copied to report.json
   "min_replicates": 16,
   "checks": {"chi2_red": true},  // set false to make a check informational (recorded in notes.non_gating_checks)
+  "num_eps": 1e-4,              // numerical-equivalence floor (default 0 = off): tiles with SE_Δ ≤ num_eps·den leave the
+                                // Δ = 0 rejection family and must MATCH |Δ| ≤ 2·num_eps·den + z_Šidák·SE_Δ
+                                // (check numeric_tiles); recorded in notes.numeric_floor (docs/decisions/cycles-deviations.md D2)
   "curve": {"slope_range": [-1.1, -0.9], "gate": false},
   "calibration": {"plants": [{"name": "light x1.0075", "kind": "scale", "factor": 1.0075},
                              {"name": "32² +3%", "kind": "region", "factor": 1.03, "size": 32, "x0": 64, "y0": 32}]}

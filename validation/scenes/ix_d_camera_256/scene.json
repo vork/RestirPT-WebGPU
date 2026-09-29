@@ -1,0 +1,456 @@
+{
+ "format": "restir-scene-package",
+ "version": 1,
+ "name": "ix_d_camera_256",
+ "source": {
+  "uri": "validation/scenes/make-m3a.ts (ix-d moving camera (static rect light); frames 0,8,16,24,32,40,48 of 0..48 @ 24 fps resolved with src/core/scene/animation.ts)"
+ },
+ "buffers": {
+  "positions": {
+   "offset": 0,
+   "length": 816,
+   "dtype": "f32",
+   "components": 3
+  },
+  "normals": {
+   "offset": 816,
+   "length": 816,
+   "dtype": "f32",
+   "components": 3
+  },
+  "uv0": {
+   "offset": 1632,
+   "length": 544,
+   "dtype": "f32",
+   "components": 2
+  },
+  "indices": {
+   "offset": 2176,
+   "length": 408,
+   "dtype": "u32",
+   "components": 3
+  },
+  "triMaterial": {
+   "offset": 2584,
+   "length": 136,
+   "dtype": "u32",
+   "components": 1
+  },
+  "triFlags": {
+   "offset": 2720,
+   "length": 136,
+   "dtype": "u32",
+   "components": 1
+  }
+ },
+ "flatShaded": true,
+ "materials": [
+  {
+   "name": "white",
+   "model": "v1",
+   "baseColorFactor": [
+    0.725,
+    0.71,
+    0.68,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.725,
+     0.71,
+     0.68
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  },
+  {
+   "name": "red",
+   "model": "v1",
+   "baseColorFactor": [
+    0.63,
+    0.065,
+    0.05,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.63,
+     0.065,
+     0.05
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  },
+  {
+   "name": "green",
+   "model": "v1",
+   "baseColorFactor": [
+    0.14,
+    0.45,
+    0.091,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.14,
+     0.45,
+     0.091
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  }
+ ],
+ "textures": [],
+ "lights": [
+  {
+   "id": 0,
+   "name": "rect0",
+   "type": "rect",
+   "color": [
+    1,
+    1,
+    1
+   ],
+   "power": 4,
+   "exposure": 0,
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0.5540000200271606,
+    0,
+    1
+   ],
+   "sizeX": 0.13,
+   "sizeY": 0.105,
+   "spread": 3.141592653589793,
+   "visibleToCamera": false
+  }
+ ],
+ "lightMode": "A",
+ "camera": {
+  "matrix": [
+   1,
+   0,
+   0,
+   0,
+   0,
+   1,
+   0,
+   0,
+   0,
+   0,
+   1,
+   0,
+   0,
+   0.273,
+   1.0775000000000001,
+   1
+  ],
+  "yfov": 0.6859143960337715,
+  "znear": 0.0001
+ },
+ "env": null,
+ "render": {
+  "width": 256,
+  "height": 256,
+  "maxBounces": 3
+ },
+ "frames": [
+  {
+   "frame": 0,
+   "camera": {
+    "matrix": [
+     1,
+     0,
+     0,
+     0,
+     0,
+     0.999809287309635,
+     -0.019529183531313485,
+     0,
+     0,
+     0.019529183531313485,
+     0.999809287309635,
+     0,
+     0,
+     0.273,
+     1.0775,
+     1
+    ],
+    "yfov": 0.6859143960337715
+   }
+  },
+  {
+   "frame": 8,
+   "camera": {
+    "matrix": [
+     0.9966172156516905,
+     0.002395262077956679,
+     -0.08214857385402283,
+     0,
+     -0.007397205460038564,
+     0.9981323625618856,
+     -0.0606388337454672,
+     0,
+     0.08184990420308333,
+     0.061041375526820645,
+     0.9947736142739914,
+     0,
+     0.075,
+     0.30925,
+     0.9618749999999999,
+     1
+    ],
+    "yfov": 0.6859143960337715
+   }
+  },
+  {
+   "frame": 16,
+   "camera": {
+    "matrix": [
+     0.9864975505287468,
+     0.0013681401406420574,
+     -0.16377029948479147,
+     0,
+     -0.018129784052909534,
+     0.9947315990969041,
+     -0.1008977536336212,
+     0,
+     0.16276944962423875,
+     0.10250450697735987,
+     0.9813250900279432,
+     0,
+     0.15,
+     0.3455,
+     0.8462500000000001,
+     1
+    ],
+    "yfov": 0.6859143960337715
+   }
+  },
+  {
+   "frame": 24,
+   "camera": {
+    "matrix": [
+     0.9966124543269904,
+     0.006984208669935375,
+     -0.0819441072291794,
+     0,
+     -0.01178698331613597,
+     0.9982310468183339,
+     -0.05827387229521111,
+     0,
+     0.08139215505586263,
+     0.05904234071603395,
+     0.9949318163060895,
+     0,
+     0.08,
+     0.30666666666666664,
+     0.7666666666666667,
+     1
+    ],
+    "yfov": 0.6859143960337715
+   }
+  },
+  {
+   "frame": 32,
+   "camera": {
+    "matrix": [
+     0.9938977385769137,
+     0.0030992208609377874,
+     0.11026187048001718,
+     0,
+     -0.007680572532538522,
+     0.9991234876232862,
+     0.04114930479429215,
+     0,
+     -0.11003769380203027,
+     -0.041745075272854267,
+     0.9930503786984799,
+     0,
+     -0.08666666666666667,
+     0.2177777777777778,
+     0.711111111111111,
+     1
+    ],
+    "yfov": 0.6859143960337715
+   }
+  },
+  {
+   "frame": 40,
+   "camera": {
+    "matrix": [
+     0.998101408931965,
+     0.002652940562746528,
+     0.06153486324350673,
+     0,
+     -0.003458689604709246,
+     0.9999096268057627,
+     0.01299136972680677,
+     0,
+     -0.06149483680964458,
+     -0.013179534420109437,
+     0.9980203830174132,
+     0,
+     -0.04444444444444441,
+     0.24444444444444446,
+     0.8111111111111111,
+     1
+    ],
+    "yfov": 0.6859143960337715
+   }
+  },
+  {
+   "frame": 48,
+   "camera": {
+    "matrix": [
+     0.9988681377244376,
+     0,
+     -0.047565149415449405,
+     0,
+     -0.002259888448331686,
+     0.9988706941626052,
+     -0.0474576574149654,
+     0,
+     0.04751143381455799,
+     0.047511433814557975,
+     0.9977401101057177,
+     0,
+     0.05,
+     0.3,
+     0.95,
+     1
+    ],
+    "yfov": 0.6859143960337715
+   }
+  }
+ ],
+ "animation": {
+  "fps": 24,
+  "frames": [
+   0,
+   8,
+   16,
+   24,
+   32,
+   40,
+   48
+  ],
+  "tracks": [
+   "camera"
+  ]
+ }
+}

@@ -1,0 +1,404 @@
+{
+ "format": "restir-scene-package",
+ "version": 1,
+ "name": "c0g_bsdf_furnace_512x256",
+ "source": {
+  "uri": "validation/scenes/make-m3a.ts (C0g BSDF furnace: V1 GGX r 0.05/0.2/0.5/1.0 + Lambert 0.8 inside an L = 1 emissive sphere)"
+ },
+ "buffers": {
+  "positions": {
+   "offset": 0,
+   "length": 967680,
+   "dtype": "f32",
+   "components": 3
+  },
+  "normals": {
+   "offset": 967680,
+   "length": 967680,
+   "dtype": "f32",
+   "components": 3
+  },
+  "uv0": {
+   "offset": 1935360,
+   "length": 645120,
+   "dtype": "f32",
+   "components": 2
+  },
+  "indices": {
+   "offset": 2580480,
+   "length": 322560,
+   "dtype": "u32",
+   "components": 3
+  },
+  "triMaterial": {
+   "offset": 2903040,
+   "length": 107520,
+   "dtype": "u32",
+   "components": 1
+  },
+  "triFlags": {
+   "offset": 3010560,
+   "length": 107520,
+   "dtype": "u32",
+   "components": 1
+  }
+ },
+ "flatShaded": true,
+ "materials": [
+  {
+   "name": "enclosure",
+   "model": "v1",
+   "baseColorFactor": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    1,
+    1,
+    1
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0,
+     0,
+     0
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  },
+  {
+   "name": "ggx_r0.05",
+   "model": "v1",
+   "baseColorFactor": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0,
+     0,
+     0
+    ],
+    "glossy": [
+     1,
+     1,
+     1
+    ],
+    "roughness": 0.05,
+    "mix": 1
+   }
+  },
+  {
+   "name": "ggx_r0.2",
+   "model": "v1",
+   "baseColorFactor": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0,
+     0,
+     0
+    ],
+    "glossy": [
+     1,
+     1,
+     1
+    ],
+    "roughness": 0.2,
+    "mix": 1
+   }
+  },
+  {
+   "name": "ggx_r0.5",
+   "model": "v1",
+   "baseColorFactor": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0,
+     0,
+     0
+    ],
+    "glossy": [
+     1,
+     1,
+     1
+    ],
+    "roughness": 0.5,
+    "mix": 1
+   }
+  },
+  {
+   "name": "ggx_r1",
+   "model": "v1",
+   "baseColorFactor": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0,
+     0,
+     0
+    ],
+    "glossy": [
+     1,
+     1,
+     1
+    ],
+    "roughness": 1,
+    "mix": 1
+   }
+  },
+  {
+   "name": "lambert",
+   "model": "v1",
+   "baseColorFactor": [
+    0.8,
+    0.8,
+    0.8,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.8,
+     0.8,
+     0.8
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  }
+ ],
+ "textures": [],
+ "lights": [],
+ "lightMode": "A",
+ "camera": {
+  "matrix": [
+   1,
+   0,
+   0,
+   0,
+   0,
+   1,
+   0,
+   0,
+   0,
+   0,
+   1,
+   0,
+   0,
+   0,
+   5.5,
+   1
+  ],
+  "yfov": 0.4886921905584123,
+  "znear": 0.0001
+ },
+ "env": null,
+ "render": {
+  "width": 512,
+  "height": 256,
+  "maxBounces": 0
+ },
+ "expected": {
+  "kind": "bsdf-furnace",
+  "formula": "pixel = directional albedo of the sphere BSDF at the view angle (minus mutual occlusion); background = 1 exactly",
+  "enclosure_Le": 1,
+  "roughness": [
+   0.05,
+   0.2,
+   0.5,
+   1
+  ],
+  "lambert": 0.8
+ }
+}

@@ -163,7 +163,12 @@ def _sampling_rows(scene: bpy.types.Scene, cfg: dict[str, Any]) -> list[Row]:
         ("min_transparent_bounces", 0),
         ("pixel_filter_type", "BOX"),  # Blender forces width 1.0 for BOX
         ("filter_width", 1.0),
-        ("sampling_pattern", "TABULATED_SOBOL"),  # explicit: new scenes default to AUTOMATIC (C7)
+        # SOBOL_BURLEY (on-the-fly Owen-scrambled Sobol, per-pixel/per-seed hash): an unbiased randomized QMC. NOT
+        # TABULATED_SOBOL: its values come from precomputed tables shared by all pixels and seeds (pixels/seeds only
+        # select and shuffle table entries), so its quadrature error does not average out over seeds — measured
+        # ±3.6% radial streaks vs an f64 quadrature (docs/decisions/cycles-deviations.md D1). A debug
+        # enum item: apply_settings enables the Cycles debug preferences first (never saved: factory startup).
+        ("sampling_pattern", "SOBOL_BURLEY"),
         ("scrambling_distance", 1.0),
         ("auto_scrambling_distance", False),
         ("seed", int(cfg["seed"])),
@@ -391,6 +396,9 @@ def apply_settings(scene: bpy.types.Scene, cfg: dict[str, Any]) -> dict[str, Any
     """Apply plan §7.5 to `scene` and return the read-back manifest. Raises SettingsError."""
     cfg = resolve_cfg(cfg)
     manifest: dict[str, Any] = {}
+    prefs = bpy.context.preferences  # SOBOL_BURLEY is listed only with the Cycles debug UI (properties.py enum_sampling_pattern)
+    prefs.experimental.use_cycles_debug = True
+    prefs.view.show_developer_ui = True
     if cfg["device"] == "GPU":
         manifest.update(enable_metal())
     rows = _sampling_rows(scene, cfg) + _render_rows(scene, cfg) + _output_rows(scene) + _world_rows(scene, cfg)

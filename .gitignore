@@ -10,3 +10,4 @@ docs/papers/*.pdf
 .DS_Store
 test-results/
 .vite/
+__pycache__/

@@ -20,7 +20,7 @@ import { LightsGpu, LUT_RECORDS_BASE, type LightMode, type LightsUpdate } from '
 import { lutDefines } from './luts/lut-layout.ts';
 import { recentrePositions, type SceneGpu } from './scene-gpu.ts';
 
-export const PT_PARAMS_SIZE = 32;
+export const PT_PARAMS_SIZE = 48;
 export const PT_COUNTER_BYTES = 16;
 export const PT_COUNTERS = { nonFinite: 0, bvhOverflow: 1, bvhItercap: 2, negative: 3 } as const;
 export const PT_FLAGS = { rr: 1, neeOnly: 2, bsdfOnly: 4, accumulate: 8, advanced: 16 } as const;
@@ -39,7 +39,13 @@ export interface PtSettings {
   /** RR only at vertices B > rrMinBounces (default 3). */
   rrMinBounces?: number;
   technique?: PtTechnique;
+  /** Gate-1 planted biases (plan §7.3; validation only). Defaults are the identity. */
+  plant?: PtPlant;
 }
+
+/** Planted biases for the our-PT-vs-Cycles calibration: every emitter ×emitScale; drop (terminate, no compensation)
+ *  the path with probability dropProb at scattering vertex dropBounce. */
+export interface PtPlant { emitScale?: number; dropProb?: number; dropBounce?: number }
 
 export interface PtKernelOptions extends Partial<PtSettings> {
   lightMode?: LightMode;
@@ -97,7 +103,13 @@ async function compilePt(device: GPUDevice, scene: SceneGpu, layouts: GPUBindGro
 }
 
 function packParams(d: { sampleBase: number; sampleCount: number; rowBase: number; rowEnd: number }, s: PtSettings, extraFlags = 0): Uint32Array {
-  return new Uint32Array([d.sampleBase >>> 0, d.sampleCount, d.rowBase, d.rowEnd, s.maxBounces, ptFlags(s) | extraFlags, s.rrMinBounces ?? 3, 0]);
+  const u = new Uint32Array(PT_PARAMS_SIZE / 4);
+  u.set([d.sampleBase >>> 0, d.sampleCount, d.rowBase, d.rowEnd, s.maxBounces, ptFlags(s) | extraFlags, s.rrMinBounces ?? 3, 0]);
+  const f = new Float32Array(u.buffer);
+  f[8] = s.plant?.emitScale ?? 1;
+  f[9] = s.plant?.dropProb ?? 0;
+  u[10] = s.plant?.dropBounce ?? 0;
+  return u;
 }
 
 /** Validation batches of the reference PT (BatchAccumulator SampleEncoder). */
@@ -121,7 +133,7 @@ export class PtKernel {
     private readonly layouts: GPUBindGroupLayout[],
     opts: PtKernelOptions,
   ) {
-    this.settings = { maxBounces: opts.maxBounces ?? 3, rr: opts.rr ?? false, rrMinBounces: opts.rrMinBounces ?? 3, technique: opts.technique ?? 'mis' };
+    this.settings = { maxBounces: opts.maxBounces ?? 3, rr: opts.rr ?? false, rrMinBounces: opts.rrMinBounces ?? 3, technique: opts.technique ?? 'mis', plant: opts.plant };
     this.frame = new FrameUniformBuffer(device);
     this.params = device.createBuffer({ label: 'pt-params', size: PT_PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.lights = new LightsGpu(device, scene.scene, scene.origin, recentrePositions(scene.scene.geometry.positions, scene.origin), { lightMode: opts.lightMode ?? 'A', label: 'pt-lights' });

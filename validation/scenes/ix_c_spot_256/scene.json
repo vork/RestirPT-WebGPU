@@ -1,0 +1,469 @@
+{
+ "format": "restir-scene-package",
+ "version": 1,
+ "name": "ix_c_spot_256",
+ "source": {
+  "uri": "validation/scenes/make-m3a.ts (ix-c rotating (sweeping) spot light; frames 0,8,16,24,32,40,48 of 0..48 @ 24 fps resolved with src/core/scene/animation.ts)"
+ },
+ "buffers": {
+  "positions": {
+   "offset": 0,
+   "length": 816,
+   "dtype": "f32",
+   "components": 3
+  },
+  "normals": {
+   "offset": 816,
+   "length": 816,
+   "dtype": "f32",
+   "components": 3
+  },
+  "uv0": {
+   "offset": 1632,
+   "length": 544,
+   "dtype": "f32",
+   "components": 2
+  },
+  "indices": {
+   "offset": 2176,
+   "length": 408,
+   "dtype": "u32",
+   "components": 3
+  },
+  "triMaterial": {
+   "offset": 2584,
+   "length": 136,
+   "dtype": "u32",
+   "components": 1
+  },
+  "triFlags": {
+   "offset": 2720,
+   "length": 136,
+   "dtype": "u32",
+   "components": 1
+  }
+ },
+ "flatShaded": true,
+ "materials": [
+  {
+   "name": "white",
+   "model": "v1",
+   "baseColorFactor": [
+    0.725,
+    0.71,
+    0.68,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.725,
+     0.71,
+     0.68
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  },
+  {
+   "name": "red",
+   "model": "v1",
+   "baseColorFactor": [
+    0.63,
+    0.065,
+    0.05,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.63,
+     0.065,
+     0.05
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  },
+  {
+   "name": "green",
+   "model": "v1",
+   "baseColorFactor": [
+    0.14,
+    0.45,
+    0.091,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.14,
+     0.45,
+     0.091
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  }
+ ],
+ "textures": [],
+ "lights": [
+  {
+   "id": 0,
+   "name": "spot0",
+   "type": "spot",
+   "color": [
+    1,
+    0.95,
+    0.9
+   ],
+   "power": 6,
+   "exposure": 0,
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0.6246950626373291,
+    -0.7808688282966614,
+    0,
+    0,
+    0.7808688282966614,
+    0.6246950626373291,
+    0,
+    0,
+    0.5,
+    0.20000000298023224,
+    1
+   ],
+   "spotSize": 0.7853981633974483,
+   "spotBlend": 0.2,
+   "visibleToCamera": false
+  }
+ ],
+ "lightMode": "A",
+ "camera": {
+  "matrix": [
+   1,
+   0,
+   0,
+   0,
+   0,
+   1,
+   0,
+   0,
+   0,
+   0,
+   1,
+   0,
+   0,
+   0.273,
+   1.0775000000000001,
+   1
+  ],
+  "yfov": 0.6859143960337715,
+  "znear": 0.0001
+ },
+ "env": null,
+ "render": {
+  "width": 256,
+  "height": 256,
+  "maxBounces": 3
+ },
+ "frames": [
+  {
+   "frame": 0,
+   "lights": {
+    "0": {
+     "matrix": [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0.6246950626373291,
+      -0.7808688282966614,
+      0,
+      0,
+      0.7808688282966614,
+      0.6246950626373291,
+      0,
+      0,
+      0.5,
+      0.20000000298023224,
+      1
+     ],
+     "power": 6
+    }
+   }
+  },
+  {
+   "frame": 8,
+   "lights": {
+    "0": {
+     "matrix": [
+      0.7363203763961792,
+      -5.551115123125783e-17,
+      -0.6766330599784851,
+      0,
+      -0.5283616781234741,
+      0.6246950626373291,
+      -0.5749695897102356,
+      0,
+      0.4226893484592438,
+      0.7808688282966614,
+      0.4599756896495819,
+      0,
+      0,
+      0.5,
+      0.20000000298023224,
+      1
+     ],
+     "power": 6
+    }
+   }
+  },
+  {
+   "frame": 16,
+   "lights": {
+    "0": {
+     "matrix": [
+      0.7363203763961792,
+      0,
+      -0.6766330599784851,
+      0,
+      -0.5283616781234741,
+      0.6246950626373291,
+      -0.5749695897102356,
+      0,
+      0.4226893484592438,
+      0.7808688282966614,
+      0.4599756896495819,
+      0,
+      0,
+      0.5,
+      0.20000000298023224,
+      1
+     ],
+     "power": 6
+    }
+   }
+  },
+  {
+   "frame": 24,
+   "lights": {
+    "0": {
+     "matrix": [
+      1,
+      0,
+      -1.068705969413283e-16,
+      0,
+      -8.345191604242511e-17,
+      0.6246950626373291,
+      -0.7808688282966614,
+      0,
+      6.676152886347315e-17,
+      0.7808688282966614,
+      0.6246950626373291,
+      0,
+      0,
+      0.5,
+      0.20000000298023224,
+      1
+     ],
+     "power": 6
+    }
+   }
+  },
+  {
+   "frame": 32,
+   "lights": {
+    "0": {
+     "matrix": [
+      0.7363203763961792,
+      5.551115123125783e-17,
+      0.6766330599784851,
+      0,
+      0.5283616781234741,
+      0.6246950626373291,
+      -0.5749695897102356,
+      0,
+      -0.4226893484592438,
+      0.7808688282966614,
+      0.4599756896495819,
+      0,
+      0,
+      0.5,
+      0.20000000298023224,
+      1
+     ],
+     "power": 6
+    }
+   }
+  },
+  {
+   "frame": 40,
+   "lights": {
+    "0": {
+     "matrix": [
+      0.7363203763961792,
+      5.551115123125783e-17,
+      0.6766330599784851,
+      0,
+      0.5283616781234741,
+      0.6246950626373291,
+      -0.5749695897102356,
+      0,
+      -0.4226893484592438,
+      0.7808688282966614,
+      0.4599756896495819,
+      0,
+      0,
+      0.5,
+      0.20000000298023224,
+      1
+     ],
+     "power": 6
+    }
+   }
+  },
+  {
+   "frame": 48,
+   "lights": {
+    "0": {
+     "matrix": [
+      1,
+      0,
+      2.137411938826566e-16,
+      0,
+      1.6690383208485022e-16,
+      0.6246950626373291,
+      -0.7808688282966614,
+      0,
+      -1.335230577269463e-16,
+      0.7808688282966614,
+      0.6246950626373291,
+      0,
+      0,
+      0.5,
+      0.20000000298023224,
+      1
+     ],
+     "power": 6
+    }
+   }
+  }
+ ],
+ "animation": {
+  "fps": 24,
+  "frames": [
+   0,
+   8,
+   16,
+   24,
+   32,
+   40,
+   48
+  ],
+  "tracks": [
+   "light:0"
+  ]
+ }
+}

@@ -1,0 +1,238 @@
+{
+ "format": "restir-scene-package",
+ "version": 1,
+ "name": "c0l_sun_256",
+ "source": {
+  "uri": "validation/scenes/make-m3a.ts (C0l sun, elevation 40 deg, over a floor with a shadow-casting box)"
+ },
+ "buffers": {
+  "positions": {
+   "offset": 0,
+   "length": 288,
+   "dtype": "f32",
+   "components": 3
+  },
+  "normals": {
+   "offset": 288,
+   "length": 288,
+   "dtype": "f32",
+   "components": 3
+  },
+  "uv0": {
+   "offset": 576,
+   "length": 192,
+   "dtype": "f32",
+   "components": 2
+  },
+  "indices": {
+   "offset": 768,
+   "length": 144,
+   "dtype": "u32",
+   "components": 3
+  },
+  "triMaterial": {
+   "offset": 912,
+   "length": 48,
+   "dtype": "u32",
+   "components": 1
+  },
+  "triFlags": {
+   "offset": 960,
+   "length": 48,
+   "dtype": "u32",
+   "components": 1
+  }
+ },
+ "flatShaded": true,
+ "materials": [
+  {
+   "name": "floor",
+   "model": "v1",
+   "baseColorFactor": [
+    0.6,
+    0.5,
+    0.4,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.6,
+     0.5,
+     0.4
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  },
+  {
+   "name": "box",
+   "model": "v1",
+   "baseColorFactor": [
+    0.3,
+    0.4,
+    0.6,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.3,
+     0.4,
+     0.6
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  }
+ ],
+ "textures": [],
+ "lights": [
+  {
+   "id": 0,
+   "name": "sun0",
+   "type": "sun",
+   "color": [
+    1,
+    0.95,
+    0.9
+   ],
+   "power": 3,
+   "exposure": 0,
+   "matrix": [
+    0.5,
+    0,
+    -0.8660253882408142,
+    0,
+    -0.5566704273223877,
+    0.7660444378852844,
+    -0.32139381766319275,
+    0,
+    0.663413941860199,
+    0.6427876353263855,
+    0.3830222189426422,
+    0,
+    0,
+    5,
+    0,
+    1
+   ],
+   "visibleToCamera": false
+  }
+ ],
+ "lightMode": "A",
+ "camera": {
+  "matrix": [
+   1,
+   0,
+   0,
+   0,
+   0,
+   0.7752349855172893,
+   -0.6316729511622359,
+   0,
+   0,
+   0.6316729511622359,
+   0.7752349855172893,
+   0,
+   0,
+   2.2,
+   2.4,
+   1
+  ],
+  "yfov": 0.8726646259971648,
+  "znear": 0.0001
+ },
+ "env": null,
+ "render": {
+  "width": 256,
+  "height": 256,
+  "maxBounces": 0
+ },
+ "expected": {
+  "kind": "direct-plane",
+  "light": "sun",
+  "formula": "unshadowed floor: L = rho/pi * color*E * sin(elevation)",
+  "rho": [
+   0.6,
+   0.5,
+   0.4
+  ],
+  "irradiance": 3,
+  "color": [
+   1,
+   0.95,
+   0.9
+  ],
+  "elevation_deg": 40,
+  "value_unshadowed": [
+   0.36829017158341165,
+   0.29156305250353426,
+   0.22097410295004705
+  ]
+ }
+}

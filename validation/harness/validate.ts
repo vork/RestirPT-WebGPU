@@ -7,15 +7,19 @@
 //     A/A + synthetic plants on C0b / (i) / spot, rendered Cycles plants (i) power ×1.0075 and spot blend 0.16 on
 //     disjoint seeds), emission-kernel marker checks (C0a ×4, C0b, C0p 3 aspects × 12 frames) and our A/A (C0a, C0b).
 //     Writes validation/out/m2-gate-<time>/summary.json.
-//   npm run validate -- --milestone M0|M1|M2
+// M3a: validation/harness/gate-m3a.ts — Gate 0 (cpu + Chrome GPU tests T1/T8/T9/T10/T13/T13b/U11, split dispatch),
+//     Gate 1 M3a items (our-PT plants vs Cycles, our A/A) and Gate 2 Stage A on the full M3a scene list with cached
+//     Cycles references. `--only pkg,pkg` restricts Gate 2 to a scene subset (debugging; skips Gates 0/1).
+//   npm run validate -- --milestone M0|M1|M2|M3a [--only ...]
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { milestoneM3a } from './gate-m3a.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const { values: args } = parseArgs({ options: { milestone: { type: 'string', default: 'M0' } } });
+const { values: args } = parseArgs({ options: { milestone: { type: 'string', default: 'M0' }, only: { type: 'string' } } });
 
 interface Step { name: string; ok: boolean; detail?: string }
 const steps: Step[] = [];
@@ -199,7 +203,10 @@ function m2References(): Record<string, string> {
 
 function writeTest(dir: string, name: string, extra: Record<string, unknown> = {}): string {
   const p = path.join(dir, `test-${name}.json`);
-  writeFileSync(path.join(ROOT, p), JSON.stringify({ name, stage: 'A', channels: ['Y', 'R', 'G', 'B'], n_units: M2_N_UNITS, tier: 'tight', ...extra }, null, 1));
+  // num_eps: the f32 numerical floor (docs/decisions/cycles-deviations.md D2). Since the M3a switch to SOBOL_BURLEY the
+  // b = 0 spot tiles are at f32 resolution (SE ~1e-7) and χ²_red over them false-alarms in ~1% of A/A splits.
+  writeFileSync(path.join(ROOT, p), JSON.stringify({ name, stage: 'A', channels: ['Y', 'R', 'G', 'B'], n_units: M2_N_UNITS, tier: 'tight',
+    num_eps: 1e-4, num_eps_note: 'f32 arithmetic floor (cycles-deviations.md D2)', ...extra }, null, 1));
   return p;
 }
 
@@ -239,7 +246,7 @@ function m2Calibrate(dir: string, label: string, ref: string, planted?: string):
       },
     };
     const fpr = aa.per_tile as Record<string, { rate: number; n: number }>;
-    detail = `A/A ${aa.ok ? 'ok' : 'FAIL'}: tile FPR ${fpr['0.05'].n ? `${(fpr['0.05'].rate * 100).toFixed(2)}% @5%, ${(fpr['0.01'].rate * 100).toFixed(2)}% @1%` : 'n/a (every tile zero-variance: exact 1e-6 rule)'}, gate pass ${aa.gate_pass_rate * 20}/20`
+    detail = `A/A ${aa.ok ? 'ok' : 'FAIL'}: tile FPR ${fpr['0.05'].n ? `${(fpr['0.05'].rate * 100).toFixed(2)}% @5%, ${(fpr['0.01'].rate * 100).toFixed(2)}% @1%` : 'n/a (no tile left in the Δ = 0 family: zero-variance 1e-6 rule or num_eps floor)'}, gate pass ${aa.gate_pass_rate * 20}/20`
       + (rp ? `; ${rp.name}: detected ${rp.gate_fail_count}/10 (TOST ${rp.equivalence_fail_count}/10), control ${rp.control_pass_count}/10, Δ ${(rp.channels.Y.planted_global_rel_median * 100).toFixed(3)}%, MDB ${(rp.channels.Y.mdb_global_median * 100).toExponential(2)}%` : '');
   }
   m2Record(`Gate 1-lite calibrate ${label}${planted ? ' + rendered plant' : ''}`, r.code === 0, r.seconds, data, detail);
@@ -348,7 +355,10 @@ function milestoneM2(): void {
   console.log(`\nsummary: ${dir}/summary.json (${summary.total_s} s)`);
 }
 
-const gates: Record<string, () => void> = { M0: milestoneM0, M1: milestoneM1, M2: milestoneM2 };
+const gates: Record<string, () => void> = {
+  M0: milestoneM0, M1: milestoneM1, M2: milestoneM2,
+  M3A: () => milestoneM3a(record, args.only ? new Set(args.only.split(',')) : undefined),
+};
 const gate = gates[args.milestone!.toUpperCase()];
 if (!gate) {
   console.error(`unknown milestone ${args.milestone}; known: ${Object.keys(gates).join(', ')}`);

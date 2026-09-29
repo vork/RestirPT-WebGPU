@@ -208,7 +208,7 @@ def build_spec(test: dict) -> tuple[S.GateSpec, dict]:
               tile=test.get("tile"), alpha_tost=test.get("alpha"), n_units=test.get("n_units"),
               alpha_suite=test.get("alpha_suite"), min_replicates=test.get("min_replicates"),
               dark_frac=test.get("dark_frac"), zero_tol=test.get("zero_tol"), power=test.get("power"),
-              fdr_q=test.get("fdr_q"))
+              fdr_q=test.get("fdr_q"), num_eps=test.get("num_eps"))
     if test.get("channels"):
         ov["channels"] = tuple(test["channels"])
     if test.get("checks"):
@@ -225,6 +225,10 @@ def build_spec(test: dict) -> tuple[S.GateSpec, dict]:
             default_tile=dflt["tile"], used_tile=spec.tile, reason=test.get("aggregate_note"))
     if spec.alpha_tost > 0.01:
         notes["alpha_loosened"] = spec.alpha_tost
+    if spec.num_eps > 0:
+        notes["numeric_floor"] = dict(num_eps=spec.num_eps, rule="tiles with SE_delta <= num_eps*denominator leave the "
+                                      "Δ = 0 rejection family and must match |Δ| <= 2*num_eps*denominator + z_sidak*SE_delta; TOST unchanged",
+                                      reason=test.get("num_eps_note"))
     disabled = [k for k, v in spec.gating.items() if not v]
     if disabled:
         notes["non_gating_checks"] = disabled

@@ -40,6 +40,11 @@ struct PtParams {
   flags: u32,          // PT_*
   rrMinBounces: u32,   // RR only at vertices B > rrMinBounces
   member: u32,         // ensemble member id (0)
+  // Gate-1 planted biases (plan §7.3 calibration; validation only, identity by default):
+  emitScale: f32,      // every emitter ×emitScale (≡ L×emitScale by linearity; 1 = off) — "light ×1.01"
+  dropProb: f32,       // terminate the path with probability dropProb at vertex dropBounce, NO compensation (0 = off)
+  dropBounce: u32,     // vertex index B of the drop plant ("drop 1% of paths at bounce 2")
+  _pad: u32,
 }
 
 const PT_RR: u32 = 1u;           // Russian roulette (off by default; interactive option)
@@ -47,6 +52,8 @@ const PT_NEE_ONLY: u32 = 2u;     // T9d estimator: NEE with ω1 = 1, BSDF-hit em
 const PT_BSDF_ONLY: u32 = 4u;    // T9d estimator: no NEE, BSDF-hit emission with ω2 = 1
 const PT_ACCUMULATE: u32 = 8u;   // interactive: progressive mean on
 const PT_ADVANCED: u32 = 16u;    // interactive: the frame advanced (add this frame's sample)
+
+const SLOT_DBG: u32 = 13u;       // path slot of the drop plant (unused by the estimator itself)
 
 const PT_CNT_NONFINITE: u32 = 0u;
 const PT_CNT_BVH_OVERFLOW: u32 = 1u;
@@ -106,6 +113,8 @@ fn pt_trace(o: vec3f, d: vec3f, seed: u32) -> PtResult {
         }
       }
     }
+    // ---- planted bias (Gate 1 calibration only): drop the continuation without compensation -------------------------
+    if (pt.dropProb > 0.0 && B == pt.dropBounce && path_u01(seed, B, SLOT_DBG) < pt.dropProb) { break; }
     // ---- Russian roulette (initial sampling only; after NEE, before the continuation) ------------------------------
     if ((pt.flags & PT_RR) != 0u && B > pt.rrMinBounces) {
       let q = min(sqrt(max(max(beta.x, beta.y), beta.z)), 1.0);
@@ -139,7 +148,7 @@ fn pt_trace(o: vec3f, d: vec3f, seed: u32) -> PtResult {
     prim = h.primId;
     V = -bs.L;
   }
-  return PtResult(L, bvh_stats().w);
+  return PtResult(L * pt.emitScale, bvh_stats().w);
 }
 
 #if !PT_INTERACTIVE

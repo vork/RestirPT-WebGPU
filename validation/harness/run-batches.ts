@@ -5,7 +5,9 @@
 //   npx tsx validation/harness/run-batches.ts --package validation/scenes/c0p_512 --frames 0,1,2 --check
 //   npx tsx validation/harness/run-batches.ts --scene /validation/assets/cornell/cornell.usda --spp 16 --batches 2
 //   npx tsx validation/harness/run-batches.ts --package validation/scenes/cornell_i_512 --kernel pt --spp 256 --batches 16
-//     (M3a reference PT; --max-bounces N overrides the package's render.maxBounces, --rr, --technique mis|nee|bsdf)
+//     (M3a reference PT; --max-bounces N overrides the package's render.maxBounces, --rr, --technique mis|nee|bsdf,
+//      Gate-1 planted biases: --plant-emit-scale 1.01 (every emitter ×s), --plant-drop 0.01@2 (terminate 1% of the
+//      paths at vertex 2, no compensation))
 // If the package directory is missing and --make-c0b is given, an equivalent C0b package (calib_scenes.py make_c0b:
 // 100 m emissive quad at z = −2, L_e = (0.5, 0.25, 0.125)·2, vfov 40°, 512²) is written with exportScenePackage to
 // validation/out/tmp-c0b/ and rendered instead.
@@ -22,7 +24,7 @@ import { decodePFM } from '../../src/core/io/pfm.ts';
 import { exportScenePackage } from '../../src/core/scene/scene-package.ts';
 import type { SceneData } from '../../src/core/scene/types.ts';
 import type { RenderBatchesReport, ValidationKernel } from './batch-run.ts';
-import type { PtTechnique } from '../../src/core/render/pt-kernel.ts';
+import type { PtPlant, PtTechnique } from '../../src/core/render/pt-kernel.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const OUT = path.join(ROOT, 'validation/out');
@@ -47,6 +49,8 @@ const { values: args } = parseArgs({
     'max-bounces': { type: 'string' },
     rr: { type: 'boolean', default: false },
     technique: { type: 'string' },
+    'plant-emit-scale': { type: 'string' },
+    'plant-drop': { type: 'string' },
   },
 });
 
@@ -129,6 +133,16 @@ async function main(): Promise<number> {
   const seed = args.seed !== undefined ? Number(args.seed) >>> 0 : (Math.random() * 2 ** 32) >>> 0;
   const base = args.run ?? `batches-${path.basename(pkgDir ?? args.scene!).replace(/[^\w.-]+/g, '_')}-${stamp()}`;
 
+  let plant: PtPlant | undefined;
+  if (args['plant-emit-scale'] || args['plant-drop']) {
+    plant = {};
+    if (args['plant-emit-scale']) plant.emitScale = Number(args['plant-emit-scale']);
+    if (args['plant-drop']) {
+      const m = /^([\d.eE+-]+)@(\d+)$/.exec(args['plant-drop']);
+      if (!m) { console.error('--plant-drop PROB@BOUNCE, e.g. 0.01@2'); return 2; }
+      plant.dropProb = Number(m[1]); plant.dropBounce = Number(m[2]);
+    }
+  }
   const port = await freePort();
   const vite: ViteDevServer = await createServer({
     root: ROOT, configFile: path.join(ROOT, 'vite.config.ts'), server: { port, strictPort: true, host: '127.0.0.1' }, logLevel: 'warn',
@@ -153,7 +167,7 @@ async function main(): Promise<number> {
         rep = await page.evaluate((o) => window.__harness!.renderBatches(o), {
           run: runId, package: pkgUrl, sceneUrl: args.scene, kernel: args.kernel as ValidationKernel, spp: Number(args.spp), batches: Number(args.batches),
           maxBounces: args['max-bounces'] !== undefined ? Number(args['max-bounces']) : undefined, rr: args.rr,
-          technique: args.technique as PtTechnique | undefined,
+          technique: args.technique as PtTechnique | undefined, plant,
           width: args.width ? Number(args.width) : undefined, height: args.height ? Number(args.height) : undefined, seed, chromeVersion, frame,
         });
       } finally {

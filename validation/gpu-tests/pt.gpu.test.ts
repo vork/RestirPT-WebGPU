@@ -351,3 +351,49 @@ describe('PT: interactive pass (PtFramePass, renderer PT mode)', () => {
     pass.destroy(); color.destroy(); fu.destroy(); gpu.destroy(); destroyEnvResources(env); batch.destroy();
   });
 });
+
+describe('PT: offline split-dispatch equality and Gate-1 plants (plan §7.4 M3a)', () => {
+  const scene = () => quadScene(
+    [groundQuad(3), { p: [[-3, 0, -1], [3, 0, -1], [3, 2, -1], [-3, 2, -1]], mat: 2 }, { p: [[-0.4, 1.2, 0.4], [0.4, 1.2, 0.4], [0.4, 1.2, -0.4], [-0.4, 1.2, -0.4]], mat: 1 }],
+    [lambert(0.6), material({ emissiveFactor: [1, 0.5, 0.25] }), lambert([0.3, 0.6, 0.4])],
+    [light({ id: 1, type: 'rect', power: 5, sizeX: 0.3, sizeY: 0.3, matrix: lightMatrixToward([0, -1, 0], [0.8, 1.5, 0]) }),
+      light({ id: 4, type: 'point', power: 20, matrix: lightMatrixToward([0, -1, 0], [-0.8, 1.5, 0.3]) })]);
+  const Ws = 40, Hs = 36, cams = { camToWorld: [1, 0, 0, 0, 0, 0.8, -0.6, 0, 0, 0.6, 0.8, 0, 0.2, 2.2, 2.5, 1], yfov: 1.0 }; // looks down (0, −0.6, −0.8)
+
+  it('row-band sub-submits are bit-identical to full-frame dispatches (k = 1); adaptive k splits agree to f32 summation', async () => {
+    const one = await ptRig(scene(), Ws, Hs, cams, { maxBounces: 3, seed: 5, budget: { maxSamplesPerDispatch: 1, targetMs: 1e9 } });
+    const full = await runPt(one, 12, 2);
+    const bands = await ptRig(scene(), Ws, Hs, cams, { maxBounces: 3, seed: 5, budget: { targetMs: 1e-6 } }); // k = 1, 8-row bands
+    const split = await runPt(bands, 12, 2);
+    expect(split.submits).toBeGreaterThan(12 * 4);
+    expect(new Uint32Array(split.mean.buffer)).toEqual(new Uint32Array(full.mean.buffer));
+    const adapt = await ptRig(scene(), Ws, Hs, cams, { maxBounces: 3, seed: 5 });
+    await runPt(adapt, 12, 0); // warm the adaptive k up
+    const k = await runPt(adapt, 12, 2);
+    expect(k.submits).toBeLessThan(split.submits);
+    let worst = 0, energy = 0;
+    for (let i = 0; i < full.mean.length; i++) { worst = Math.max(worst, Math.abs(k.mean[i] - full.mean[i]) / Math.max(Math.abs(full.mean[i]), 1e-3)); energy += full.mean[i]; }
+    expect(worst).toBeLessThan(1e-5);
+    expect(energy).toBeGreaterThan(0);
+    expectCounters(full.counters); expectCounters(split.counters); expectCounters(k.counters);
+    one.destroy(); bands.destroy(); adapt.destroy();
+  });
+
+  it('plants: emitScale 1.01 scales every sample exactly; drop 1% at vertex 2 only removes energy (never adds)', async () => {
+    const base = await ptRig(scene(), Ws, Hs, cams, { maxBounces: 3, seed: 5, budget: { maxSamplesPerDispatch: 1, targetMs: 1e9 } });
+    const s = await ptRig(scene(), Ws, Hs, cams, { maxBounces: 3, seed: 5, budget: { maxSamplesPerDispatch: 1, targetMs: 1e9 }, plant: { emitScale: 1.01 } });
+    const d = await ptRig(scene(), Ws, Hs, cams, { maxBounces: 3, seed: 5, budget: { maxSamplesPerDispatch: 1, targetMs: 1e9 }, plant: { dropProb: 0.01, dropBounce: 2 } });
+    const b0 = await runPt(base, 64, 0), b1 = await runPt(s, 64, 0), b2 = await runPt(d, 64, 0);
+    let worst = 0, sum0 = 0, sum2 = 0, less = 0;
+    for (let i = 0; i < b0.mean.length; i++) {
+      worst = Math.max(worst, Math.abs(b1.mean[i] - 1.01 * b0.mean[i]) / Math.max(b0.mean[i], 1e-3));
+      sum0 += b0.mean[i]; sum2 += b2.mean[i];
+      expect(b2.mean[i]).toBeLessThanOrEqual(b0.mean[i] * (1 + 1e-6) + 1e-7);
+      if (b2.mean[i] < b0.mean[i] * (1 - 1e-6)) less++;
+    }
+    expect(worst).toBeLessThan(1e-5);
+    expect(sum2).toBeLessThan(sum0);
+    expect(less).toBeGreaterThan(0);
+    base.destroy(); s.destroy(); d.destroy();
+  });
+});

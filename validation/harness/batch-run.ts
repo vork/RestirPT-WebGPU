@@ -6,7 +6,7 @@ import { encodePFM } from '../../src/core/io/pfm.ts';
 import { sha256Hex } from '../../src/core/io/zlib.ts';
 import { BatchAccumulator, type SubmitBudget } from '../../src/core/render/batch-accumulator.ts';
 import { EMISSION_COUNTERS, EmissionKernel } from '../../src/core/render/emission-kernel.ts';
-import { PT_COUNTERS, PtKernel, type PtTechnique } from '../../src/core/render/pt-kernel.ts';
+import { PT_COUNTERS, PtKernel, type PtPlant, type PtTechnique } from '../../src/core/render/pt-kernel.ts';
 import { createEnvResources, destroyEnvResources, writeEnvParams } from '../../src/core/render/env-gpu.ts';
 import { computeRenderOrigin } from '../../src/core/render/frame-uniforms.ts';
 import { SceneGpu } from '../../src/core/render/scene-gpu.ts';
@@ -47,6 +47,8 @@ export interface RenderBatchesOptions {
   rr?: boolean;
   /** kernel 'pt': estimator (default 'mis'; 'nee'/'bsdf' are the T9d single-technique estimators). */
   technique?: PtTechnique;
+  /** kernel 'pt': Gate-1 planted bias (emitter scale / path drop); recorded in meta.json and the config hash. */
+  plant?: PtPlant;
 }
 
 export interface RenderBatchesReport {
@@ -115,11 +117,11 @@ export async function renderBatches(ctx: GpuContext, o: RenderBatchesOptions): P
   const lightMode = src.source.lightMode === 'B' ? 'B' : 'A';
   if (o.kernel === 'pt' && lightMode !== 'A') errors.push('kernel pt: Mode B is M3b (rendering as Mode A)');
   const kernel = o.kernel === 'pt'
-    ? await PtKernel.create(device, gpu, env, { features, wgslLanguageFeatures, maxBounces, rr: o.rr ?? false, technique: o.technique ?? 'mis', lightMode: 'A' })
+    ? await PtKernel.create(device, gpu, env, { features, wgslLanguageFeatures, maxBounces, rr: o.rr ?? false, technique: o.technique ?? 'mis', lightMode: 'A', plant: o.plant })
     : await EmissionKernel.create(device, gpu, env, { features, wgslLanguageFeatures });
   kernel.setView(view);
   const ptInfo = kernel instanceof PtKernel
-    ? { maxBounces, rr: kernel.settings.rr, technique: kernel.settings.technique, lightMode, lights: kernel.lights.summary() }
+    ? { maxBounces, rr: kernel.settings.rr, technique: kernel.settings.technique, lightMode, lights: kernel.lights.summary(), ...(o.plant ? { plant: o.plant } : {}) }
     : undefined;
   const acc = new BatchAccumulator(device, W, H, o.budget);
   const tSetup = performance.now();
@@ -157,7 +159,7 @@ export async function renderBatches(ctx: GpuContext, o: RenderBatchesOptions): P
   const config = {
     kernel: o.kernel, sppPerBatch: o.spp, width: W, height: H, jitter: 'iid-per-run', filter: 'box-1px',
     scene: src.source.packageSha256 ?? src.source.fileSha256, frame: o.frame ?? null, textureMode: 'validation', intersector: watertight ? 'woop-watertight' : 'moller-trumbore',
-    ...(ptInfo ? { maxBounces: ptInfo.maxBounces, rr: ptInfo.rr, technique: ptInfo.technique, lightMode: 'A', env: 'bsdf-only (sampling_method NONE equivalent)' } : {}),
+    ...(ptInfo ? { maxBounces: ptInfo.maxBounces, rr: ptInfo.rr, technique: ptInfo.technique, lightMode: 'A', env: 'bsdf-only (sampling_method NONE equivalent)', ...(o.plant ? { plant: o.plant } : {}) } : {}),
   };
   const configHash = await sha256Hex(new TextEncoder().encode(stable(config)));
   const info = describeContext(ctx) as { vendor?: string; architecture?: string; description?: string };

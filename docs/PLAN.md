@@ -1042,7 +1042,7 @@ Runs after M3a, in parallel with M3b. Its glass variants follow M3b.
 - `caustics_reflective` and `caustics_refractive` = True; fast GI and guiding off.
 - `max_bounces` = diffuse = glossy = transmission = b; volume = 0; **`transparent_max_bounces` = 1024 always**.
 - BOX filter.
-- `sampling_pattern = TABULATED_SOBOL`; scrambling distance 1, auto off.
+- `sampling_pattern = SOBOL_BURLEY` (debug enum; M3a: TABULATED_SOBOL is a fixed-table quadrature whose error does not average over seeds, `docs/decisions/cycles-deviations.md` D1); scrambling distance 1, auto off.
 - seed = hash(rep[, frame]); animated seed off.
 - film exposure 1, not transparent.
 - motion blur, compositing and sequencer off.

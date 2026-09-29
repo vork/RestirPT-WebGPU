@@ -1,0 +1,406 @@
+{
+ "format": "restir-scene-package",
+ "version": 1,
+ "name": "xi_contact_512",
+ "source": {
+  "uri": "validation/scenes/make-m3a.ts ((xi) contact geometry: wall corner, box in the corner and on the floor, 2 mm slab gap, 3 mm wall panel)"
+ },
+ "buffers": {
+  "positions": {
+   "offset": 0,
+   "length": 864,
+   "dtype": "f32",
+   "components": 3
+  },
+  "normals": {
+   "offset": 864,
+   "length": 864,
+   "dtype": "f32",
+   "components": 3
+  },
+  "uv0": {
+   "offset": 1728,
+   "length": 576,
+   "dtype": "f32",
+   "components": 2
+  },
+  "indices": {
+   "offset": 2304,
+   "length": 432,
+   "dtype": "u32",
+   "components": 3
+  },
+  "triMaterial": {
+   "offset": 2736,
+   "length": 144,
+   "dtype": "u32",
+   "components": 1
+  },
+  "triFlags": {
+   "offset": 2880,
+   "length": 144,
+   "dtype": "u32",
+   "components": 1
+  }
+ },
+ "flatShaded": true,
+ "materials": [
+  {
+   "name": "floor",
+   "model": "v1",
+   "baseColorFactor": [
+    0.6,
+    0.6,
+    0.6,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.6,
+     0.6,
+     0.6
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  },
+  {
+   "name": "back",
+   "model": "v1",
+   "baseColorFactor": [
+    0.7,
+    0.65,
+    0.6,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.7,
+     0.65,
+     0.6
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  },
+  {
+   "name": "left",
+   "model": "v1",
+   "baseColorFactor": [
+    0.55,
+    0.6,
+    0.7,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.55,
+     0.6,
+     0.7
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  },
+  {
+   "name": "box",
+   "model": "v1",
+   "baseColorFactor": [
+    0.75,
+    0.5,
+    0.35,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.75,
+     0.5,
+     0.35
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  },
+  {
+   "name": "slab",
+   "model": "v1",
+   "baseColorFactor": [
+    0.4,
+    0.7,
+    0.45,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.4,
+     0.7,
+     0.45
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  }
+ ],
+ "textures": [],
+ "lights": [
+  {
+   "id": 0,
+   "name": "rect0",
+   "type": "rect",
+   "color": [
+    1,
+    1,
+    1
+   ],
+   "power": 40,
+   "exposure": 0,
+   "matrix": [
+    0,
+    -0.09950371831655502,
+    0.9950371980667114,
+    0,
+    0.9807674288749695,
+    0.19421137869358063,
+    0.019421137869358063,
+    0,
+    -0.1951800137758255,
+    0.9759000539779663,
+    0.09759000688791275,
+    0,
+    0,
+    1.4500000476837158,
+    -0.20000000298023224,
+    1
+   ],
+   "sizeX": 0.8,
+   "sizeY": 0.5,
+   "spread": 3.141592653589793,
+   "visibleToCamera": false
+  },
+  {
+   "id": 1,
+   "name": "point1",
+   "type": "point",
+   "color": [
+    1,
+    0.8,
+    0.6
+   ],
+   "power": 2,
+   "exposure": 0,
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    1.399999976158142,
+    0.05000000074505806,
+    -0.20000000298023224,
+    1
+   ],
+   "visibleToCamera": false
+  }
+ ],
+ "lightMode": "A",
+ "camera": {
+  "matrix": [
+   0.9728062146853669,
+   0,
+   -0.23162052730603971,
+   0,
+   -0.0804876223327114,
+   0.9376808001760878,
+   -0.33804801379738786,
+   0,
+   0.2171861213815347,
+   0.34749779421045557,
+   0.9121817098024458,
+   0,
+   0.45,
+   1,
+   1.5,
+   1
+  ],
+  "yfov": 0.8726646259971648,
+  "znear": 0.0001
+ },
+ "env": null,
+ "render": {
+  "width": 512,
+  "height": 512,
+  "maxBounces": 3
+ }
+}

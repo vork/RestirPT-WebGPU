@@ -257,3 +257,24 @@ def test_heavy_noise_is_unbiased(rng):
     x = heavy_noise(rng, 2_000_000, 1.0)
     assert x.min() >= 0
     assert x.mean() == pytest.approx(1.0, abs=0.01)
+
+
+# ---------------------------------------------------------------- numerical-equivalence floor (num_eps)
+
+def _near_deterministic(rng, bias_rel: float, n: int = 16):
+    """Two f32-like implementations of a deterministic image: per-replicate noise 1e-7, relative offset bias_rel."""
+    img = 0.2 + 0.6 * rng.random((128, 128, 3))
+    a = img[None] * (1 + bias_rel) + rng.normal(0, 1e-7, (n, 128, 128, 3))
+    b = img[None] + rng.normal(0, 1e-7, (n, 128, 128, 3))
+    return S.aggregate_stack(a, tile_sizes=(32,)), S.aggregate_stack(b, tile_sizes=(32,))
+
+
+def test_num_eps_floor(rng):
+    spec = S.GateSpec.for_stage("A", n_units=8)
+    a, b = _near_deterministic(rng, 3e-6)
+    assert not S.evaluate_gate(a, b, spec).passed  # f32-level offset: the Δ = 0 tests have unbounded power
+    r = S.evaluate_gate(a, b, spec.with_(num_eps=1e-4))
+    assert r.passed and r.summary["channels"]["Y"]["tiles"]["numeric_det"] == 16
+    a, b = _near_deterministic(rng, 5e-4)  # a real sub-δ bias above the floor is still caught (it must MATCH)
+    r = S.evaluate_gate(a, b, spec.with_(num_eps=1e-4))
+    assert not r.passed and "numeric_tiles[Y]" in r.summary["failed_checks"]

@@ -550,6 +550,11 @@ class GateSpec:
     alpha_suite: float = 0.01
     dark_frac: float = 0.05
     zero_tol: float = 1e-6
+    # Numerical-equivalence floor (relative; 0 = off). Tiles whose SE_Δ ≤ num_eps·denominator are below the resolution
+    # of two independent f32 implementations of the same integrand (e.g. a deterministic sun-lit floor, SE ~1e-7):
+    # they leave the Δ = 0 rejection family (Šidák, χ²_red, mean-t, KS/AD) and must instead MATCH,
+    # |Δ| ≤ 2·num_eps·den + z_Šidák·SE_Δ (check "numeric_tiles"). TOST (δ) is unchanged. Recorded in report notes (docs/decisions/cycles-deviations.md).
+    num_eps: float = 0.0
     power: float = 0.9
     fdr_q: float = 0.01
     min_replicates: int = 16
@@ -644,6 +649,10 @@ def evaluate_gate(ours: Replicates, ref: Replicates, spec: GateSpec) -> GateResu
         d, se, t, nu = welch(tx.mean[..., k], tx.se[..., k], tx.nu[..., k], tr.mean[..., k], tr.se[..., k], tr.nu[..., k])
         to = tost(d, se, nu, tr.mean[..., k], rimg, spec.delta_tile, alpha=spec.alpha_tost,
                   dark_frac=spec.dark_frac, zero_tol=spec.zero_tol)
+        nd = np.zeros(np.shape(se), dtype=bool)
+        if spec.num_eps > 0:
+            nd = (~to["zero_var"]) & (se <= spec.num_eps * to["denom"])
+            t = np.where(nd, np.nan, t)
         p = p_two_sided(t, nu)
         a1 = sidak_alpha(au, max(nt, 1))
         sidak_rej = np.where(np.isnan(p), False, p < a1)
@@ -670,6 +679,17 @@ def evaluate_gate(ours: Replicates, ref: Replicates, spec: GateSpec) -> GateResu
                      mdb_max=_fl(np.max(t_mdb)), mdb_median=_fl(np.median(t_mdb)),
                      sizing_target=target, sizing_ratio_max=_fl(np.max(size_ratio)),
                      replicate_multiplier_needed=_fl(max(1.0, float(np.max(size_ratio)) ** 2)))
+        if spec.num_eps > 0:
+            # match rule: |Δ| ≤ 2·num_eps·den + z·SE_Δ, z = the Šidák two-sided normal quantile of this tile family
+            # (the tile's own noise, SE_Δ ≤ num_eps·den, must not fail it; a bias above the floor still does)
+            zc = float(st.norm.isf(a1 / 2))
+            den_nd = to["denom"][nd]
+            excess = (np.abs(d[nd]) - zc * se[nd]) / den_nd if nd.any() else np.zeros(0)
+            nd_rel = np.abs(d[nd]) / den_nd if nd.any() else np.zeros(0)
+            tiles.update(numeric_det=int(nd.sum()), numeric_max_rel=_fl(nd_rel.max()) if nd_rel.size else 0.0,
+                         numeric_max_excess_rel=_fl(excess.max()) if excess.size else 0.0)
+            add("numeric_tiles", ch, bool(np.all(excess <= 2 * spec.num_eps)), value=tiles["numeric_max_excess_rel"],
+                threshold=2 * spec.num_eps, tiles=int(nd.sum()), z=zc, max_rel=tiles["numeric_max_rel"])
         add("tost_tiles", ch, fails == 0, value=tiles["max_ratio"], threshold=1.0, failed_tiles=fails, m=nt,
             delta=spec.delta_tile, worst_tile=tiles["worst_tile"], worst_rel=tiles["worst_rel"])
         add("sidak_tiles", ch, tiles["sidak_rejected"] == 0, value=tiles["max_abs_t"],
