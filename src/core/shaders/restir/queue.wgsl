@@ -21,6 +21,11 @@ fn arena_slot_word(ai: u32, s: u32) -> u32 { return 4u * slot_index(ai, s); }
 fn arena_code_word(ai: u32, s: u32) -> u32 { return 4u * queue_capacity() + slot_index(ai, s); }
 fn arena_item_word(i: u32) -> u32 { return 5u * queue_capacity() + i; }
 
+/// Items of the chunk [base, base + count) of a queue holding n items (count 0 = unbounded).
+fn queue_chunk_n(n: u32, base: u32, count: u32) -> u32 {
+  let rest = select(0u, n - base, n > base);
+  return select(min(rest, count), rest, count == 0u);
+}
 /// 2D indirect args of n items (§2.7): (min(g, 65535), ceil(g / 65535), 1), g = ceil(n / 64); n = 0 → (0, 1, 1).
 /// A 1D dispatch would silently no-op above 65535·64 = 4.19 M items (PLAN §1.8).
 fn queue_args(n: u32) -> vec3u {
@@ -87,5 +92,13 @@ fn arena_slot_jword(ai: u32, s: u32) -> u32 { return rsArena.words[arena_slot_wo
 fn queue_item(q: u32, wid: vec3u, nwg: vec3u, lid: u32) -> u32 {
   let item = (wid.y * nwg.x + wid.x) * RS_WG + lid;
   return select(0xFFFFFFFFu, item, item < rs_hdr(4u * q + 1u));
+}
+/// Chunked consumer (Changelog C7): item base + local index of the chunk [base, base + count) (count 0 = unbounded),
+/// or 0xFFFFFFFF past the chunk or past hdr.n. The chunk's args come from rs_args with the same (base, count).
+fn queue_item_chunk(q: u32, wid: vec3u, nwg: vec3u, lid: u32, base: u32, count: u32) -> u32 {
+  let local = (wid.y * nwg.x + wid.x) * RS_WG + lid;
+  let item = base + local;
+  let inChunk = count == 0u || local < count;
+  return select(0xFFFFFFFFu, item, inChunk && item < rs_hdr(4u * q + 1u));
 }
 #endif

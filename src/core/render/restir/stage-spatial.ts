@@ -1,8 +1,8 @@
 // Paired spatial reuse stage (restir-api.md §4.1, §3.8–§3.9, §2.6–§2.8; PLAN §3 step 5, §1.8 queues). OWNER WP-C.
 // Per round r (reads res[r % 2], writes res[(r + 1) % 2]):
-//   clear queue-0 {counter, n} (8 B; overflow stays sticky) → rs_pair_accept (row bands) → rs_args (1 thread) →
-//   rs_spatial_replay (2D indirect over the replay queue) → rs_spatial_shift (row bands) → rs_spatial_resample
-//   (row bands; RSD_FINAL_ROUND on the last round writes rsShade).
+//   clear queue-0 {counter, n} (8 B; overflow stays sticky) → rs_pair_accept (row bands) → per replay chunk:
+//   rs_args (1 thread) + rs_spatial_replay (2D indirect over the chunk; one chunk per row band, Changelog C7) →
+//   rs_spatial_shift (row bands) → rs_spatial_resample (row bands; RSD_FINAL_ROUND on the last round writes rsShade).
 // The stage emits all rounds or none (Changelog A6). Every stage of a round covers the whole atlas before the next
 // stage starts (units are emitted in order and the runner keeps unit order), because pair_accept writes the slots of
 // both pixels of a pair and the shift/resample passes read partners in other bands.
@@ -60,13 +60,17 @@ export class SpatialStage implements RestirStage {
           k.encodePass(enc, 'rs_pair_accept', accept, res.g2('rs_pair_accept', inIdx), { ...d, rowBase: r0, rowEnd: r1 }, k.perPixelWorkgroups(r0, r1));
         },
       }));
-      units.push({
-        label: `rs_spatial_replay[${r}]`, costHint: slotWork(0, a.atlasH) * (s.maxBounces + 1),
+      // Replay: one chunk per row band (Changelog C7) so the runner can split it across submits like the per-pixel
+      // passes; with a single band the whole queue is one dispatch. Chunk c covers items [c·chunk, (c+1)·chunk).
+      const chunk = bands.length > 1 ? Math.max(1, Math.ceil((a.atlasW * a.atlasH * s.slots) / bands.length)) : 0;
+      bands.forEach(([r0, r1], ci) => units.push({
+        label: `rs_spatial_replay[${r}][${ci}]`, costHint: slotWork(r0, r1) * (s.maxBounces + 1),
         encode: (enc) => {
-          k.encodePass(enc, 'rs_args', args, res.g2('rs_args'), d, [1, 1]);
-          k.encodePass(enc, 'rs_spatial_replay', replay, res.g2('rs_spatial_replay', inIdx), d, { indirect: res.args, offset: 0 });
+          const dc = { ...d, treeBase: ci * chunk, treeCount: chunk };
+          k.encodePass(enc, 'rs_args', args, res.g2('rs_args'), dc, [1, 1]);
+          k.encodePass(enc, 'rs_spatial_replay', replay, res.g2('rs_spatial_replay', inIdx), dc, { indirect: res.args, offset: 0 });
         },
-      });
+      }));
       for (const [r0, r1] of bands) {
         units.push({
           label: `rs_spatial_shift[${r}][${r0}]`, costHint: slotWork(r0, r1) * 2,

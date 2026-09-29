@@ -1344,6 +1344,12 @@ touching a shared interface. "WP-A" entries were made while landing P0 / A1.
   `rc.wgsl` and once with `TEST_RC_DR` (a test replacement of `rc.wgsl` whose `rcPairTest` is D ∧ R only, passed via
   `extraSources`), so every case (b), (c) tri/env, (d), (e), deep NEE/TRI/ENV occurs independently of the predicate.
   Other WPs may reuse `TEST_RC_DR` and `restirRig()` (`frames(n, base, perSubmit)`).
+- **C7 Chunked replay dispatch (submit budget, §4.4)** (affects WP-E: units). With row bands (`k.rowBand > 0`) the
+  replay of a round is emitted as one work unit per band, each `rs_args` + `rs_spatial_replay` over the item chunk
+  `[c·chunk, (c+1)·chunk)`, `chunk = ⌈P·NS / bands⌉`; `RsDispatch.treeBase / treeCount` carry the chunk's item base /
+  count on these two dispatches (count 0 = whole queue, the single-band default). `rs_args` writes the args of the
+  chunk (`queue_chunk_n`), `hdr.n` stays the whole queue; the consumer uses `queue_item_chunk`. The result is bitwise
+  independent of the chunking (every slot is written by exactly one item).
 
 ### WP-E amendments (Gate 3 harness)
 

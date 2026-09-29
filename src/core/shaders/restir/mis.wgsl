@@ -114,7 +114,7 @@ fn spatial_resample(p: RsPix, round: u32, finalRound: bool) {
     if (!is_finite(W0)) { atomicAdd(&misCnt[2], 1u); W0 = 0.0; }
     resout_set(c, RP_WF, vec4u(bitcast<u32>(W0), p0.yzw));
     mis_store_shade(p, finalRound, select(Fc * Wc * wScale, vec3f(0.0), Wc == 0.0));
-    rsdbg_mis(p.px, 0u, 1.0, 0.0, 0.0, 0xFFu, 0.0, pc * Wc, 0u);
+    rsdbg_mis(p.px, 0u, 1.0, 0.0, 0.0, 0xFFu, 1.0, pc * Wc, 0u);
     return;
   }
   let a = cc / f32(k);

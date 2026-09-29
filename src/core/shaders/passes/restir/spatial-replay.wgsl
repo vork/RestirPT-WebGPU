@@ -1,6 +1,7 @@
 // rs_spatial_replay (restir-api.md §3.9, §2.7; PLAN §1.8 "prefix replay is its own compacted indirect pass, with the
 // reconnection fused in"; gap-webgpu-pass-cost): one thread per queue-0 item (ai << 3 | s), 2D indirect dispatch of
-// rs_args, @workgroup_size(64). Recomputes the partner of (ai, s) and runs shift_hybrid with replay compiled in
+// rs_args, @workgroup_size(64); optionally one chunk [treeBase, treeBase + treeCount) of the queue per dispatch
+// (Changelog C7, submit budget). Recomputes the partner of (ai, s) and runs shift_hybrid with replay compiled in
 // (RS_REPLAY = 1): source = the reservoir of ai, destination = its partner's domain; writes slot (ai, s).
 // Counters: SC histogram and RSC_SHIFT_NONFINITE, aggregated per workgroup.
 // G2: 0 resIn ro · 1 shiftArena rw · 2 rsVbuf · 3 rsGeo · 4 pairTex.
@@ -32,7 +33,7 @@ fn sr_item(i: u32) {
 
 @compute @workgroup_size(64)
 fn rs_spatial_replay(@builtin(workgroup_id) wid: vec3u, @builtin(num_workgroups) nwg: vec3u, @builtin(local_invocation_index) li: u32) {
-  let i = queue_item(0u, wid, nwg, li);
+  let i = queue_item_chunk(0u, wid, nwg, li, rsDispatch.treeBase, rsDispatch.treeCount);
   if (i != 0xFFFFFFFFu) { sr_item(i); }
   workgroupBarrier();
   if (li < 16u) {
