@@ -117,7 +117,7 @@ function milestoneM1(): void {
 
 const PY = path.join(ROOT, 'validation/.venv/bin/python');
 const BLENDER = process.env.BLENDER ?? '/Applications/Blender.app/Contents/MacOS/Blender';
-const BLENDER_PY = process.env.BLENDER_PY ?? '/Applications/Blender.app/Contents/Resources/5.1/python/bin/python3.13';
+const BLENDER_PY = process.env.BLENDER_PY ?? '/Applications/Blender.app/Contents/Resources/5.2/python/bin/python3.13';
 const REFS = 'validation/out/m2/refs'; // shared Cycles cache (render_reference.py keys on package + args + scripts + Blender)
 const PLANT_SEEDS = '500..515'; // disjoint from the reference seeds 0..15 (compare.py --planted refuses overlaps)
 /** Cycles references: [package, spp, seeds]. (i) 1024 spp ≈ 3.5 s/seed on Metal; the spot scene is b = 0. */

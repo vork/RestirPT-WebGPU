@@ -1,6 +1,6 @@
 """M2 Blender-side test driver (plan §5 M2: scene bridge, render_reference, C0a/C0b/C0p calibration).
 
-  /Applications/Blender.app/Contents/Resources/5.1/python/bin/python3.13 validation/blender/tests/run_m2_tests.py \
+  /Applications/Blender.app/Contents/Resources/5.2/python/bin/python3.13 validation/blender/tests/run_m2_tests.py \
       [--blender /Applications/Blender.app/Contents/MacOS/Blender] [--out validation/out/m2] [--quick]
 
 Steps (each recorded in <out>/summary.json; exit 1 on any failure):

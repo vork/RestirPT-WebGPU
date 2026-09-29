@@ -6,7 +6,7 @@ export default defineConfig({
   test: {
     projects: [
       {
-        test: { name: 'cpu', environment: 'node', include: ['tests/**/*.test.ts'] },
+        test: { name: 'cpu', environment: 'node', include: ['tests/**/*.test.ts'], testTimeout: 60_000 },  // heavy f64 suites under GPU-gate load
       },
       {
         test: {

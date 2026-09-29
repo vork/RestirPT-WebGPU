@@ -16,7 +16,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '../../..');
 const ASSETS = join(ROOT, 'validation/assets/usd-spike');
 const OUT = join(ROOT, 'validation/out/usd-spike');
-const PXR_PYTHON = '/Applications/Blender.app/Contents/Resources/5.1/python/bin/python3.13';
+const PXR_PYTHON = '/Applications/Blender.app/Contents/Resources/5.2/python/bin/python3.13';
 
 const { values: args } = parseArgs({
   options: {

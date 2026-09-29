@@ -1,7 +1,7 @@
 """Reference dump of USD files with OpenUSD (pxr), in the same schema as the LightUSD spike page.
 
 Run with Blender's bundled Python (pxr 0.25.8 importable there):
-  /Applications/Blender.app/Contents/Resources/5.1/python/bin/python3.13 \
+  /Applications/Blender.app/Contents/Resources/5.2/python/bin/python3.13 \
       validation/spikes/usd/pxr_dump.py validation/assets/usd-spike/*.usd? --out validation/out/usd-spike
 
 Schema (shared with spike.ts, see SceneDump there): matrices are 16 floats, USD row-major for row
