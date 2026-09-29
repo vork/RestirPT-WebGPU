@@ -719,3 +719,74 @@ describe('T6(b): stored vs recomputed p̂_{←j} (real shifts)', () => {
     });
   }
 });
+
+// ------------------------------------------------------------------------------------------------ app-path regression
+
+// App smoke bug (M4, Changelog C8): RestirFramePass.encode bracketed the ReSTIR passes with two compute passes carrying
+// the app's frame timestamp writes. In some page loads (not the first page of a fresh browser, so a fresh test page
+// cannot reproduce the GPU-side symptom) Chrome 154 / Metal then lost the frame's ReSTIR effects with no WebGPU error:
+// arena header 0 with q0 capacity kept (both clearBuffer ranges as if applied last), view 460 unwritten, image ≈ L1,
+// GPU time halved. Plain Cornell and Cornell + HDRI failed alike; frames encoded without ReSTIR timestamp writes never
+// failed (measured in failing pages: manual frames, app frames with the timestamp ring disabled, timestamps on the M1
+// primary pass only). Guard: the pass must not put timestampWrites on any pass it encodes, and must render the same
+// result with and without a timestamp argument; driven like the renderer: 540p, env + point + rect.
+describe('interactive RestirFramePass with frame timestamps (app path, 540p, env + analytic lights)', () => {
+  it('the spatial stage runs every frame: accepted > 0, q0 capacity set, SC histogram non-empty, same result as without timestamps', async () => {
+    const { FrameUniformBuffer, JITTER_IID, FRAME_RESET_HISTORY } = await import('../../src/core/render/frame-uniforms.ts');
+    const { RestirKernel } = await import('../../src/core/render/restir/kernel.ts');
+    const { restirSettings } = await import('../../src/core/render/restir/presets.ts');
+    const { gpuScene, boxScene, boxCamera, light } = await import('./restir-fixtures.ts');
+    const { lightMatrixToward } = await import('./pt-fixtures.ts');
+    const { synthEnvData } = await import('./env-fixtures.ts');
+    const down = (p: [number, number, number]) => lightMatrixToward([0, -1, 0], p);
+    const scene = boxScene([light({ id: 1, type: 'point', power: 30, matrix: down([0.2, 1.7, -0.5]) }),
+      light({ id: 2, type: 'rect', power: 40, sizeX: 0.5, sizeY: 0.3, matrix: down([0, 1.95, -0.9]) })], { env: synthEnvData(128, 64) });
+    const g = await gpuScene(scene);
+    const dev = g.device;
+    const W = 960, H = 540;
+    const hasTs = g.features.has('timestamp-query');
+    const qs = hasTs ? dev.createQuerySet({ type: 'timestamp', count: 8 }) : undefined;
+    const results: { ts: boolean; acc: number[]; cap: number[]; codes: number[]; mean: number }[] = [];
+    for (const useTs of [false, true]) {
+      if (useTs && !qs) continue;
+      const pass = await RestirKernel.interactive(dev, g.gpu, g.env, 'rgba16float', { settings: restirSettings('interactive', { maxBounces: 3 }), features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
+      const color = dev.createTexture({ size: [W, H], format: 'rgba16float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC });
+      const fu = new FrameUniformBuffer(dev);
+      pass.setTargets({ width: W, height: H, color, frameUniforms: fu.buffer });
+      const k = pass.kernel;
+      const r = { ts: useTs, acc: [] as number[], cap: [] as number[], codes: [] as number[], mean: 0 };
+      dev.pushErrorScope('validation');
+      for (let f = 0; f < 4; f++) {
+        fu.write({ camera: boxCamera(), prevCamera: boxCamera(), width: W, height: H, frameIndex: f, seedIndex: f, runSeed: 7, flags: f === 0 ? FRAME_RESET_HISTORY : 0,
+          jitterMode: JITTER_IID, jitter: [0.5, 0.5], origin: g.gpu.origin, exposure: 1, time: 0, dt: 0, sceneDiag: 1 });
+        const enc = dev.createCommandEncoder();
+        const bcp = enc.beginComputePass.bind(enc);
+        let tsPasses = 0;
+        enc.beginComputePass = (d?: GPUComputePassDescriptor) => { if (d?.timestampWrites) tsPasses++; return bcp(d); };
+        enc.clearBuffer(k.resources.arena, 0, 256);
+        expect(pass.encode(enc, { advanced: true, accumulate: true }, qs ? { querySet: qs, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 } : undefined)).toBe(true);
+        expect(tsPasses, 'compute passes with timestampWrites').toBe(0);
+        dev.queue.submit([enc.finish()]);
+        const c = await k.readCounters(false);
+        r.acc.push(c.rsc.accepted); r.cap.push(c.queues[0].capacity); r.codes.push(c.codes.reduce((a, b) => a + b, 0));
+      }
+      const err = await dev.popErrorScope();
+      expect(err?.message ?? '').toBe('');
+      const frame = new Float32Array((await readTexture4(dev, k.resources.frameTex)).buffer);
+      let m = 0; for (let i = 0; i < W * H; i++) m += frame[4 * i] + frame[4 * i + 1] + frame[4 * i + 2];
+      r.mean = m / (3 * W * H);
+      results.push(r);
+      pass.destroy(); color.destroy(); fu.destroy();
+    }
+    console.log(`[app-path] timestamp-query ${hasTs}: ${JSON.stringify(results)}`);
+    for (const r of results) {
+      for (let f = 0; f < 4; f++) {
+        expect(r.acc[f], `ts ${r.ts} frame ${f} accepted`).toBeGreaterThan(W * H * 0.5);
+        expect(r.cap[f], `ts ${r.ts} frame ${f} q0 capacity`).toBe(W * H * 3);
+        expect(r.codes[f], `ts ${r.ts} frame ${f} SC histogram`).toBe(W * H * 3);
+      }
+    }
+    if (results.length === 2) expect(results[1].mean).toBe(results[0].mean);
+    qs?.destroy(); g.destroy();
+  });
+});
