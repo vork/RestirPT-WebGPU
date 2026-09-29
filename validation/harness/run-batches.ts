@@ -17,6 +17,8 @@
 //     (M4 Stage-B ReSTIR, restir-api.md §6.4: --spp = frames per batch (alias --frames-per-batch), --preset
 //      initial|initial-rr|offline|criteria2022, --members E (ensemble atlas, writes ensemble.npz), --plant no-j|marginal-j,
 //      --w-scale s (W × s plant), --max-bounces N; --env-nee on|off as for the PT; Mode A only)
+//   --batch-offset N (pt / restir sequential): render batches N … N+batches−1 of a longer run (the same samples; the
+//      gate splits long references into GPU-lock chunks and merges the batch files)
 // If the package directory is missing and --make-c0b is given, an equivalent C0b package (calib_scenes.py make_c0b:
 // 100 m emissive quad at z = −2, L_e = (0.5, 0.25, 0.125)·2, vfov 40°, 512²) is written with exportScenePackage to
 // validation/out/tmp-c0b/ and rendered instead.
@@ -73,6 +75,7 @@ const { values: args } = parseArgs({
     'env-plant': { type: 'string' },
     'env-strength-scale': { type: 'string' },
     preset: { type: 'string', default: 'initial' },
+    'batch-offset': { type: 'string' },
     'frames-per-batch': { type: 'string' },
     members: { type: 'string' },
     plant: { type: 'string' },
@@ -217,13 +220,13 @@ async function main(): Promise<number> {
           if (!pkgUrl) throw new Error('--kernel restir needs --package');
           rep = await page.evaluate((o) => window.__harness!.renderRestirBatches(o), {
             run: runId, package: pkgUrl, preset: args.preset as RestirPresetName, framesPerBatch: Number(args['frames-per-batch'] ?? args.spp),
-            batches: Number(args.batches), seed, chromeVersion, members: args.members ? Number(args.members) : undefined,
+            batches: Number(args.batches), batchOffset: args['batch-offset'] ? Number(args['batch-offset']) : undefined, seed, chromeVersion, members: args.members ? Number(args.members) : undefined,
             plant: args.plant as RestirPlantName | undefined, wScale: args['w-scale'] !== undefined ? Number(args['w-scale']) : undefined,
             maxBounces: args['max-bounces'] !== undefined ? Number(args['max-bounces']) : undefined, env: env && env.nee !== undefined ? { nee: env.nee } : undefined,
           });
         } else rep = await page.evaluate((o) => window.__harness!.renderBatches(o), {
           run: runId, package: pkgUrl, sceneUrl: args.scene, kernel: args.kernel as ValidationKernel, spp: Number(args.spp), batches: Number(args.batches),
-          maxBounces: args['max-bounces'] !== undefined ? Number(args['max-bounces']) : undefined, rr: args.rr,
+          batchOffset: args['batch-offset'] ? Number(args['batch-offset']) : undefined, maxBounces: args['max-bounces'] !== undefined ? Number(args['max-bounces']) : undefined, rr: args.rr,
           technique: args.technique as PtTechnique | undefined, plant, lightMode: args['light-mode'], env,
           width: args.width ? Number(args.width) : undefined, height: args.height ? Number(args.height) : undefined, seed, chromeVersion, frame,
         });

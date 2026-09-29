@@ -30,6 +30,9 @@ export interface RenderBatchesOptions {
   kernel: ValidationKernel;
   spp: number;
   batches: number;
+  /** Render batches [batchOffset, batchOffset + batches) of a longer run (the same samples as rendering them in one call:
+   *  sample indices are run-global; the adaptive samples-per-dispatch may regroup the f32 sums, ≤ 3e-7 relative); gate-m4.ts splits long references into GPU-lock chunks. Default 0. */
+  batchOffset?: number;
   width?: number;
   height?: number;
   seed: number;
@@ -149,7 +152,7 @@ export async function renderBatches(ctx: GpuContext, o: RenderBatchesOptions): P
   const submits = { total: 0, maxMs: 0, overBudget: 0, overHardCap: 0, perBatch: [] as number[] };
   const batchMs: number[] = [];
   try {
-    for (let b = 0; b < o.batches; b++) {
+    for (let b = o.batchOffset ?? 0; b < (o.batchOffset ?? 0) + o.batches; b++) {
       const r = await acc.runBatch((enc, d, a, c) => kernel.encode(enc, d, a, c), o.spp, b);
       counters.nonFinite += r.counters[EMISSION_COUNTERS.nonFinite];
       counters.bvhOverflow += r.counters[EMISSION_COUNTERS.bvhOverflow];
@@ -192,7 +195,8 @@ export async function renderBatches(ctx: GpuContext, o: RenderBatchesOptions): P
     userAgent: ua,
     adapterInfo: { vendor: info.vendor, architecture: info.architecture, description: info.description },
     // replicate identifiers for compare.py (confirmatory re-runs need disjoint seeds)
-    seeds: Array.from({ length: o.batches }, (_, b) => `${o.seed}:${b}`),
+    seeds: Array.from({ length: o.batches }, (_, b) => `${o.seed}:${(o.batchOffset ?? 0) + b}`),
+    ...(o.batchOffset ? { batchOffset: o.batchOffset } : {}),
     sampleIndexing: 'batch b = run-global samples [b*sppPerBatch, (b+1)*sppPerBatch); jitter = rand2(pcg3d(seed, k, pixelIndex).x, 0, STREAM_JITTER)'
       + (o.kernel === 'pt' ? '; path stream = pcg3d(pcg3d(seed, k, pixelIndex).x, vertex*16 + slot, STREAM_PATH).x (math.md#rng-layout)' : ''),
     image: { format: 'PFM RGB float32', rowOrder: 'PFM bottom-to-top (decodes to row 0 = top)', value: 'batch mean radiance' },

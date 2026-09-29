@@ -33,6 +33,8 @@ export interface RenderRestirBatchesOptions {
   /** Frames per batch F (a batch is the mean of F sequential independent frames). */
   framesPerBatch: number;
   batches: number;
+  /** Render batches [batchOffset, batchOffset + batches) of a longer sequential run (bitwise identical, measured; E = 1 only). */
+  batchOffset?: number;
   seed: number;
   /** Ensemble members E (> 1: atlas of E members per frame, ensemble.npz output). Default 1. */
   members?: number;
@@ -62,6 +64,8 @@ export async function renderRestirBatches(ctx: GpuContext, o: RenderRestirBatche
   if (!(o.framesPerBatch >= 1 && o.batches >= 1)) throw new Error('framesPerBatch and batches must be ≥ 1');
   if (!(o.preset in RESTIR_PRESETS)) throw new Error(`unknown preset ${o.preset}`);
   const E = o.members ?? 1;
+  const off = o.batchOffset ?? 0;
+  if (off && E > 1) throw new Error('batchOffset is for sequential runs only (ensemble rows are frame-indexed in one npz)');
   const { device, features, wgslLanguageFeatures } = ctx;
   const src = await loadSource({ package: o.package });
   if (!src.size) throw new Error(`${o.package}: package without a render size`);
@@ -94,7 +98,7 @@ export async function renderRestirBatches(ctx: GpuContext, o: RenderRestirBatche
   const batchMs: number[] = [];
   let spatialRounds = 0;
   try {
-    for (let b = 0; b < o.batches; b++) {
+    for (let b = off; b < off + o.batches; b++) {
       const r = await runner.runBatch(o.framesPerBatch, b);
       batchMs.push(r.wallMs);
       spatialRounds = kernel.lastRounds;
@@ -148,11 +152,11 @@ export async function renderRestirBatches(ctx: GpuContext, o: RenderRestirBatche
   const info = describeContext(ctx) as { vendor?: string; architecture?: string; description?: string };
   const ua = navigator.userAgent;
   const seeds = E === 1
-    ? Array.from({ length: o.batches }, (_, b) => `${o.seed}:${b}`)
+    ? Array.from({ length: o.batches }, (_, b) => `${o.seed}:${off + b}`)
     : runner.ensemble!.seeds;
   const meta = {
     kind: E === 1 ? 'batches' : 'ensemble', kernel: 'restir', seed: o.seed, sppPerBatch: o.framesPerBatch, framesPerBatch: o.framesPerBatch, batches: o.batches,
-    members: E, width: W, height: H, configHash, config,
+    members: E, width: W, height: H, configHash, config, ...(off ? { batchOffset: off } : {}),
     // T16 config assertions (gate-m4.ts checks them against the PT reference's meta.json)
     t16: {
       validationModeUnbiased: unbiased, plantsNamed: plant ? Object.keys(plant) : [], internalScale: 1, denoiser: 'none', upscaler: 'none',

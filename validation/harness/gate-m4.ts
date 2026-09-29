@@ -33,7 +33,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { decodePFM } from '../../src/core/io/pfm.ts';
+import { decodePFM, encodePFM } from '../../src/core/io/pfm.ts';
 import { withGpuLockSync } from './gpu-lock.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -246,7 +246,7 @@ export interface SceneSizing {
  * × margin and round per batch with niceCeil. A side above SIDE_CAP_S enlarges that rung's tiles to 64² (the PT side
  * above the cap enlarges every rung); δ is never loosened.
  */
-export function sizeScene(pt: PilotSide, rungsIn: RungSizingInput[], o: { B: number; deltaGlobal?: number; deltaTile?: number; margin?: number; capS?: number; minPtSpp?: number; minFrames?: (id: string) => number }): SceneSizing {
+export function sizeScene(pt: PilotSide, rungsIn: RungSizingInput[], o: { B: number; deltaGlobal?: number; deltaTile?: number; margin?: number; capS?: number; minPtSpp?: number; minFrames?: (id: string) => number; fixedPtSpp?: number }): SceneSizing {
   const dG = o.deltaGlobal ?? 0.002, dT = o.deltaTile ?? 0.01, margin = o.margin ?? SIZING_MARGIN, cap = o.capS ?? SIDE_CAP_S;
   const rungs = rungsIn.map((r) => ({ ...r }));
   const notes: string[] = [];
@@ -265,12 +265,13 @@ export function sizeScene(pt: PilotSide, rungsIn: RungSizingInput[], o: { B: num
     const cR = pt.msPerSample;
     let best: { NR: number; NK: number[]; cost: number } | undefined;
     const lo = Math.max(uRmax * 1.02, 1);
-    for (let i = 0; i <= 400; i++) {
-      const NR = lo * 1000 ** (i / 400);
+    // a frozen PT reference (sized once per PT code; the ReSTIR side re-sizes around it)
+    const grid = o.fixedPtSpp ? [(o.fixedPtSpp * o.B) / margin] : Array.from({ length: 401 }, (_, i) => lo * 1000 ** (i / 400));
+    for (const NR of grid) {
       const NK = rungs.map((_, j) => {
         let m = 0;
         for (let a = 0; a < uK[j].length; a++) {
-          const rem = 1 - uR[j][a] / NR;
+          const rem = Math.max(1 - uR[j][a] / NR, 0.02);
           if (uK[j][a] > 0) m = Math.max(m, uK[j][a] / rem);
         }
         return Math.max(m, 1);
@@ -284,7 +285,7 @@ export function sizeScene(pt: PilotSide, rungsIn: RungSizingInput[], o: { B: num
   for (let iter = 0; iter < 3; iter++) {
     let changed = false;
     const ptS = (sol.NR * margin * pt.msPerSample) / 1000;
-    if (ptS > cap && rungs.some((r) => r.tile === 32)) {
+    if (!o.fixedPtSpp && ptS > cap && rungs.some((r) => r.tile === 32)) {
       for (const r of rungs) r.tile = 64;
       notes.push(`PT side ${(ptS / 60).toFixed(0)} min > ${cap / 60} min: every rung enlarged to 64² tiles`);
       changed = true;
@@ -297,7 +298,8 @@ export function sizeScene(pt: PilotSide, rungsIn: RungSizingInput[], o: { B: num
     if (!changed) break;
     sol = solve();
   }
-  const ptSpp = Math.max(o.minPtSpp ?? MIN_PT_SPP, niceCeil((sol.NR * margin) / o.B));
+  const ptSpp = o.fixedPtSpp ?? Math.max(o.minPtSpp ?? MIN_PT_SPP, niceCeil((sol.NR * margin) / o.B));
+  if (o.fixedPtSpp) notes.push(`PT size frozen at ${o.fixedPtSpp} spp (validation/out/m4/ptsize)`);
   const out: SceneSizing = {
     B: o.B, ptSamples: ptSpp * o.B, ptSpp, ptSeconds: (ptSpp * o.B * pt.msPerSample) / 1000, rungs: {}, feasible: true, notes,
   };
@@ -450,7 +452,12 @@ type Add = (name: string, ok: boolean, seconds: number, data?: unknown, detail?:
 type Rec = (name: string, ok: boolean, detail?: string) => void;
 interface Run { dir: string; meta: Record<string, any>; seconds: number; cacheHit?: boolean }
 
-export interface M4Options { only?: Set<string>; pilotOnly?: boolean; writeBudget?: boolean }
+export interface M4Options {
+  only?: Set<string>; pilotOnly?: boolean; writeBudget?: boolean;
+  /** Pilots + sizing, then render (cache) every PT reference: seed 4001 and the re-run seed 104001 of each scene, and the
+   *  4× calibration references (seed 4201) of the plant scenes. No ReSTIR Stage-B runs. */
+  prerenderPtRefs?: boolean;
+}
 
 export function milestoneM4(record: Rec, o: M4Options = {}): void {
   const t0 = performance.now();
@@ -468,7 +475,7 @@ export function milestoneM4(record: Rec, o: M4Options = {}): void {
     add(name, r.code === 0, r.seconds, undefined, `exit ${r.code}`);
     return r;
   };
-  const full = !o.only && !o.pilotOnly;
+  const full = !o.only && !o.pilotOnly && !o.prerenderPtRefs;
   const scenes = M4_SCENES.filter((s) => !o.only || o.only.has(s.pkg));
   const N_UNITS = nUnits();
   const hashes = codeHashes();
@@ -510,7 +517,15 @@ export function milestoneM4(record: Rec, o: M4Options = {}): void {
   if (o.writeBudget) mergeBudget(budget, runId, add);
 
   const results: Record<string, any>[] = [];
-  if (!o.pilotOnly) {
+  if (o.prerenderPtRefs) {
+    for (const s of scenes) if (sizing[s.pkg]) ptRef(s, sizing[s.pkg], SEEDS.pt, add);
+    for (const p of PLANTS) {
+      const s = M4_SCENES.find((x) => x.pkg === p.pkg)!;
+      if (sizing[p.pkg]) ptRef(s, { ...sizing[p.pkg], ptSpp: sizing[p.pkg].ptSpp * CALIB_FACTOR }, SEEDS.ptCalib, add);
+    }
+    for (const s of scenes) if (sizing[s.pkg]) ptRef(s, sizing[s.pkg], SEEDS.ptRerun, add);
+  }
+  if (!o.pilotOnly && !o.prerenderPtRefs) {
     // ---- Gate 3: per-scene ladders ------------------------------------------------------------------------------------
     const ladders: Record<string, { reached: RungId[]; failedAt?: RungId }> = {};
     const firstRuns: Record<string, Run> = {};
@@ -629,18 +644,93 @@ function budgetRowsPresent(add: Add): void {
     miss.length ? `missing ${miss.length}: ${miss.slice(0, 4).join(', ')}` : `${have.size} rows`);
 }
 
-/** run-batches.ts into validation/out/<run> (the GPU lock is taken inside), then moved to `dest`. */
-function runBatches(argv: string[], run: string, dest: string): { dir?: string; meta?: Record<string, any>; code: number; out: string; seconds: number } {
-  const r = sh('npx', ['tsx', 'validation/harness/run-batches.ts', ...argv, '--run', run], (l) => /^(FAIL)\s|errors:|Error|lock wait/.test(l));
-  const from = path.join(ROOT, 'validation/out', run);
-  if (!existsSync(from)) return { ...r };
-  mkdirSync(path.dirname(path.join(ROOT, dest)), { recursive: true });
-  rmSync(path.join(ROOT, dest), { recursive: true, force: true });
-  renameSync(from, path.join(ROOT, dest));
-  return { ...r, dir: dest, meta: tryJson(path.join(dest, 'meta.json')) };
+/** Longest GPU-lock hold we aim for per run-batches invocation (coordinator: ≤ ~15 min so other jobs interleave). */
+export const LOCK_CHUNK_S = 12 * 60;
+
+/** Batches per chunk so one chunk takes ≤ LOCK_CHUNK_S at the estimated rate (whole run when it fits). */
+export function chunkBatches(B: number, estSeconds: number | undefined): number {
+  if (!(estSeconds && estSeconds > LOCK_CHUNK_S)) return B;
+  return Math.max(1, Math.min(B, Math.floor((B * LOCK_CHUNK_S) / estSeconds)));
 }
 
-function cachedRun(cacheRoot: string, keyObj: Record<string, unknown>, label: string, argv: string[], B: number, add: Add, stepName: string): Run | undefined {
+/** Merge the meta.json of consecutive batch chunks (--batch-offset) of one sequential run. Pure. */
+export function mergeChunkMetas(metas: Record<string, any>[]): Record<string, any> {
+  const m = structuredClone(metas[0]);
+  const sum = (f: (x: Record<string, any>) => number | undefined) => metas.reduce((a, x) => a + (f(x) ?? 0), 0);
+  m.batches = sum((x) => x.batches);
+  m.seeds = metas.flatMap((x) => x.seeds ?? []);
+  delete m.batchOffset;
+  m.chunks = metas.map((x) => ({ batchOffset: x.batchOffset ?? 0, batches: x.batches, totalMs: x.timings?.totalMs }));
+  m.timings = { loadMs: sum((x) => x.timings?.loadMs), setupMs: sum((x) => x.timings?.setupMs), batchMs: metas.flatMap((x) => x.timings?.batchMs ?? []), totalMs: sum((x) => x.timings?.totalMs) };
+  for (const k of Object.keys(m.counters ?? {})) m.counters[k] = sum((x) => x.counters?.[k]);
+  if (m.submits) {
+    m.submits = { total: sum((x) => x.submits?.total), maxMs: Math.max(...metas.map((x) => x.submits?.maxMs ?? 0)), overBudget: sum((x) => x.submits?.overBudget),
+      overHardCap: sum((x) => x.submits?.overHardCap), perBatch: metas.flatMap((x) => x.submits?.perBatch ?? []) };
+  }
+  m.errors = metas.flatMap((x) => x.errors ?? []);
+  m.ok = metas.every((x) => x.ok) && m.errors.length === 0;
+  m.files = [...metas.flatMap((x) => (x.files ?? []).filter((f: string) => /^batch_/.test(f))), 'mean.pfm'];
+  if (m.restir) {
+    const r = m.restir;
+    for (const k of Object.keys(r.counters ?? {})) r.counters[k] = sum((x) => x.restir?.counters?.[k]);
+    for (const k of Object.keys(r.codes ?? {})) r.codes[k] = sum((x) => x.restir?.codes?.[k]);
+    r.queueOverflow = (r.queueOverflow ?? []).map((_: number, i: number) => Math.max(...metas.map((x) => x.restir?.queueOverflow?.[i] ?? 0)));
+    r.queueMaxCounter = (r.queueMaxCounter ?? []).map((_: number, i: number) => Math.max(...metas.map((x) => x.restir?.queueMaxCounter?.[i] ?? 0)));
+    r.fr = r.counters?.accepted > 0 ? r.counters.queued / r.counters.accepted : 0;
+    r.baseJdenInvalidRate = Math.max(...metas.map((x) => x.restir?.baseJdenInvalidRate ?? 0));
+    r.chunking = metas.flatMap((x) => x.restir?.chunking ?? []);
+  }
+  if (m.t16) m.t16.spatialRoundsExecuted = Math.min(...metas.map((x) => x.t16?.spatialRoundsExecuted ?? 0));
+  return m;
+}
+
+/**
+ * run-batches.ts into validation/out/<run> (the GPU lock is taken inside), then moved to `dest`. A sequential run whose
+ * estimate exceeds LOCK_CHUNK_S is rendered as consecutive --batch-offset chunks (one lock hold each; the same samples —
+ * ReSTIR batches bitwise, PT batches up to f32 summation order, ≤ 3e-7 relative) and merged: batch files moved into `dest`, meta.json merged, mean.pfm recomputed.
+ */
+function runBatches(argv: string[], run: string, dest: string, o: { B?: number; estSeconds?: number } = {}): { dir?: string; meta?: Record<string, any>; code: number; out: string; seconds: number } {
+  const echo = (l: string) => /^(FAIL)\s|errors:|Error|lock wait/.test(l);
+  const B = o.B ?? 0, k = B && !argv.includes('--members') ? chunkBatches(B, o.estSeconds) : B;
+  mkdirSync(path.dirname(path.join(ROOT, dest)), { recursive: true });
+  rmSync(path.join(ROOT, dest), { recursive: true, force: true });
+  if (!B || k >= B) {
+    const r = sh('npx', ['tsx', 'validation/harness/run-batches.ts', ...argv, '--run', run], echo);
+    const from = path.join(ROOT, 'validation/out', run);
+    if (!existsSync(from)) return { ...r };
+    renameSync(from, path.join(ROOT, dest));
+    return { ...r, dir: dest, meta: tryJson(path.join(dest, 'meta.json')) };
+  }
+  const bi = argv.indexOf('--batches');
+  const metas: Record<string, any>[] = [];
+  let seconds = 0, out = '';
+  mkdirSync(path.join(ROOT, dest), { recursive: true });
+  for (let off = 0; off < B; off += k) {
+    const n = Math.min(k, B - off);
+    const a = [...argv];
+    a[bi + 1] = String(n);
+    console.log(`  chunk batches ${off}..${off + n - 1} of ${B}`);
+    const cr = `${run}-c${off}`;
+    const r = sh('npx', ['tsx', 'validation/harness/run-batches.ts', ...a, '--batch-offset', String(off), '--run', cr], echo);
+    seconds += r.seconds; out += r.out.slice(-2000);
+    const from = path.join(ROOT, 'validation/out', cr);
+    const meta = tryJson(path.join('validation/out', cr, 'meta.json'));
+    if (r.code !== 0 || !meta) { rmSync(from, { recursive: true, force: true }); return { code: r.code || 1, out, seconds }; }
+    for (const f of readdirSync(from)) if (/^batch_\d{3}\.pfm$/.test(f)) renameSync(path.join(from, f), path.join(ROOT, dest, f));
+    rmSync(from, { recursive: true, force: true });
+    metas.push(meta);
+  }
+  const meta = mergeChunkMetas(metas);
+  const files = readdirSync(path.join(ROOT, dest)).filter((f) => /^batch_\d{3}\.pfm$/.test(f)).sort();
+  const imgs = files.map((f) => decodePFM(new Uint8Array(readFileSync(path.join(ROOT, dest, f)))));
+  const mean = new Float32Array(imgs[0].data.length);
+  for (const im of imgs) for (let i = 0; i < mean.length; i++) mean[i] += im.data[i] / imgs.length;
+  writeFileSync(path.join(ROOT, dest, 'mean.pfm'), encodePFM({ width: imgs[0].width, height: imgs[0].height, channels: 3, data: mean }));
+  writeFileSync(path.join(ROOT, dest, 'meta.json'), JSON.stringify(meta, null, 1));
+  return { code: meta.ok ? 0 : 1, out, seconds, dir: dest, meta };
+}
+
+function cachedRun(cacheRoot: string, keyObj: Record<string, unknown>, label: string, argv: string[], B: number, add: Add, stepName: string, estSeconds?: number): Run | undefined {
   const key = sha(stableJson(keyObj)).slice(0, 16);
   const dest = path.join(cacheRoot, `${label}-${key}`);
   const meta = tryJson(path.join(dest, 'meta.json'));
@@ -650,7 +740,7 @@ function cachedRun(cacheRoot: string, keyObj: Record<string, unknown>, label: st
     return { dir: dest, meta, seconds: 0, cacheHit: true };
   }
   console.log(`\n--- ${stepName}: ${argv.join(' ')}`);
-  const r = runBatches(argv, `m4c-${label}-${key}`.slice(0, 120), dest);
+  const r = runBatches(argv, `m4c-${label}-${key}`.slice(0, 110), dest, { B, estSeconds });
   const ok = r.code === 0 && !!r.meta?.ok;
   if (r.dir) writeFileSync(path.join(ROOT, dest, 'cache-key.json'), `${JSON.stringify(keyObj, null, 1)}\n`);
   add(stepName, ok, r.seconds, { dir: dest, cache_hit: false, key, gpu_s: r.meta && r.meta.timings.totalMs / 1000 },
@@ -685,7 +775,15 @@ function pilotAndSize(s: M4Scene, _dir: string, add: Add): (SceneSizing & { pilo
     rungs.push({ id: r.id, side: batchImages(run.dir, run.meta), tile: 32 });
   }
   const t0 = performance.now();
-  const z = sizeScene(batchImages(pt.dir, pt.meta), rungs, { B: pilotB(s) });
+  // the PT side is frozen once per (package, PT code): later ReSTIR changes re-size only the ReSTIR frames, so the
+  // cached references stay valid (validation/out/m4/ptsize/<pkg>-<ptcode>-<pkgHash>.json)
+  const sizeFile = path.join(M4_OUT, 'ptsize', `${s.pkg}-${codeHashes().pt.slice(0, 16)}-${packageHash(sceneDir(s)).slice(0, 16)}.json`);
+  const frozen = tryJson(sizeFile) as { ptSpp: number; B: number } | undefined;
+  const z = sizeScene(batchImages(pt.dir, pt.meta), rungs, { B: pilotB(s), ...(frozen?.B === pilotB(s) ? { fixedPtSpp: frozen.ptSpp } : {}) });
+  if (!frozen) {
+    mkdirSync(path.join(ROOT, M4_OUT, 'ptsize'), { recursive: true });
+    writeFileSync(path.join(ROOT, sizeFile), `${JSON.stringify({ pkg: s.pkg, ptSpp: z.ptSpp, B: z.B, ptSeconds: z.ptSeconds, created: new Date().toISOString() }, null, 1)}\n`);
+  }
   add(`sizing ${s.pkg} (B ${z.B}, x${SIZING_MARGIN} margin)`, true, (performance.now() - t0) / 1000, z,
     `PT ${z.ptSpp} spp x ${z.B} (${(z.ptSeconds / 60).toFixed(1)} min); ` + M4_RUNGS.map((r) => `${r.id}: ${z.rungs[r.id].framesPerBatch} fr x ${z.B}${z.rungs[r.id].tile === 64 ? ' @64²' : ''} (${(z.rungs[r.id].seconds / 60).toFixed(1)} min)`).join(', ')
     + (z.notes.length ? `; ${z.notes.join('; ')}` : ''));
@@ -695,7 +793,7 @@ function pilotAndSize(s: M4Scene, _dir: string, add: Add): (SceneSizing & { pilo
 function ptRef(s: M4Scene, z: SceneSizing, seed: number, add: Add): Run | undefined {
   return cachedRun(PTREFS, ptRunKey(s, z.ptSpp, z.B, seed), `${s.pkg}-s${seed}-${z.ptSpp}x${z.B}`,
     ['--package', sceneDir(s), '--kernel', 'pt', '--spp', String(z.ptSpp), '--batches', String(z.B), '--seed', String(seed)],
-    z.B, add, `PT reference ${s.pkg} (${z.ptSpp} spp x ${z.B}, seed ${seed})`);
+    z.B, add, `PT reference ${s.pkg} (${z.ptSpp} spp x ${z.B}, seed ${seed})`, 1.2 * z.ptSpp * z.B * (z.ptSeconds / z.ptSamples));
 }
 
 function writeTest(dir: string, name: string, nUnits: number, s: M4Scene, tile: 32 | 64, extra: Record<string, unknown> = {}): string {
@@ -725,9 +823,9 @@ function summarize(rep: Record<string, any>) {
   };
 }
 
-function restirRun(s: M4Scene, preset: Preset, frames: number, B: number, seed: number, run: string, dest: string, extra: string[] = []) {
+function restirRun(s: M4Scene, preset: Preset, frames: number, B: number, seed: number, run: string, dest: string, extra: string[] = [], estSeconds?: number) {
   console.log(`\n--- ReSTIR ${s.pkg} ${preset}: ${frames} frames x ${B}, seed ${seed}${extra.length ? ` ${extra.join(' ')}` : ''}`);
-  return runBatches(['--package', sceneDir(s), '--kernel', 'restir', '--preset', preset, '--spp', String(frames), '--batches', String(B), '--seed', String(seed), ...extra], run, dest);
+  return runBatches(['--package', sceneDir(s), '--kernel', 'restir', '--preset', preset, '--spp', String(frames), '--batches', String(B), '--seed', String(seed), ...extra], run, dest, { B, estSeconds });
 }
 
 /** Frames per batch / batches of an ensemble run holding the rung's total member-frames (rows r = t·E + m). */
@@ -745,7 +843,7 @@ function stageB(s: M4Scene, rung: RungId, preset: Preset, z: SceneSizing, ref: R
   const shape = o.members ? ensembleShape(rz.samples, o.members) : { framesPerBatch: rz.framesPerBatch, batches: z.B };
   const extra = o.members ? ['--members', String(o.members)] : [];
   const t0 = performance.now();
-  const first = restirRun(s, preset, shape.framesPerBatch, shape.batches, SEEDS.restir, `${runId}-${unit}`.replace(/[^\w.-]+/g, '_'), path.join(dir, 'restir', unit.replace(/[^\w.@-]+/g, '_')), extra);
+  const first = restirRun(s, preset, shape.framesPerBatch, shape.batches, SEEDS.restir, `${runId}-${unit}`.replace(/[^\w.-]+/g, '_'), path.join(dir, 'restir', unit.replace(/[^\w.@-]+/g, '_')), extra, rz.seconds * 1.2);
   const test = writeTest(dir, unit, nU, s, rz.tile);
   const out = path.join(dir, 'compare', unit.replace(/[^\w.@-]+/g, '_'));
   const t16 = first.meta ? t16Problems(first.meta, ref.meta, { rounds: o.rounds, members: o.members }) : ['ReSTIR run produced no meta.json'];
@@ -760,7 +858,7 @@ function stageB(s: M4Scene, rung: RungId, preset: Preset, z: SceneSizing, ref: R
   if (rep?.status === 'rerun_required') {
     console.log(`  ${unit}: rerun_required (${rep.failed_checks.join(', ')}) -> confirmatory re-run on disjoint seeds (PT ${SEEDS.ptRerun}, ReSTIR ${SEEDS.restirRerun})`);
     const ref2 = ptRef(s, z, SEEDS.ptRerun, add);
-    const second = restirRun(s, preset, shape.framesPerBatch, shape.batches, SEEDS.restirRerun, `${runId}-${unit}-rerun`.replace(/[^\w.-]+/g, '_'), path.join(dir, 'restir', `${unit.replace(/[^\w.@-]+/g, '_')}-rerun`), extra);
+    const second = restirRun(s, preset, shape.framesPerBatch, shape.batches, SEEDS.restirRerun, `${runId}-${unit}-rerun`.replace(/[^\w.-]+/g, '_'), path.join(dir, 'restir', `${unit.replace(/[^\w.@-]+/g, '_')}-rerun`), extra, rz.seconds * 1.2);
     if (ref2 && second.dir && second.meta) {
       t16.push(...t16Problems(second.meta, ref2.meta, { rounds: o.rounds, members: o.members }).map((x) => `re-run: ${x}`));
       c = compare(second.dir, ref2.dir, test, `${out}-rerun`, path.join(out, 'report.json'));
@@ -790,7 +888,7 @@ function plantDetection(s: M4Scene, p: (typeof PLANTS)[number], z: SceneSizing, 
   const unit = `plant-${p.tag}-${s.pkg}`;
   const rz = z.rungs['3.2'];
   const t0 = performance.now();
-  const run = restirRun(s, 'offline', rz.framesPerBatch, z.B, p.seed, `${runId}-${unit}`, path.join(dir, 'restir', unit), ['--plant', p.plant]);
+  const run = restirRun(s, 'offline', rz.framesPerBatch, z.B, p.seed, `${runId}-${unit}`, path.join(dir, 'restir', unit), ['--plant', p.plant], rz.seconds * 1.2);
   let ok = false, data: Record<string, any> = { unit, kind: 'plant', scene: s.pkg, rung: '3.2', plant: p.plant };
   let detail = `run exit ${run.code}`;
   if (run.dir && run.meta) {
@@ -845,7 +943,7 @@ function restirAA(s: M4Scene, z: SceneSizing, ref: Run, dir: string, runId: stri
   const t0 = performance.now();
   const rz = z.rungs['3.2'];
   const frames = rz.framesPerBatch * CALIB_FACTOR;
-  const runs = [SEEDS.aa, SEEDS.aa2].map((seed) => restirRun(s, 'offline', frames, z.B, seed, `${runId}-${unit}-${seed}`, path.join(dir, 'restir', `${unit}-${seed}`)));
+  const runs = [SEEDS.aa, SEEDS.aa2].map((seed) => restirRun(s, 'offline', frames, z.B, seed, `${runId}-${unit}-${seed}`, path.join(dir, 'restir', `${unit}-${seed}`), [], rz.seconds * CALIB_FACTOR * 1.2));
   let data: Record<string, any> = { unit, kind: 'aa', scene: s.pkg, rung: '3.2', ok: false, status: `run exit ${runs.map((r) => r.code).join('/')}`, restir: `${frames}x${z.B} (x${CALIB_FACTOR})` };
   let base: Run | undefined;
   if (runs.every((r) => r.dir && r.meta)) {

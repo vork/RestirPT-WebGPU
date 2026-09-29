@@ -10,7 +10,7 @@ import { chooseChunking } from '../../src/core/render/restir/batch-runner.ts';
 import { RESTIR_PRESETS } from '../../src/core/render/restir/presets.ts';
 import { M3C_G2 } from '../../validation/harness/gate-m3c.ts';
 import {
-  AA_PKG, CRIT2022_PKG, ENSEMBLE_UNIT, M4_RUNGS, M4_SCENES, PLANTS, SEEDS, aggregateSide, ensembleShape, niceCeil, normInv, nUnits,
+  AA_PKG, CRIT2022_PKG, ENSEMBLE_UNIT, LOCK_CHUNK_S, chunkBatches, mergeChunkMetas, M4_RUNGS, M4_SCENES, PLANTS, SEEDS, aggregateSide, ensembleShape, niceCeil, normInv, nUnits,
   sizeScene, sizingTarget, t16Problems, tInv, tsClosure, uVector, wgslClosure, type PilotSide,
 } from '../../validation/harness/gate-m4.ts';
 
@@ -244,5 +244,38 @@ describe('PT reference cache key closures', () => {
     const w = wgslClosure(['passes/pt.wgsl']);
     for (const f of ['passes/pt.wgsl', 'path/length1.wgsl', 'lights/env-sample.wgsl', 'material/bsdf.wgsl', 'bvh/traverse.wgsl']) expect(w).toContain(`src/core/shaders/${f}`);
     expect(w.some((f) => f.includes('shaders/restir/'))).toBe(false);
+  });
+});
+
+describe('GPU-lock chunks (--batch-offset) and merged metas', () => {
+  it('chunk sizes keep one lock hold ≤ LOCK_CHUNK_S', () => {
+    expect(chunkBatches(16, undefined)).toBe(16);
+    expect(chunkBatches(16, LOCK_CHUNK_S)).toBe(16);
+    expect(chunkBatches(16, 2 * LOCK_CHUNK_S)).toBe(8);
+    expect(chunkBatches(16, 3 * LOCK_CHUNK_S)).toBe(5);
+    expect(chunkBatches(16, 100 * LOCK_CHUNK_S)).toBe(1);
+  });
+  it('merged meta: seeds in order, sums, maxima, min spatial rounds, re-derived f_r', () => {
+    const mk = (off: number, n: number, rounds: number) => ({
+      ok: true, errors: [], batches: n, batchOffset: off, seeds: Array.from({ length: n }, (_, i) => `7:${off + i}`),
+      files: [...Array.from({ length: n }, (_, i) => `batch_${String(off + i).padStart(3, '0')}.pfm`), 'mean.pfm', 'meta.json'],
+      timings: { loadMs: 1, setupMs: 2, batchMs: Array(n).fill(10), totalMs: 100 },
+      counters: { nonFinite: 0, negative: 1 }, submits: { total: 5, maxMs: 40 + off, overBudget: 0, overHardCap: 0, perBatch: Array(n).fill(1) },
+      restir: { counters: { accepted: 100, queued: 10 * (off + 1) }, codes: { OK: 3 }, queueOverflow: [0, 0], queueMaxCounter: [5 + off, 0], baseJdenInvalidRate: off * 1e-7, chunking: [{ rowBand: 0, treeChunk: 0 }] },
+      t16: { spatialRoundsExecuted: rounds },
+    });
+    const m = mergeChunkMetas([mk(0, 5, 3), mk(5, 5, 3), mk(10, 6, 2)]);
+    expect(m.batches).toBe(16);
+    expect(m.seeds).toEqual(Array.from({ length: 16 }, (_, i) => `7:${i}`));
+    expect(m.batchOffset).toBeUndefined();
+    expect(m.counters.negative).toBe(3);
+    expect(m.submits.maxMs).toBe(50);
+    expect(m.timings.batchMs.length).toBe(16);
+    expect(m.restir.counters.accepted).toBe(300);
+    expect(m.restir.fr).toBeCloseTo((10 + 60 + 110) / 300);
+    expect(m.restir.queueMaxCounter[0]).toBe(15);
+    expect(m.t16.spatialRoundsExecuted).toBe(2);
+    expect(m.files.filter((f: string) => f.startsWith('batch_')).length).toBe(16);
+    expect(m.ok).toBe(true);
   });
 });

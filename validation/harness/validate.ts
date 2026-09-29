@@ -20,7 +20,8 @@
 //     make-m4.ts determinism, budget rows, M4 app smoke), Gate 3 Stage B (our ReSTIR ≡ our PT) on the rung ladder
 //     3.1 → 3.1b → 3.2 per scene with cached PT references and pilot sizing, the ensemble and 2022-criteria units, the
 //     planted controls (omitted spatial J, marginal J, W x1.003) and a ReSTIR A/A. `--only pkg,pkg` restricts Gate 3;
-//     `--pilot-only` runs the pilots + sizing only; `--write-budget` merges the M4 rows into validation/budget.json.
+//     `--pilot-only` runs the pilots + sizing only; `--write-budget` merges the M4 rows into validation/budget.json;
+//     `--prerender-ptrefs` renders (caches) every PT reference in GPU-lock chunks of ≤ 12 min, no ReSTIR units.
 //   npm run validate -- --milestone M0|M1|M2|M3a|M3b|M3c|M4 [--only ...] [--pilot-only] [--write-budget]
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -37,6 +38,7 @@ const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const { values: args } = parseArgs({ options: {
   milestone: { type: 'string', default: 'M0' }, only: { type: 'string' },
   'pilot-only': { type: 'boolean', default: false }, 'write-budget': { type: 'boolean', default: false },
+  'prerender-ptrefs': { type: 'boolean', default: false },
 } });
 
 interface Step { name: string; ok: boolean; detail?: string }
@@ -371,7 +373,7 @@ const gates: Record<string, () => void> = {
   M3A: () => milestoneM3a(record, args.only ? new Set(args.only.split(',')) : undefined),
   M3B: () => milestoneM3b(record, args.only ? new Set(args.only.split(',')) : undefined),
   M3C: () => milestoneM3c(record, args.only ? new Set(args.only.split(',')) : undefined),
-  M4: () => milestoneM4(record, { only: args.only ? new Set(args.only.split(',')) : undefined, pilotOnly: args['pilot-only'], writeBudget: args['write-budget'] }),
+  M4: () => milestoneM4(record, { only: args.only ? new Set(args.only.split(',')) : undefined, pilotOnly: args['pilot-only'], writeBudget: args['write-budget'], prerenderPtRefs: args['prerender-ptrefs'] }),
 };
 const gate = gates[args.milestone!.toUpperCase()];
 if (!gate) {
