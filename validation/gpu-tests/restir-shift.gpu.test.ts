@@ -6,8 +6,12 @@ import { RestirKernel } from '../../src/core/render/restir/kernel.ts';
 import { JITTER_IID } from '../../src/core/render/frame-uniforms.ts';
 import { pairTestF64, isLogic, type RcEventD, type RcVertexD } from '../../tests/restir/rc-dual.ts';
 import { releaseTestGpu } from './device-factory.ts';
-import { boxCamera, boxScene, gpuScene, light } from './restir-fixtures.ts';
-import { bitsToF32, readU32, storageBuffer, testPipeline } from './restir-shift-fixtures.ts';
+import { allLightsScene, boxCamera, boxScene, gpuScene, light, restirRig, type RestirRig } from './restir-fixtures.ts';
+import {
+  T3_BIN_NAMES, T3_STATS_WORDS, T3_VIOL_CAP, T3_VIOL_WORDS, T3_WGSL, bitsToF32, decodeT3Stats, readU32, storageBuffer, testPipeline,
+  type T3Stats, type TestPipeline,
+} from './restir-shift-fixtures.ts';
+import { SC_NAMES, rfUnpack } from '../../src/core/render/restir/layout.ts';
 
 afterAll(releaseTestGpu);
 
@@ -104,4 +108,69 @@ describe('U-RC-1: rcPairTest (Enhanced and 2022) ≡ the f64 dual on random pair
       out.destroy(); k.destroy(); g.destroy();
     });
   }
+});
+
+// ------------------------------------------------------------------------------------------------ T3 rig
+
+interface T3RunOptions { mode: 0 | 1; partners: number; frames: number; frameBase?: number; maxTrialsPerDispatch?: number }
+interface T3Result { stats: T3Stats; viol: Uint32Array; nViol: number; frames: number }
+
+/** Render frames with the candidate dump and run the T3 kernel over every dumped candidate × partners. */
+async function runT3(rig: RestirRig, tp: TestPipeline, o: T3RunOptions): Promise<T3Result> {
+  const dev = rig.g.device;
+  const k = rig.kernel;
+  const stats = storageBuffer(dev, T3_STATS_WORDS * 4);
+  const viol = storageBuffer(dev, (4 + T3_VIOL_CAP * T3_VIOL_WORDS) * 4);
+  const P = rig.W * rig.H;
+  const total = P * 32 * o.partners;
+  const chunk = o.maxTrialsPerDispatch ?? (1 << 20);
+  const res = k.resources;
+  for (let f = 0; f < o.frames; f++) {
+    const t = (o.frameBase ?? 0) + f;
+    await rig.frames(1, t);
+    for (let base = 0; base < total; base += chunk) {
+      const n = Math.min(chunk, total - base);
+      const g = Math.ceil(n / 64);
+      await tp.run([res.candDump!, stats, viol], [Math.min(g, 65535), Math.ceil(g / 65535)],
+        { t, treeBase: base, treeCount: n, round: o.mode, flags: o.partners }, [res.views.vbuf, res.views.geo]);
+    }
+  }
+  const s = decodeT3Stats(await readU32(dev, stats));
+  const v = await readU32(dev, viol);
+  stats.destroy(); viol.destroy();
+  return { stats: s, viol: v, nViol: v[0], frames: o.frames };
+}
+
+function t3Report(tag: string, r: T3Result): { logic: number; fp: number; rt: number } {
+  let logic = 0, fp = 0, rt = 0;
+  const rows: string[] = [];
+  for (const [n, b] of Object.entries(r.stats.bins)) {
+    if (!b.trials) continue;
+    logic += b.logic + b.sigLogic + b.jViol + b.visZero + b.fViol;
+    fp += b.fp + b.sigFp;
+    rt += b.fwdOk;
+    rows.push(`  ${n.padEnd(14)} trials=${b.trials} fwdOk=${b.fwdOk} rtOk=${b.rtOk} LOGIC=${b.logic} FP=${b.fp} visZero=${b.visZero} sigL=${b.sigLogic} sigFP=${b.sigFp} J=${b.jViol} F=${b.fViol} Fcond=${b.fCond} fwd=[${r.stats.fwdCodes[n].map((c, i) => c ? `${SC_NAMES[i]}:${c}` : '').filter(Boolean).join(' ')}] inv=[${r.stats.invCodes[n].map((c, i) => c ? `${SC_NAMES[i]}:${c}` : '').filter(Boolean).join(' ')}]`);
+  }
+  console.log(`[${tag}] frames=${r.frames} fwdOk=${rt} LOGIC=${logic} FP=${fp} violations=${r.nViol}\n${rows.join('\n')}`);
+  const ex: string[] = [];
+  for (let i = 0; i < Math.min(r.nViol, T3_VIOL_CAP, 12); i++) {
+    const o = 4 + i * T3_VIOL_WORDS;
+    const w = r.viol;
+    const f = rfUnpack(w[o + 8]);
+    ex.push(`  kind=${w[o] & 255} bin=${T3_BIN_NAMES[w[o] >> 8]} fwd=${SC_NAMES[w[o + 2] & 255]}(t${(w[o + 2] >> 8) & 15},p${(w[o + 2] >> 12) & 15}) inv=${SC_NAMES[w[o + 3] & 255]}(t${(w[o + 3] >> 8) & 15},p${(w[o + 3] >> 12) & 15}) sig=${w[o + 4].toString(16)} edge=${bitsToF32(w[o + 5]).toExponential(2)} J=${bitsToF32(w[o + 6]).toPrecision(6)}/${bitsToF32(w[o + 7]).toPrecision(6)} m|fr=${bitsToF32(w[o + 11]).toExponential(3)} ai=${w[o + 9]} q=${w[o + 10]} f=${JSON.stringify(f)}`);
+  }
+  if (ex.length) console.log(ex.join('\n'));
+  return { logic, fp, rt };
+}
+
+describe('T3-0 / T3-1 smoke on the all-lights box (allLightsScene, 128², maxBounces 4)', () => {
+  it('self shifts (T3-0) and round trips (T3-1/T4)', async () => {
+    const rig = await restirRig(allLightsScene(), 128, 128, { dumpCandidates: true, settings: { maxBounces: 4 } });
+    const tp = await testPipeline(rig.kernel, 't3', T3_WGSL, 't3_main', 3, { RS_REPLAY: 1, RS_SHIFT_TRACE: 1, RS_VBUF_BINDING: '3u', RS_GEO_BINDING: '4u' }, ['uint', 'unfilterable-float']);
+    const self = t3Report('T3-0 smoke', await runT3(rig, tp, { mode: 0, partners: 1, frames: 2 }));
+    const rt = t3Report('T3-1 smoke', await runT3(rig, tp, { mode: 1, partners: 4, frames: 2 }));
+    expect(self.logic).toBe(0);
+    expect(rt.logic).toBe(0);
+    rig.destroy();
+  });
 });
