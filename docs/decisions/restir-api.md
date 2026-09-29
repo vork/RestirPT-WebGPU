@@ -1298,3 +1298,15 @@ touching a shared interface. "WP-A" entries were made while landing P0 / A1.
   dumped; the dump's `wSum` word is Σw before the candidate, `W` its w_i, `nCand` its ordinal; words 40–47 hold x₁…x₈
   (`0xFFFFFFFF` beyond x_{d−1}); the per-pixel count is at word `P·32·48 + ai` (`layout.ts dumpCountWord`).
   Candidates with w = 0 (e.g. F underflow) are neither streamed nor dumped.
+
+### WP-B amendments (shift core)
+
+- **B-1 rc.wgsl conventions** (affects WP-A: `kMargin`; WP-C/WP-D: slot-code margin field, views 410/440–445).
+  `rcPairTest` reads α_min, `RSF_CRIT_2022` and `crit2022MinDist` from `rsParams` (rc.wgsl includes
+  `restir/frame.wgsl`; every pipeline that includes rc.wgsl has G0). A **discrete** failure (delta event, G_T lobe,
+  failed guard) reports margin `RC_MARGIN_DISCRETE = −1024` (a module constant of rc.wgsl, mirrored in
+  `tests/restir/rc-dual.ts`) instead of 0, so it can never be classed FP-BOUNDARY; every margin is clamped to ±1024
+  (fits the f16 slot-code field). F and I are decided as `t² ≥ thr·(p̄·|cos|)` on bit patterns (the same decision as
+  `t²/(p̄·|cos|) ≥ thr`, with no division by a tiny product and no Inf); the margin is `log2(t²) − log2(thr·p̄·|cos|)`.
+  PLAN rule 5 "v1: G_T never passes" is enforced in `rcPairTest` itself: `ℓ_{k−1} = G_T` fails D, `ℓ_k = G_T` fails
+  the I branch (also in 2022 mode).
