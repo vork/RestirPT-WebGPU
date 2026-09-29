@@ -6,6 +6,7 @@
 //   npx tsx validation/harness/run-batches.ts --scene /validation/assets/cornell/cornell.usda --spp 16 --batches 2
 //   npx tsx validation/harness/run-batches.ts --package validation/scenes/cornell_i_512 --kernel pt --spp 256 --batches 16
 //     (M3a reference PT; --max-bounces N overrides the package's render.maxBounces, --rr, --technique mis|nee|bsdf,
+//      --light-mode A|B|A' overrides the package's light mode (plan §1.4; U9 A ≡ B),
 //      Gate-1 planted biases: --plant-emit-scale 1.01 (every emitter ×s), --plant-drop 0.01@2 (terminate 1% of the
 //      paths at vertex 2, no compensation))
 // If the package directory is missing and --make-c0b is given, an equivalent C0b package (calib_scenes.py make_c0b:
@@ -51,6 +52,7 @@ const { values: args } = parseArgs({
     technique: { type: 'string' },
     'plant-emit-scale': { type: 'string' },
     'plant-drop': { type: 'string' },
+    'light-mode': { type: 'string' },
   },
 });
 
@@ -167,7 +169,7 @@ async function main(): Promise<number> {
         rep = await page.evaluate((o) => window.__harness!.renderBatches(o), {
           run: runId, package: pkgUrl, sceneUrl: args.scene, kernel: args.kernel as ValidationKernel, spp: Number(args.spp), batches: Number(args.batches),
           maxBounces: args['max-bounces'] !== undefined ? Number(args['max-bounces']) : undefined, rr: args.rr,
-          technique: args.technique as PtTechnique | undefined, plant,
+          technique: args.technique as PtTechnique | undefined, plant, lightMode: args['light-mode'],
           width: args.width ? Number(args.width) : undefined, height: args.height ? Number(args.height) : undefined, seed, chromeVersion, frame,
         });
       } finally {

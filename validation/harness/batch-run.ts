@@ -10,6 +10,7 @@ import { PT_COUNTERS, PtKernel, type PtPlant, type PtTechnique } from '../../src
 import { createEnvResources, destroyEnvResources, writeEnvParams } from '../../src/core/render/env-gpu.ts';
 import { computeRenderOrigin } from '../../src/core/render/frame-uniforms.ts';
 import { SceneGpu } from '../../src/core/render/scene-gpu.ts';
+import { parseLightMode } from '../../src/core/render/lights-gpu.ts';
 import { loadScene as loadGltfScene } from '../../src/core/scene/load-scene.ts';
 import { fetchScenePackage } from '../../src/core/scene/scene-package.ts';
 import type { SceneData } from '../../src/core/scene/types.ts';
@@ -49,6 +50,8 @@ export interface RenderBatchesOptions {
   technique?: PtTechnique;
   /** kernel 'pt': Gate-1 planted bias (emitter scale / path drop); recorded in meta.json and the config hash. */
   plant?: PtPlant;
+  /** kernel 'pt': light mode override ('A' | 'B' | 'A′'; default the package's lightMode). */
+  lightMode?: string;
 }
 
 export interface RenderBatchesReport {
@@ -114,10 +117,10 @@ export async function renderBatches(ctx: GpuContext, o: RenderBatchesOptions): P
   const view = { camera: { camToWorld: src.camera.camToWorld as number[], yfov: src.camera.yfov }, width: W, height: H, runSeed: o.seed };
   const pkgBounces = typeof src.source.maxBounces === 'number' ? src.source.maxBounces : undefined;
   const maxBounces = o.maxBounces ?? pkgBounces ?? 3;
-  const lightMode = src.source.lightMode === 'B' ? 'B' : 'A';
-  if (o.kernel === 'pt' && lightMode !== 'A') errors.push('kernel pt: Mode B is M3b (rendering as Mode A)');
+  // plan §1.4 light modes: the package's mode unless overridden (U9: the same package rendered in A and B)
+  const lightMode = parseLightMode(o.lightMode ?? (src.source.lightMode as string | undefined), 'A');
   const kernel = o.kernel === 'pt'
-    ? await PtKernel.create(device, gpu, env, { features, wgslLanguageFeatures, maxBounces, rr: o.rr ?? false, technique: o.technique ?? 'mis', lightMode: 'A', plant: o.plant })
+    ? await PtKernel.create(device, gpu, env, { features, wgslLanguageFeatures, maxBounces, rr: o.rr ?? false, technique: o.technique ?? 'mis', lightMode, plant: o.plant })
     : await EmissionKernel.create(device, gpu, env, { features, wgslLanguageFeatures });
   kernel.setView(view);
   const ptInfo = kernel instanceof PtKernel
@@ -159,7 +162,7 @@ export async function renderBatches(ctx: GpuContext, o: RenderBatchesOptions): P
   const config = {
     kernel: o.kernel, sppPerBatch: o.spp, width: W, height: H, jitter: 'iid-per-run', filter: 'box-1px',
     scene: src.source.packageSha256 ?? src.source.fileSha256, frame: o.frame ?? null, textureMode: 'validation', intersector: watertight ? 'woop-watertight' : 'moller-trumbore',
-    ...(ptInfo ? { maxBounces: ptInfo.maxBounces, rr: ptInfo.rr, technique: ptInfo.technique, lightMode: 'A', env: 'bsdf-only (sampling_method NONE equivalent)', ...(o.plant ? { plant: o.plant } : {}) } : {}),
+    ...(ptInfo ? { maxBounces: ptInfo.maxBounces, rr: ptInfo.rr, technique: ptInfo.technique, lightMode, env: 'bsdf-only (sampling_method NONE equivalent)', ...(o.plant ? { plant: o.plant } : {}) } : {}),
   };
   const configHash = await sha256Hex(new TextEncoder().encode(stable(config)));
   const info = describeContext(ctx) as { vendor?: string; architecture?: string; description?: string };

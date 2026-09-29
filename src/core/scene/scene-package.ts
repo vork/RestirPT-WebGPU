@@ -21,7 +21,8 @@ import {
 export const SCENE_PACKAGE_FORMAT = 'restir-scene-package';
 export const SCENE_PACKAGE_VERSION = 1;
 
-export type LightMode = 'A' | 'B';
+/** plan §1.4 Modes (A′ = pass-through only after delta lobes; its Cycles reference is Mode B: per-light MIS on). */
+export type LightMode = 'A' | 'B' | 'A′';
 type V3 = [number, number, number];
 
 export interface PackageRender { width: number; height: number; maxBounces: number }
@@ -53,7 +54,7 @@ export interface TextureRefJson { texture: number; texCoord: number; transform?:
 
 export interface MaterialJson {
   name: string;
-  model: 'v1' | 'principled';
+  model: 'v1' | 'principled' | 'glass' | 'refraction';
   v1?: { diffuse: V3; glossy: V3; roughness: number; mix: number };
   baseColorFactor: [number, number, number, number];
   baseColorTexture?: TextureRefJson;
@@ -181,6 +182,15 @@ export async function exportScenePackage(scene: SceneData, opts: ExportScenePack
     const w = `material ${i} '${m.name}'`;
     if ((m.alphaMode as string) === 'BLEND') fail(`${w}: alphaMode BLEND cannot be represented (convert to MASK first)`);
     if (m.model === 'v1' && !m.v1) fail(`${w}: model 'v1' without v1 parameters`);
+    if (m.model === 'glass' || m.model === 'refraction') {
+      // Cycles Glass / Refraction BSDF nodes (M3b): constant Color / Roughness / IOR only (build_scene.py
+      // build_material_glass); emission, textures, alpha and transmission are not part of these node graphs.
+      const extra = [m.baseColorTexture, m.metallicRoughnessTexture, m.normalTexture, m.emissiveTexture, m.transmissionTexture,
+        m.specularTexture, m.specularColorTexture].some((t) => t !== undefined);
+      if (extra) fail(`${w}: model '${m.model}' takes no textures`);
+      if (Math.max(...m.emissiveFactor) * m.emissiveStrength > 0) fail(`${w}: model '${m.model}' cannot emit`);
+      if (m.alphaMode !== 'OPAQUE') fail(`${w}: model '${m.model}' must be OPAQUE`);
+    }
     const mj: MaterialJson = {
       name: m.name, model: m.model,
       baseColorFactor: [...m.baseColorFactor], baseColorTexture: texRef(m.baseColorTexture, w),
@@ -193,7 +203,7 @@ export async function exportScenePackage(scene: SceneData, opts: ExportScenePack
       transmissionFactor: m.transmissionFactor, transmissionTexture: texRef(m.transmissionTexture, w),
       alphaMode: m.alphaMode as 'OPAQUE' | 'MASK', alphaCutoff: m.alphaCutoff, doubleSided: m.doubleSided,
       emission: { color: [...m.emissiveFactor], strength: m.emissiveStrength },
-      emissionSampling: 'FRONT_BACK',
+      emissionSampling: m.emissionSampling ?? 'FRONT_BACK',
     };
     if (m.v1) mj.v1 = { diffuse: [...m.v1.diffuse], glossy: [...m.v1.glossy], roughness: m.v1.roughness, mix: m.v1.mix };
     return stripUndefined(mj);
@@ -394,7 +404,8 @@ export async function readScenePackage(input: PackageFiles): Promise<LoadedScene
     bounds: boundsOf(positions, indices), warnings: [...(json.warnings ?? [])],
   };
   if (!scene.env) delete scene.env;
-  return { scene, camera, render: json.render, lightMode: json.lightMode, flatShaded: json.flatShaded, frames: json.frames, json };
+  const lightMode: LightMode = (json.lightMode as string) === "A'" ? 'A′' : json.lightMode;   // ASCII spelling accepted
+  return { scene, camera, render: json.render, lightMode, flatShaded: json.flatShaded, frames: json.frames, json };
 }
 
 /** Fetch a package directory (URL ending in '/', or the scene.json URL) and read it. */
@@ -445,6 +456,7 @@ function materialFromJson(mj: Partial<MaterialJson> & { name: string; model: Mat
     alphaCutoff: m.alphaCutoff ?? 0.5,
     doubleSided: m.doubleSided ?? true,
     model: m.model,
+    ...(m.emissionSampling === 'NONE' ? { emissionSampling: 'NONE' as const } : {}),
     v1: m.v1 ? { diffuse: [...m.v1.diffuse] as V3, glossy: [...m.v1.glossy] as V3, roughness: m.v1.roughness, mix: m.v1.mix } : undefined,
   };
   if ((md.alphaMode as string) === 'BLEND') throw new ScenePackageError(`material '${m.name}': alphaMode BLEND`);

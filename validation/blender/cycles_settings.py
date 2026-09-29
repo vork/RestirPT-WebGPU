@@ -332,6 +332,36 @@ def material_object_rows(scene: bpy.types.Scene, emission_sampling: str, per_mat
     return rows
 
 
+_GLASS_NODES = ("ShaderNodeBsdfGlass", "ShaderNodeBsdfRefraction", "ShaderNodeBsdfPrincipled")
+
+
+def glass_rows(scene: bpy.types.Scene) -> list[Row]:
+    """Glass / transmission (M3b; gap-glass §2.1, §2.5, §7.1; plan §7.5): on every Glass, Refraction and Principled node,
+    distribution GGX (material_object_rows sets it; asserted again here with the node type in the manifest), Thin Film
+    off (it feeds the glass Fresnel above 0.1 nm) and, on Principled, no Coat/Sheen/Subsurface (Tier 1). The caustics
+    tricks (caustics_reflective/refractive True) and MNEE off (is_caustics_* False) are set by the sampling / object /
+    light rows; blur_glossy 0 keeps the glass α unchanged."""
+    rows: list[Row] = []
+    for tp, tree in _iter_node_trees():
+        for n in tree.nodes:
+            if n.bl_idname not in _GLASS_NODES:
+                continue
+            np = f"{tp}.nodes{_q(n.name)}"
+            rows.append(Row(n, np, "distribution", "GGX", False))
+            if "Thin Film Thickness" in n.inputs:
+                i = n.inputs["Thin Film Thickness"]
+                if i.is_linked:
+                    raise SettingsError(f"{np}: Thin Film Thickness is linked (not bridged)")
+                rows.append(Row(i, np + '.inputs["Thin Film Thickness"]', "default_value", 0.0, False))
+            if n.bl_idname == "ShaderNodeBsdfPrincipled":
+                for k in ("Coat Weight", "Sheen Weight", "Subsurface Weight"):
+                    rows.append(Row(n.inputs[k], np + f'.inputs["{k}"]', "default_value", 0.0, False))
+    rows.append(Row(scene.cycles, "scene.cycles", "transparent_max_bounces", 1024, False))
+    rows.append(Row(scene.cycles, "scene.cycles", "caustics_refractive", True, False))
+    rows.append(Row(scene.cycles, "scene.cycles", "caustics_reflective", True, False))
+    return rows
+
+
 def build_world(scene: bpy.types.Scene, wcfg: dict[str, Any]) -> bpy.types.World:
     """Minimal world graph (M2 owns the final one). wcfg: {'color', 'strength'} constant, or
     {'hdri': path, 'rotation_z', 'strength', 'tint'} equirect; Linear interpolation."""
@@ -415,6 +445,7 @@ def apply_settings(scene: bpy.types.Scene, cfg: dict[str, Any]) -> dict[str, Any
             spec = {"mis": cfg["light_mis"], **cfg["light_defaults"], **cfg["lights"].get(o.name, {})}
             rows += light_rows(o, spec)
     rows += material_object_rows(scene, cfg["emission_sampling"], cfg.get("material_emission_sampling"))
+    rows += glass_rows(scene)
     manifest.update(run_rows(rows))
     _assert_invariants(scene, cfg)
     return manifest

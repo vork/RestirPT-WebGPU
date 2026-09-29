@@ -74,15 +74,12 @@ const PROBE_N: u32 = ${PROBE_N}u;
 fn case_mat(c: Case, V: vec3f) -> MatEval {
   var m: MatEval;
   m.model = c.model;
-  m.base_color = c.base;
-  m.metallic = c.metallic;
+  m.base_color = select(c.base, c.v1Diffuse, c.model == 0u);   // V1 slots: Diffuse, Glossy colour, mix
+  m.metallic = select(c.metallic, c.v1Mix, c.model == 0u);
   m.roughness = c.roughness;
   m.ior = c.ior;
   m.specular_level = c.specLevel;
-  m.specular_tint = c.tint;
-  m.v1_diffuse = c.v1Diffuse;
-  m.v1_glossy = c.v1Glossy;
-  m.v1_mix = c.v1Mix;
+  m.specular_tint = select(c.tint, c.v1Glossy, c.model == 0u);
   m.ns = c.ns;
   m.ng = c.ng;
   m.flags = bsdf_flags(m, V);
@@ -812,9 +809,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   mo[o] = vec4f(f32(m.model), m.metallic, m.roughness, m.ior);
   mo[o + 1u] = vec4f(m.base_color, m.specular_level);
   mo[o + 2u] = vec4f(m.specular_tint, m.transmission);
-  mo[o + 3u] = vec4f(m.emission, f32(m.flags));
-  mo[o + 4u] = vec4f(m.v1_diffuse, m.v1_mix);
-  mo[o + 5u] = vec4f(m.v1_glossy, 0.0);
+  mo[o + 3u] = vec4f(0.0, 0.0, 0.0, f32(m.flags));
+  mo[o + 4u] = vec4f(m.base_color, m.metallic);             // V1 slots: Diffuse, mix
+  mo[o + 5u] = vec4f(m.specular_tint, 0.0);                 // V1 slot: Glossy colour
   mo[o + 6u] = vec4f(m.ns, 0.0);
   mo[o + 7u] = vec4f(m.ng, 0.0);
 }`;
@@ -895,9 +892,9 @@ describe(`material_eval (${lane()})`, () => {
     close(row(0, 0), [1, 0.6 * 191 / 255, 0.9 * 128 / 255, 1.45]);
     close(row(0, 1), [0.5 * s2l(128 / 255) * 0.5, 1 * s2l(64 / 255) * 0.25, 0.8 * 1 * 1, 0.5 * 1.5 * 153 / 255]);
     close(row(0, 2), [1, 0.8, 0.6, 0]);
-    close(row(0, 3).slice(0, 3), [2 * s2l(200 / 255), 4 * s2l(100 / 255), 6 * s2l(50 / 255)], 1e-4);
+    // (emission is not part of MatEval since M3b: the PT reads tri_emission(), covered by pt.gpu.test.ts (vii) textures)
     expect(row(0, 3)[3]).toBe(1 | 4 | 8);                       // non-delta, hasD, hasS
-    // 1: transmission → model 2 (glass stub)
+    // 1: transmission → model 2 (Principled + glass closure)
     expect(row(1, 0)[0]).toBe(2);
     expect(row(1, 2)[3]).toBeCloseTo(0.5, 6);
     // 2: V1 (COLOR_0 does not touch V1)

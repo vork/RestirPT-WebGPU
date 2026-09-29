@@ -8,14 +8,12 @@
 
 fn bsdf_setup_v1(m: MatEval, c_in: BsdfCtx) -> BsdfCtx {
   var c = c_in;
-  let f = saturate(m.v1_mix);
-  let wD = max((1.0 - f) * m.v1_diffuse, vec3f(0.0));
-  let wG = max(f * m.v1_glossy, vec3f(0.0));
+  let f = saturate(m.metallic);                        // MatEval V1 slots: metallic = mix
+  let wD = max((1.0 - f) * m.base_color, vec3f(0.0));   // base_color = Diffuse
+  let wG = max(f * m.specular_tint, vec3f(0.0));        // specular_tint = Glossy
   let swD = abs(bsdf_avg3(wD));
   let swG = abs(bsdf_avg3(wG));
-  c.has_d = swD >= BSDF_WEIGHT_CUTOFF;
-  c.has_s = swG >= BSDF_WEIGHT_CUTOFF;
-  if (c.has_d) { c.w_d = wD; c.sw_d = swD; }
-  if (c.has_s) { c.w_g = wG; c.sw_s = swG; }
+  if (swD >= BSDF_WEIGHT_CUTOFF) { c.bits |= BC_HAS_D; c.w_d = wD; c.q_d = swD; }
+  if (swG >= BSDF_WEIGHT_CUTOFF) { c.bits |= BC_HAS_S; c.s_a = wG; c.q_s = swG; }   // q_*: raw sample weights
   return c;
 }

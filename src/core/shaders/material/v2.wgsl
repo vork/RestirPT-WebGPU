@@ -6,7 +6,9 @@
 // η = max(IOR, 1e-5), L_s = max(Specular IOR Level, 0), T_s = max(Specular Tint, 0); weight = mix_weight·alpha = 1.
 // Closure order (each closure allocated iff |avg(weight_i)| ≥ 1e-5):
 //   1. metal     (m > 1e-5): w_M = m·weight, F82-tint with F0 = Cc, f82 = min(T_s, 1); then weight *= (1 − m)
-//   2. glass     [M3b TODO] model 2 is currently a stub that behaves as transmission = 0 (no G lobe, no (1 − t))
+//   2. glass     (model 2, t = saturate(Transmission Weight) > 1e-5): w_G = t·weight, generalized Schlick with the
+//                NODE IOR (η_side = 1/ior when backfacing), f0 = saturate(F0(ior)·T_s), f90 = 1, reflection tint 1,
+//                transmission tint √Cc (per interface) — glass.wgsl; then weight *= (1 − t) (no albedo layering)
 //   3. IOR level: f0 = F0(η); if L_s ≠ 0.5: f0 *= 2L_s, η' = ior_from_F0(f0), η' = 1/η' if η < 1; else η' = η
 //   4. specular  (η' ≠ 1): w_S = weight, generalized Schlick f0_S = saturate(f0·T_s), f90 = 1, exponent = −η';
 //                then layering weight ← weight·saturate(1 − max_c E_S,c(μ)),  E_S = mix(f0_S, 1, S_ior(r, μ, z_S))
@@ -31,22 +33,28 @@ fn bsdf_setup_v2(m: MatEval, c_in: BsdfCtx, mu: f32) -> BsdfCtx {
   if (met > BSDF_WEIGHT_CUTOFF) {
     let wM = met * weight;
     if (abs(wM) >= BSDF_WEIGHT_CUTOFF) {
-      c.has_s = true;
-      c.has_metal = true;
+      c.bits |= BC_HAS_S | BC_HAS_METAL;
       c.w_m = wM;
-      c.f0_m = Cc;
-      c.b_m = fresnel_f82_tint_B(Cc, min(tint, vec3f(1.0)));
+      c.s_a = Cc;                                           // F82 F0
+      c.s_b = fresnel_f82_tint_B(Cc, min(tint, vec3f(1.0)));
       // bsdf_microfacet_estimate_albedo, F82_TINT branch (B ignored: Cycles TODO)
       var est = vec3f(0.0);
-      if (any(fresnel_f82(mu, c.f0_m, c.b_m) != vec3f(0.0))) {
-        est = mix(Cc, vec3f(1.0), lut_ggx_gen_schlick_s(c.rough, mu, 0.5));
+      if (any(fresnel_f82(mu, c.s_a, c.s_b) != vec3f(0.0))) {
+        est = mix(Cc, vec3f(1.0), lut_ggx_gen_schlick_s(bctx_rough(c), mu, 0.5));
       }
-      c.sw_s += abs(wM) * bsdf_avg3(est);
+      c.q_s += abs(wM) * bsdf_avg3(est);                   // raw sample weight (normalised in bsdf_prepare)
     }
     weight *= (1.0 - met);
   }
 
-  // 2. transmission: M3b (glass lobe class G). TODO(M3b): w_G = t·weight, weight *= (1 − t) for model 2.
+  // 2. transmission: glass closure (lobe class G) [closure.h:377-415]
+  if (m.model == BSDF_MODEL_GLASS) {
+    let t = saturate(m.transmission);
+    if (t > BSDF_WEIGHT_CUTOFF) {
+      c = bsdf_setup_glass_schlick(c, t * weight, ior, fresnel_F0_from_ior(ior) * tint, sqrt(Cc), false, mu);
+      weight *= (1.0 - t);
+    }
+  }
 
   // 3. IOR level [closure.h:417-426]
   var eta = ior;
@@ -59,17 +67,16 @@ fn bsdf_setup_v2(m: MatEval, c_in: BsdfCtx, mu: f32) -> BsdfCtx {
 
   // 4. dielectric specular + layering [closure.h:428-462]
   if (eta != 1.0 && abs(weight) >= BSDF_WEIGHT_CUTOFF) {
-    c.has_s = true;
-    c.has_spec = true;
+    c.bits |= BC_HAS_S | BC_HAS_SPEC;
     c.w_s = weight;
     c.eta_s = eta;
     c.f0_s = saturate(f0 * tint);                           // bsdf_microfacet_setup_fresnel_generalized_schlick
     var est = vec3f(0.0);                                    // E_S / weight (reflection_tint = 1)
     if (any(fresnel_gen_schlick_ior(mu, eta, c.f0_s) != vec3f(0.0))) {
       let z = sqrt(abs((eta - 1.0) / (eta + 1.0)));
-      est = mix(c.f0_s, vec3f(1.0), lut_ggx_gen_schlick_ior_s(c.rough, mu, z));
+      est = mix(c.f0_s, vec3f(1.0), lut_ggx_gen_schlick_ior_s(bctx_rough(c), mu, z));
     }
-    c.sw_s += abs(weight) * bsdf_avg3(est);
+    c.q_s += abs(weight) * bsdf_avg3(est);
     // closure_layering_weight(albedo = weight·est, weight): safe_divide_color → est where weight ≠ 0 (grey weight > 0 here)
     weight = weight * saturate(1.0 - bsdf_max3(est));
   }
@@ -78,9 +85,9 @@ fn bsdf_setup_v2(m: MatEval, c_in: BsdfCtx, mu: f32) -> BsdfCtx {
   let wD = max(C * weight, vec3f(0.0));
   let swD = abs(bsdf_avg3(wD));
   if (swD >= BSDF_WEIGHT_CUTOFF) {
-    c.has_d = true;
+    c.bits |= BC_HAS_D;
     c.w_d = wD;
-    c.sw_d = swD;
+    c.q_d = swD;
   }
   return c;
 }

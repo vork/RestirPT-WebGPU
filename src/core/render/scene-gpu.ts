@@ -29,6 +29,9 @@ export const MATERIAL_LAYOUT = {
 export const MAT_ALPHA_MASK = 1;
 export const MAT_DOUBLE_SIDED = 2;
 export const MAT_V1 = 4;
+/** Cycles Glass BSDF node (model 'glass') / Refraction BSDF node (model 'refraction'), M3b (math.md#glass). */
+export const MAT_GLASS_NODE = 8;
+export const MAT_REFRACTION_NODE = 16;
 export const TRI_MAT_MASK = 0xffffff;
 export const TRI_FLAGS_SHIFT = 24;
 
@@ -116,6 +119,8 @@ export function packMaterials(materials: MaterialData[], textures: Pick<GpuTextu
     if (m.alphaMode !== 'OPAQUE') flags |= MAT_ALPHA_MASK;
     if (m.doubleSided) flags |= MAT_DOUBLE_SIDED;
     if (m.model === 'v1') flags |= MAT_V1;
+    if (m.model === 'glass') flags |= MAT_GLASS_NODE;
+    if (m.model === 'refraction') flags |= MAT_REFRACTION_NODE;
     dv.setUint32(b + L.flags, flags, true);
     v3(b + L.specularColor, m.specularColorFactor);
     f(b + L.specularFactor, m.specularFactor);

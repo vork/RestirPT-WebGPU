@@ -53,6 +53,8 @@ struct MaterialGpu {
 const MAT_ALPHA_MASK: u32 = 1u;
 const MAT_DOUBLE_SIDED: u32 = 2u;
 const MAT_V1: u32 = 4u;
+const MAT_GLASS_NODE: u32 = 8u;        // Cycles Glass BSDF node (M3b): Color = baseColor, Roughness, IOR
+const MAT_REFRACTION_NODE: u32 = 16u;  // Cycles Refraction BSDF node (M3b)
 
 // SceneGeometry.triFlags bits (src/core/scene/types.ts).
 const TRI_ALPHA_MASK: u32 = 1u;

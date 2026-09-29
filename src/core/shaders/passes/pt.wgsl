@@ -1,5 +1,6 @@
-// Reference path tracer (plan §3 mode PT, §5 M3a; math.md#bounces, #raster, #rng-layout, #measure, #mis, #path-tree,
-// #visibility, #env-mapping). Mode A (analytic lights NEE-only), no glass (M3b), env BSDF-only (M3c adds env NEE).
+// Reference path tracer (plan §3 mode PT, §5 M3a/M3b; math.md#bounces, #raster, #rng-layout, #measure, #mis, #path-tree,
+// #visibility, #env-mapping, #glass). Light modes A / B / A′ (path/crossings.wgsl), glass lobe G (material/glass.wgsl:
+// each interface is a scattering vertex and a bounce), env BSDF-only (M3c adds env NEE).
 //
 // Per sample (pixel p, sample/frame index t):
 //   initSeed = pcg3d(runSeed ⊕ member·φ, t, p).x  (rng-path.wgsl); jitter = rand2(initSeed, 0, STREAM_JITTER) (JITTER_IID)
@@ -11,9 +12,13 @@
 //   At x_B:  NEE      F = β ⊙ ω1·f_cos ⊙ Λ·V/q     (light_sample in μ; ω1 ≡ 1 for delta / Mode-A analytic)
 //            RR       optional (PT_RR): q = min(sqrt(max_c β_c), 1) on the RR-free β, only for B > rrMinBounces
 //            BSDF     bsdf_sample(u_lobe, u_h1, u_h2, u_rt) → β ⊙= weight (joint pdf), trace the closest triangle
+//            Mode B / A′: + β ⊙ Σ_crossed L_e·ω2 for the analytic area lights the BSDF ray passes before the first
+//            triangle (pass-through: no vertex, no bounce, no RNG, no RR; path/crossings.wgsl)
 //            hit on an emissive triangle: + β ⊙ L_e·ω2, ω2 = p2/(M p1 + p2) with p1 recomputed from x_B (1 after a
 //            delta lobe); escape: + β ⊙ L_env·ω2_env (M3a: 1, Cycles sampling_method NONE) and stop.
-//   Analytic lights are never hit by BSDF rays in Mode A and never occlude (math.md#visibility).
+//   Analytic lights never occlude (math.md#visibility); in Mode A they are never crossed.
+//   PT_PROBE (tests, gap-light U10): pt_batch writes (hash of the vertex/lobe sequence, number of crossing candidates,
+//   number of scattering vertices) instead of radiance.
 // Accumulation in f32 per batch (accum[p] += Σ samples); NaN/Inf samples are counted and dropped (T15).
 //
 // Entry points: pt_batch (validation batches, G2 = accum + counters, row bands) and, with PT_INTERACTIVE, pt_frame
@@ -29,6 +34,7 @@
 #include "lights/env.wgsl"
 #include "lights/measure.wgsl"
 #include "material/material-eval.wgsl"
+#include "path/crossings.wgsl"
 
 
 struct PtParams {
@@ -62,7 +68,7 @@ const PT_CNT_NEGATIVE: u32 = 3u;
 
 @group(0) @binding(4) var<uniform> pt: PtParams;
 
-struct PtResult { L: vec3f, bvhFlags: u32 }
+struct PtResult { L: vec3f, bvhFlags: u32, probe: vec3f }
 
 /// Σ radiance of camera-visible analytic area lights crossed by the camera ray before tMax (length-1, weight 1).
 fn pt_camera_lights(o: vec3f, d: vec3f, tMax: f32) -> vec3f {
@@ -84,7 +90,7 @@ fn pt_trace(o: vec3f, d: vec3f, seed: u32) -> PtResult {
   var L = pt_camera_lights(o, d, select(FLT_MAX, hit0.t, hit0.primId != BVH_MISS));
   if (hit0.primId == BVH_MISS) {
     L += envBackground(d);
-    return PtResult(L, bvh_stats().w);
+    return PtResult(L, bvh_stats().w, vec3f(0.0));
   }
   var s = scene_surface(hit0.primId, hit0.u, hit0.v, d);
   var prim = hit0.primId;
@@ -95,6 +101,8 @@ fn pt_trace(o: vec3f, d: vec3f, seed: u32) -> PtResult {
   let lastB = pt.maxBounces + 1u;
   let neeOnly = (pt.flags & PT_NEE_ONLY) != 0u;
   let bsdfOnly = (pt.flags & PT_BSDF_ONLY) != 0u;
+  var probe = vec3f(0.0);
+  var probeHash = 0x9e3779b9u;
   for (var B = 1u; B <= lastB; B++) {
     let m = material_eval(s, V);
     // ---- NEE at x_B (not at a delta-only vertex) ------------------------------------------------------------------
@@ -128,6 +136,12 @@ fn pt_trace(o: vec3f, d: vec3f, seed: u32) -> PtResult {
     if (!any(beta > vec3f(0.0))) { break; }
     let org = offset_ray(s.pos, select(-s.ng, s.ng, dot(s.ng, bs.L) >= 0.0));
     let h = trace_closest_ex(org, bs.L, FLT_MAX, prim, BVH_MISS);
+    let cross = pt_crossings(s.pos, org, bs.L, h.t, bs.pdf_marginal, B, bs.is_delta, bsdfOnly);   // Mode B / A′
+    if (!neeOnly) { L += rrScale * beta * cross.rgb; }
+#if PT_PROBE
+    probeHash = pcg3d(vec3u(probeHash, h.primId, bs.lobe | (B << 8u))).x;
+    probe = vec3f(f32(probeHash >> 8u), probe.y + cross.w, f32(B));
+#endif
     if (h.primId == BVH_MISS) {
       if (pt_env_present() && !neeOnly) {
         let w2 = env_bsdf_mis_weight(bs.L, bs.pdf_marginal, B, bs.is_delta);
@@ -148,7 +162,7 @@ fn pt_trace(o: vec3f, d: vec3f, seed: u32) -> PtResult {
     prim = h.primId;
     V = -bs.L;
   }
-  return PtResult(L * pt.emitScale, bvh_stats().w);
+  return PtResult(L * pt.emitScale, bvh_stats().w, probe);
 }
 
 #if !PT_INTERACTIVE
@@ -172,10 +186,14 @@ fn pt_batch(@builtin(global_invocation_id) gid: vec3u) {
     let ray = frame_camera_ray(pixel, jit);
     let r = pt_trace(ray.o, ray.d, seed);
     flags |= r.bvhFlags;
+#if PT_PROBE
+    sum += r.probe;
+#else
     if (all_finite3(r.L)) {
       sum += r.L;
       if (any(r.L < vec3f(0.0))) { neg++; }
     } else { bad++; }
+#endif
   }
   accum[idx] += vec4f(sum, 0.0);
   if (bad != 0u) { atomicAdd(&counters[PT_CNT_NONFINITE], bad); }

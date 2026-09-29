@@ -48,7 +48,10 @@ export interface PtSettings {
 export interface PtPlant { emitScale?: number; dropProb?: number; dropBounce?: number }
 
 export interface PtKernelOptions extends Partial<PtSettings> {
+  /** plan §1.4: 'A' (default), 'B' (pass-through + MIS), 'A′' (pass-through after delta lobes, weight 1). */
   lightMode?: LightMode;
+  /** Tests (gap-light U10): pt_batch writes (vertex-sequence hash, crossing candidates, vertices) instead of radiance. */
+  probe?: boolean;
   features?: Set<string>;
   wgslLanguageFeatures?: Set<string>;
 }
@@ -84,13 +87,13 @@ function g0LayoutEntries(): GPUBindGroupLayoutEntry[] {
 }
 
 async function compilePt(device: GPUDevice, scene: SceneGpu, layouts: GPUBindGroupLayout[], entry: 'pt_batch' | 'pt_frame',
-  opts: { colorFormat?: string; features?: Set<string>; wgslLanguageFeatures?: Set<string> }): Promise<GPUComputePipeline> {
+  opts: { colorFormat?: string; features?: Set<string>; wgslLanguageFeatures?: Set<string>; probe?: boolean }): Promise<GPUComputePipeline> {
   const shader = composeWgsl('passes/pt.wgsl', {
     sources: shaderSources,
     defines: {
       ...scene.defines(SCENE_GROUP), ...envDefines(0, ENV_BINDING_BASE), LIGHTS_GROUP: 0, LIGHTS_BINDING,
       ...lutDefines({ base: LUT_RECORDS_BASE, recordsKind: 'u32' }),
-      PT_INTERACTIVE: entry === 'pt_frame', ...(opts.colorFormat ? { COLOR_FORMAT: opts.colorFormat } : {}),
+      PT_INTERACTIVE: entry === 'pt_frame', PT_PROBE: !!opts.probe, ...(opts.colorFormat ? { COLOR_FORMAT: opts.colorFormat } : {}),
     },
     features: opts.features, wgslLanguageFeatures: opts.wgslLanguageFeatures,
   });

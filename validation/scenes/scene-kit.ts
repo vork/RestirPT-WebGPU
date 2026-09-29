@@ -80,6 +80,21 @@ export function principled(name: string, o: Partial<Omit<MaterialData, 'name' | 
   return { ...BASE_MAT, ...rest, ...(specularLevel !== undefined ? { specularFactor: specularLevel / 0.5 } : {}), name, model: 'principled' };
 }
 
+/** Cycles Glass BSDF node (M3b): Color, Roughness, IOR (distribution GGX; math.md#glass). */
+export function glassNode(name: string, color: V3 = [1, 1, 1], roughness = 0, ior = 1.5): MaterialData {
+  return { ...BASE_MAT, name, model: 'glass', baseColorFactor: [...color, 1], roughnessFactor: roughness, ior, metallicFactor: 0 };
+}
+
+/** Cycles Refraction BSDF node (M3b): Color, Roughness, IOR (distribution GGX; no reflection, TIR kills the path). */
+export function refractionNode(name: string, color: V3 = [1, 1, 1], roughness = 0, ior = 1.5): MaterialData {
+  return { ...BASE_MAT, name, model: 'refraction', baseColorFactor: [...color, 1], roughnessFactor: roughness, ior, metallicFactor: 0 };
+}
+
+/** Two-sided black emitter with Cycles emission_sampling NONE (BSDF-only: furnace enclosures, glass §7.1). */
+export function emitterNone(name: string, Le: V3 = [1, 1, 1]): MaterialData {
+  return { ...v1(name, { diffuse: [0, 0, 0], emission: Le }), emissionSampling: 'NONE' };
+}
+
 // ---- mesh builder (flat shaded: every face has its own vertices with the face normal) -------------------------------
 
 export class MeshBuilder {
@@ -277,7 +292,7 @@ export async function cornellBase(): Promise<CornellBase & { glbSha: string }> {
 // ---- package writer --------------------------------------------------------------------------------------------------
 
 export interface WriteOptions extends Omit<ExportScenePackageOptions, 'lightMode'> {
-  /** Default 'A' (M3a: analytic lights NEE-only). */
+  /** Default 'A' (M3a: analytic lights NEE-only); 'B' / 'A′' (M3b) render with Cycles per-light MIS on. */
   lightMode?: ExportScenePackageOptions['lightMode'];
   /** Extra top-level scene.json keys (e.g. "expected", "notes", "plant"). */
   extra?: Record<string, unknown>;

@@ -36,13 +36,34 @@ export const LF_DELTA = 2;
 /** LightsParams.flags. */
 export const LP_MODE_A = 1;   // analytic area lights are NEE-only (ω1 ≡ 1), never hit by BSDF rays
 export const LP_ENV_NEE = 2;  // reserved (M3c): env is an alias entry and uses MIS
+export const LP_CROSS_ALL = 4;    // Mode B: every BSDF ray crosses the analytic area lights (pass-through, MIS)
+export const LP_CROSS_DELTA = 8;  // Mode A′: only rays leaving a delta lobe cross them (weight 1)
 export const LIGHT_SLOT_WORDS = 12;
 export const LIGHTS_PARAMS_SIZE = 112; // 2 × 48 B slots + 16 B
 export const NO_ENV_ENTRY = 0xffffffff;
 
 const lum = (c: readonly number[]): number => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 
-export type LightMode = 'A' | 'B';
+/** plan §1.4 Modes: A (analytic lights NEE-only), B (pass-through + MIS), A′ (pass-through after delta lobes only). */
+export type LightMode = 'A' | 'B' | 'A′';
+
+/** LightsParams.flags of a light mode (path/crossings.wgsl). */
+export function lightModeFlags(m: LightMode): number {
+  switch (m) {
+    case 'A': return LP_MODE_A;
+    case 'B': return LP_CROSS_ALL;
+    case 'A′': return LP_MODE_A | LP_CROSS_DELTA;
+    default: throw new Error(`unknown light mode ${m as string}`);
+  }
+}
+
+/** Accepts the ASCII spelling "A'" for A′ (CLI / hand-written JSON). */
+export function parseLightMode(s: string | undefined, fallback: LightMode = 'A'): LightMode {
+  if (s === undefined) return fallback;
+  if (s === 'A' || s === 'B' || s === 'A′') return s;
+  if (s === "A'" || s === 'Aprime') return 'A′';
+  throw new Error(`unknown light mode ${s}`);
+}
 
 /** Radiometric emission of one analytic light (math.md#units-lights). */
 export function lightEmission(l: LightData): { emit: [number, number, number]; area: number } {
@@ -274,7 +295,7 @@ export class LightsState {
   }
 
   /** LightsParams uniform (lights.wgsl): cur slot, prev slot, tri/primMap offsets, flags. */
-  paramsBytes(flags = this.lightMode === 'A' ? LP_MODE_A : 0): ArrayBuffer {
+  paramsBytes(flags = lightModeFlags(this.lightMode)): ArrayBuffer {
     const buf = new ArrayBuffer(LIGHTS_PARAMS_SIZE);
     const u = new Uint32Array(buf);
     const put = (o: number, s: LightSlotCpu) => {

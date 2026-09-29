@@ -399,6 +399,32 @@ def build_material_v1(b: _MatBuilder, m: dict[str, Any]) -> dict[str, Any]:
             "emission": [c * strength for c in col]}
 
 
+def build_material_glass_node(b: _MatBuilder, m: dict[str, Any]) -> dict[str, Any]:
+    """Cycles Glass BSDF ('glass') or Refraction BSDF ('refraction') node, distribution GGX (M3b; math.md#glass,
+    gap-glass §7.1): Color = baseColorFactor.rgb, Roughness = roughnessFactor, IOR = ior; Thin Film off. Constant
+    inputs only (scene-package.ts refuses textures / emission on these models)."""
+    model = m["model"]
+    name = m.get("name", "?")
+    p = m.get("principled", m)
+    col = _v3(list(p.get("baseColorFactor", [1, 1, 1, 1]))[:3], f"{name}.baseColorFactor")
+    for k in ("baseColorTexture", "metallicRoughnessTexture", "normalTexture", "emissiveTexture", "transmissionTexture"):
+        if p.get(k):
+            raise BridgeError(f"{name}: model {model!r} takes no {k}")
+    ecol, estr = _emission(m)
+    if estr > 0 and any(c != 0 for c in ecol):
+        raise BridgeError(f"{name}: model {model!r} cannot emit")
+    n = b.new("ShaderNodeBsdfGlass" if model == "glass" else "ShaderNodeBsdfRefraction")
+    n.distribution = "GGX"  # defaults: Glass MULTI_GGX, Refraction BECKMANN (gap-glass §2.1) — cycles_settings asserts GGX
+    n.inputs["Color"].default_value = (*col, 1.0)
+    n.inputs["Roughness"].default_value = float(p.get("roughnessFactor", 0.0))
+    n.inputs["IOR"].default_value = float(p.get("ior", 1.5))
+    if "Thin Film Thickness" in n.inputs:
+        n.inputs["Thin Film Thickness"].default_value = 0.0
+    b.link(n.outputs[0], b.out.inputs["Surface"])
+    return {"model": model, "color": col, "roughness": n.inputs["Roughness"].default_value, "ior": n.inputs["IOR"].default_value,
+            "distribution": n.distribution}
+
+
 def build_material_principled(b: _MatBuilder, m: dict[str, Any], has_color0: bool) -> dict[str, Any]:
     p = m.get("principled", m)
     name = m.get("name", "?")
@@ -521,6 +547,8 @@ def build_materials(scene_json: dict[str, Any], pkg: Path, has_color0: bool) -> 
             d = build_material_v1(b, m)
         elif model == "principled":
             d = build_material_principled(b, m, has_color0)
+        elif model in ("glass", "refraction"):
+            d = build_material_glass_node(b, m)
         else:
             raise BridgeError(f"material {i}: unknown model {model!r}")
         es = m.get("emissionSampling", "FRONT_BACK")
@@ -540,6 +568,12 @@ def build_materials(scene_json: dict[str, Any], pkg: Path, has_color0: bool) -> 
 
 
 _LIGHT_TYPES = {"point": "POINT", "spot": "SPOT", "rect": "AREA", "disk": "AREA", "sun": "SUN"}
+
+
+def light_mode_mis(light_mode: str) -> bool:
+    """Per-light MIS in Cycles for our light mode (plan §1.4): A = NEE-only (MIS off); B and A′ (pass-through only after
+    delta lobes, same expectation as B) are rendered by Cycles with MIS on (lights hittable by BSDF rays)."""
+    return light_mode in ("B", "A′")
 
 
 def build_light(L: dict[str, Any], light_mode: str) -> tuple[bpy.types.Object, dict[str, Any]]:
@@ -573,7 +607,7 @@ def build_light(L: dict[str, Any], light_mode: str) -> tuple[bpy.types.Object, d
         if k in spec:
             setattr(ld, k, spec[k])
     ob.visible_camera = vis
-    ld.cycles.use_multiple_importance_sampling = light_mode == "B"
+    ld.cycles.use_multiple_importance_sampling = light_mode_mis(light_mode)
     if t in ("point", "spot"):
         ld.shadow_soft_size = 0.0
         ld.use_soft_falloff = False
@@ -668,7 +702,9 @@ def build_from_package(package_dir: str | Path, *, reset: bool = True) -> dict[s
         bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
     light_mode = sj.get("lightMode", "A")
-    if light_mode not in ("A", "B"):
+    if light_mode == "A'":
+        light_mode = "A′"  # ASCII spelling of A′
+    if light_mode not in ("A", "B", "A′"):
         raise BridgeError(f"lightMode {light_mode!r}")
 
     has_color0 = "color0" in arrays
@@ -786,7 +822,7 @@ def settings_cfg(built: dict[str, Any], **overrides: Any) -> dict[str, Any]:
     cfg: dict[str, Any] = {
         "resolution": (int(r.get("width", 512)), int(r.get("height", 512))),
         "max_bounces": int(r.get("maxBounces", 3)),
-        "light_mis": built["light_mode"] == "B",
+        "light_mis": light_mode_mis(built["light_mode"]),
         "camera": {"vfov_rad": built["state"]["yfov"], "clip_start": built["state"]["znear"], "clip_end": 1e5},
         "lights": {o.name: dict(built["state"]["light_specs"][k]) for k, o in built["lights"].items()},
         "emission_sampling": "FRONT_BACK",

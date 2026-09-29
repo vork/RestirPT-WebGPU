@@ -76,8 +76,13 @@ export interface MaterialData {
   alphaMode: AlphaMode;
   alphaCutoff: number;                // default 0.5 (BLEND is rendered as MASK with 0.5, plan §0)
   doubleSided: boolean;               // informational: Cycles renders everything two-sided
-  /** Which BSDF model the renderer uses for this material (V1 validation materials come from scene.json). */
-  model: 'principled' | 'v1';
+  /** Which BSDF model the renderer uses for this material (V1 validation materials come from scene.json).
+   *  'glass' = Cycles Glass BSDF node, 'refraction' = Cycles Refraction BSDF node (validation, M3b; math.md#glass):
+   *  Color = baseColorFactor.rgb, Roughness = roughnessFactor, IOR = ior; no other field is used. */
+  model: 'principled' | 'v1' | 'glass' | 'refraction';
+  /** Cycles material emission_sampling (default FRONT_BACK). 'NONE': the emissive triangles are not NEE entries
+   *  (BSDF-only, ω2 := 1; glass §7.1 furnace enclosures). */
+  emissionSampling?: 'FRONT_BACK' | 'NONE';
   /** V1 parameters (validation): Lambert albedo, GGX glossy colour/roughness, mix factor. */
   v1?: { diffuse: [number, number, number]; glossy: [number, number, number]; roughness: number; mix: number };
 }
