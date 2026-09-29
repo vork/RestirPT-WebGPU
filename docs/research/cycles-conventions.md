@@ -231,7 +231,7 @@ att    = π if tan θ ≤ 1e-5 else 0                      for spread == 0 (coll
 
 **Camera visibility:** only if `visible_camera` = True (default False in 5.1). When visible, the camera sees L and **also whatever is behind the light** (§2.8).
 
-### 2.5 Sun / distant light (`kernel/light/distant.h`, `scene/light.cpp:1285-1306`)
+### 2.5 Sun / distant light (`kernel/light/distant.h`, renamed `kernel/light/sun.h` in 5.2 with identical math; `scene/light.cpp:1285-1306`)
 
 ```
 half = angle/2 ;  A_disk = π sin²(half) if half>0 else 1     (Light::area, DISTANT)

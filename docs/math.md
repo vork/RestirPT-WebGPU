@@ -24,7 +24,7 @@ this document follows the higher-ranked one and records the conflict in
 - `io` = scene-io.md
 - `review Rn` = plan-review.txt finding Rn
 
-`K/` is the Cycles 5.1.2 kernel source that ships in the installed Blender.
+`K/` is the Cycles kernel source of the pinned reference Blender: 5.2.2 since 2026-09-29 (formulas re-audited unchanged from 5.1.2, docs/decisions/blender-5.2-migration.md; line numbers cited below are mostly 5.1.2).
 
 **Notation used throughout.**
 - `·` is a scalar product or multiplication. `⊙` is component-wise RGB multiplication.

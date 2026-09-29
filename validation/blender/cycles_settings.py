@@ -205,6 +205,10 @@ def _sampling_rows(scene: bpy.types.Scene, cfg: dict[str, Any]) -> list[Row]:
         ("film_exposure", 1.0),
         ("use_light_tree", bool(cfg["use_light_tree"])),
         ("texture_limit_render", "OFF"),
+        # Blender 5.2 (blender-5.2-migration.md): texture resolution scale 1 and no per-frame Halton pixel jitter
+        # (use_pixel_jitter=True shares one offset per frame across all samples; False ≡ 5.1.2 per-sample BOX jitter).
+        ("texture_resolution_render", 1.0),
+        ("use_pixel_jitter", False),
         ("use_sample_subset", False),
         ("shading_system", False),  # SVM, not OSL
         ("direct_light_sampling_type", "MULTIPLE_IMPORTANCE_SAMPLING"),
@@ -230,6 +234,10 @@ def _render_rows(scene: bpy.types.Scene, cfg: dict[str, Any]) -> list[Row]:
         ("use_sequencer", False),
         ("dither_intensity", 0.0),
         ("use_simplify", False),
+        # Blender 5.2 tiled/mipped .tx texture cache picks a ray-differential LOD with per-sample jitter
+        # (kernel/util/image_2d.h); off = the 5.1.2 full-image LOD-0 bilinear path for image AND environment textures.
+        ("use_texture_cache", False),
+        ("use_auto_generate_texture_cache", False),
     ]
     rows = [Row(r, "scene.render", k, v) for k, v in table]
     if cfg.get("output_path"):
@@ -435,6 +443,7 @@ def _world_rows(scene: bpy.types.Scene, cfg: dict[str, Any]) -> list[Row]:
         Row(w.cycles, p + ".cycles", "sampling_method", wcfg.get("sampling_method", "AUTOMATIC")),
         Row(w.cycles, p + ".cycles", "max_bounces", 1024),
         Row(w.cycles, p + ".cycles", "is_caustics_light", False),
+        Row(w.cycles, p + ".cycles", "use_shadows", True),  # new in 5.2 (default True)
     ]
     vis = w.cycles_visibility
     rows.append(Row(vis, p + ".cycles_visibility", "camera", bool(wcfg.get("visible_camera", True))))
@@ -482,7 +491,7 @@ def apply_settings(scene: bpy.types.Scene, cfg: dict[str, Any]) -> dict[str, Any
 
 def _assert_invariants(scene: bpy.types.Scene, cfg: dict[str, Any]) -> None:
     # Cycles 5.1.2 runs lights_intersect() only if some light has MIS (kernel_data.integrator.use_light_mis,
-    # intersect_closest.h:426), for camera rays too. In Mode A (no MIS light) an area light with
+    # intersect_closest.h:424 in 5.2.2, :426 in 5.1.2), for camera rays too. In Mode A (no MIS light) an area light with
     # visible_camera=True is therefore NOT seen by the camera (verified by render); refuse that combination.
     lights = [o for o in scene.objects if o.type == "LIGHT"]
     if not any(o.data.cycles.use_multiple_importance_sampling for o in lights):

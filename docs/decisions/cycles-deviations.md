@@ -197,6 +197,23 @@ The code is identical in v5.1.2, v5.2.2 and main.
 **Effect on the gates.** None on the expectation; both changes only affect how kernels are compiled. All references
 re-render under 5.2.2 anyway.
 
+## D8. Glass lobe-selection weight `sw_G` follows Cycles 5.1.2, not 5.2.2 (noise-only)
+
+**Change in 5.2.** Cycles 5.2 changed how `bsdf_microfacet_estimate_albedo` estimates T for glass-type closures (the
+Principled transmission lobe and the Glass node).
+- 5.1.2 used the smooth-surface value `(1−F_gs(μ;η))·tint`, with TIR giving 0.
+- 5.2 uses the LUT form `(1−mix(f0,1,lut3(r,μ,z)))·tint`, with no TIR zero.
+
+**Where it matters.** The estimate feeds only closure picking and the one-sample normalisation `sum_pdf/sum_sample_weight`,
+so Cycles' **expectation is unchanged** and only its variance moves (blender-5.2-migration.md §C3).
+
+**What we do.** Our lobe-selection pmf q(ℓ|V) (math.md §12 "Sample weight") keeps the 5.1.2 form:
+- every pdf in our code is the realized sampler density of our own q, so q never has to equal Cycles';
+- our NEE/BSDF MIS already uses the balance form, not Cycles' power heuristic.
+
+**Effect on the gates.** None on the expectation. D5's documented approximate-tier excess on G5b depends on Cycles'
+normalisation and may shift slightly; G5b stays in the approximate tier.
+
 ## Deferred
 
 - **C0o visibleToCamera** (M3a): Mode B only. In Mode A Cycles 5.1.2 does not show camera-visible area lights when no

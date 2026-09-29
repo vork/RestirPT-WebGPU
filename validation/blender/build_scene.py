@@ -223,8 +223,17 @@ class _Tex:
             img.name = f"tex{i}_{'srgb' if colorspace == 'sRGB' else 'data'}"
             img.colorspace_settings.name = colorspace
             img.alpha_mode = "CHANNEL_PACKED"  # raw RGBA, no (un)premultiplication: equals our texel fetch
+            _assert_file_image(img, f"texture {i}")
             self.cache[key] = img
         return self.cache[key]
+
+
+def _assert_file_image(img: bpy.types.Image, what: str) -> None:
+    """Blender 5.2: the Cycles texture cache (off in cycles_settings) only ever touches file-backed images; references
+    additionally require plain FILE images that are neither packed nor edited, so the pixels are the package bytes."""
+    if img.source != "FILE" or img.packed_file is not None or img.is_dirty:
+        raise BridgeError(f"{what}: image must be an unpacked, unmodified FILE (source={img.source}, "
+                          f"packed={img.packed_file is not None}, dirty={img.is_dirty})")
 
 
 def _decompose_transform(tf: list[float], what: str) -> tuple[list[float], float, list[float]]:
@@ -434,7 +443,7 @@ def build_material_principled(b: _MatBuilder, m: dict[str, Any], has_color0: boo
     I = bsdf.inputs
     # Tier-1 inputs only; everything else explicitly neutral (math.md#bsdf-v2)
     for k, v in (("Diffuse Roughness", 0.0), ("Subsurface Weight", 0.0), ("Anisotropic", 0.0), ("Anisotropic Rotation", 0.0),
-                 ("Coat Weight", 0.0), ("Sheen Weight", 0.0), ("Thin Film Thickness", 0.0)):
+                 ("Coat Weight", 0.0), ("Sheen Weight", 0.0), ("Thin Film Thickness", 0.0), ("Thin Wall", False)):
         I[k].default_value = v
     bc = [float(x) for x in p.get("baseColorFactor", [1, 1, 1, 1])]
     if len(bc) != 4:
@@ -665,6 +674,7 @@ def build_env(scene: bpy.types.Scene, env: dict[str, Any], pkg: Path) -> tuple[b
     img = tex.image
     img.colorspace_settings.name = cs.WORKING_SPACE
     img.alpha_mode = "NONE"  # plan §1.4b / env table: alpha ignored
+    _assert_file_image(img, "env")
     w.cycles.sampling_method = env.get("sampling", "AUTOMATIC")
     w.cycles_visibility.camera = bool(env.get("visibleToCamera", True))
     got = image_pixels_sha256(img)

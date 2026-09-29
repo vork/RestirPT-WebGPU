@@ -71,7 +71,10 @@ A **scene package** is the exact scene our renderer draws, exported so that Blen
 - `primId` order in `indices` is the renderer's stable order. Blender faces are created in the same order, so
   per-face debugging can map primId → Blender face index directly.
 - Normals: if `flatShaded`, Blender shades flat (geometric normals). Otherwise vertex normals are applied as
-  custom split normals, matching our interpolated shading normals.
+  custom split normals, matching our interpolated shading normals. Contract: a package is all-flat, or all-smooth with
+  custom normals — never mixed flat/smooth faces without custom normals (Blender 5.2 exports corner normals for those).
+- Images (textures, env) are unpacked, unmodified FILE images (`build_scene._assert_file_image`); Cycles' 5.2 texture
+  cache is off (`render.use_texture_cache = False`), so both are sampled at LOD 0 with plain bilinear filtering.
 - The env EXR is written from the exact float32 texels our GPU samples. Blender asserts the image-pixel hash
   (ENV-U9, `math.md#env-mapping`).
 - Anything the bridge cannot represent exactly (e.g. KTX2 textures, BLEND alpha) is a hard error, not a warning.

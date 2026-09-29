@@ -17,7 +17,7 @@
 - Place point, spot and area lights, and animate them.
 - Fly camera: WASD + mouse; **E = up, Q = down**.
 - Debug visualizations of every pipeline stage.
-- Statistical proof of correctness against **Blender 5.1.2 Cycles**, run headless.
+- Statistical proof of correctness against **Blender 5.2.2 Cycles**, run headless (5.1.2 until 2026-09-29; migration audit in docs/decisions/blender-5.2-migration.md).
 
 **User decisions.**
 - Static geometry; only the lights and the camera move.
