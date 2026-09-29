@@ -9,6 +9,17 @@ REPLICATES is any compare.py input directory (our PT batches or Cycles seeds). S
                 box-filtered image is built by f64 supersampling (8x8 per pixel) of the closed form
                 point: rho/pi * Phi/(4 pi) * h/d^3; rect/disk: rho/pi * L_e * E_polygon (disk = 512-gon, area
                 corrected), one-sided. Sun / spread / occluded scenes are not imaged (their "expected" is text only).
+  glass-slab    (M3b, gap-glass §7.2 G1/G2) smooth glass slab / box top face y = plane_y seen from above; per camera ray
+                F = F_diel(|d.y|, ior) and (N = max_bounces)
+                  transmission        L_e (1-F)^2 sum_{j<=(N-1)/2} F^{2j}          (C0h: emitter below, black above)
+                  furnace-principled  F + (1-F) C (1-F^N)                          (G1, Principled grey C, L = 1 furnace)
+                  furnace-glassnode   cF + c^2 (1-F)^2 (1-(cF)^N) / (1-cF)         (G1, Glass node colour c)
+                  immersed            (1-F) sqrt(C) L_e                            (C0i/G2, where the refracted ray hits
+                                                                                     the emissive quad at quad_y)
+                pixels are tested only where all 6x6 sub-samples hit the face within half_size - margin (masked
+                global + tile TOST as below, tiles with >= 50% valid pixels).
+  glass-shadow  (M3b, C0k) floor pixels whose segment to the point light crosses the glass box (shrunk by margin) and
+                whose camera ray misses the box (grown by margin) must be EXACTLY 0 in every replicate.
 Rule (as compare.py TOST, delta 0.5% global / 2% per 32^2 tile, dark-tile absolute margin): |D| + t_{0.99,n-1} SE
 < margin, plus a bias test |D|/SE < 4.5 (the analytic side has no variance). The supersampling error of the analytic
 image is far below both. Exit 0 pass, 1 fail, 2 input error / not applicable.
@@ -107,6 +118,117 @@ def direct_plane_image(sj: dict, ss: int = 8) -> np.ndarray:
     return img[..., None] * (rho * color)[None, None, :]
 
 
+def fresnel_dielectric(c: np.ndarray, eta: float) -> np.ndarray:
+    """Unpolarised dielectric Fresnel (Cycles bsdf_util.h fresnel_dielectric); 1 under TIR."""
+    c = np.abs(c)
+    g = eta * eta - (1 - c * c)
+    out = np.ones_like(c)
+    ok = g > 0
+    ct = -np.sqrt(np.where(ok, g, 1)) / eta
+    rs = (c + eta * ct) / (c - eta * ct)
+    rp = (ct + eta * c) / (eta * c - ct)
+    return np.where(ok, 0.5 * (rs * rs + rp * rp), out)
+
+
+def glass_slab_image(sj: dict, ss: int = 6) -> tuple[np.ndarray, np.ndarray]:
+    """(expected image (H, W, 3), valid-pixel mask (H, W)) of a glass-slab scene."""
+    exp = sj["expected"]
+    W, H = sj["render"]["width"], sj["render"]["height"]
+    o, d = camera_dirs(sj["camera"], W, H, ss)
+    y0, half, margin, ior = float(exp["plane_y"]), float(exp["half_size"]), float(exp.get("margin", 0.5)), float(exp["ior"])
+    N = int(exp["N"])
+    t = (y0 - o[1]) / np.where(d[..., 1] != 0, d[..., 1], -1e-30)
+    x = o + t[..., None] * d
+    valid = (t > 0) & (d[..., 1] < 0) & (np.abs(x[..., 0]) <= half - margin) & (np.abs(x[..., 2]) <= half - margin)
+    cosi = np.abs(d[..., 1])
+    F = fresnel_dielectric(cosi, ior)
+    f = exp["formula"]
+    if f == "transmission":
+        J = (N - 1) // 2
+        s = sum(F ** (2 * j) for j in range(J + 1)) if N >= 1 else 0 * F
+        val = float(exp.get("Le", 1)) * (1 - F) ** 2 * s
+    elif f == "furnace-principled":
+        C = float(exp["C"])
+        val = F + (1 - F) * C * (1 - F ** N)
+    elif f == "furnace-glassnode":
+        c = float(exp["c"])
+        val = c * F + c * c * (1 - F) ** 2 * (1 - (c * F) ** N) / (1 - c * F)
+    elif f == "immersed":
+        C, Le = float(exp["C"]), float(exp["Le"])
+        val = (1 - F) * math.sqrt(C) * Le
+        sin_t = np.sqrt(np.maximum(1 - cosi * cosi, 0)) / ior
+        tan_t = sin_t / np.sqrt(np.maximum(1 - sin_t * sin_t, 1e-30))
+        hdir = d[..., [0, 2]] / np.maximum(np.linalg.norm(d[..., [0, 2]], axis=-1, keepdims=True), 1e-30)
+        land = x[..., [0, 2]] + (y0 - float(exp["quad_y"])) * tan_t[..., None] * hdir
+        valid &= np.all(np.abs(land) <= float(exp["quad_half"]) - margin, axis=-1)
+    else:
+        raise ValueError(f"glass-slab formula {f!r}")
+    mask = valid.all(-1)
+    img = np.where(valid, val, 0).mean(-1)
+    return np.repeat(img[..., None], 3, -1), mask
+
+
+def glass_shadow_mask(sj: dict, ss: int = 4) -> np.ndarray:
+    """Pixels of floor points (y = 0) in the glass box's shadow from the point light, camera ray clear of the box."""
+    exp = sj["expected"]
+    W, H = sj["render"]["width"], sj["render"]["height"]
+    o, d = camera_dirs(sj["camera"], W, H, ss)
+    lo, hi = (np.asarray(v, float) for v in exp["box"])
+    m = float(exp.get("margin", 0.02))
+    lp = np.asarray(exp["light"], float)
+
+    def slab_hit(orig, dirn, tmax, blo, bhi):
+        inv = 1 / np.where(np.abs(dirn) > 1e-30, dirn, 1e-30)
+        t0, t1 = (blo - orig) * inv, (bhi - orig) * inv
+        tn, tf = np.minimum(t0, t1).max(-1), np.maximum(t0, t1).min(-1)
+        return (tn <= tf) & (tf > 0) & (tn < tmax)
+
+    t = -o[1] / d[..., 1]
+    x = o + t[..., None] * d
+    floor = (t > 0) & (d[..., 1] < 0)
+    clear = ~slab_hit(np.broadcast_to(o, d.shape), d, t, lo - m, hi + m)
+    seg = lp - x
+    shadow = slab_hit(x, seg, np.ones(t.shape), lo + m, hi - m)
+    return (floor & clear & shadow).all(-1)
+
+
+def check_masked(reps: np.ndarray, E: np.ndarray, mask: np.ndarray, tile: int = 32, d_glob: float = 0.005, d_tile: float = 0.02) -> dict:
+    """check() restricted to the valid pixels: global mean over the mask, tiles with >= 50% valid pixels."""
+    n = reps.shape[0]
+    tq = sps.t.ppf(0.99, n - 1)
+    out: dict = {"n": int(n), "valid_pixels": int(mask.sum()), "channels": {}}
+    ok = bool(mask.sum() > 0)
+    H, W = E.shape[:2]
+    for ci, ch in enumerate(("R", "G", "B", "Y")):
+        x = reps @ LUMA if ch == "Y" else reps[..., ci]
+        e = E @ LUMA if ch == "Y" else E[..., ci]
+        m = x[:, mask].mean(1)
+        eg = e[mask].mean()
+        D, se = m.mean() - eg, m.std(ddof=1) / math.sqrt(n)
+        sz = math.hypot(se, NUM_EPS * eg)
+        g_ok = abs(D) + tq * se < d_glob * eg and abs(D) / sz < 4.5
+        worst, fails, tiles = 0.0, 0, 0
+        for y0 in range(0, H, tile):
+            for x0 in range(0, W, tile):
+                mt = mask[y0:y0 + tile, x0:x0 + tile]
+                if mt.mean() < 0.5:
+                    continue
+                tiles += 1
+                xt = x[:, y0:y0 + tile, x0:x0 + tile][:, mt].mean(1)
+                et = e[y0:y0 + tile, x0:x0 + tile][mt].mean()
+                Dt, st = xt.mean() - et, xt.std(ddof=1) / math.sqrt(n)
+                margin = d_tile * max(et, 0.05 * eg)
+                szt = math.hypot(st, NUM_EPS * max(et, 0.05 * eg))
+                t_ok = abs(Dt) + tq * st < margin and abs(Dt) / szt < 4.5 + math.sqrt(2 * math.log(max(H * W / tile / tile, 1)))
+                fails += not t_ok
+                worst = max(worst, abs(Dt) / max(et, 0.05 * eg, 1e-30))
+        ok &= g_ok and fails == 0
+        out["channels"][ch] = {"expected_mean": eg, "rel": D / eg if eg else 0.0, "z": D / sz if sz else 0.0, "se_rel": se / eg if eg else 0.0,
+                               "global_ok": bool(g_ok), "tiles_failed": fails, "tiles": tiles, "worst_tile_rel": worst}
+    out["ok"] = bool(ok)
+    return out
+
+
 NUM_EPS = 1e-4  # relative accuracy claimed for the analytic image (8x8 supersampling, 512-gon disk); floors the bias test
 
 
@@ -163,12 +285,24 @@ def main(argv: list[str]) -> int:
             print(json.dumps({"ok": None, "skipped": str(e)}) if a.json else f"skipped: {e}")
             return 2
         res = check(reps, E)
+    elif exp.get("kind") == "glass-slab":
+        E, mask = glass_slab_image(sj)
+        res = check_masked(reps, E, mask)
+    elif exp.get("kind") == "glass-shadow":
+        mask = glass_shadow_mask(sj)
+        vals = reps[:, mask, :]
+        z = float(np.abs(vals).max()) if vals.size else float("nan")
+        res = {"n": int(reps.shape[0]), "shadow_pixels": int(mask.sum()), "max_abs": z, "ok": bool(mask.sum() > 100 and z == 0.0),
+               "channels": {"Y": {"expected_mean": 0.0, "rel": 0.0, "z": 0.0, "worst_tile_rel": z}}}
     else:
         print(json.dumps({"ok": None, "skipped": f"expected kind {exp.get('kind')!r}"}) if a.json else "no analytic expectation")
         return 2
     res.update(kind=exp["kind"], dir=str(a.dir), package=str(a.package))
     if a.json:
         print(json.dumps(res))
+    elif exp.get("kind") == "glass-shadow":
+        print(f"glass shadow: {res['shadow_pixels']} pixels, max |value| {res['max_abs']:.3g} over {res['n']} replicates")
+        print("PASS" if res["ok"] else "FAIL")
     else:
         for ch, v in res["channels"].items():
             print(f"{ch}: expected {v['expected_mean']:.6g} rel {v['rel']:+.3e} (z {v['z']:+.2f}, SE {v['se_rel']:.2e}) global {'ok' if v['global_ok'] else 'FAIL'}, "

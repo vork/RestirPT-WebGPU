@@ -44,8 +44,13 @@ export interface PtSettings {
 }
 
 /** Planted biases for the our-PT-vs-Cycles calibration: every emitter ×emitScale; drop (terminate, no compensation)
- *  the path with probability dropProb at scattering vertex dropBounce. */
-export interface PtPlant { emitScale?: number; dropProb?: number; dropBounce?: number }
+ *  the path with probability dropProb at scattering vertex dropBounce; glass (M3b, compiled in: material/glass.wgsl
+ *  GLASS_PLANT): 'eta2' = a 1/η² radiance scaling of the BTDF (B-η), 'pr-half' = R/T chosen with 0.5 instead of P_R
+ *  without pdf compensation, 'tint' = Principled glass C instead of √C (B-tint), 'side' = η not inverted on backfaces
+ *  (B-side), 'shadow' = shadow rays pass through glass (B-shadow). */
+export type GlassPlant = 'eta2' | 'pr-half' | 'tint' | 'side' | 'shadow';
+export const GLASS_PLANTS: readonly GlassPlant[] = ['eta2', 'pr-half', 'tint', 'side', 'shadow'];
+export interface PtPlant { emitScale?: number; dropProb?: number; dropBounce?: number; glass?: GlassPlant }
 
 export interface PtKernelOptions extends Partial<PtSettings> {
   /** plan §1.4: 'A' (default), 'B' (pass-through + MIS), 'A′' (pass-through after delta lobes, weight 1). */
@@ -87,13 +92,14 @@ function g0LayoutEntries(): GPUBindGroupLayoutEntry[] {
 }
 
 async function compilePt(device: GPUDevice, scene: SceneGpu, layouts: GPUBindGroupLayout[], entry: 'pt_batch' | 'pt_frame',
-  opts: { colorFormat?: string; features?: Set<string>; wgslLanguageFeatures?: Set<string>; probe?: boolean }): Promise<GPUComputePipeline> {
+  opts: { colorFormat?: string; features?: Set<string>; wgslLanguageFeatures?: Set<string>; probe?: boolean; plant?: PtPlant }): Promise<GPUComputePipeline> {
   const shader = composeWgsl('passes/pt.wgsl', {
     sources: shaderSources,
     defines: {
       ...scene.defines(SCENE_GROUP), ...envDefines(0, ENV_BINDING_BASE), LIGHTS_GROUP: 0, LIGHTS_BINDING,
       ...lutDefines({ base: LUT_RECORDS_BASE, recordsKind: 'u32' }),
-      PT_INTERACTIVE: entry === 'pt_frame', PT_PROBE: !!opts.probe, ...(opts.colorFormat ? { COLOR_FORMAT: opts.colorFormat } : {}),
+      PT_INTERACTIVE: entry === 'pt_frame', PT_PROBE: !!opts.probe, GLASS_PLANT: opts.plant?.glass ? GLASS_PLANTS.indexOf(opts.plant.glass) + 1 : 0,
+      ...(opts.colorFormat ? { COLOR_FORMAT: opts.colorFormat } : {}),
     },
     features: opts.features, wgslLanguageFeatures: opts.wgslLanguageFeatures,
   });

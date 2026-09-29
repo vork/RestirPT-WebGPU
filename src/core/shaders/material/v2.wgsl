@@ -51,7 +51,11 @@ fn bsdf_setup_v2(m: MatEval, c_in: BsdfCtx, mu: f32) -> BsdfCtx {
   if (m.model == BSDF_MODEL_GLASS) {
     let t = saturate(m.transmission);
     if (t > BSDF_WEIGHT_CUTOFF) {
+#if GLASS_PLANT == 3
+      c = bsdf_setup_glass_schlick(c, t * weight, ior, fresnel_F0_from_ior(ior) * tint, Cc, false, mu);   // plant B-tint
+#else
       c = bsdf_setup_glass_schlick(c, t * weight, ior, fresnel_F0_from_ior(ior) * tint, sqrt(Cc), false, mu);
+#endif
       weight *= (1.0 - t);
     }
   }

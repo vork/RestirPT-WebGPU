@@ -1,0 +1,184 @@
+{
+ "format": "restir-scene-package",
+ "version": 1,
+ "name": "c0i_immersed_emitter_256",
+ "source": {
+  "uri": "validation/scenes/make-m3b.ts (C0i / G2 emitter inside a smooth glass box)"
+ },
+ "buffers": {
+  "positions": {
+   "offset": 0,
+   "length": 336,
+   "dtype": "f32",
+   "components": 3
+  },
+  "normals": {
+   "offset": 336,
+   "length": 336,
+   "dtype": "f32",
+   "components": 3
+  },
+  "uv0": {
+   "offset": 672,
+   "length": 224,
+   "dtype": "f32",
+   "components": 2
+  },
+  "indices": {
+   "offset": 896,
+   "length": 168,
+   "dtype": "u32",
+   "components": 3
+  },
+  "triMaterial": {
+   "offset": 1064,
+   "length": 56,
+   "dtype": "u32",
+   "components": 1
+  },
+  "triFlags": {
+   "offset": 1120,
+   "length": 56,
+   "dtype": "u32",
+   "components": 1
+  }
+ },
+ "flatShaded": true,
+ "materials": [
+  {
+   "name": "emitter",
+   "model": "v1",
+   "baseColorFactor": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    2,
+    2,
+    2
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     2,
+     2,
+     2
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0,
+     0,
+     0
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  },
+  {
+   "name": "box",
+   "model": "principled",
+   "baseColorFactor": [
+    0.36,
+    0.36,
+    0.36,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 1,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK"
+  }
+ ],
+ "textures": [],
+ "lights": [],
+ "lightMode": "A",
+ "camera": {
+  "matrix": [
+   1,
+   0,
+   0,
+   0,
+   0,
+   0.31622776601683794,
+   -0.9486832980505138,
+   0,
+   0,
+   0.9486832980505138,
+   0.31622776601683794,
+   0,
+   0,
+   3,
+   1,
+   1
+  ],
+  "yfov": 0.4886921905584123,
+  "znear": 0.0001
+ },
+ "env": null,
+ "render": {
+  "width": 256,
+  "height": 256,
+  "maxBounces": 1
+ },
+ "expected": {
+  "kind": "glass-slab",
+  "formula": "immersed",
+  "ior": 1.5,
+  "C": 0.36,
+  "Le": 2,
+  "N": 1,
+  "plane_y": 0.5,
+  "half_size": 1,
+  "margin": 0.05,
+  "quad_y": 0,
+  "quad_half": 0.9,
+  "text": "(1-F) sqrt(C) L_e for rays refracted onto the quad"
+ }
+}

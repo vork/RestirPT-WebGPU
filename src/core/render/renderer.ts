@@ -24,6 +24,7 @@ import { SceneGpu, type BvhBuilder } from './scene-gpu.ts';
 import type { LightData } from '../scene/types.ts';
 import type { LightsUpdate } from './lights-gpu.ts';
 import { PtFramePass } from './pt-kernel.ts';
+import type { LightMode } from './lights-gpu.ts';
 import type { TexturePathMode } from './textures-gpu.ts';
 
 export const GBUF_TEXEL_BYTES = 80;
@@ -59,6 +60,9 @@ export interface RendererOptions {
   maxBounces: number;
   /** PT: Russian roulette (unbiased; off by default, plan §2 rule 11). */
   rr: boolean;
+  /** PT: plan §1.4 light mode: 'A' NEE-only analytic lights (default until Gate 3.11), 'B' pass-through + MIS (area
+   *  lights visible in mirrors / through smooth glass), 'A′' pass-through after delta lobes only. */
+  lightMode: LightMode;
 }
 
 export interface RendererTargets {
@@ -103,7 +107,7 @@ export class Renderer {
   readonly device: GPUDevice;
   /** Defaults are the validation path: exact textures and Woop watertight intersection (Möller–Trumbore leaks through
    *  the shared diagonal of a quad; plan §1.3). The interactive app opts into MT explicitly (src/app/integration.ts). */
-  readonly options: RendererOptions = { textureMode: 'validation', watertight: true, accumulate: true, thrTau: THR_TAU, renderMode: 'albedo', maxBounces: 3, rr: false };
+  readonly options: RendererOptions = { textureMode: 'validation', watertight: true, accumulate: true, thrTau: THR_TAU, renderMode: 'albedo', maxBounces: 3, rr: false, lightMode: 'A' };
   env!: EnvGpuResources;
   sceneData: SceneData | undefined;
   origin: [number, number, number] = [0, 0, 0];
@@ -181,6 +185,7 @@ export class Renderer {
     const wtChanged = o.watertight !== undefined && o.watertight !== this.options.watertight;
     Object.assign(this.options, o);
     this.state?.pt?.setSettings({ maxBounces: this.options.maxBounces, rr: this.options.rr });
+    if (this.state?.pt && this.state.pt.lights.lightMode !== this.options.lightMode) this.state.pt.lights.setLightMode(this.options.lightMode);
     if (!this.sceneData) return;
     if (texChanged || wtChanged) await this.setScene(this.sceneData, this.origin);
   }
@@ -202,7 +207,7 @@ export class Renderer {
     const p = (async () => {
       try {
         const pt = await PtFramePass.create(this.device, state.gpu, this.env, colorFormat, {
-          maxBounces: this.options.maxBounces, rr: this.options.rr, features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures,
+          maxBounces: this.options.maxBounces, rr: this.options.rr, lightMode: this.options.lightMode, features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures,
         });
         const tg = this.targets;
         if (tg) pt.setTargets({ width: tg.t.width, height: tg.t.height, color: tg.t.color, frameUniforms: tg.t.frameUniforms });

@@ -23,10 +23,21 @@
 
 const GLASS_ETA_SINGULAR_EPS: f32 = 1e-4;   // bsdf_microfacet.h:771
 
+// Gate-1 planted biases (validation only; compile-time define GLASS_PLANT, absent = 0 = off):
+//   1 "B-η"     the BTDF gets a 1/η_side² radiance scaling (eval and sampled weights)
+//   2 "P_R 0.5" the R/T decision uses 0.5 instead of P_R, the weights still divide by P_R (no pdf compensation)
+//   3 "B-tint"  the Principled glass closure takes C instead of √C per interface (v2.wgsl)
+//   4 "B-side"  η is not inverted on backfaces (η_side = ior on both sides)
+//   5 "B-shadow" shadow / any-hit rays pass through glass materials (traverse.wgsl any-hit, scene-data.wgsl)
+
 /// η_side from the node IOR (Cycles clamps max(ior, 1e-5)) and the backfacing test of the evaluating V.
 fn glass_eta_side(ior: f32, back: bool) -> f32 {
   let i = max(ior, 1e-5);
+#if GLASS_PLANT == 4
+  return i;
+#else
   return select(i, 1.0 / i, back);
+#endif
 }
 
 struct GlassFresnel {
@@ -102,6 +113,9 @@ fn glass_eval(c: BsdfCtx, V: vec3f, L: vec3f) -> GlassEval {
   let pR = aR / (aR + aT);
   e.pdfC = jac * select(pR, 1.0 - pR, e.isT) / (1.0 + lI);
   e.f = select(fr.R, fr.T, e.isT) * (c.g_w * jac / (1.0 + lI + lO));
+#if GLASS_PLANT == 1
+  if (e.isT) { e.f /= c.g_eta * c.g_eta; }
+#endif
   if (e.isT) {
     let Hn = select(-H, H, cNH >= 0.0);
     e.valid = !glass_delta_t(c) && dot(c.ng, L) < 0.0 && dot(Hn, V) > 0.0 && dot(Hn, L) < 0.0 && aT > 0.0;
@@ -132,7 +146,11 @@ fn glass_sample(c: BsdfCtx, V: vec3f, u: vec3f) -> GlassSample {
   let aT = bsdf_avg3(fr.T);
   if (!(aR + aT > 0.0)) { return s; }
   let pR = aR / (aR + aT);
+#if GLASS_PLANT == 2
+  let refr = u.z >= 0.5 && aT > 0.0;
+#else
   let refr = u.z >= pR;
+#endif
   let inv = 1.0 / c.g_eta;
   s.L = normalize(select(2.0 * cHI * H - V, (inv * cHI + fr.cosT) * H - inv * V, refr));   // refract_angle / reflect
   s.isT = refr;                                     // the attempted sub-event (also reported for a rejected sample)
@@ -141,6 +159,9 @@ fn glass_sample(c: BsdfCtx, V: vec3f, u: vec3f) -> GlassSample {
   s.isDelta = bctx_singular(c) || (refr && abs(c.g_eta - 1.0) < GLASS_ETA_SINGULAR_EPS);
   if (s.isDelta) {
     s.weightDelta = select(fr.R, fr.T, refr) * (c.g_w / (select(pR, 1.0 - pR, refr) * c.q_g));
+#if GLASS_PLANT == 1
+    if (refr) { s.weightDelta /= c.g_eta * c.g_eta; }
+#endif
   }
   return s;
 }

@@ -10,13 +10,17 @@
 // M3a: validation/harness/gate-m3a.ts — Gate 0 (cpu + Chrome GPU tests T1/T8/T9/T10/T13/T13b/U11, split dispatch),
 //     Gate 1 M3a items (our-PT plants vs Cycles, our A/A) and Gate 2 Stage A on the full M3a scene list with cached
 //     Cycles references. `--only pkg,pkg` restricts Gate 2 to a scene subset (debugging; skips Gates 0/1).
-//   npm run validate -- --milestone M0|M1|M2|M3a [--only ...]
+// M3b: validation/harness/gate-m3b.ts — Gate 0 (glass U-G1…U-G10, U9/U10, closed forms, M3a GPU regression), Gate 1
+//     M3b items (glass plants B-η and P_R = 0.5 vs Cycles, our A/A) and Gate 2 Stage A on the M3b scene list
+//     (C0h–C0k, G1–G10, (vi) Mode A/B, (vi-B), C0o) with closed forms on both renderers.
+//   npm run validate -- --milestone M0|M1|M2|M3a|M3b [--only ...]
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { milestoneM3a } from './gate-m3a.ts';
+import { milestoneM3b } from './gate-m3b.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const { values: args } = parseArgs({ options: { milestone: { type: 'string', default: 'M0' }, only: { type: 'string' } } });
@@ -358,6 +362,7 @@ function milestoneM2(): void {
 const gates: Record<string, () => void> = {
   M0: milestoneM0, M1: milestoneM1, M2: milestoneM2,
   M3A: () => milestoneM3a(record, args.only ? new Set(args.only.split(',')) : undefined),
+  M3B: () => milestoneM3b(record, args.only ? new Set(args.only.split(',')) : undefined),
 };
 const gate = gates[args.milestone!.toUpperCase()];
 if (!gate) {

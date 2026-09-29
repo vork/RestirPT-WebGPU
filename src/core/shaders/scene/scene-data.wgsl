@@ -101,6 +101,15 @@ fn alpha_pass(primId: u32, u: f32, v: f32) -> bool {
 }
 #endif
 
+#if GLASS_PLANT == 5
+/// Gate-1 plant B-shadow (glass.wgsl): glass triangles (Glass / Refraction node, Principled transmission > 0) do not
+/// occlude any-hit rays.
+fn glass_plant_transparent(primId: u32) -> bool {
+  let m = sceneMaterials[tri_material(sceneTris[primId])];
+  return (m.flags & (MAT_GLASS_NODE | MAT_REFRACTION_NODE)) != 0u || m.transmission > 0.0;
+}
+#endif
+
 struct SurfaceHit {
   pos: vec3f,        // from barycentrics on the vertices (never o + t·d; Wächter–Binder)
   ng: vec3f,         // unit geometric normal, flipped toward the incoming ray (Cycles two-sided)

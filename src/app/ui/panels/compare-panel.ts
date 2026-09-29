@@ -26,7 +26,7 @@ export function addComparePanel(pane: TpPane, view: CompareView, hooks: CompareP
     ex.addBinding(cfg, 'spp', { min: 1, max: 65536, step: 1 });
     ex.addBinding(cfg, 'seeds', { label: 'seeds (e.g. 0..3)' });
     ex.addBinding(cfg, 'maxBounces', { label: 'max bounces', min: 0, max: 64, step: 1 });
-    ex.addBinding(cfg, 'lightMode', { label: 'light mode', options: { 'A (NEE only)': 'A', 'B (MIS)': 'B' } });
+    ex.addBinding(cfg, 'lightMode', { label: 'light mode', options: { 'A (NEE only)': 'A', 'B (MIS)': 'B', 'A′ (Cycles: MIS)': 'A′' } });
     ex.addBinding(cfg, 'frames', { label: 'frames', options: { 'current frame': 'current', all: 'all' } });
     ex.addBinding(cfg, 'width', { label: 'width (0 = internal)', min: 0, max: 8192, step: 1 });
     ex.addBinding(cfg, 'height', { label: 'height (0 = internal)', min: 0, max: 8192, step: 1 });

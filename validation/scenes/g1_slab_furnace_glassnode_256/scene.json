@@ -1,0 +1,182 @@
+{
+ "format": "restir-scene-package",
+ "version": 1,
+ "name": "g1_slab_furnace_glassnode_256",
+ "source": {
+  "uri": "validation/scenes/make-m3b.ts (G1 smooth slab in a furnace, furnace-glassnode, N = 2)"
+ },
+ "buffers": {
+  "positions": {
+   "offset": 0,
+   "length": 576,
+   "dtype": "f32",
+   "components": 3
+  },
+  "normals": {
+   "offset": 576,
+   "length": 576,
+   "dtype": "f32",
+   "components": 3
+  },
+  "uv0": {
+   "offset": 1152,
+   "length": 384,
+   "dtype": "f32",
+   "components": 2
+  },
+  "indices": {
+   "offset": 1536,
+   "length": 288,
+   "dtype": "u32",
+   "components": 3
+  },
+  "triMaterial": {
+   "offset": 1824,
+   "length": 96,
+   "dtype": "u32",
+   "components": 1
+  },
+  "triFlags": {
+   "offset": 1920,
+   "length": 96,
+   "dtype": "u32",
+   "components": 1
+  }
+ },
+ "flatShaded": true,
+ "materials": [
+  {
+   "name": "enclosure",
+   "model": "v1",
+   "baseColorFactor": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    1,
+    1,
+    1
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "NONE",
+   "v1": {
+    "diffuse": [
+     0,
+     0,
+     0
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  },
+  {
+   "name": "slab",
+   "model": "glass",
+   "baseColorFactor": [
+    0.8,
+    0.8,
+    0.8,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK"
+  }
+ ],
+ "textures": [],
+ "lights": [],
+ "lightMode": "A",
+ "camera": {
+  "matrix": [
+   1,
+   0,
+   0,
+   0,
+   0,
+   0.8944271909999159,
+   -0.4472135954999579,
+   0,
+   0,
+   0.4472135954999579,
+   0.8944271909999159,
+   0,
+   0,
+   1,
+   1.35,
+   1
+  ],
+  "yfov": 1.0821041362364843,
+  "znear": 0.0001
+ },
+ "env": null,
+ "render": {
+  "width": 256,
+  "height": 256,
+  "maxBounces": 2
+ },
+ "expected": {
+  "kind": "glass-slab",
+  "formula": "furnace-glassnode",
+  "ior": 1.5,
+  "N": 2,
+  "Le": 1,
+  "plane_y": 0.01,
+  "half_size": 10,
+  "margin": 0.5,
+  "c": 0.8,
+  "text": "cF + c^2 (1-F)^2 (1-(cF)^N)/(1-cF)"
+ }
+}

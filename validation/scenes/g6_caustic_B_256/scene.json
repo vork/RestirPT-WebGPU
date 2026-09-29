@@ -1,0 +1,257 @@
+{
+ "format": "restir-scene-package",
+ "version": 1,
+ "name": "g6_caustic_B_256",
+ "source": {
+  "uri": "validation/scenes/make-m3b.ts (G6 rect light (Mode B) behind a smooth glass icosphere: caustic through delta glass)"
+ },
+ "buffers": {
+  "positions": {
+   "offset": 0,
+   "length": 11616,
+   "dtype": "f32",
+   "components": 3
+  },
+  "normals": {
+   "offset": 11616,
+   "length": 11616,
+   "dtype": "f32",
+   "components": 3
+  },
+  "uv0": {
+   "offset": 23232,
+   "length": 7744,
+   "dtype": "f32",
+   "components": 2
+  },
+  "indices": {
+   "offset": 30976,
+   "length": 3888,
+   "dtype": "u32",
+   "components": 3
+  },
+  "triMaterial": {
+   "offset": 34864,
+   "length": 1296,
+   "dtype": "u32",
+   "components": 1
+  },
+  "triFlags": {
+   "offset": 36160,
+   "length": 1296,
+   "dtype": "u32",
+   "components": 1
+  }
+ },
+ "flatShaded": true,
+ "materials": [
+  {
+   "name": "floor",
+   "model": "v1",
+   "baseColorFactor": [
+    0.6,
+    0.6,
+    0.6,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.6,
+     0.6,
+     0.6
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  },
+  {
+   "name": "wall",
+   "model": "v1",
+   "baseColorFactor": [
+    0.5,
+    0.55,
+    0.6,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.5,
+     0.55,
+     0.6
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  },
+  {
+   "name": "sphere",
+   "model": "glass",
+   "baseColorFactor": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK"
+  }
+ ],
+ "textures": [],
+ "lights": [
+  {
+   "id": 0,
+   "name": "rect0",
+   "type": "rect",
+   "color": [
+    1,
+    1,
+    1
+   ],
+   "power": 40,
+   "exposure": 0,
+   "matrix": [
+    0,
+    0,
+    1,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    2.4000000953674316,
+    0,
+    1
+   ],
+   "sizeX": 0.6,
+   "sizeY": 0.6,
+   "spread": 3.141592653589793,
+   "visibleToCamera": false
+  }
+ ],
+ "lightMode": "B",
+ "camera": {
+  "matrix": [
+   1,
+   0,
+   0,
+   0,
+   0,
+   0.8443294201829334,
+   -0.535824439731477,
+   0,
+   0,
+   0.535824439731477,
+   0.8443294201829334,
+   0,
+   0,
+   2,
+   2.6,
+   1
+  ],
+  "yfov": 0.7853981633974483,
+  "znear": 0.0001
+ },
+ "env": null,
+ "render": {
+  "width": 256,
+  "height": 256,
+  "maxBounces": 4
+ }
+}

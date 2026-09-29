@@ -17,7 +17,7 @@ export interface ReferenceConfig {
   /** render_reference.py seeds, e.g. "0..3". */
   seeds: string;
   maxBounces: number;
-  lightMode: 'A' | 'B';
+  lightMode: 'A' | 'B' | 'A′';
   /** 'current' = the timeline's current frame only (default), 'all' = every frame of the animation. */
   frames: 'current' | 'all';
   /** Output size; 0 = the app's internal resolution (needed for pixel-exact comparison). */

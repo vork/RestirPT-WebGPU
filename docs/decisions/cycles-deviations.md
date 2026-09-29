@@ -1,4 +1,4 @@
-# Cycles reference: deviations from plan §7.5 and documented Cycles behaviour (M3a)
+# Cycles reference: deviations from plan §7.5 and documented Cycles behaviour (M3a, M3b)
 
 Gate 2 (Stage A, our PT ≡ Cycles) found the items below while closing M3a. Each has its evidence and its effect on
 the gate. None of them loosens δ.
@@ -77,7 +77,71 @@ off) had tile MDB up to 17% at 16×1024 spp. Both renderers are unbiased, but a 
 Mode-A analytic NEE with glossy lobes stays covered by the r ≥ 0.2 scene and the V2 sweep. Mode B (light MIS on) is
 M3b.
 
+## D4. Sobol-Burley with next_pow2(spp) ≤ 2048: a seed-independent error on multi-bounce rough glass (M3b)
+
+**Symptom.** In the M3b pilot (`validation/out/m3b-gate-20260929-025921`, Cycles 1024 spp × 16 seeds), two units passed
+TOST but failed the rejection checks, on both the first run (seeds 0…15) and the re-run (seeds 100…115):
+- **G4** (rough Glass-node slabs, N 3, L = 1 furnace): Δ_Y +0.004% globally, mean-t 8.4. Our PT was higher than Cycles
+  by +2…4e-4 (relative) in the r = 0.5 and r = 1 tiles.
+- **(vi) Mode B** (smooth glass sphere, roughness-0 mirror, rect + disk lights, 512²): χ²_red 3.35, KS/AD p ≈ 0, and two
+  Šidák tiles. The worst tile was only 0.51%, but the tile-t maps of the two runs correlate at 0.63 (structured
+  bands on the wall and floor, not noise).
+
+**Localisation (G4).**
+- An infinite rough slab (r 0.5, N 3) in the same furnace, seen at 25°/45°/60° through a 2° FOV: ours, Cycles and an
+  f64 CPU Monte Carlo of the slab (independent random numbers) agree to ≤ 6e-5 (≈ 2 SE).
+- The same slab seen by the G4 camera: ours is +3.2e-4 above Cycles at 2048 spp × 16 seeds (t ≈ 6 on every 64-px strip).
+  At 4096 spp × 16 the two agree (|Δ| ≤ 7e-5, |t| ≤ 1.9). Resolution, aspect ratio and slab extent do not matter.
+- A Cycles spp sweep of that scene with the **same** 16 seeds (200…215), luminance image mean vs ours (8192 spp × 16):
+
+  | Cycles spp | next_pow2 | Δ vs ours | t | per-seed image means |
+  |---|---|---|---|---|
+  | 1024 | 1024 | −2.99e-4 | −11.1 | 0.608491 … 0.608724 |
+  | 1536 | 2048 | −3.31e-4 | −18.4 | 0.608514 … 0.608610 |
+  | 2048 | 2048 | −3.27e-4 | −18.6 | 0.608514 … 0.608598 |
+  | 2560 | 4096 | −4.5e-6 | −0.3 | 0.608710 … 0.608810 |
+  | 3072 | 4096 | −7.6e-6 | −0.5 | 0.608711 … 0.608798 |
+  | 4096 | 4096 | +4.3e-6 | +0.3 | 0.608737 … 0.608786 |
+  | 8192 | 8192 | +9.5e-6 | +0.6 | 0.608734 … 0.608790 |
+
+  Every one of the 16 per-seed means at ≤ 2048 spp lies below every per-seed mean at ≥ 2560 spp. Cycles **CPU** at
+  1024 spp gives the same images as Metal (mean |Δ| 6e-7 relative, identical statistics), so it is not the GPU backend.
+- A Cycles-vs-Cycles A/A across seed sets at the same spp passes (G4 seeds 0…15 vs 100…115: global t −0.55, χ²_red
+  0.76). The error is therefore common to all seeds: replicate statistics cannot see it, only a comparison with an
+  independent estimator can.
+
+**Localisation ((vi) Mode B).** At 256² with Cycles 4096 spp, variants without the mirror, without the spheres and
+without the disk light all pass (χ²_red 0.99 / 1.46 / 1.61 over 64 tiles, max |t| ≤ 4.9), and so does the full scene:
+ours (8192 × 16) vs Cycles 4096 × 16 has χ²_red 1.42, max |t| 3.0. The same full scene against Cycles **1024** × 16
+fails (χ²_red 4.12, max |t| 7.1), and Cycles 1024 vs Cycles 4096 fails by itself (χ²_red 3.83, max |t| 6.6). Our Mode A′
+and Mode B agree on this scene (tile χ²_red 0.04 with the same seed).
+
+**Cause (as far as localised).** The step sits exactly where next_pow2(spp) goes from 2048 to 4096 (spp 2048 is
+biased, 2560 is not). That is the Sobol-Burley `sobol_index_mask` (next_pow2(spp) − 1, reversed), which selects how
+many Owen-shuffled Sobol indices a pixel's padded 4D sample sets use (`kernel/sample/sobol_burley.h`,
+`pattern.h::blue_noise_indexing`). Each dimension set's scramble seed is the pixel hash XOR a fixed per-dimension
+constant (`seed ^= hash_hp_uint(dimension_set)`) passed through the Laine–Karras-style `reversed_bit_owen`, so the
+relative shuffle between the padded dimension sets is not independently randomised per pixel. We read this as the
+same class of defect as D1: at ≤ 2^11 indices the pairing of dimension sets behaves like a shared quadrature rule for
+high-dimensional integrands (three rough-glass bounces; caustic chains), and its error does not average out over
+pixels or seeds. We have not isolated it further inside Cycles.
+
+**Rule.** M3b Gate-2 references render at ≥ 4096 spp (`gate-m3b.ts` default `cyclesSpp: 4096`; the larger budgets of
+G5, G8, G9 and G10 also have next_pow2 ≥ 16384). δ is unchanged. The M2/M3a scenes passed at 1024 spp (their
+integrands are low-dimensional or diffuse), so their budgets are unchanged.
+
+## D5. Rough transmission NEE of an MIS light: the approximate tier (M3b)
+
+gap-glass §5.3 (table at line 363): for an MIS-enabled light reached by NEE through a rough transmission lobe, Cycles
+weights the spurious region (f_T > 0 there, but the sampler cannot produce the direction) by its power heuristic,
+w_C < 1, while our valid-only p2 gives ω1 = 1 there. Our expectation exceeds Cycles' by (1 − w_C)·f_spur, and only in
+that region. G5b (rect light over smooth / rough slabs and a rough pane, Mode B) therefore runs in the documented
+**approximate** tier (report.json `"tier": "approximate"`); δ is not loosened and nothing is clamped. Measured once
+(gap-glass risk 1): in the pilot (Cycles 1024 × 16, ours 2048 × 16) G5b also met every tight rule, Δ_Y +0.017% globally,
+worst tile 0.46%, no Šidák tile, so the excess is below the resolution of that run.
+
 ## Deferred
 
-- **C0o visibleToCamera:** Mode B only. In Mode A Cycles 5.1.2 does not show camera-visible area lights when no light
-  has MIS, so `exportScenePackage` and `build_scene.py` refuse them. It moves to M3b with Mode B.
+- **C0o visibleToCamera** (M3a): Mode B only. In Mode A Cycles 5.1.2 does not show camera-visible area lights when no
+  light has MIS, so `exportScenePackage` and `build_scene.py` refuse them. **Covered in M3b** by
+  `c0o_visible_camera_B_256` (Mode B).

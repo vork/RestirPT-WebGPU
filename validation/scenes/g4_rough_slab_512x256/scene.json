@@ -1,0 +1,284 @@
+{
+ "format": "restir-scene-package",
+ "version": 1,
+ "name": "g4_rough_slab_512x256",
+ "source": {
+  "uri": "validation/scenes/make-m3b.ts (G4 rough slabs r 0.1/0.25/0.5/1, N = 3 (inside η = 1/ior, TIR, Tier-1 energy loss))"
+ },
+ "buffers": {
+  "positions": {
+   "offset": 0,
+   "length": 1440,
+   "dtype": "f32",
+   "components": 3
+  },
+  "normals": {
+   "offset": 1440,
+   "length": 1440,
+   "dtype": "f32",
+   "components": 3
+  },
+  "uv0": {
+   "offset": 2880,
+   "length": 960,
+   "dtype": "f32",
+   "components": 2
+  },
+  "indices": {
+   "offset": 3840,
+   "length": 720,
+   "dtype": "u32",
+   "components": 3
+  },
+  "triMaterial": {
+   "offset": 4560,
+   "length": 240,
+   "dtype": "u32",
+   "components": 1
+  },
+  "triFlags": {
+   "offset": 4800,
+   "length": 240,
+   "dtype": "u32",
+   "components": 1
+  }
+ },
+ "flatShaded": true,
+ "materials": [
+  {
+   "name": "enclosure",
+   "model": "v1",
+   "baseColorFactor": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    1,
+    1,
+    1
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "NONE",
+   "v1": {
+    "diffuse": [
+     0,
+     0,
+     0
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  },
+  {
+   "name": "slab_r0.1",
+   "model": "glass",
+   "baseColorFactor": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.1,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK"
+  },
+  {
+   "name": "slab_r0.25",
+   "model": "glass",
+   "baseColorFactor": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.25,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK"
+  },
+  {
+   "name": "slab_r0.5",
+   "model": "glass",
+   "baseColorFactor": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK"
+  },
+  {
+   "name": "slab_r1",
+   "model": "glass",
+   "baseColorFactor": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 1,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK"
+  }
+ ],
+ "textures": [],
+ "lights": [],
+ "lightMode": "A",
+ "camera": {
+  "matrix": [
+   1,
+   0,
+   0,
+   0,
+   0,
+   0.8516583167045438,
+   -0.5240974256643347,
+   0,
+   0,
+   0.5240974256643347,
+   0.8516583167045438,
+   0,
+   0,
+   1.6,
+   2.4,
+   1
+  ],
+  "yfov": 0.9599310885968813,
+  "znear": 0.0001
+ },
+ "env": null,
+ "render": {
+  "width": 512,
+  "height": 256,
+  "maxBounces": 3
+ }
+}

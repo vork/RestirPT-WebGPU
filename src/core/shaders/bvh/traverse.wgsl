@@ -119,6 +119,9 @@ fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u3
 #endif
         if (prim == skipA || prim == skipB || prim == BVH_MISS) { continue; }
         if (!alpha_pass(prim, r.u, r.v)) { continue; }
+#if GLASS_PLANT == 5
+        if (any_hit && glass_plant_transparent(prim)) { continue; }   // Gate-1 plant B-shadow (validation only)
+#endif
         hit = Hit(r.t, r.u, r.v, prim);
         if (any_hit) { return hit; }
       }

@@ -6,7 +6,9 @@
 //   npx tsx validation/harness/run-batches.ts --scene /validation/assets/cornell/cornell.usda --spp 16 --batches 2
 //   npx tsx validation/harness/run-batches.ts --package validation/scenes/cornell_i_512 --kernel pt --spp 256 --batches 16
 //     (M3a reference PT; --max-bounces N overrides the package's render.maxBounces, --rr, --technique mis|nee|bsdf,
-//      --light-mode A|B|A' overrides the package's light mode (plan §1.4; U9 A ≡ B),
+//      --light-mode A|B|A' overrides the package's light mode (plan §1.4; U9 A ≡ B), --plant-glass eta2|pr-half|tint|side|shadow
+//      (M3b glass plants, pt-kernel.ts GlassPlant: B-η 1/η² BTDF scaling, R/T chosen with 0.5 instead of P_R without
+//      pdf compensation, B-tint C instead of √C, B-side η not inverted on backfaces, B-shadow glass does not occlude),
 //      Gate-1 planted biases: --plant-emit-scale 1.01 (every emitter ×s), --plant-drop 0.01@2 (terminate 1% of the
 //      paths at vertex 2, no compensation))
 // If the package directory is missing and --make-c0b is given, an equivalent C0b package (calib_scenes.py make_c0b:
@@ -25,7 +27,9 @@ import { decodePFM } from '../../src/core/io/pfm.ts';
 import { exportScenePackage } from '../../src/core/scene/scene-package.ts';
 import type { SceneData } from '../../src/core/scene/types.ts';
 import type { RenderBatchesReport, ValidationKernel } from './batch-run.ts';
-import type { PtPlant, PtTechnique } from '../../src/core/render/pt-kernel.ts';
+import type { GlassPlant, PtPlant, PtTechnique } from '../../src/core/render/pt-kernel.ts';
+
+const GLASS_PLANTS: readonly GlassPlant[] = ['eta2', 'pr-half', 'tint', 'side', 'shadow'];   // pt-kernel.ts order
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const OUT = path.join(ROOT, 'validation/out');
@@ -53,6 +57,7 @@ const { values: args } = parseArgs({
     'plant-emit-scale': { type: 'string' },
     'plant-drop': { type: 'string' },
     'light-mode': { type: 'string' },
+    'plant-glass': { type: 'string' },
   },
 });
 
@@ -136,8 +141,12 @@ async function main(): Promise<number> {
   const base = args.run ?? `batches-${path.basename(pkgDir ?? args.scene!).replace(/[^\w.-]+/g, '_')}-${stamp()}`;
 
   let plant: PtPlant | undefined;
-  if (args['plant-emit-scale'] || args['plant-drop']) {
+  if (args['plant-emit-scale'] || args['plant-drop'] || args['plant-glass']) {
     plant = {};
+    if (args['plant-glass']) {
+      if (!(GLASS_PLANTS as readonly string[]).includes(args['plant-glass'])) { console.error(`--plant-glass ${GLASS_PLANTS.join('|')}`); return 2; }
+      plant.glass = args['plant-glass'] as GlassPlant;
+    }
     if (args['plant-emit-scale']) plant.emitScale = Number(args['plant-emit-scale']);
     if (args['plant-drop']) {
       const m = /^([\d.eE+-]+)@(\d+)$/.exec(args['plant-drop']);

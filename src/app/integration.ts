@@ -30,7 +30,7 @@ export interface Integration {
   exportForCycles(app: App, cfg?: Partial<ExportConfig>): Promise<string | undefined>;
 }
 
-export interface ExportConfig { width: number; height: number; maxBounces: number; lightMode: 'A' | 'B'; status: string }
+export interface ExportConfig { width: number; height: number; maxBounces: number; lightMode: 'A' | 'B' | 'A′'; status: string }
 
 export interface IntegrationOptions {
   envMode?: EnvLoadMode;
@@ -75,6 +75,9 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
     pendingScenes++;
     try {
       const store = ensureLightStore(scene); // before the upload: scene.lights mirrors the store (stable ids)
+      // plan §1.10: interactive default ≥ 4 bounces when glass is present (each glass interface is a bounce)
+      const hasGlass = scene.materials.some((m) => m.model === 'glass' || m.model === 'refraction' || m.transmissionFactor > 1e-5);
+      if (hasGlass && r.options.maxBounces < 4) { await r.setOptions({ maxBounces: 4 }); app.panel?.refresh(); }
       const g = await r.setScene(scene, origin);
       if (!g) return; // superseded by a newer scene
       lightUnsub?.();
@@ -174,6 +177,10 @@ function addRendererPanel(app: App, r: Renderer): void {
   f.addBinding(o, 'maxBounces', { label: 'max bounces', min: 0, max: 13, step: 1 })
     .on('change', () => { void r.setOptions({ maxBounces: o.maxBounces }); app.resetHistory(); });
   f.addBinding(o, 'rr', { label: 'Russian roulette' }).on('change', () => { void r.setOptions({ rr: o.rr }); app.resetHistory(); });
+  // M3b light modes (plan §1.4): A = analytic lights NEE-only (smooth mirrors / glass never show them, no caustics);
+  // B = area lights hittable by BSDF rays (pass-through, MIS); A′ = hittable only after a delta lobe (same expectation as B)
+  f.addBinding(o, 'lightMode', { label: 'light mode', options: { 'A (NEE only)': 'A', 'B (pass-through + MIS)': 'B', 'A′ (after delta lobes)': 'A′' } })
+    .on('change', () => { void r.setOptions({ lightMode: o.lightMode }); app.resetHistory(); });
   if (import.meta.env.DEV) addExportFolder(app, r);
 }
 
@@ -186,7 +193,7 @@ function addExportFolder(app: App, r: Renderer): void {
   f.addBinding(cfg, 'width', { min: 16, max: 8192, step: 1 });
   f.addBinding(cfg, 'height', { min: 16, max: 8192, step: 1 });
   f.addBinding(cfg, 'maxBounces', { label: 'max bounces', min: 0, max: 64, step: 1 });
-  f.addBinding(cfg, 'lightMode', { label: 'light mode', options: { 'A (NEE only)': 'A', 'B (MIS)': 'B' } });
+  f.addBinding(cfg, 'lightMode', { label: 'light mode', options: { 'A (NEE only)': 'A', 'B (MIS)': 'B', 'A′ (Cycles: MIS)': 'A′' } });
   f.addButton({ title: 'Export for Cycles' }).on('click', () => { void exportForCycles(app, r, cfg); });
   f.addBinding(cfg, 'status', { readonly: true, multiline: true, rows: 3 });
 }
