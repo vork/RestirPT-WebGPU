@@ -250,7 +250,9 @@ function pairTangency(a: RcVertexD, b: RcVertexD): number {
 export const TANGENCY_FP = 1e-5;
 
 export interface DualRecordResult {
-  checked: number; logic: number; fp: number; tangentFp: number; skipped: string | undefined;
+  checked: number; logic: number; fp: number; tangentFp: number;
+  /** U-11: J of a defined (SC_OK) shift re-derived from JOINT pdfs in f64 (Eq. 2): checked / disagreeing (> 1e-3 rel). */
+  jChecked: number; jBad: number; skipped: string | undefined;
   details: string[];
 }
 
@@ -263,7 +265,7 @@ const SC = { OK: 0, O0_MISS: 3, O0_LOBE: 4, O0_TECH: 5, O1: 7, O2: 8, O3: 9, OCC
  * destination thr itself (recomputed from the camera and y₁) and the completeness of the pair list of a defined shift.
  */
 export function dualCheckRecord(s: DualScene, w: Uint32Array, o: number): DualRecordResult {
-  const r: DualRecordResult = { checked: 0, logic: 0, fp: 0, tangentFp: 0, skipped: undefined, details: [] };
+  const r: DualRecordResult = { checked: 0, logic: 0, fp: 0, tangentFp: 0, jChecked: 0, jBad: 0, skipped: undefined, details: [] };
   const code = w[o], flags = w[o + 1], thr = bf(w[o + 2]);
   const sc = code & 0xff;
   const d = flags & 15, k = (flags >>> 4) & 15, tech = (flags >>> 8) & 3;
@@ -360,6 +362,33 @@ export function dualCheckRecord(s: DualScene, w: Uint32Array, o: number): DualRe
     r.checked++;
     if (res.ok !== gOk) {
       if (isLogic(res) && !(tang < TANGENCY_FP)) { r.logic++; r.details.push(`pair ${j}: gpu ok=${gOk} term=${gTerm} m=${bf(w[o + 55 + 2 * i]).toExponential(3)}, f64 ${JSON.stringify(res)} (d=${d} k=${k} tech=${tech} lkm1=${lkm1} lk=${lk} sc=${sc}) ${dbg}`); } else { r.fp++; if (tang < TANGENCY_FP) r.tangentFp++; }
+    }
+  }
+  // U-11: J = jNum/jDen with JOINT pdfs of the copied lobes (math.md#jacobian), recomputed in f64
+  if (sc === SC.OK && yk1) {
+    const gpuJ = bf(w[o + 77]), jDen = bf(w[o + 78]);
+    const joint = (x: DualVertex, from: V3, L: V3, lobe: number): number | undefined => {
+      const pd = pdfF64(x.mat, x.ng, x.ng, nrm(sub(from, x.pos)), L);
+      if (!pd.supported) return undefined;
+      return lobe === LOBE.D ? pd.pD : lobe === LOBE.S ? pd.pS : undefined;
+    };
+    const Gf = (a: V3, b: V3, nb: V3) => { const dl = sub(a, b); const t2 = dot(dl, dl); return Math.abs(dot(nb, dl)) / (t2 * Math.sqrt(t2)); };
+    const from = prevPos(yk1Idx);
+    let jNum: number | undefined = 1;
+    if (forced) jNum = undefined;
+    else if (envRc) jNum = joint(yk1, from, rcWi, lkm1);
+    else {
+      const wP = nrm(sub(xk!.pos, yk1.pos));
+      const pY = joint(yk1, from, wP, lkm1);
+      const G = Gf(yk1.pos, xk!.pos, xk!.ng);
+      if (pY === undefined) jNum = undefined;
+      else if (emitRc || (tech === 0 && k === d - 1)) jNum = pY * G;
+      else { const pK = joint(xk!, yk1.pos, rcWi, lk); jNum = pK === undefined ? undefined : pY * G * pK; }
+    }
+    if (jNum !== undefined) {
+      r.jChecked++;
+      const Jf = jNum / jDen;
+      if (!(Math.abs(Jf / gpuJ - 1) < 1e-3)) { r.jBad++; if (r.details.length < 4) r.details.push(`J gpu ${gpuJ} f64 ${Jf} (d=${d} k=${k} tech=${tech} lkm1=${lkm1} lk=${lk})`); }
     }
   }
   // completeness: a shift defined w.r.t. O1–O3 must have evaluated every pair of its list

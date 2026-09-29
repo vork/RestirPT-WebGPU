@@ -66,6 +66,13 @@ export const T3S = {
   fwdDefined: 11, invDefined: 12, fCond: 13, words: 48, fwdCodes: 16, invCodes: 32,
 } as const;
 export const T3_HIST_BINS = 64;
+/** Global regions after the log2 J histogram: chain (T3-5) counters and per-endpoint-type (U5) counters. */
+export const T3_CHAIN = { trials: 0, both: 1, jViol: 2, defMismatch: 3, fViol: 4 } as const;
+export const T3_EP_WORDS = 3;   // per endpoint type LT_* (8): fwdOk, rtOk, logic
+/** Path-class table (dense PSS sweep): key = flags bits 0–21 | (ℓ₁ | ℓ₂ << 3 | ℓ₃ << 6) << 22, count. */
+export const T3_CLASS_SLOTS = 4096;
+/** Dense sweep: destination texels live in the dual buffer at this word offset (8 words each: vbuf, geo bits). */
+export const DENSE_OFF = 64;
 export const T3_VIOL_WORDS = 16;
 export const T3_VIOL_CAP = 4096;
 /** Violation kinds (viol record word 1 high byte). */
@@ -81,20 +88,87 @@ export const T3V = { invUndefined: 1, invZero: 2, sig: 3, J: 4, F: 5, selfUndefi
  * Failures of the inverse are classified FP-BOUNDARY (|margin| < 2⁻¹⁶ of the deciding pair, or a replay divergence
  * at a triangle edge: barycentric distance < 1e-6) or LOGIC (everything else), gap-rc §10.3.
  * G2: 0 candDump, 1 stats (atomic), 2 violations, 3 dual trace records; 4 rsVbuf, 5 rsGeo. RsDispatch: treeBase = first trial,
- * treeCount = trials, round = mode, flags = partners per candidate, passId = bin skip mask, rowBase = dual trace stride
+ * treeCount = trials, round = mode (0 self, 1 round trip, 2 T5 census, 3 T3-5 chain), flags = partners per candidate
+ * (bit 31: T5 side B), passId = bin skip mask, rowBase = dual trace stride, rowEnd = T5 offset δ (i16 × 2)
  * (0 = off; every rowBase-th trial records both shifts for the f64 dual).
  */
+/** Rank-1 lattice over the first 12 path dims (BSDF slots 0–3 of vertices 1–3; Korobov a = 154303, N = 2²⁰) with a
+ *  per-pair Cranley–Patterson shift; every other dim from the path hash. WGSL, shared by both dense kernels. */
+export const DENSE_LATTICE_WGSL = `
+fn dense_lattice(seed: vec2u, vertex: u32, slot: u32, n: u32, pairSeed: u32) -> u32 {
+  if (vertex < 1u || vertex > 3u || slot > 3u) { return path_hash(seed, vertex, slot); }
+  let dim = (vertex - 1u) * 4u + slot;
+  var g = 1u;
+  for (var i = 0u; i < dim; i++) { g = (g * 154303u) & 0xFFFFFu; }
+  let x = (n * g) & 0xFFFFFu;
+  return (x << 12u) + pcg4d(vec4u(pairSeed, dim, 0x51ed270bu, 0x2c1b3c6du)).x;
+}
+`;
+
+/** Dense PSS sweep, path-tree pass: every atlas pixel is the SAME primary hit (texel in the arena words 0–7) with lattice
+ *  point treeBase + ai; tree 0 of the production pathtree_run, candidate dump on. G2: 0 resOut, 1 arena, 4 candDump. */
+export const DENSE_INIT_WGSL = `
+#include "restir/frame.wgsl"
+#include "restir/reservoir.wgsl"
+#include "restir/queue.wgsl"
+fn rs_vbuf(px: vec2u) -> vec4u { return vec4u(rsArena.words[0], rsArena.words[1], rsArena.words[2], rsArena.words[3]); }
+fn rs_geo(px: vec2u) -> vec4f { return bitcast<vec4f>(vec4u(rsArena.words[4], rsArena.words[5], rsArena.words[6], rsArena.words[7])); }
+var<private> latIdx: u32;
+fn rs_rng_override(seed: vec2u, vertex: u32, slot: u32) -> u32 { return dense_lattice(seed, vertex, slot, latIdx, rsArena.words[8]); }
+${DENSE_LATTICE_WGSL}
+#include "path/pathtree.wgsl"
+@compute @workgroup_size(8, 8, 1)
+fn dense_initial(@builtin(global_invocation_id) gid: vec3u) {
+  let p = rs_pix(vec2u(gid.x, gid.y + rsDispatch.rowBase));
+  if (!p.valid) { return; }
+  latIdx = rsDispatch.treeBase + p.ai;
+  pathtree_run(p, rs_frame_key(p.member, rs_t(), p.localIdx), 0u, 1u, true, true);
+}
+`;
+
 /** Dual (T3-D) trace records: word 0 of the buffer = count; record r at 4 + r·T3_DUAL_WORDS (layout: decodeDualRecord). */
 export const T3_DUAL_WORDS = 80;
 export const T3_DUAL_CAP = 131072;
 export const T3_WGSL = `
 #include "restir/shift.wgsl"
+${DENSE_LATTICE_WGSL}
 @group(2) @binding(0) var<storage, read_write> dump: array<u32>;
 @group(2) @binding(1) var<storage, read_write> stats: array<atomic<u32>>;
 @group(2) @binding(2) var<storage, read_write> viol: array<atomic<u32>>;
 
 const NB: u32 = ${T3_NBINS}u;
 const SW: u32 = ${T3S.words}u;
+const CH0: u32 = ${T3_NBINS * T3S.words + T3_HIST_BINS}u;
+fn stg(w: u32) { atomicAdd(&stats[CH0 + w], 1u); }
+fn stEp(ep: u32, w: u32) { atomicAdd(&stats[CH0 + 8u + ep * ${T3_EP_WORDS}u + w], 1u); }
+const CL0: u32 = CH0 + 8u + 8u * ${T3_EP_WORDS}u;
+fn stClass(key: u32) {
+  var i = pcg3d(vec3u(key, 0x2545f491u, 7u)).x % ${T3_CLASS_SLOTS}u;
+  for (var n = 0u; n < 64u; n++) {
+    let r = atomicCompareExchangeWeak(&stats[CL0 + 2u * i], 0u, key);
+    if (r.exchanged || r.old_value == key) { atomicAdd(&stats[CL0 + 2u * i + 1u], 1u); return; }
+    if (r.old_value != 0u) { i = (i + 1u) % ${T3_CLASS_SLOTS}u; }
+  }
+}
+#if T3_DENSE
+// Dense PSS sweep (restir-api.md §6.1): destinations from the dual buffer (0 = the source pixel, 1… partners); the
+// first 12 path dims (BSDF slots 0–3 of vertices 1–3) from a rank-1 lattice point (RS_RNG_OVERRIDE, the same function
+// as the dense path-tree pass).
+fn shift_dst_load(px: vec2u) -> ShiftDst {
+  let o = ${DENSE_OFF}u + 8u * px.x;
+  var d: ShiftDst;
+  d.prim = atomicLoad(&dual[o]);
+  d.valid = d.prim != 0xFFFFFFFFu;
+  d.bary = bitcast<vec2f>(vec2u(atomicLoad(&dual[o + 1u]), atomicLoad(&dual[o + 2u])));
+  d.thr = bitcast<f32>(atomicLoad(&dual[o + 7u]));
+  d.camPos = rs_cam_pos();
+  return d;
+}
+var<private> latIdx: u32;
+fn rs_rng_override(seed: vec2u, vertex: u32, slot: u32) -> u32 {
+  return dense_lattice(seed, vertex, slot, latIdx, atomicLoad(&dual[${DENSE_OFF - 1}u]));
+}
+#endif
 @group(2) @binding(3) var<storage, read_write> dual: array<atomic<u32>>;
 const DW: u32 = ${T3_DUAL_WORDS}u;
 var<private> trPrim: array<u32, 8>;
@@ -170,7 +244,7 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
   let idx = gid.y * 65535u * 64u + gid.x;
   if (idx >= rsDispatch.treeCount) { return; }
   let trial = rsDispatch.treeBase + idx;
-  let NP = max(rsDispatch.flags, 1u);
+  let NP = max(rsDispatch.flags & 0xFFFFu, 1u);
   let W = rsParams.atlasSize.x; let H = rsParams.atlasSize.y; let P = W * H;
   let ai = trial / (RS_DUMP_CAP * NP);
   let rem = trial % (RS_DUMP_CAP * NP);
@@ -191,25 +265,56 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
   let f = src.flags;
   let bin = t3_case(f);
   if (((rsDispatch.passId >> bin) & 1u) != 0u) { return; }     // bins already at their target (skip mask)
+#if T3_DENSE
+  latIdx = atomicLoad(&dual[${DENSE_OFF - 2}u]) + ai;
+  let p = vec2u(0u);
+  if (j == 0u) { stClass((f & 0x3FFFFFu) | ((dump[base + 23u] & 7u) | (((dump[base + 23u] >> 4u) & 7u) << 3u) | (((dump[base + 23u] >> 8u) & 7u) << 6u)) << 22u); }
+#else
   let p = vec2u(ai % W, ai / W);
+#endif
   let mode = rsDispatch.round;
   var q = p;
-  if (mode == 1u) {
-    let h = pcg4d(vec4u(ai, di, j, 0x5bd1e995u ^ rsDispatch.t));
+  var q2 = p;
+  let h = pcg4d(vec4u(ai, di, j, 0x5bd1e995u ^ rsDispatch.t));
+#if T3_DENSE
+  if (mode == 1u) { q = vec2u(1u + j, 0u); }
+#else
+  if (mode == 1u || mode == 3u) {
     let r = 1.0 + 29.0 * sqrt(u32_to_unit(h.x));
     let ph = TWO_PI * u32_to_unit(h.y);
     let qi = vec2i(p) + vec2i(round(r * vec2f(cos(ph), sin(ph))));
     if (any(qi < vec2i(0)) || qi.x >= i32(W) || qi.y >= i32(H) || all(vec2u(qi) == p)) { st(bin, ${T3S.skipped}u); return; }
     q = vec2u(qi);
   }
+#endif
+  if (mode == 2u) {                                    // T5: fixed offset δ (rowEnd = i16 dx | i16 dy << 16), side B: −δ
+    var dl = vec2i(i32(rsDispatch.rowEnd << 16u) >> 16u, i32(rsDispatch.rowEnd) >> 16u);
+    if ((rsDispatch.flags & 0x80000000u) != 0u) { dl = -dl; }
+    let qi = vec2i(p) + dl;
+    if (any(qi < vec2i(0)) || qi.x >= i32(W) || qi.y >= i32(H)) { return; }
+    q = vec2u(qi);
+  }
+  if (mode == 3u) {                                    // T3-5: q2 = q + another disk offset
+    let r = 1.0 + 29.0 * sqrt(u32_to_unit(h.z));
+    let ph = TWO_PI * u32_to_unit(h.w);
+    let qi = vec2i(q) + vec2i(round(r * vec2f(cos(ph), sin(ph))));
+    if (any(qi < vec2i(0)) || qi.x >= i32(W) || qi.y >= i32(H) || all(vec2u(qi) == q)) { return; }
+    q2 = vec2u(qi);
+    if (!shift_dst_load(q2).valid) { return; }
+  }
   let dq = shift_dst_load(q);
   if (!dq.valid) { st(bin, ${T3S.skipped}u); return; }
   let dp = shift_dst_load(p);
+  let dq2 = shift_dst_load(q2);
+  let ep = rf_ep(f);
   st(bin, ${T3S.trials}u);
   let F0 = src.F;
   var J0 = 0.0;
   var c0 = 0u;
-  let nPass = select(1u, 2u, mode == 1u);
+  var nPass = 1u;
+  if (mode == 1u) { nPass = 2u; } else if (mode == 3u) { nPass = 3u; }
+  var J1 = 0.0;
+  var Fc = vec3f(0.0);
   var s = src;
   var dst = dq;
   for (var ps = 0u; ps < nPass; ps++) {
@@ -223,6 +328,52 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
     }
     let o = shift_hybrid(s, dst);
     let sc = rs_slot_code_sc(o.code);
+    if (mode == 2u) {                                  // T5 census values: side A J·h(F_q(ȳ)), side B h(F_p(x̄))
+      let ok = sc == SC_OK;
+      let sideB = (rsDispatch.flags & 0x80000000u) != 0u;
+      var v1 = 0.0;
+      var vh = 0.0;
+      if (ok) {
+        let Fq = luminance(select(o.FJ / o.J, src.F, sideB));
+        let hh = Fq / (1.0 + Fq);
+        v1 = select(o.J, 1.0, sideB);
+        vh = v1 * hh;
+      }
+      let ob = 4u + 3u * idx;
+      atomicStore(&dual[ob], bitcast<u32>(v1)); atomicStore(&dual[ob + 1u], bitcast<u32>(vh));
+      atomicStore(&dual[ob + 2u], bin | 0x200u | select(0u, 0x100u, ok));
+      return;
+    }
+    if (mode == 3u) {                                  // T3-5: J_{p→q}·J_{q→q2} vs J_{p→q2}, same offset path at q2
+      if (ps == 0u) {
+        if (sc != SC_OK) { return; }
+        J0 = o.J; s.F = o.FJ / o.J; s.jDen = o.J * s.jDen; dst = dq2;
+        continue;
+      }
+      if (ps == 1u) {
+        stg(${T3_CHAIN.trials}u);
+        J1 = select(0.0, o.J, sc == SC_OK); Fc = select(vec3f(0.0), o.FJ / o.J, sc == SC_OK); c0 = o.code;
+        s = src; dst = dq2;
+        continue;
+      }
+      let okA = J1 > 0.0;
+      let okB = sc == SC_OK;
+      if (okA != okB) {
+        let mA = margin_of(c0); let mB = margin_of(o.code);
+        if (!(abs(mA) < 1.52587890625e-5 || abs(mB) < 1.52587890625e-5)) {
+          stg(${T3_CHAIN.defMismatch}u);
+          t3_viol(11u, bin, trial, c0, o.code, 0u, 0.0, J0 * J1, o.J, f, ai, q2.y * W + q2.x, 0.0);
+        }
+        return;
+      }
+      if (!okA) { return; }
+      stg(${T3_CHAIN.both}u);
+      if (!(abs(log(J0 * J1 / o.J)) < 1e-4)) { stg(${T3_CHAIN.jViol}u); t3_viol(12u, bin, trial, c0, o.code, 0u, 0.0, J0 * J1, o.J, f, ai, q2.y * W + q2.x, 0.0); }
+      let Fb = o.FJ / o.J;
+      let dF = abs(Fc - Fb) / max(Fb, vec3f(1e-30));
+      if (!(max(max(dF.x, dF.y), dF.z) < 1e-4)) { stg(${T3_CHAIN.fViol}u); t3_viol(13u, bin, trial, c0, o.code, 0u, 0.0, J0 * J1, o.J, f, ai, q2.y * W + q2.x, max(max(dF.x, dF.y), dF.z)); }
+      return;
+    }
     if (trSlot != 0u) {
       dw(0u, o.code); dw(1u, s.flags); dw(2u, bitcast<u32>(dst.thr)); dw(3u, dst.prim); dw(4u, bitcast<u32>(dst.bary.x)); dw(5u, bitcast<u32>(dst.bary.y));
       dw(6u, s.rc.x); dw(7u, s.rc.y); dw(8u, s.rc.z);
@@ -230,6 +381,7 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
       dw(12u, s.end.x); dw(13u, s.end.y); dw(14u, s.end.z);
       dw(15u, min(trNP, 10u) | (ps << 8u) | (bin << 16u) | (mode << 24u));
       dw(74u, bitcast<u32>(dst.camPos.x)); dw(75u, bitcast<u32>(dst.camPos.y)); dw(76u, bitcast<u32>(dst.camPos.z));
+      dw(77u, bitcast<u32>(o.J)); dw(78u, bitcast<u32>(s.jDen));
     }
     let last = ps + 1u == nPass;
     var edge = 1.0;
@@ -239,6 +391,7 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
       if (!undefined_sc(sc)) { st(bin, ${T3S.fwdDefined}u); }
       if (sc == SC_OK) {
         st(bin, ${T3S.fwdOk}u);
+        stEp(ep, 0u);
         let lb = clamp(i32(floor(log2(o.J) * 2.0)) + 32, 0, 63);
         atomicAdd(&stats[NB * SW + u32(lb)], 1u);
       }
@@ -256,6 +409,7 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
         let fp = (isPair && abs(m) < 1.52587890625e-5) || (sig != 0u && edge < 1e-6);
         if (fp) { st(bin, ${T3S.fp}u); } else {
           st(bin, ${T3S.logic}u);
+          stEp(ep, 2u);
           t3_viol(select(${T3V.invUndefined}u, ${T3V.selfUndefined}u, selfM), bin, trial, c0, o.code, sig, edge, J0, o.J, f, ai, q.y * W + q.x, m);
         }
         return;
@@ -266,6 +420,7 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
         return;
       }
       st(bin, ${T3S.rtOk}u);
+      stEp(ep, 1u);
       if (sig != 0u) {
         if (edge < 1e-6) { st(bin, ${T3S.sigFp}u); } else {
           st(bin, ${T3S.sigLogic}u);
@@ -281,12 +436,9 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
       if (!(frOk && lumOk)) {
         // diagnostic: grazing cosine of the reconnection directions (|ng·ω'| at y_{k−1}, |ng·ω_k| at x_k)
         let gz = trCos;
-        // The base F uses the sampler's weight f/p at the SAMPLED direction (D3 allows it), the shift f/p at the
-        // position-derived one; they differ by the ray-offset angle (~ulp·256/t) over |cos|: explained if fr·|cos| < 1e-3.
-        if (fr * gz < 1e-3) { st(bin, ${T3S.fCond}u); } else {
-          st(bin, ${T3S.fViol}u);
-          t3_viol(select(${T3V.F}u, ${T3V.selfF}u, selfM), bin, trial, c0, o.code, sig, gz, J0, o.J, f, ai, q.y * W + q.x, fr);
-        }
+        // F is one function of the stored vertices (D3 / Changelog B-2): no tolerance beyond 1e-4 (gz: diagnostic)
+        st(bin, ${T3S.fViol}u);
+        t3_viol(select(${T3V.F}u, ${T3V.selfF}u, selfM), bin, trial, c0, o.code, sig, gz, J0, o.J, f, ai, q.y * W + q.x, fr);
       }
       var jBad = false;
       if (selfM) { jBad = !(abs(log2(o.J)) < 1.52587890625e-5); }
@@ -306,7 +458,7 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
 }
 `;
 
-export interface T3Stats { bins: Record<string, Record<string, number>>; fwdCodes: Record<string, number[]>; invCodes: Record<string, number[]>; hist: number[] }
+export interface T3Stats { bins: Record<string, Record<string, number>>; fwdCodes: Record<string, number[]>; invCodes: Record<string, number[]>; hist: number[]; chain: Record<string, number>; ep: { fwdOk: number; rtOk: number; logic: number }[]; classes: { key: number; count: number }[] }
 export function decodeT3Stats(w: Uint32Array): T3Stats {
   const bins: Record<string, Record<string, number>> = {};
   const fwdCodes: Record<string, number[]> = {}, invCodes: Record<string, number[]> = {};
@@ -316,6 +468,13 @@ export function decodeT3Stats(w: Uint32Array): T3Stats {
     fwdCodes[n] = Array.from(w.subarray(o + T3S.fwdCodes, o + T3S.fwdCodes + 16));
     invCodes[n] = Array.from(w.subarray(o + T3S.invCodes, o + T3S.invCodes + 16));
   });
-  return { bins, fwdCodes, invCodes, hist: Array.from(w.subarray(T3_NBINS * T3S.words, T3_NBINS * T3S.words + T3_HIST_BINS)) };
+  const h0 = T3_NBINS * T3S.words;
+  const c0 = h0 + T3_HIST_BINS;
+  const chain = Object.fromEntries(Object.entries(T3_CHAIN).map(([k, i]) => [k, w[c0 + i]]));
+  const ep = Array.from({ length: 8 }, (_, e) => ({ fwdOk: w[c0 + 8 + e * T3_EP_WORDS], rtOk: w[c0 + 9 + e * T3_EP_WORDS], logic: w[c0 + 10 + e * T3_EP_WORDS] }));
+  const cl0 = c0 + 8 + 8 * T3_EP_WORDS;
+  const classes: { key: number; count: number }[] = [];
+  for (let i = 0; i < T3_CLASS_SLOTS; i++) if (w[cl0 + 2 * i]) classes.push({ key: w[cl0 + 2 * i], count: w[cl0 + 2 * i + 1] });
+  return { bins, fwdCodes, invCodes, hist: Array.from(w.subarray(h0, h0 + T3_HIST_BINS)), chain, ep, classes };
 }
-export const T3_STATS_WORDS = T3_NBINS * T3S.words + T3_HIST_BINS;
+export const T3_STATS_WORDS = T3_NBINS * T3S.words + T3_HIST_BINS + 8 + 8 * T3_EP_WORDS + 2 * T3_CLASS_SLOTS;

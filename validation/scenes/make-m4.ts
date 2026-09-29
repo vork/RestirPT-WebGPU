@@ -13,12 +13,16 @@
 // (delta S), a two-sided emissive triangle mesh, point, spot, rect, disk and sun lights and studio_small_09 (P(env)
 // clamped by the analytic lights). Variants: _noenv, _envonly (env only; env NEE on and off at run time), _b2 (b = 2,
 // d ≤ 4: dense PSS sweep), t3_glass_256 (+ smooth glass sphere and rough glass r 0.3 sphere: reported only, D13).
+// WP-B additions (restir-api.md Changelog B-3): t3_rare_256 = t3_cases_256 with glossy r 0.1 floor / back wall (pair 2
+// fails R, so k > 2, ∅-TRI and ∅-ENV paths are frequent) and a large emissive panel; t3_cutoff_256 (U-12) = the
+// spheres replaced by V2 / V1 materials whose lobe weights sit at the closure cutoff 1e-5 (metallic 1 − 1.5e-5,
+// 1 − 0.8e-5, mix 1 − 1.2e-5, specular level ~1e-5).
 import type { EnvironmentData, LightData, MaterialData, SceneData, SceneGeometry } from '../../src/core/scene/types.ts';
 import { TRI_EMISSIVE } from '../../src/core/scene/types.ts';
 
 export type V3 = [number, number, number];
-export type T3Variant = 't3_cases_256' | 't3_cases_256_noenv' | 't3_cases_256_envonly' | 't3_cases_256_b2' | 't3_glass_256';
-export const T3_VARIANTS: T3Variant[] = ['t3_cases_256', 't3_cases_256_noenv', 't3_cases_256_envonly', 't3_cases_256_b2', 't3_glass_256'];
+export type T3Variant = 't3_cases_256' | 't3_cases_256_noenv' | 't3_cases_256_envonly' | 't3_cases_256_b2' | 't3_glass_256' | 't3_rare_256' | 't3_cutoff_256';
+export const T3_VARIANTS: T3Variant[] = ['t3_cases_256', 't3_cases_256_noenv', 't3_cases_256_envonly', 't3_cases_256_b2', 't3_glass_256', 't3_rare_256', 't3_cutoff_256'];
 export const T3_ENV_ID = 'studio_small_09';
 
 const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -133,6 +137,17 @@ export function t3Scene(variant: T3Variant, env?: EnvironmentData): T3Scene {
     v1('mirror', { diffuse: [0, 0, 0], glossy: [0.95, 0.95, 0.95], roughness: 0, mix: 1 }),
     v1('emissive', { diffuse: [0, 0, 0], emission: [6, 5, 4] }),
   ];
+  if (variant === 't3_rare_256') {
+    materials[T3_MAT.floor] = v1('floor_glossy', { diffuse: [0.1, 0.1, 0.1], glossy: [0.8, 0.8, 0.8], roughness: 0.1, mix: 0.9 });
+    materials[T3_MAT.back] = v1('back_glossy', { diffuse: [0, 0, 0], glossy: [0.85, 0.85, 0.85], roughness: 0.12, mix: 1 });
+  }
+  if (variant === 't3_cutoff_256') {
+    materials[T3_MAT.ggx010] = principled('m_cut_a', { baseColorFactor: [0.9, 0.6, 0.3, 1], metallicFactor: 1 - 1.5e-5, roughnessFactor: 0.3 });
+    materials[T3_MAT.ggx019] = principled('m_cut_b', { baseColorFactor: [0.9, 0.6, 0.3, 1], metallicFactor: 1 - 0.8e-5, roughnessFactor: 0.3 });
+    materials[T3_MAT.ggx021] = v1('mix_cut', { diffuse: [0.8, 0.8, 0.8], glossy: [0.9, 0.9, 0.9], roughness: 0.3, mix: 1 - 1.2e-5 });
+    materials[T3_MAT.ggx030] = principled('spec_cut', { baseColorFactor: [0.7, 0.7, 0.7, 1], metallicFactor: 0, roughnessFactor: 0.35, specularFactor: 2e-5 });
+    materials[T3_MAT.ggx050] = principled('diff_cut', { baseColorFactor: [1.2e-5, 1.2e-5, 1.2e-5, 1], metallicFactor: 0, roughnessFactor: 0.45 });
+  }
   if (glass) {
     materials.push(principled('glass', { baseColorFactor: [1, 1, 1, 1], roughnessFactor: 0, transmissionFactor: 1, ior: 1.5 }));
     materials.push(principled('rough_glass', { baseColorFactor: [1, 1, 1, 1], roughnessFactor: 0.3, transmissionFactor: 1, ior: 1.5 }));
@@ -156,6 +171,7 @@ export function t3Scene(variant: T3Variant, env?: EnvironmentData): T3Scene {
   // mirror on the left wall (delta S), a two-sided emissive mesh hanging in the right back corner
   mb.quad([X0 + 0.02, 0.3, -0.4], [X0 + 0.02, 0.3, -1.2], [X0 + 0.02, 1.3, -1.2], [X0 + 0.02, 1.3, -0.4], M.mirror, inside);
   mb.icosphere([0.95, 1.45, -1.05], 0.13, 0, M.emissive);
+  if (variant === 't3_rare_256') mb.quad([1.45, 0.3, 0.6], [1.45, 0.3, -0.2], [1.45, 1.2, -0.2], [1.45, 1.2, 0.6], M.emissive, inside);
   if (glass) {
     mb.icosphere([-0.35, 0.8, 0.3], 0.18, 2, M.glass);
     mb.icosphere([0.45, 0.8, 0.35], 0.18, 2, M.roughGlass);

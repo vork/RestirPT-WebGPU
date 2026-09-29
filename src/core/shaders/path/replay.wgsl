@@ -18,6 +18,7 @@
 // §3.7); F = 0 becomes SC_ZERO in the shift. Inline budget (§4.5): one material_eval, bsdf_sample, bsdf_query site.
 // RS_SHIFT_TRACE (tests): the includer defines rs_trace_vertex / rs_trace_pair / rs_trace_escape (restir-shift.gpu.test.ts).
 #include "restir/rc.wgsl"
+#include "path/path-weight.wgsl"
 #include "restir/frame.wgsl"
 #include "lights/env-sample.wgsl"
 
@@ -88,7 +89,7 @@ fn replay_prefix(seed: vec2u, y1: SurfaceHit, y1Prim: u32, camPos: vec3f, thr: f
         return r;
       }
     }
-    Tp *= bs.weight;
+    Tp *= rs_path_weight(qb, bs.weight, bs.is_delta);
     if (empty && last) {
       // ∅: the same technique at the same d, then the terminal pair (y_{d−1}, env | emitter) must fail as well
       var Le = vec3f(0.0);

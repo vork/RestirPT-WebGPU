@@ -1311,6 +1311,31 @@ touching a shared interface. "WP-A" entries were made while landing P0 / A1.
   PLAN rule 5 "v1: G_T never passes" is enforced in `rcPairTest` itself: `ℓ_{k−1} = G_T` fails D, `ℓ_k = G_T` fails
   the I branch (also in 2022 mode).
 
+- **B-2 D3 strengthened: throughput factors from positions** (affects **WP-A** `path/pathtree.wgsl`, minimal change
+  made by WP-B; WP-C T6(b); U-RIS-1 tolerances). D3 allowed the base path's throughput to use the sampler's `weight`
+  (f/p at the SAMPLED direction) while every shift recomputes f/p at a reconnection vertex at the POSITION-DERIVED
+  direction `normalize(pos(x_{k}) − pos(x_{k−1}))` (resp. the stored ω_k). The two directions differ by the ray-offset
+  angle (Wächter–Binder origin offset / t), and near a grazing direction f/p is steep, so `F(x̄)` from the path tree and
+  `F(T⁻¹T x̄)` from a round trip differed by up to 7e-2 relative (T3-0 self shifts on the all-lights box; WP-C's T6(b)
+  failure on the C0s box, 1.387e-3 on one deep NEE→env path with ℓ₁ = S, seen from both pixels of its pair). That is
+  a target/integrand defined by two formulas (a measure-small bias), not FP noise. Now **every** BSDF-sampled
+  throughput factor in the path tree (`beta`, `betaPost`) and in replay (`Tp`) is `rs_path_weight(q, weight, δ)`
+  (new WP-B module `path/path-weight.wgsl`, included by pathtree and replay) = `bsdf_query(m, V, wOut, ℓ).f_lobe / p_joint` at the position-derived `wOut` (the escape direction on a
+  miss), the formula the shift uses at y_{k−1} and x_k; the sampler's weight is kept only for delta lobes and when
+  `p_joint(wOut)` is not finite-positive (measure-small, counted by `RSC_BASE_JDEN_INVALID` in the base). F is then one
+  function of the stored vertices everywhere, and T3-0 / T3-1 check `|F(x̄')/F(x̄) − 1| < 1e-4` without exceptions. The
+  PT keeps the sampler's weight; the ReSTIR base differs from it per sample by the ray-offset effect (R14).
+- **B-3 T3 fixtures** (§6.2, `make-m4.ts`): added `t3_rare_256` (glossy r 0.1 / 0.12 floor and back wall so pair 2 fails R:
+  k > 2, ∅-TRI and ∅-ENV are frequent; an emissive panel) and `t3_cutoff_256` (U-12: V2 metallic 1 − 1.5e-5 and
+  1 − 0.8e-5, V1 mix 1 − 1.2e-5, specular level 1e-5, base colour 1.2e-5, i.e. lobe weights on both sides of the
+  1e-5 closure cutoff). `t3Scene()` is browser-safe (the Chrome test builds the scenes directly; the CLI writes packages).
+- **B-4 T3 classification** (§6.1 T3, gap-rc §10.3): a round-trip failure of the inverse is FP-BOUNDARY iff the
+  deciding pair has |margin| < 2⁻¹⁶ or the replay diverged at a triangle edge (barycentric distance < 1e-6 of the
+  offset's hit); everything else (incl. an inverse ZERO/OCCLUDED after a forward OK, J or F reciprocity > 1e-4) is
+  LOGIC. In the f64 dual (T3-D) a disagreement is FP-BOUNDARY iff |margin_f64| < 2⁻¹⁶ or the pair is **tangent**
+  (|cos| < 1e-5 between the pair segment or an event direction and a geometric normal: the sampler supports and the
+  two-sided flip switch there, so f32 vertex rounding decides; e.g. both endpoints on the same wall).
+
 ### WP-C amendments (paired spatial reuse, queues, ensemble)
 
 - **C1 Arena write access of `rs_args` and `rs_spatial_resample`; queue clear** (affects WP-A: `resources.ts`
@@ -1389,3 +1414,48 @@ touching a shared interface. "WP-A" entries were made while landing P0 / A1.
 - **E8 Gate-3 T16 extras**: a rung-3.2 / 2022 / ensemble unit fails T16 unless `spatialRoundsExecuted = 3` (a stubbed
   spatial stage cannot pass the final gate); ReSTIR and PT must agree on scene bytes, resolution, env NEE and
   maxBounces; plants must be named and are exempt from the unbiased-preset check.
+
+### WP-D amendments (debug views, inspector, interactive integration)
+
+- **D1 Shift views come from the arena, not from `rsdbg_slot`** (affects nobody's call sites; WP-B/WP-C keep calling
+  the hooks). Views 420–445, 438 and 439 are written by the WP-D pass `rs_debug_views` (`passes/restir/debug.wgsl`,
+  new file owned by WP-D) after the spatial stage, from the J/code words of the **last executed round**
+  (`RsDispatch.round` = executed rounds, as A6) and the flags of the reservoir that round read. The hook could not
+  cover slots that only `rs_pair_accept` finalises (NOT_ACCEPTED, EMPTY_SRC, which would render as code 0 = OK), and
+  the per-pixel masks would need a cross-thread read-modify-write of the AOV. `replayMask` is derived with the
+  `res_needs_replay` rule (accepted ∧ ≠ EMPTY_SRC ∧ source needs replay). `rsdbg_slot` now only records probe tag 68
+  (live shift events); `rsdbg_accept` is a no-op kept for signature stability. The pass is encoded only while a
+  shift view or the probe is active; a second pass `rs_debug_fill` sets the AOV to `DBG_CODE_NONE` before the ReSTIR
+  passes while a ReSTIR code view is active (pixels that no hook writes render black instead of code 0). Both use
+  G1 = scene, G2 = {res[(rounds−1) % 2] ro, arena ro, rsVbuf, rsGeo, pairTex}, G3 = debug (9 storage buffers) and are
+  encoded through `kernel.encodePass` with the group shape of `rs_spatial_shift`.
+- **D2 View 446 `shift.thr`** (appended to the WP-D range 400–499): thr of the pixel (`rsGeo.w`), the reference of the
+  margin views 410/440–445 (with B-1 those margins are `log2(footprint/thr)`, so together they are the PLAN §6
+  "footprints vs thr" view).
+- **D3 Stage taps of the reservoir views.** `rsdbg_reservoir(px, ai, tap)` writes views 400–410 when `dbg.tap == tap`
+  or `dbg.tap == DBG_TAP_FINAL`; in the final tap the later stage of the frame overwrites (last writer wins), so
+  "final" = after spatial when the spatial stage ran, else after initial. The probe records the reservoir of every
+  tap regardless of `dbg.tap`. Bg / empty pixels write `DBG_CODE_NONE` for the code views 405–409 (404 d writes 0 for
+  empty, NONE for background).
+- **D4 Probe records** (§2.11 tags, formats pinned): 65 header = (bits(passId), bits(round), bits(ai), bits(tap)),
+  header + 10 planes (tag 64) are reserved as one block of 11 consecutive records (one atomicAdd, never interleaved);
+  66 candidate = (bits(d | tech<<4 | k<<8 | selected<<12), w, lumF, bits(counter)); 67 vertex = (pos.xyz render
+  frame, bits(path<<8 | b<<4 | lobeCode)); 68 = (bits(code), J, bits(s), bits(replayed)); **69** = (bits(s), m, w, 0),
+  s = 0xFF for the canonical record (m_c, w_c); **70** = (bits(k | sel<<8), m_c, Σm−1, lumRel) — the hook has no
+  W_out / c_out (they are in the tap-SPATIAL reservoir record). New WP-D tags from `rs_debug_views` at the probe
+  pixel: **71** outgoing slot (bits(code), bits(Jword), bits(s | queued<<8 | partnerValid<<9), bits(partner ai)),
+  **72** incoming slot of the partner (bits(code), bits(Jword), bits(s), lum(FJ)), and tag-67 anchors of the shifted
+  paths: path **16+s** = the partner's primary hit (p→partner), path **24+s** = the probe's primary hit, the partner's
+  surface rc vertex and surface endpoint (partner→p). The inspector joins them with the base path's own vertices
+  (the replayed prefix of k > 2 is not recorded). Path ids 1+s / 8+s stay reserved for `rsdbg_vertex` calls from
+  the shift (none in M4).
+- **D5 Interactive ReSTIR in the app** (`renderer.ts`): `RendererOptions.renderMode 'restir'` +
+  `restirMode: 'unbiased' | 'criteria2022' | 'offline' | 'initial'` (interactive preset; + 2022 criteria; offline preset;
+  interactive with rounds 0); `RendererContext.debug` passes the app's DebugResources to `RestirKernel.interactive`.
+  The renderer clears the arena counter words 16–63 at the start of each interactive frame (per-frame HUD numbers);
+  batch kernels are untouched. A light mode other than A falls back to the PT with a HUD note (D1). Offline mode runs
+  S = 32 trees in one interactive submit: at 540p this can exceed the 100 ms submit budget (interactive viewing only;
+  validation uses the batch runner's chunking).
+- **D6 Debug off.** Validation pipelines (no G3, `DEBUG_NO_BINDINGS`) compile every hook to an empty body (tested). With
+  debug resources bound, views/probe on vs off give bitwise-identical finalize output; the debug-enabled pipelines
+  may differ from the validation pipelines by f32 contraction only (measured: 1 word of 2304 by 7e-8 rel).

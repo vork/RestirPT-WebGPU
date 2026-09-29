@@ -20,6 +20,7 @@
 #include "restir/reservoir.wgsl"
 #include "restir/endpoint.wgsl"
 #include "restir/rc.wgsl"
+#include "path/path-weight.wgsl"
 #include "restir/queue.wgsl"
 #include "debug/restir-views.wgsl"
 
@@ -212,8 +213,9 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
           betaPost = vec3f(1.0);
         }
       }
-      beta *= bs.weight;
-      if (treeRc != 0u && treeRc < B) { betaPost *= bs.weight; }
+      let wq = rs_path_weight(qb, bs.weight, bs.is_delta);   // D3 / Changelog B-2: the shift's own factor formula
+      beta *= wq;
+      if (treeRc != 0u && treeRc < B) { betaPost *= wq; }
       if (!any(beta > vec3f(0.0))) { break; }
       // (4) Mode-B crossings: RS_MODE_B = 0 in M4 (D1)
       // ---- (5) BSDF endings at x_{B+1}, d = B + 1 -------------------------------------------------------------------
