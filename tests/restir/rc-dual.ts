@@ -201,3 +201,195 @@ export function pdfF64(m: DualMat, ngIn: V3, nsIn: V3, V: V3, L: V3): DualPdf {
   out.marg = out.pD + out.pS;
   return out;
 }
+
+// ------------------------------------------------------------------------------------------------ T3-D: recorded shifts
+
+/** Geometry as the GPU sees it (recentred f32 positions), per-triangle material, materials in dual form. */
+export interface DualScene { positions: Float32Array; indices: Uint32Array; triMaterial: Uint32Array; materials: DualMat[]; tau: number; params: RcParams }
+
+export interface DualVertex { pos: V3; ng: V3; mat: DualMat }
+
+const f32v = new Float32Array(1);
+const u32v = new Uint32Array(f32v.buffer);
+const bf = (u: number) => { u32v[0] = u; return f32v[0]; };
+const neg = (a: V3): V3 => [-a[0], -a[1], -a[2]];
+
+/** vertex_from_ids in f64 from the f32 vertex data (flat shading: ns = ng). */
+export function dualVertex(s: DualScene, prim: number, u: number, v: number): DualVertex {
+  const i0 = s.indices[3 * prim], i1 = s.indices[3 * prim + 1], i2 = s.indices[3 * prim + 2];
+  const P = (i: number): V3 => [s.positions[3 * i], s.positions[3 * i + 1], s.positions[3 * i + 2]];
+  const a = P(i0), b = P(i1), c = P(i2);
+  const w = 1 - u - v;
+  const pos: V3 = [w * a[0] + u * b[0] + v * c[0], w * a[1] + u * b[1] + v * c[1], w * a[2] + u * b[2] + v * c[2]];
+  const e1 = sub(b, a), e2 = sub(c, a);
+  const ng = nrm([e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]]);
+  return { pos, ng, mat: s.materials[s.triMaterial[prim]] };
+}
+
+/** The event leaving vertex x (incoming from `from`, outgoing along L) with lobe code (lobe | delta << 3 | NEE). */
+function dualEvent(x: DualVertex, from: V3, L: V3, lobeCode: number): { e: RcEventD; v: RcVertexD; supported: boolean; cosL: number } {
+  const V = nrm(sub(from, x.pos));
+  const pdf = pdfF64(x.mat, x.ng, x.ng, V, L);
+  const lobe = lobeCode & 7, delta = (lobeCode & 8) !== 0;
+  const alpha = delta ? 0 : lobeRoughnessF64(x.mat, lobe, pdf.lob);
+  // |cos| of the event direction and of V with the geometric normal: the sampler supports (Ng·L > 0 / ≥ 0) and the
+  // two-sided flip switch there, so a pair decided within f32 noise of such a tangency is FP-BOUNDARY, not LOGIC.
+  const cosL = Math.min(Math.abs(dot(x.ng, L)), Math.abs(dot(x.ng, V)));
+  return { e: { lobe, delta, alpha, pMarg: pdf.marg }, v: { pos: x.pos, ng: x.ng, kind: RCK.SURFACE, diffuseOnly: pdf.lob.diffuseOnly }, supported: pdf.supported, cosL };
+}
+
+/** Tangency of a pair (a, b): min |cos| of the segment with both geometric normals (surface vertices only). */
+function pairTangency(a: RcVertexD, b: RcVertexD): number {
+  const dl = sub(b.pos, a.pos);
+  const t = Math.hypot(dl[0], dl[1], dl[2]);
+  let c = Math.abs(dot(a.ng, dl)) / t;
+  if (b.kind !== RCK.ENV) c = Math.min(c, Math.abs(dot(b.ng, dl)) / t);
+  return c;
+}
+/** A disagreement within this tangency (|cos| of the pair segment or of an event direction) is FP-BOUNDARY. */
+export const TANGENCY_FP = 1e-5;
+
+export interface DualRecordResult {
+  checked: number; logic: number; fp: number; tangentFp: number; skipped: string | undefined;
+  details: string[];
+}
+
+const SC = { OK: 0, O0_MISS: 3, O0_LOBE: 4, O0_TECH: 5, O1: 7, O2: 8, O3: 9, OCCLUDED: 10, ZERO: 11, J_INVALID: 12, O0_SUPPORT: 13, NONFINITE: 15 };
+
+/**
+ * Re-derive, in f64, every rcPairTest decision the GPU recorded for one shift (restir-shift-fixtures.ts T3 dual
+ * records): the replayed pairs (O1 / O3), the last pre-rc pair with EV_RECONNECT(_NEE) (O1), the rc pair (O2) and the
+ * ∅ terminal pair (O3), from ids, the stored rcWi / NEE light data, the destination thr and the materials; plus the
+ * destination thr itself (recomputed from the camera and y₁) and the completeness of the pair list of a defined shift.
+ */
+export function dualCheckRecord(s: DualScene, w: Uint32Array, o: number): DualRecordResult {
+  const r: DualRecordResult = { checked: 0, logic: 0, fp: 0, tangentFp: 0, skipped: undefined, details: [] };
+  const code = w[o], flags = w[o + 1], thr = bf(w[o + 2]);
+  const sc = code & 0xff;
+  const d = flags & 15, k = (flags >>> 4) & 15, tech = (flags >>> 8) & 3;
+  const lkm1 = (flags >>> 14) & 7, lk = (flags >>> 18) & 7, dk = (flags & 0x200000) !== 0;
+  const nP = w[o + 15] & 0xff;
+  const cam: V3 = [bf(w[o + 74]), bf(w[o + 75]), bf(w[o + 76])];
+  const y1 = dualVertex(s, w[o + 3], bf(w[o + 4]), bf(w[o + 5]));
+  const empty = k === 0;
+  const nB = empty ? d - 1 : (k > 2 ? k - 2 : 0);
+  if (nB > 7 || d > 9) { r.skipped = 'deep'; return r; }
+  // thr of the destination domain (math.md#rc-predicate), recomputed
+  const thrD = primaryThresholdF64(cam, y1.pos, y1.ng, s.tau);
+  if (!(Math.abs(thrD / thr - 1) < 1e-4)) { r.logic++; r.details.push(`thr ${thr} vs f64 ${thrD}`); }
+  // offset vertices Y[1..]: y₁, then the replayed hits (Y[b+1] = hit of sample b); lobes at Y[b]
+  const Y: (DualVertex | undefined)[] = [undefined, y1];
+  const lobes: number[] = [0];
+  let escape: V3 | undefined;
+  for (let b = 1; b <= nB; b++) {
+    const q = o + 26 + 4 * (b - 1);
+    const prim = w[q];
+    lobes[b] = w[q + 3];
+    if (prim === 0xFFFFFFFF || prim === 0xFFFFFFFE) { Y[b + 1] = undefined; if (prim === 0xFFFFFFFF) escape = [bf(w[o + 23]), bf(w[o + 24]), bf(w[o + 25])]; break; }
+    Y[b + 1] = dualVertex(s, prim, bf(w[q + 1]), bf(w[q + 2]));
+  }
+  if (Y.some((v) => v && !v.mat)) { r.skipped = 'material'; return r; }
+  const prevPos = (b: number): V3 => (b === 1 ? cam : Y[b - 1]!.pos);
+  const dirTo = (b: number): V3 | undefined => (Y[b + 1] ? nrm(sub(Y[b + 1]!.pos, Y[b]!.pos)) : escape);
+  const replayEvent = (b: number) => { const L = dirTo(b); return L ? dualEvent(Y[b]!, prevPos(b), L, lobes[b]) : undefined; };
+  // reconnection data
+  const yk1Idx = empty ? 0 : (k > 2 ? k - 1 : 1);
+  const yk1 = empty ? undefined : Y[yk1Idx];
+  const forced = tech === 0 && k === d;
+  const envRc = tech === 3 && k === d, emitRc = tech === 1 && k === d;
+  const light = { dir: [bf(w[o + 16]), bf(w[o + 17]), bf(w[o + 18])] as V3, pos: [bf(w[o + 19]), bf(w[o + 20]), bf(w[o + 21])] as V3, inf: w[o + 22] !== 0 };
+  const neeDir = (x: V3): V3 => (light.inf ? light.dir : nrm(sub(light.pos, x)));
+  const rcWi: V3 = [bf(w[o + 9]), bf(w[o + 10]), bf(w[o + 11])];
+  const xk = (!empty && !forced && !envRc) ? dualVertex(s, w[o + 6], bf(w[o + 7]), bf(w[o + 8])) : undefined;
+  const reconnectEvent = () => {
+    if (!yk1) return undefined;
+    const from = prevPos(yk1Idx);
+    if (forced) return dualEvent(yk1, from, neeDir(yk1.pos), LOBE.NEE);
+    const L = envRc ? rcWi : nrm(sub(xk!.pos, yk1.pos));
+    return dualEvent(yk1, from, L, lkm1);
+  };
+  const seen = new Set<number>();
+  for (let i = 0; i < Math.min(nP, 10); i++) {
+    const pw = w[o + 54 + 2 * i];
+    const j = pw & 15, gOk = ((pw >>> 4) & 1) !== 0, gTerm = pw >>> 5;
+    seen.add(j);
+    let res: RcResultD | undefined;
+    let sup = true;
+    let dbg = '';
+    let tang = 1;
+    if (empty && j === d) {                              // ∅ terminal pair (y_{d−1}, emitter | env)
+      const ea = replayEvent(d - 1);
+      if (!ea) { r.skipped = 'trace'; return r; }
+      sup = ea.supported;
+      const bV: RcVertexD = Y[d] ? { pos: Y[d]!.pos, ng: Y[d]!.ng, kind: RCK.LIGHT, diffuseOnly: false } : { pos: [0, 0, 0], ng: [0, 0, 0], kind: RCK.ENV, diffuseOnly: false };
+      res = pairTestF64(ea.v, ea.e, bV, eventNone(), thr, s.params);
+      tang = Math.min(ea.cosL, bV.kind === RCK.ENV ? 1 : pairTangency(ea.v, bV));
+    } else if (empty || j <= nB) {                      // replayed pair (y_{j−1}, y_j | EV_BSDF)
+      const ea = replayEvent(j - 1), eb = replayEvent(j);
+      if (!ea || !eb) { r.skipped = 'trace'; return r; }
+      sup = ea.supported && eb.supported;
+      res = pairTestF64(ea.v, ea.e, eb.v, eb.e, thr, s.params);
+      tang = Math.min(ea.cosL, eb.cosL, pairTangency(ea.v, eb.v));
+    } else if (j === k - 1) {                           // last pre-rc pair, EV_RECONNECT(_NEE) at y_{k−1}
+      const ea = replayEvent(k - 2), eb = reconnectEvent();
+      if (!ea || !eb) { r.skipped = 'trace'; return r; }
+      sup = ea.supported && eb.supported;
+      res = pairTestF64(ea.v, ea.e, eb.v, eb.e, thr, s.params);
+      tang = Math.min(ea.cosL, eb.cosL, pairTangency(ea.v, eb.v));
+    } else if (j === k) {                               // rc pair (O2)
+      const ea = reconnectEvent();
+      if (!ea) { r.skipped = 'trace'; return r; }
+      sup = ea.supported;
+      tang = ea.cosL;
+      if (envRc) res = pairTestF64(ea.v, ea.e, { pos: [0, 0, 0], ng: [0, 0, 0], kind: RCK.ENV, diffuseOnly: false }, eventNone(), thr, s.params);
+      else if (emitRc) {
+        const zV: RcVertexD = { pos: xk!.pos, ng: xk!.ng, kind: RCK.LIGHT, diffuseOnly: false };
+        res = pairTestF64(ea.v, ea.e, zV, eventNone(), thr, s.params);
+        tang = Math.min(tang, pairTangency(ea.v, zV));
+      } else {
+        const Lk = tech === 0 && k === d - 1 ? neeDir(xk!.pos) : rcWi;
+        const code2 = tech === 0 && k === d - 1 ? LOBE.NEE : (lk | (dk ? 8 : 0));
+        const eb = dualEvent(xk!, yk1!.pos, Lk, code2);
+        sup = sup && eb.supported;
+        dbg = `ea=${JSON.stringify(ea.e)} eb=${JSON.stringify(eb.e)} xk=${JSON.stringify(xk)} y=${JSON.stringify(yk1)} Lk=${Lk}`;
+        res = pairTestF64(ea.v, ea.e, eb.v, eb.e, thr, s.params);
+      }
+    }
+    if (!res) { r.logic++; r.details.push(`pair ${j} not attributable (d=${d} k=${k})`); continue; }
+    if (!sup) { r.skipped = 'material'; return r; }
+    r.checked++;
+    if (res.ok !== gOk) {
+      if (isLogic(res) && !(tang < TANGENCY_FP)) { r.logic++; r.details.push(`pair ${j}: gpu ok=${gOk} term=${gTerm} m=${bf(w[o + 55 + 2 * i]).toExponential(3)}, f64 ${JSON.stringify(res)} (d=${d} k=${k} tech=${tech} lkm1=${lkm1} lk=${lk} sc=${sc}) ${dbg}`); } else { r.fp++; if (tang < TANGENCY_FP) r.tangentFp++; }
+    }
+  }
+  // completeness: a shift defined w.r.t. O1–O3 must have evaluated every pair of its list
+  const defined = sc === SC.OK || sc === SC.ZERO || sc === SC.OCCLUDED || sc === SC.J_INVALID || sc === SC.O0_LOBE || sc === SC.O0_SUPPORT || sc === SC.NONFINITE;
+  if (defined && nP <= 10) {
+    const need: number[] = [];
+    const hi = empty ? d : (forced ? k - 1 : k);
+    for (let j = 2; j <= hi; j++) need.push(j);
+    const lobeFailEarly = sc === SC.O0_LOBE && forced;   // forced NEE with no non-delta lobe stops before O1
+    if (!lobeFailEarly && need.some((j) => !seen.has(j))) {
+      r.logic++; r.details.push(`incomplete pair list: need ${need} seen ${[...seen]} (d=${d} k=${k} tech=${tech} sc=${sc})`);
+    }
+  }
+  return r;
+}
+
+/** MaterialData (scene types) → the dual's parameters (bsdf.wgsl MatEval mapping of material_eval, untextured). */
+export function dualMaterial(m: {
+  model: string; baseColorFactor: number[]; metallicFactor: number; roughnessFactor: number; ior: number; specularFactor: number;
+  specularColorFactor: number[]; transmissionFactor: number; v1?: { diffuse: number[]; glossy: number[]; roughness: number; mix: number };
+}): DualMat {
+  if (m.model === 'v1' && m.v1) {
+    return { model: 0, base: m.v1.diffuse as V3, metallic: m.v1.mix, roughness: m.v1.roughness, ior: 1.5, specLevel: 0.5, specTint: m.v1.glossy as V3, transmission: 0 };
+  }
+  if (m.model === 'glass' || m.model === 'refraction') {
+    return { model: m.model === 'glass' ? 3 : 4, base: m.baseColorFactor.slice(0, 3) as V3, metallic: 0, roughness: m.roughnessFactor, ior: m.ior, specLevel: 0.5, specTint: [1, 1, 1], transmission: 0 };
+  }
+  return {
+    model: m.transmissionFactor > 1e-5 ? 2 : 1, base: m.baseColorFactor.slice(0, 3) as V3, metallic: m.metallicFactor, roughness: m.roughnessFactor,
+    ior: m.ior, specLevel: 0.5 * m.specularFactor, specTint: m.specularColorFactor.slice(0, 3) as V3, transmission: m.transmissionFactor,
+  };
+}
+void neg;

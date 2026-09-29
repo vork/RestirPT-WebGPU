@@ -4,11 +4,15 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { restirSettings } from '../../src/core/render/restir/presets.ts';
 import { RestirKernel } from '../../src/core/render/restir/kernel.ts';
 import { JITTER_IID } from '../../src/core/render/frame-uniforms.ts';
-import { pairTestF64, isLogic, type RcEventD, type RcVertexD } from '../../tests/restir/rc-dual.ts';
+import { dualCheckRecord, dualMaterial, pairTestF64, isLogic, type DualScene, type RcEventD, type RcVertexD } from '../../tests/restir/rc-dual.ts';
+import { recentrePositions } from '../../src/core/render/scene-gpu.ts';
+import type { SceneData } from '../../src/core/scene/types.ts';
 import { releaseTestGpu } from './device-factory.ts';
+import { loadHdri, synthEnvData } from './env-fixtures.ts';
+import { T3_ENV_ID, t3Scene, type T3Variant } from '../scenes/make-m4.ts';
 import { allLightsScene, boxCamera, boxScene, gpuScene, light, restirRig, type RestirRig } from './restir-fixtures.ts';
 import {
-  T3_BIN_NAMES, T3_STATS_WORDS, T3_VIOL_CAP, T3_VIOL_WORDS, T3_WGSL, bitsToF32, decodeT3Stats, readU32, storageBuffer, testPipeline,
+  T3S, T3_BIN_NAMES, T3_DUAL_CAP, T3_DUAL_WORDS, T3_NBINS, T3_STATS_WORDS, T3_VIOL_CAP, T3_VIOL_WORDS, T3_WGSL, bitsToF32, decodeT3Stats, readU32, storageBuffer, testPipeline,
   type T3Stats, type TestPipeline,
 } from './restir-shift-fixtures.ts';
 import { SC_NAMES, rfUnpack } from '../../src/core/render/restir/layout.ts';
@@ -112,8 +116,16 @@ describe('U-RC-1: rcPairTest (Enhanced and 2022) ≡ the f64 dual on random pair
 
 // ------------------------------------------------------------------------------------------------ T3 rig
 
-interface T3RunOptions { mode: 0 | 1; partners: number; frames: number; frameBase?: number; maxTrialsPerDispatch?: number }
-interface T3Result { stats: T3Stats; viol: Uint32Array; nViol: number; frames: number }
+interface T3RunOptions {
+  mode: 0 | 1; partners: number; frames: number; frameBase?: number; maxTrialsPerDispatch?: number;
+  /** Stop a bin once it has this many forward-OK trials (round trips); stop the run when every bin with ≥ minSeen
+   *  trials in the first frames reached it, or after `frames` frames / `maxMs`. */
+  target?: number; maxMs?: number;
+  /** T3-D: record every `dualStride`-th trial (both shifts) and re-derive its predicate decisions in f64. */
+  dual?: DualScene; dualStride?: number;
+}
+interface DualSummary { records: number; pairs: number; logic: number; fp: number; tangentFp: number; skipped: Record<string, number>; details: string[] }
+interface T3Result { stats: T3Stats; viol: Uint32Array; nViol: number; frames: number; ms: number; dual?: DualSummary }
 
 /** Render frames with the candidate dump and run the T3 kernel over every dumped candidate × partners. */
 async function runT3(rig: RestirRig, tp: TestPipeline, o: T3RunOptions): Promise<T3Result> {
@@ -121,24 +133,56 @@ async function runT3(rig: RestirRig, tp: TestPipeline, o: T3RunOptions): Promise
   const k = rig.kernel;
   const stats = storageBuffer(dev, T3_STATS_WORDS * 4);
   const viol = storageBuffer(dev, (4 + T3_VIOL_CAP * T3_VIOL_WORDS) * 4);
+  const dualBuf = storageBuffer(dev, o.dual ? (4 + T3_DUAL_CAP * T3_DUAL_WORDS) * 4 : 16);
+  const dualSum: DualSummary = { records: 0, pairs: 0, logic: 0, fp: 0, tangentFp: 0, skipped: {}, details: [] };
+  const drainDual = async () => {
+    const w = await readU32(dev, dualBuf);
+    const n = Math.min(w[0], T3_DUAL_CAP);
+    for (let r = 0; r < n; r++) {
+      const res = dualCheckRecord(o.dual!, w, 4 + r * T3_DUAL_WORDS);
+      dualSum.records++;
+      if (res.skipped) { dualSum.skipped[res.skipped] = (dualSum.skipped[res.skipped] ?? 0) + 1; continue; }
+      dualSum.pairs += res.checked; dualSum.logic += res.logic; dualSum.fp += res.fp; dualSum.tangentFp += res.tangentFp;
+      for (const d of res.details) if (dualSum.details.length < 12) dualSum.details.push(d);
+    }
+    const enc = dev.createCommandEncoder();
+    enc.clearBuffer(dualBuf, 0, 16);
+    dev.queue.submit([enc.finish()]);
+  };
   const P = rig.W * rig.H;
   const total = P * 32 * o.partners;
   const chunk = o.maxTrialsPerDispatch ?? (1 << 20);
   const res = k.resources;
+  const t0 = Date.now();
+  let mask = 0, frames = 0;
   for (let f = 0; f < o.frames; f++) {
     const t = (o.frameBase ?? 0) + f;
     await rig.frames(1, t);
     for (let base = 0; base < total; base += chunk) {
       const n = Math.min(chunk, total - base);
       const g = Math.ceil(n / 64);
-      await tp.run([res.candDump!, stats, viol], [Math.min(g, 65535), Math.ceil(g / 65535)],
-        { t, treeBase: base, treeCount: n, round: o.mode, flags: o.partners }, [res.views.vbuf, res.views.geo]);
+      await tp.run([res.candDump!, stats, viol, dualBuf], [Math.min(g, 65535), Math.ceil(g / 65535)],
+        { t, treeBase: base, treeCount: n, round: o.mode, flags: o.partners, passId: mask, rowBase: o.dual ? (o.dualStride ?? 101) : 0 },
+        [res.views.vbuf, res.views.geo]);
     }
+    if (o.dual) await drainDual();
+    frames++;
+    if (o.target) {
+      const w = await readU32(dev, stats, T3_NBINS * T3S.words * 4);
+      mask = 0;
+      let open = 0;
+      for (let b = 0; b < T3_NBINS; b++) {
+        const ok = w[b * T3S.words + T3S.fwdOk];
+        if (ok >= o.target) mask |= 1 << b; else if (w[b * T3S.words + T3S.trials] > 0) open++;
+      }
+      if (open === 0) break;
+    }
+    if (o.maxMs && Date.now() - t0 > o.maxMs) break;
   }
   const s = decodeT3Stats(await readU32(dev, stats));
   const v = await readU32(dev, viol);
-  stats.destroy(); viol.destroy();
-  return { stats: s, viol: v, nViol: v[0], frames: o.frames };
+  stats.destroy(); viol.destroy(); dualBuf.destroy();
+  return { stats: s, viol: v, nViol: v[0], frames, ms: Date.now() - t0, dual: o.dual ? dualSum : undefined };
 }
 
 function t3Report(tag: string, r: T3Result): { logic: number; fp: number; rt: number } {
@@ -151,7 +195,7 @@ function t3Report(tag: string, r: T3Result): { logic: number; fp: number; rt: nu
     rt += b.fwdOk;
     rows.push(`  ${n.padEnd(14)} trials=${b.trials} fwdOk=${b.fwdOk} rtOk=${b.rtOk} LOGIC=${b.logic} FP=${b.fp} visZero=${b.visZero} sigL=${b.sigLogic} sigFP=${b.sigFp} J=${b.jViol} F=${b.fViol} Fcond=${b.fCond} fwd=[${r.stats.fwdCodes[n].map((c, i) => c ? `${SC_NAMES[i]}:${c}` : '').filter(Boolean).join(' ')}] inv=[${r.stats.invCodes[n].map((c, i) => c ? `${SC_NAMES[i]}:${c}` : '').filter(Boolean).join(' ')}]`);
   }
-  console.log(`[${tag}] frames=${r.frames} fwdOk=${rt} LOGIC=${logic} FP=${fp} violations=${r.nViol}\n${rows.join('\n')}`);
+  console.log(`[${tag}] frames=${r.frames} ms=${r.ms.toFixed(0)} fwdOk=${rt} LOGIC=${logic} FP=${fp} violations=${r.nViol}\n${rows.join('\n')}`);
   const ex: string[] = [];
   for (let i = 0; i < Math.min(r.nViol, T3_VIOL_CAP, 12); i++) {
     const o = 4 + i * T3_VIOL_WORDS;
@@ -160,17 +204,50 @@ function t3Report(tag: string, r: T3Result): { logic: number; fp: number; rt: nu
     ex.push(`  kind=${w[o] & 255} bin=${T3_BIN_NAMES[w[o] >> 8]} fwd=${SC_NAMES[w[o + 2] & 255]}(t${(w[o + 2] >> 8) & 15},p${(w[o + 2] >> 12) & 15}) inv=${SC_NAMES[w[o + 3] & 255]}(t${(w[o + 3] >> 8) & 15},p${(w[o + 3] >> 12) & 15}) sig=${w[o + 4].toString(16)} edge=${bitsToF32(w[o + 5]).toExponential(2)} J=${bitsToF32(w[o + 6]).toPrecision(6)}/${bitsToF32(w[o + 7]).toPrecision(6)} m|fr=${bitsToF32(w[o + 11]).toExponential(3)} ai=${w[o + 9]} q=${w[o + 10]} f=${JSON.stringify(f)}`);
   }
   if (ex.length) console.log(ex.join('\n'));
+  if (r.dual) {
+    console.log(`[${tag} T3-D] records=${r.dual.records} pairs=${r.dual.pairs} LOGIC=${r.dual.logic} FP=${r.dual.fp} (tangent ${r.dual.tangentFp}) skipped=${JSON.stringify(r.dual.skipped)}${r.dual.details.length ? '\n  ' + r.dual.details.join('\n  ') : ''}`);
+    logic += r.dual.logic;
+  }
   return { logic, fp, rt };
 }
 
 describe('T3-0 / T3-1 smoke on the all-lights box (allLightsScene, 128², maxBounces 4)', () => {
   it('self shifts (T3-0) and round trips (T3-1/T4)', async () => {
     const rig = await restirRig(allLightsScene(), 128, 128, { dumpCandidates: true, settings: { maxBounces: 4 } });
-    const tp = await testPipeline(rig.kernel, 't3', T3_WGSL, 't3_main', 3, { RS_REPLAY: 1, RS_SHIFT_TRACE: 1, RS_VBUF_BINDING: '3u', RS_GEO_BINDING: '4u' }, ['uint', 'unfilterable-float']);
+    const tp = await testPipeline(rig.kernel, 't3', T3_WGSL, 't3_main', 4, { RS_REPLAY: 1, RS_SHIFT_TRACE: 1, RS_VBUF_BINDING: '4u', RS_GEO_BINDING: '5u' }, ['uint', 'unfilterable-float']);
     const self = t3Report('T3-0 smoke', await runT3(rig, tp, { mode: 0, partners: 1, frames: 2 }));
     const rt = t3Report('T3-1 smoke', await runT3(rig, tp, { mode: 1, partners: 4, frames: 2 }));
     expect(self.logic).toBe(0);
     expect(rt.logic).toBe(0);
     rig.destroy();
   });
+});
+
+// ------------------------------------------------------------------------------------------------ T3 on the t3_cases fixtures
+
+async function t3Rig(variant: T3Variant, W = 256, o: { envNee?: boolean; criteria?: 'enhanced' | '2022' } = {}): Promise<RestirRig & { scene: SceneData }> {
+  const env = variant === 't3_cases_256_noenv' ? undefined : (await loadHdri(`${T3_ENV_ID}_1k.hdr`)) ?? synthEnvData(256, 128);
+  const t = t3Scene(variant, env);
+  const rig = await restirRig(t.scene, W, W, {
+    dumpCandidates: true, cam: { camToWorld: t.camera.matrix, yfov: t.camera.yfov },
+    settings: { maxBounces: t.maxBounces, criteria: o.criteria ?? 'enhanced' }, env: { nee: o.envNee ?? true },
+  });
+  return Object.assign(rig, { scene: t.scene });
+}
+function dualScene(rig: RestirRig, scene: SceneData, params: { alphaMin: number; crit2022?: boolean; dmin?: number } = { alphaMin: 0.2 }): DualScene {
+  const g = scene.geometry;
+  return { positions: recentrePositions(g.positions, rig.g.gpu.origin), indices: g.indices, triMaterial: g.triMaterial, materials: scene.materials.map(dualMaterial), tau: rig.kernel.settings.tau, params };
+}
+const T3_DEFINES = { RS_REPLAY: 1, RS_SHIFT_TRACE: 1, RS_VBUF_BINDING: '4u', RS_GEO_BINDING: '5u' };
+
+describe('T3 throughput probe (t3_cases_256)', () => {
+  it('self + round trips, 3 frames, 16 partners', async () => {
+    const rig = await t3Rig('t3_cases_256');
+    const tp = await testPipeline(rig.kernel, 't3', T3_WGSL, 't3_main', 4, T3_DEFINES, ['uint', 'unfilterable-float']);
+    const self = t3Report('T3-0 probe', await runT3(rig, tp, { mode: 0, partners: 1, frames: 3 }));
+    const rt = t3Report('T3-1 probe', await runT3(rig, tp, { mode: 1, partners: 16, frames: 3, dual: dualScene(rig, rig.scene), dualStride: 97 }));
+    expect(self.logic).toBe(0);
+    expect(rt.logic).toBe(0);
+    rig.destroy();
+  }, 1_800_000);
 });

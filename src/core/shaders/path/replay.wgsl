@@ -16,7 +16,7 @@
 // An invalid sample, or a miss before the last vertex, is SC_O0_MISS (pair field = b). A zero throughput is NOT a
 // decision here: the replay continues so that every "undefined" decision precedes any "zero" decision (restir-api.md
 // §3.7); F = 0 becomes SC_ZERO in the shift. Inline budget (§4.5): one material_eval, bsdf_sample, bsdf_query site.
-// RS_SHIFT_TRACE (tests): the includer defines rs_trace_vertex / rs_trace_pair (restir-shift.gpu.test.ts).
+// RS_SHIFT_TRACE (tests): the includer defines rs_trace_vertex / rs_trace_pair / rs_trace_escape (restir-shift.gpu.test.ts).
 #include "restir/rc.wgsl"
 #include "restir/frame.wgsl"
 #include "lights/env-sample.wgsl"
@@ -62,6 +62,7 @@ fn replay_prefix(seed: vec2u, y1: SurfaceHit, y1Prim: u32, camPos: vec3f, thr: f
     let isHit = h.primId != BVH_MISS;
 #if RS_SHIFT_TRACE
     rs_trace_vertex(b, h.primId, h.u, h.v, bs.lobe | select(0u, 8u, bs.is_delta));
+    if (!isHit) { rs_trace_escape(bs.L); }
 #endif
     if (!isHit && !(empty && last)) {
       r.code = rs_slot_code(SC_O0_MISS, RCT_NONE, b, 0.0);

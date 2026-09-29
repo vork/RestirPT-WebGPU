@@ -22,7 +22,7 @@
 // Inline budget (§4.5): the reconnection loop has one material_eval and one bsdf_query call site (≤ 2 iterations:
 // y_{k−1}, then x_k), replay one of each plus the only bsdf_sample.
 // Compile-time switches: RS_REPLAY (replay compiled in), RS_SHIFT_TRACE (tests: the includer defines rs_trace_vertex,
-// rs_trace_pair and rs_trace_light).
+// rs_trace_pair, rs_trace_light and rs_trace_recon).
 #include "restir/reservoir.wgsl"
 #include "restir/endpoint.wgsl"
 #include "restir/rc.wgsl"
@@ -238,6 +238,9 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
   else if (cs != SH_FORCED) { jNum = pYj * rc_G(yPrev.pos, xk.pos, xk.ng) * pKj; }
   var J = 1.0;
   if (cs != SH_FORCED) { J = jNum / src.jDen; }
+#if RS_SHIFT_TRACE
+  rs_trace_recon(abs(dot(yPrev.ng, wP)), select(1.0, abs(dot(xk.ng, src.rcWi)), cs == SH_B1 || cs == SH_DEEP));
+#endif
   // ---- 5. integrand F(ȳ) in the destination domain ---------------------------------------------------------------------
   var F = vec3f(0.0);
   switch cs {

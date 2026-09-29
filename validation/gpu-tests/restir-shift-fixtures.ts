@@ -80,9 +80,13 @@ export const T3V = { invUndefined: 1, invZero: 2, sig: 3, J: 4, F: 5, selfUndefi
  * Both shifts go through ONE shift_hybrid call site (loop), RS_REPLAY = 1, RS_SHIFT_TRACE = 1 (replayed prefix).
  * Failures of the inverse are classified FP-BOUNDARY (|margin| < 2⁻¹⁶ of the deciding pair, or a replay divergence
  * at a triangle edge: barycentric distance < 1e-6) or LOGIC (everything else), gap-rc §10.3.
- * G2: 0 candDump, 1 stats (atomic), 2 violations; 3 rsVbuf, 4 rsGeo. RsDispatch: treeBase = first trial,
- * treeCount = trials, round = mode, flags = partners per candidate.
+ * G2: 0 candDump, 1 stats (atomic), 2 violations, 3 dual trace records; 4 rsVbuf, 5 rsGeo. RsDispatch: treeBase = first trial,
+ * treeCount = trials, round = mode, flags = partners per candidate, passId = bin skip mask, rowBase = dual trace stride
+ * (0 = off; every rowBase-th trial records both shifts for the f64 dual).
  */
+/** Dual (T3-D) trace records: word 0 of the buffer = count; record r at 4 + r·T3_DUAL_WORDS (layout: decodeDualRecord). */
+export const T3_DUAL_WORDS = 80;
+export const T3_DUAL_CAP = 131072;
 export const T3_WGSL = `
 #include "restir/shift.wgsl"
 @group(2) @binding(0) var<storage, read_write> dump: array<u32>;
@@ -91,14 +95,33 @@ export const T3_WGSL = `
 
 const NB: u32 = ${T3_NBINS}u;
 const SW: u32 = ${T3S.words}u;
+@group(2) @binding(3) var<storage, read_write> dual: array<atomic<u32>>;
+const DW: u32 = ${T3_DUAL_WORDS}u;
 var<private> trPrim: array<u32, 8>;
 var<private> trLobe: array<u32, 8>;
 var<private> trEdge: array<f32, 8>;
+var<private> trCos: f32;
+var<private> trSlot: u32;      // dual record word offset (0 = not recording)
+var<private> trNP: u32;
+fn dw(i: u32, v: u32) { atomicStore(&dual[trSlot + i], v); }
 fn rs_trace_vertex(b: u32, prim: u32, u: f32, v: f32, lobe: u32) {
   if (b < 8u) { trPrim[b] = prim; trLobe[b] = lobe; trEdge[b] = min(min(u, v), 1.0 - u - v); }
+  if (trSlot != 0u && b <= 7u) { let o = 26u + 4u * (b - 1u); dw(o, prim); dw(o + 1u, bitcast<u32>(u)); dw(o + 2u, bitcast<u32>(v)); dw(o + 3u, lobe); }
 }
-fn rs_trace_pair(j: u32, ok: bool, margin: f32, term: u32) { }
-fn rs_trace_light(dir: vec3f, pos: vec3f, inf: bool) { }
+fn rs_trace_pair(j: u32, ok: bool, margin: f32, term: u32) {
+  if (trSlot != 0u && trNP < 10u) { dw(54u + 2u * trNP, j | (select(0u, 1u, ok) << 4u) | (term << 5u)); dw(55u + 2u * trNP, bitcast<u32>(margin)); }
+  trNP++;
+}
+fn rs_trace_light(dir: vec3f, pos: vec3f, inf: bool) {
+  if (trSlot != 0u) {
+    dw(16u, bitcast<u32>(dir.x)); dw(17u, bitcast<u32>(dir.y)); dw(18u, bitcast<u32>(dir.z));
+    dw(19u, bitcast<u32>(pos.x)); dw(20u, bitcast<u32>(pos.y)); dw(21u, bitcast<u32>(pos.z)); dw(22u, select(0u, 1u, inf));
+  }
+}
+fn rs_trace_escape(dir: vec3f) {
+  if (trSlot != 0u) { dw(23u, bitcast<u32>(dir.x)); dw(24u, bitcast<u32>(dir.y)); dw(25u, bitcast<u32>(dir.z)); }
+}
+fn rs_trace_recon(cosY: f32, cosK: f32) { trCos = min(cosY, cosK); }
 
 fn t3_case(f: u32) -> u32 {
   let d = rf_d(f); let k = rf_k(f); let tech = rf_tech(f); let ep = rf_ep(f);
@@ -167,6 +190,7 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
   src.end = vec3u(dump[base + 20u], dump[base + 21u], dump[base + 22u]);
   let f = src.flags;
   let bin = t3_case(f);
+  if (((rsDispatch.passId >> bin) & 1u) != 0u) { return; }     // bins already at their target (skip mask)
   let p = vec2u(ai % W, ai / W);
   let mode = rsDispatch.round;
   var q = p;
@@ -190,8 +214,23 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
   var dst = dq;
   for (var ps = 0u; ps < nPass; ps++) {
     for (var b = 0u; b < 8u; b++) { trPrim[b] = 0xFFFFFFFEu; trLobe[b] = 0xFFu; trEdge[b] = 1.0; }
+    trCos = 1.0;
+    trSlot = 0u;
+    trNP = 0u;
+    if (rsDispatch.rowBase != 0u && (trial % rsDispatch.rowBase) == 0u) {
+      let r = atomicAdd(&dual[0], 1u);
+      if (r < ${T3_DUAL_CAP}u) { trSlot = 4u + r * DW; }
+    }
     let o = shift_hybrid(s, dst);
     let sc = rs_slot_code_sc(o.code);
+    if (trSlot != 0u) {
+      dw(0u, o.code); dw(1u, s.flags); dw(2u, bitcast<u32>(dst.thr)); dw(3u, dst.prim); dw(4u, bitcast<u32>(dst.bary.x)); dw(5u, bitcast<u32>(dst.bary.y));
+      dw(6u, s.rc.x); dw(7u, s.rc.y); dw(8u, s.rc.z);
+      dw(9u, bitcast<u32>(s.rcWi.x)); dw(10u, bitcast<u32>(s.rcWi.y)); dw(11u, bitcast<u32>(s.rcWi.z));
+      dw(12u, s.end.x); dw(13u, s.end.y); dw(14u, s.end.z);
+      dw(15u, min(trNP, 10u) | (ps << 8u) | (bin << 16u) | (mode << 24u));
+      dw(74u, bitcast<u32>(dst.camPos.x)); dw(75u, bitcast<u32>(dst.camPos.y)); dw(76u, bitcast<u32>(dst.camPos.z));
+    }
     let last = ps + 1u == nPass;
     var edge = 1.0;
     if (ps == 0u) {
@@ -240,17 +279,8 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
       let frOk = fr < 1e-4;
       let lumOk = abs(luminance(F1) / luminance(F0) - 1.0) < 1e-4;
       if (!(frOk && lumOk)) {
-        // diagnostic: grazing cosines at the rc vertex (x_k: ω_k = rcWi) and at y_{k−1} (k = 2: y₁, ω' toward x_k)
-        var gz = 1.0;
-        let kk = rf_k(f);
-        if (kk >= 2u && src.rc.x < 0x80000000u) {
-          let x = vertex_from_ids(src.rc.x, bitcast<f32>(src.rc.y), bitcast<f32>(src.rc.z), rs_cam_pos());
-          if (kk < rf_d(f)) { gz = abs(dot(x.ng, src.rcWi)); }
-          if (kk == 2u) {
-            let y = vertex_from_ids(dp.prim, dp.bary.x, dp.bary.y, dp.camPos);
-            gz = min(gz, abs(dot(y.ng, normalize(x.pos - y.pos))));
-          }
-        }
+        // diagnostic: grazing cosine of the reconnection directions (|ng·ω'| at y_{k−1}, |ng·ω_k| at x_k)
+        let gz = trCos;
         // The base F uses the sampler's weight f/p at the SAMPLED direction (D3 allows it), the shift f/p at the
         // position-derived one; they differ by the ray-offset angle (~ulp·256/t) over |cos|: explained if fr·|cos| < 1e-3.
         if (fr * gz < 1e-3) { st(bin, ${T3S.fCond}u); } else {
