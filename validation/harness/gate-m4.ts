@@ -307,7 +307,7 @@ export function t16Problems(rs: Record<string, any>, pt: Record<string, any>, o:
   if (o.plant && !(t.plantsNamed?.length > 0)) p.push('plant run without a named plant');
   if (t.internalScale !== 1) p.push(`internal scale ${t.internalScale}`);
   if (t.denoiser !== 'none' || t.upscaler !== 'none') p.push('denoiser/upscaler active');
-  if (!/linear accumulation/.test(t.readback ?? '')) p.push('readback is not the linear accumulation');
+  if (!/^linear /.test(t.readback ?? '')) p.push('readback is not the linear radiance (accumulation buffer / ensemble sums)');
   if (t.jitterMode !== 'iid-per-run' || rs.config?.jitter !== 'iid-per-run') p.push('jitter is not iid-per-run');
   if (pt.config?.jitter !== 'iid-per-run') p.push('PT reference jitter is not iid-per-run');
   if (t.maxBounces !== pt.config?.maxBounces) p.push(`maxBounces ${t.maxBounces} != PT reference ${pt.config?.maxBounces}`);

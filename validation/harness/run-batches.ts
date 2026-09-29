@@ -188,7 +188,9 @@ async function main(): Promise<number> {
   }
   const port = await freePort();
   const vite: ViteDevServer = await createServer({
-    root: ROOT, configFile: path.join(ROOT, 'vite.config.ts'), server: { port, strictPort: true, host: '127.0.0.1' }, logLevel: 'warn',
+    // no HMR / file watching: a source edit elsewhere in the tree (another agent, an editor) must never reload the
+    // harness page in the middle of a run ("Execution context was destroyed"); the page loads its modules once
+    root: ROOT, configFile: path.join(ROOT, 'vite.config.ts'), server: { port, strictPort: true, host: '127.0.0.1', hmr: false, watch: null }, logLevel: 'warn',
     // a git worktree whose node_modules is a symlink to another checkout keeps its own dep-optimizer cache (never
     // rewrite the other checkout's node_modules/.vite while its jobs run)
     ...(worktreeCacheDir() ? { cacheDir: worktreeCacheDir() } : {}),

@@ -156,7 +156,8 @@ export async function renderRestirBatches(ctx: GpuContext, o: RenderRestirBatche
     // T16 config assertions (gate-m4.ts checks them against the PT reference's meta.json)
     t16: {
       validationModeUnbiased: unbiased, plantsNamed: plant ? Object.keys(plant) : [], internalScale: 1, denoiser: 'none', upscaler: 'none',
-      readback: 'linear accumulation buffer (f32 Σ L per frame) / frames, f64 division', jitterMode: 'iid-per-run', maxBounces, lightMode: 'A',
+      readback: E === 1 ? 'linear accumulation buffer (f32 Σ L per frame) / frames, f64 division'
+        : 'linear rsFrame radiance reduced by ensStats / ensPixel (f32 sums per frame, f64 host rows); no accumulation buffer', jitterMode: 'iid-per-run', maxBounces, lightMode: 'A',
       spatialRoundsExecuted: spatialRounds, spatialRoundsRequested: settings.rounds,
     },
     restir: {
