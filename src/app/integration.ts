@@ -8,6 +8,9 @@ import type { GpuContext } from '../core/gpu/device.ts';
 import { registerProbeTag } from '../core/render/probe.ts';
 import { EXTRA_VIEWS, PRIMARY_PROBE_TAGS, Renderer } from '../core/render/renderer.ts';
 import { ENV_DEBUG_VIEWS } from '../core/render/env-debug.ts';
+import { RESTIR_PROBE_TAGS, RESTIR_VIEWS } from '../core/render/restir/debug.ts';
+import { addRestirPanel, type RestirPanelHandle } from './ui/panels/restir-panel.ts';
+import { RestirInspector } from './ui/panels/restir-inspector.ts';
 import { DBG } from '../core/render/debug-views.ts';
 import { boundsDiagonal } from '../core/render/frame-uniforms.ts';
 import { emptyScene } from '../core/render/scene-gpu.ts';
@@ -27,6 +30,8 @@ export interface Integration {
   renderer(): Renderer | undefined;
   /** Resolves when the first real scene (or env-only empty scene) has been uploaded and compiled. */
   sceneReady: Promise<void>;
+  /** M4 (WP-D): the ReSTIR panel and pixel inspector (available once the renderer exists). */
+  restirUi(): { panel?: RestirPanelHandle; inspector?: RestirInspector };
   /** Dev: export the current scene/camera/env as a scene package to validation/out/export-<id>/ (returns the dir). */
   exportForCycles(app: App, cfg?: Partial<ExportConfig>): Promise<string | undefined>;
 }
@@ -49,17 +54,20 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
   let lightStore: LightStore | undefined;
   let lightUnsub: (() => void) | undefined;
   let lightsDirty = false;
+  const restirUi: { panel?: RestirPanelHandle; inspector?: RestirInspector } = {};
 
   const ensure = (app: App): Promise<Renderer> => {
     rendererP ??= (async () => {
-      for (const [tag, name] of PRIMARY_PROBE_TAGS) registerProbeTag(tag, name);
-      for (const v of [...EXTRA_VIEWS, ...ENV_DEBUG_VIEWS]) if (!app.debug.registry.get(v.id)) app.registerDebugView(v);
+      for (const [tag, name] of [...PRIMARY_PROBE_TAGS, ...RESTIR_PROBE_TAGS]) registerProbeTag(tag, name);
+      for (const v of [...EXTRA_VIEWS, ...ENV_DEBUG_VIEWS, ...RESTIR_VIEWS]) if (!app.debug.registry.get(v.id)) app.registerDebugView(v);
       app.render.jitter = 'iid'; // plan §1.2: i.i.d. per-run/per-frame jitter; the panel offers R2 and pixel centre
-      const r = await Renderer.create({ device: gpu.device, debugLayout: app.debug.layout, features: gpu.features, wgslLanguageFeatures: gpu.wgslLanguageFeatures },
+      const r = await Renderer.create({ device: gpu.device, debugLayout: app.debug.layout, debug: app.debug, features: gpu.features, wgslLanguageFeatures: gpu.wgslLanguageFeatures },
         { watertight: false, renderMode: 'pt' }); // interactive default: MT (the panel toggles Woop; validation paths default to Woop); PT beauty (M3a)
       renderer = r;
       if (app.targets) r.resize(app.targets);
       addRendererPanel(app, r);
+      restirUi.inspector = new RestirInspector(app);
+      restirUi.panel = addRestirPanel(app, r, restirUi.inspector, 4);
       app.panel?.refresh();
       return r;
     })();
@@ -68,7 +76,7 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
 
   const renderFrame: AppHooks['renderFrame'] = (encoder, ctx) => {
     if (lightsDirty && lightStore && renderer?.setLights(lightStore.list())) lightsDirty = false;
-    renderer?.encode(encoder, { advanced: ctx.advanced, debugMode: ctx.debug.mode, debugGroup: ctx.targets.debug.bindGroup }, () => ctx.timestamps('primary'), () => ctx.timestamps('pt'));
+    renderer?.encode(encoder, { advanced: ctx.advanced, debugMode: ctx.debug.mode, debugGroup: ctx.targets.debug.bindGroup }, () => ctx.timestamps('primary'), () => ctx.timestamps('pt'), () => ctx.timestamps('restir'));
   };
 
   const adoptScene = async (app: App, scene: SceneData, origin: [number, number, number]) => {
@@ -156,8 +164,10 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
       }
       app.resetHistory();
     },
+    onResetHistory: () => { renderer?.restirHud?.resetTotals(); },
     hudLines: (app) => {
       const lines = renderer?.hudLines() ?? [];
+      restirUi.panel?.refresh();
       const env = renderer?.env;
       if (env) {
         const l = lines.find((x) => x.startsWith('env NEE'));
@@ -168,7 +178,7 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
   };
 
   return {
-    loader, hooks, renderer: () => renderer, sceneReady,
+    loader, hooks, renderer: () => renderer, sceneReady, restirUi: () => restirUi,
     exportForCycles: async (app, cfg = {}) => (renderer
       ? exportForCycles(app, renderer, { width: 512, height: 512, maxBounces: 3, lightMode: 'A', status: '', ...cfg })
       : undefined),
@@ -187,7 +197,8 @@ function addRendererPanel(app: App, r: Renderer): void {
   f.addBinding(o, 'watertight', { label: 'watertight (Woop)' }).on('change', () => { if (r.sceneData) reupload(); });
   f.addBinding(o, 'accumulate', { label: 'accumulate' }).on('change', () => app.resetHistory());
   // M3a reference path tracer (PT) vs the M1 albedo placeholder; bounce count and Russian roulette.
-  f.addBinding(o, 'renderMode', { label: 'mode', options: { 'PT (reference)': 'pt', 'albedo (M1)': 'albedo' } }).on('change', () => app.resetHistory());
+  f.addBinding(o, 'renderMode', { label: 'mode', options: { 'PT (reference)': 'pt', 'ReSTIR PT (M4)': 'restir', 'albedo (M1)': 'albedo' } })
+    .on('change', () => { if (o.renderMode === 'restir') void r.prepareRestir(); app.resetHistory(); app.panel?.refresh(); });
   f.addBinding(o, 'maxBounces', { label: 'max bounces', min: 0, max: 13, step: 1 })
     .on('change', () => { void r.setOptions({ maxBounces: o.maxBounces }); app.resetHistory(); });
   f.addBinding(o, 'rr', { label: 'Russian roulette' }).on('change', () => { void r.setOptions({ rr: o.rr }); app.resetHistory(); });
