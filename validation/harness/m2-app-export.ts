@@ -2,7 +2,7 @@
 // mode), renders frames without WebGPU errors, then "Export for Cycles" writes a scene package to
 // validation/out/export-<id>/, which is read back in Node (readScenePackage verifies the env pixel hash).
 //   npx tsx validation/harness/m2-app-export.ts [--scene /validation/assets/cornell/cornell.usda] [--env <url>]
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -11,13 +11,12 @@ import { createServer } from 'vite';
 import type { App } from '../../src/app/app.ts';
 import type { Integration } from '../../src/app/integration.ts';
 import { readScenePackage } from '../../src/core/scene/scene-package.ts';
+import { acquireGpuLock } from './gpu-lock.ts';
 
 declare global { interface Window { __app?: App; __integration?: Integration; __webgpuErrors?: string[] } }
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const LOCK = '/tmp/restirpt-gpu.lock';
 const HDRI = 'validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr';
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const { values: args } = parseArgs({ options: { scene: { type: 'string', default: '/validation/assets/cornell/cornell.usda' }, env: { type: 'string' } } });
 
 const checks: { name: string; ok: boolean }[] = [];
@@ -28,7 +27,7 @@ async function main(): Promise<number> {
   const vite = await createServer({ root: ROOT, configFile: path.join(ROOT, 'vite.config.ts'), server: { port: 0, host: '127.0.0.1' }, logLevel: 'warn' });
   await vite.listen();
   const port = (vite.httpServer!.address() as { port: number }).port;
-  for (;;) { try { mkdirSync(LOCK); break; } catch { await sleep(5000); } }
+  const release = await acquireGpuLock('m2-app-export');
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   let exported: string | undefined;
   try {
@@ -57,7 +56,7 @@ async function main(): Promise<number> {
     check('Export for Cycles wrote a package', !!exported, exported);
   } finally {
     await browser.close();
-    try { rmdirSync(LOCK); } catch { /* gone */ }
+    release();
     await vite.close();
   }
   if (exported) {
@@ -76,4 +75,4 @@ async function main(): Promise<number> {
   return ok ? 0 : 1;
 }
 
-main().then((c) => process.exit(c), (e: unknown) => { console.error(e); try { rmdirSync(LOCK); } catch { /* */ } process.exit(1); });
+main().then((c) => process.exit(c), (e: unknown) => { console.error(e); process.exit(1); });

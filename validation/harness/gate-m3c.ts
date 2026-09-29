@@ -21,11 +21,11 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { withGpuLockSync } from './gpu-lock.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const PY = path.join(ROOT, 'validation/.venv/bin/python');
 const BLENDER = process.env.BLENDER ?? '/Applications/Blender.app/Contents/MacOS/Blender';
-const GPU_LOCK = '/tmp/restirpt-gpu.lock';
 const SCENES = 'validation/out/m3c/scenes';
 const REFS = 'validation/out/m3c/refs';
 const OUR_SEED = 7, OUR_RERUN_SEED = 100_007;
@@ -123,14 +123,6 @@ function sh(cmd: string, argv: string[], echo: (l: string) => boolean = () => tr
   return { code: r.status ?? 1, out, seconds: (performance.now() - t0) / 1000 };
 }
 
-function withGpuLock<T>(fn: () => T): T {
-  const nap = new Int32Array(new SharedArrayBuffer(4));
-  for (;;) { try { mkdirSync(GPU_LOCK); break; } catch { console.log('waiting for the GPU lock ...'); Atomics.wait(nap, 0, 0, 5000); } }
-  const release = () => { try { rmSync(GPU_LOCK, { recursive: true, force: true }); } catch { /* gone */ } };
-  process.once('exit', release);
-  try { return fn(); } finally { release(); process.removeListener('exit', release); }
-}
-
 function fileRun(run: string, dest: string): string {
   const to = path.join(dest, run);
   mkdirSync(path.join(ROOT, dest), { recursive: true });
@@ -166,7 +158,7 @@ export function milestoneM3c(record: Rec, only?: Set<string>): void {
     runStep('typecheck', 'npx', ['tsc', '--noEmit']);
     runStep('vitest cpu (ENV-U3 CPU, ENV-U5, ENV-U8, env as a light)', 'npx', ['vitest', 'run', '--project', 'cpu'], (l) => /Test Files|Tests |FAIL|✗|×/.test(l));
     runStep('python stats tests (validation/tools/tests)', PY, ['-m', 'pytest', 'validation/tools/tests', '-q'], (l) => /passed|failed|error/i.test(l));
-    withGpuLock(() => {
+    withGpuLockSync('gate-m3c', () => {
       for (const [name, file] of [
         ['ENV-U3 realized-pdf identity + GPU χ², ENV-U4 support, ENV-U6 NEE/BSDF partition (chrome)', 'env-sampling'],
         ['ENV-U2 mapping + ENV-U7 bilinear/pole wrap (chrome, regression)', 'env'],
@@ -284,29 +276,14 @@ function cyclesRef(s: G2E, out: string, seeds: string, add: Add): string | undef
   console.log(`\n--- Cycles reference ${s.pkg}: ${s.cyclesSpp} spp × seeds ${seeds}`);
   let r = renderRef(s, out, seeds);
   if (r.code !== 0 && !r.out.includes('[render_reference] RESULT ')) {
-    // Blender 5.1.2 occasionally aborts in Metal ShaderCache::load_kernel (NSException, no Python traceback); the
-    // abort skips its atexit, so the GPU lock it held is released here if its holder file names a dead process.
+    // Blender 5.1.2 occasionally aborted in Metal ShaderCache::load_kernel (NSException, no Python traceback). The
+    // abort skips its atexit; the retry's render_reference.py reclaims the GPU lock left behind (its holder file names
+    // a dead pid; gpu-lock.ts protocol).
     console.log('  Blender aborted without a result; retrying once');
-    releaseAbortedLock();
     r = renderRef(s, out, seeds);
     r.out = `[retried after a Blender abort]\n${r.out}`;
   }
   return refResult(s, seeds, r, add);
-}
-
-/** Remove the GPU lock iff render_reference.py's holder file inside it names a process that no longer exists. */
-function releaseAbortedLock(): void {
-  if (!existsSync(GPU_LOCK)) return;
-  for (const f of readdirSync(GPU_LOCK)) {
-    const m = /^render_reference-(\d+)$/.exec(f);
-    if (!m) continue;
-    let alive = true;
-    try { process.kill(Number(m[1]), 0); } catch { alive = false; }
-    if (!alive) {
-      console.log(`  removing the GPU lock left by aborted Blender pid ${m[1]}`);
-      rmSync(GPU_LOCK, { recursive: true, force: true });
-    }
-  }
 }
 
 function renderRef(s: G2E, out: string, seeds: string): { code: number; out: string; seconds: number } {

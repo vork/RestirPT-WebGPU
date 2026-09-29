@@ -4,7 +4,7 @@
 // resolution change take effect (HUD), strength edits change P(env) and rotation does not, no uncaptured WebGPU errors,
 // NaN/Inf = 0.
 //   npx tsx validation/harness/m3c-app-smoke.ts [--run <id>] [--no-lock]
-import { mkdirSync, rmdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -13,13 +13,12 @@ import { createServer } from 'vite';
 import type { App } from '../../src/app/app.ts';
 import type { Integration } from '../../src/app/integration.ts';
 import type { EditorHandle } from '../../src/app/editor/index.ts';
+import { acquireGpuLock } from './gpu-lock.ts';
 
 declare global { interface Window { __app?: App; __integration?: Integration; __editor?: EditorHandle } }
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const LOCK = '/tmp/restirpt-gpu.lock';
 const HDRI = 'validation/assets/downloaded/hdri/studio_small_09_1k.hdr';
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
 const { values: args } = parseArgs({ options: { run: { type: 'string' }, 'no-lock': { type: 'boolean', default: false } } });
 
@@ -38,10 +37,7 @@ async function main(): Promise<number> {
   const runId = args.run ?? `m3c-app-smoke-${stamp()}`;
   const OUT = path.join(ROOT, 'validation/out', runId);
   mkdirSync(OUT, { recursive: true });
-  let locked = false;
-  const release = () => { if (locked) { try { rmdirSync(LOCK); } catch { /* gone */ } locked = false; } };
-  process.on('exit', release);
-  if (!args['no-lock']) { for (;;) { try { mkdirSync(LOCK); locked = true; break; } catch { await sleep(5000); } } }
+  const release = args['no-lock'] ? () => {} : await acquireGpuLock('m3c-app-smoke');
   const vite = await createServer({ root: ROOT, configFile: path.join(ROOT, 'vite.config.ts'), server: { port: 0, host: '127.0.0.1' }, logLevel: 'warn' });
   await vite.listen();
   const port = (vite.httpServer!.address() as { port: number }).port;

@@ -8,18 +8,16 @@ kernel load, measured as a warm 1-spp render (min of repeats). seconds = T(n) - 
 s_per_4096spp = seconds / (n-1) * 4096. The first render of the process also pays Metal device init and
 kernel compile/load; `metal_first_compile_s` = T_first(1 spp) - overhead (depends on the Metal shader cache).
 
-Every render group holds the GPU lock /tmp/restirpt-gpu.lock (mkdir protocol).
+Every render group holds the shared GPU lock (gpu_lock.py; protocol in validation/harness/gpu-lock.ts).
 Sponza needs `python3 validation/blender/fetch_sponza.py` first.
 """
 from __future__ import annotations
 
 import argparse
-import atexit
 import contextlib
 import json
 import math
 import os
-import signal
 import sys
 import time
 from pathlib import Path
@@ -33,43 +31,20 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import cycles_settings as cs  # noqa: E402
 import make_cornell  # noqa: E402
+from gpu_lock import gpu_lock as _gpu_lock  # noqa: E402
 from verify_exr import read_exr, verify_exr  # noqa: E402
 
-LOCK = Path("/tmp/restirpt-gpu.lock")
-_lock_held = False
-
-
-def _release_lock() -> None:
-    global _lock_held
-    if _lock_held:
-        with contextlib.suppress(OSError):
-            LOCK.rmdir()
-        _lock_held = False
+def _log(msg: str) -> None:
+    print(f"[smoke] {msg}", flush=True)
 
 
 @contextlib.contextmanager
 def gpu_lock() -> Iterator[None]:
-    global _lock_held
-    t0 = time.perf_counter()
-    while True:
-        try:
-            LOCK.mkdir()
-            break
-        except FileExistsError:
-            time.sleep(5)
-    _lock_held = True
-    waited = time.perf_counter() - t0
-    if waited > 1:
-        print(f"[smoke] waited {waited:.0f} s for GPU lock", flush=True)
-    try:
+    """Hold the shared GPU lock (gpu_lock.py, holder file smoke_render-<pid>) for one render group."""
+    with _gpu_lock("smoke_render", log=_log) as waited:
+        if waited > 1:
+            _log(f"waited {waited:.0f} s for GPU lock")
         yield
-    finally:
-        _release_lock()
-
-
-atexit.register(_release_lock)
-for _sig in (signal.SIGINT, signal.SIGTERM):
-    signal.signal(_sig, lambda s, f: (_release_lock(), sys.exit(128 + s)))
 
 
 def reset() -> bpy.types.Scene:

@@ -6,7 +6,7 @@
 // ≥ 4 for a glass scene, the image changes between modes (B/A′ show the light in the mirror and the caustic, A does
 // not: mean(B) > mean(A)), and A′ ≈ B. Saves screenshots to validation/out/<run>/.
 //   npx tsx validation/harness/m3b-app-smoke.ts [--run <id>]
-import { mkdirSync, rmdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -18,12 +18,11 @@ import type { App } from '../../src/app/app.ts';
 import type { EditorHandle } from '../../src/app/editor/index.ts';
 import type { Integration } from '../../src/app/integration.ts';
 import { decodePng } from '../../src/core/io/png.ts';
+import { acquireGpuLock } from './gpu-lock.ts';
 
 declare global { interface Window { __app?: App; __integration?: Integration; __editor?: EditorHandle } }
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const LOCK = '/tmp/restirpt-gpu.lock';
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
 const { values: args } = parseArgs({ options: { run: { type: 'string' } } });
 const runId = args.run ?? `m3b-app-smoke-${stamp()}`;
@@ -110,10 +109,7 @@ async function main(): Promise<number> {
   mkdirSync(OUT, { recursive: true });
   const glb = path.join(OUT, 'glass-smoke.glb');
   await writeGlassGlb(glb);
-  let locked = false;
-  const release = () => { if (locked) { try { rmdirSync(LOCK); } catch { /* gone */ } locked = false; } };
-  process.on('exit', release);
-  for (;;) { try { mkdirSync(LOCK); locked = true; break; } catch { await sleep(3000); } }
+  const release = await acquireGpuLock('m3b-app-smoke', { pollMs: 3000 });
   const vite = await createServer({ root: ROOT, configFile: path.join(ROOT, 'vite.config.ts'), server: { port: 0, host: '127.0.0.1' }, logLevel: 'warn' });
   await vite.listen();
   const port = (vite.httpServer!.address() as { port: number }).port;

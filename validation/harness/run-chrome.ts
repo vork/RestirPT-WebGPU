@@ -2,7 +2,7 @@
 // the M0 smoke: hardware Metal adapter + profile limits, IO orientation upload (+ Python check), allocation probe.
 //   npx tsx validation/harness/run-chrome.ts --smoke [--run <id>] [--members 16,64] [--skip-alloc]
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, rmdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import path from 'node:path';
@@ -12,13 +12,13 @@ import { chromium, type Browser, type Page } from 'playwright';
 import { createServer, type ViteDevServer } from 'vite';
 import { PROFILE_CHROME154_M5PRO } from '../../src/core/gpu/profile.ts';
 import type { AllocProbeReport } from './alloc-probe.ts';
+import { acquireGpuLock } from './gpu-lock.ts';
 import type { SmokeReport } from './harness.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const OUT = path.join(ROOT, 'validation/out');
 const PYTHON = path.join(ROOT, 'validation/.venv/bin/python');
 const ORIENT_CHECK = path.join(ROOT, 'validation/tools/orientation_check.py');
-const GPU_LOCK = '/tmp/restirpt-gpu.lock';
 
 const { values: args } = parseArgs({
   options: {
@@ -52,22 +52,6 @@ function freePort(): Promise<number> {
     });
   });
 }
-
-// GPU lock shared with the Blender renders and other GPU-heavy jobs (plan §1.8: never overlap).
-let lockHeld = false;
-async function acquireGpuLock(): Promise<number> {
-  const t0 = now();
-  for (;;) {
-    try { mkdirSync(GPU_LOCK); lockHeld = true; return now() - t0; } catch { await sleep(5000); }
-  }
-}
-function releaseGpuLock(): void {
-  if (!lockHeld) return;
-  try { rmdirSync(GPU_LOCK); } catch { /* already gone */ }
-  lockHeld = false;
-}
-for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => { releaseGpuLock(); process.exit(130); });
-process.on('exit', releaseGpuLock);
 
 function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   return Promise.race([p, sleep(ms).then(() => { throw new Error(`${what} timed out after ${ms} ms`); })]);
@@ -180,8 +164,10 @@ async function main(): Promise<number> {
     const allocs: AllocProbeReport[] = [];
     if (smoke.ok && !args['skip-alloc']) {
       const members = args.members!.split(',').map(Number).filter((n) => n > 0);
+      // GPU lock shared with the Blender renders and other GPU-heavy jobs (plan §1.8: never overlap).
       console.log('acquiring GPU lock for the allocation probe...');
-      timings.gpuLockWaitMs = await acquireGpuLock();
+      const releaseGpuLock = await acquireGpuLock('run-chrome');
+      timings.gpuLockWaitMs = releaseGpuLock.waitedMs;
       try {
         for (const m of members) {
           t = now();
@@ -244,6 +230,6 @@ async function main(): Promise<number> {
 }
 
 main().then(
-  (code) => { releaseGpuLock(); process.exit(code); },
-  (e: unknown) => { releaseGpuLock(); console.error(e); process.exit(1); },
+  (code) => process.exit(code),
+  (e: unknown) => { console.error(e); process.exit(1); },
 );

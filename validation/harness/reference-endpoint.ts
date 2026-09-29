@@ -5,7 +5,7 @@
 //       maxBounces?: 3, device?: "GPU" | "CPU", force?: false }
 //   → 200 application/x-ndjson, one JSON object per line, streamed while Blender runs:
 //       {"type":"start","cmd":[...],"lockHeld":false}
-//       {"type":"lock","message":"..."}                         (another job holds /tmp/restirpt-gpu.lock)
+//       {"type":"lock","message":"..."}                         (another job holds the GPU lock, gpu-lock.ts)
 //       {"type":"progress","done":1,"total":8,"file":"f0000_s000.exr","seconds":0.42}
 //       {"type":"log","line":"..."}
 //       {"type":"result","ok":true,"dir":"validation/out/refs-app/<name>-<key16>","cacheHit":false,
@@ -13,7 +13,7 @@
 //     or {"type":"error","message":"..."} as the last line.
 //
 // It spawns `Blender -b --factory-startup --python-exit-code 1 -P validation/blender/render_reference.py -- ...`.
-// GPU lock (plan §7.5 Orchestration): render_reference.py takes /tmp/restirpt-gpu.lock itself around the renders;
+// GPU lock (plan §7.5 Orchestration; gpu-lock.ts): render_reference.py takes the GPU lock itself around the renders;
 // this process never holds it (a harness that holds it while waiting on this endpoint would deadlock — release it
 // first, as tests/editor/e2e-editor.ts does). The app suspends its own frame loop while the request is in flight.
 //
@@ -26,9 +26,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
+import { GPU_LOCK, gpuLockHolders } from './gpu-lock.ts';
+
+export { GPU_LOCK };
 
 export const BLENDER_DEFAULT = '/Applications/Blender.app/Contents/MacOS/Blender';
-export const GPU_LOCK = '/tmp/restirpt-gpu.lock';
 const MAX_BODY = 64 * 1024;
 const PACKAGE_ROOTS = ['validation/out', 'validation/scenes'];
 
@@ -177,7 +179,12 @@ export function referenceEndpointPlugin(opts: ReferenceOptions): Plugin {
             ...v.args, '--out', outDir];
           const lockHeld = existsSync(GPU_LOCK);
           send({ type: 'start', cmd: [blender, ...cmd], total, lockHeld });
-          if (lockHeld) send({ type: 'lock', message: `${GPU_LOCK} is held by another job; Blender waits for it (polls every 5 s)` });
+          if (lockHeld) {
+            let by = '';
+            try { by = gpuLockHolders(GPU_LOCK)?.map((h) => h.name).join(', ') ?? ''; } catch { /* unreadable: generic message */ }
+            by ||= 'another job';
+            send({ type: 'lock', message: `${GPU_LOCK} is held by ${by}; Blender waits for it (polls every 5 s)` });
+          }
           const child = spawnFn(blender, cmd, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
           busy = child;
           let done = 0;
@@ -191,7 +198,7 @@ export function referenceEndpointPlugin(opts: ReferenceOptions): Plugin {
             if (r) { try { result = JSON.parse(r[1]); } catch { /* reported below */ } return; }
             const p = /^\[render_reference\] (f\d{4}_s\d{3}\.exr) seed=\d+ ([\d.]+) s/.exec(line);
             if (p) { done++; send({ type: 'progress', done, total, file: p[1], seconds: Number(p[2]) }); return; }
-            if (line.startsWith('[render_reference]')) send({ type: /waited .* GPU lock/.test(line) ? 'lock' : 'log', line, message: line });
+            if (line.startsWith('[render_reference]')) send({ type: /GPU lock/.test(line) ? 'lock' : 'log', line, message: line });
           };
           const pipeLines = (s: NodeJS.ReadableStream) => {
             let buf = '';

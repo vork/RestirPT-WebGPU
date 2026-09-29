@@ -4,7 +4,7 @@
 // WebGPU errors, NaN/Inf = 0 and BVH overflow/itercap = 0, saves view screenshots and times the primary pass
 // (timestamp queries) at 960×540 and 1920×1080.
 //   npx tsx validation/harness/m1-app-smoke.ts [--run <id>] [--no-lock]
-import { existsSync, mkdirSync, rmdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,11 +13,11 @@ import { chromium, type Page } from 'playwright';
 import { createServer } from 'vite';
 import type { App } from '../../src/app/app.ts';
 import type { Integration } from '../../src/app/integration.ts';
+import { acquireGpuLock } from './gpu-lock.ts';
 
 declare global { interface Window { __app?: App; __integration?: Integration; __webgpuErrors?: string[] } }
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const LOCK = '/tmp/restirpt-gpu.lock';
 const SPONZA = 'validation/assets/downloaded/sponza/Sponza.gltf';
 const CORNELL = 'validation/assets/cornell/cornell.glb';
 const HDRI = 'validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr';
@@ -64,11 +64,7 @@ async function main(): Promise<number> {
   if (!hdri) warn(`${HDRI} missing (npx tsx validation/assets/fetch_hdris.ts); running without an environment`);
   const sceneUrl = `/${sponza ? SPONZA : CORNELL}`;
 
-  let locked = false;
-  const release = () => { if (locked) { try { rmdirSync(LOCK); } catch { /* gone */ } locked = false; } };
-  process.on('exit', release);
-  for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => { release(); process.exit(130); });
-  if (!args['no-lock']) { for (;;) { try { mkdirSync(LOCK); locked = true; break; } catch { await sleep(5000); } } }
+  const release = args['no-lock'] ? () => {} : await acquireGpuLock('m1-app-smoke');
 
   const vite = await createServer({ root: ROOT, configFile: path.join(ROOT, 'vite.config.ts'), server: { port: 0, host: '127.0.0.1' }, logLevel: 'warn' });
   await vite.listen();

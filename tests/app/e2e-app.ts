@@ -2,19 +2,19 @@
 // checks DPR-independent internal resolution, the Standard view transform on the calibration strip (±1 LSB),
 // debug views, probe records, timestamps and fly-camera keys, and writes screenshots.
 //   npx tsx tests/app/e2e-app.ts [outDir]
-import { mkdirSync, rmdirSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import type { App } from '../../src/app/app.ts';
+import { acquireGpuLock } from '../../validation/harness/gpu-lock.ts';
 
 declare global { interface Window { __app?: App } }
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const OUT = path.resolve(process.argv[2] ?? path.join(ROOT, 'validation/out/app-e2e'));
-const LOCK = '/tmp/restirpt-gpu.lock';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const checks: { name: string; ok: boolean; detail?: string }[] = [];
@@ -36,10 +36,7 @@ const srgb = (x: number) => { const c = Math.min(1, Math.max(0, x)); return c <=
 
 async function main(): Promise<number> {
   mkdirSync(OUT, { recursive: true });
-  let locked = false;
-  for (;;) { try { mkdirSync(LOCK); locked = true; break; } catch { await sleep(5000); } }
-  const release = () => { if (locked) { try { rmdirSync(LOCK); } catch { /* gone */ } locked = false; } };
-  process.on('exit', release);
+  const release = await acquireGpuLock('e2e-app');
   const vite = await createServer({ root: ROOT, configFile: path.join(ROOT, 'vite.config.ts'), server: { port: 0, host: '127.0.0.1' }, logLevel: 'warn' });
   await vite.listen();
   const addr = vite.httpServer!.address() as { port: number };

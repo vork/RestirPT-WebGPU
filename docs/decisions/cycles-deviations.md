@@ -174,7 +174,9 @@ cannot bias there.
 - `-[NSURL initFileURLWithPath:]` raised on a nil path, which led to SIGABRT (3 crashes);
 - `BUG IN CLIENT OF LIBMALLOC: memory corruption of free block` inside the AGX compiler (1 crash).
 
-Each abort skipped `atexit`, which left `/tmp/restirpt-gpu.lock` behind and stalled every GPU job.
+Each abort skipped `atexit`, which left `/tmp/restirpt-gpu.lock` behind and stalled every GPU job. Independently of
+this fix, the lock now recovers by itself: every job writes a holder file `<tag>-<pid>` into it, and waiters reclaim a
+lock whose holder files all name dead pids (`validation/harness/gpu-lock.ts`, `validation/blender/gpu_lock.py`).
 
 **Cause.** In `intern/cycles/util/path.cpp`, `path_cache_get()` lazily assigns a file-static `std::string`
 (`cached_xdg_cache_path`) with no synchronisation. `MetalKernelPipeline::compile()` (`device/metal/kernel.mm`) calls it

@@ -17,7 +17,7 @@
 // 100 m emissive quad at z = −2, L_e = (0.5, 0.25, 0.125)·2, vfov 40°, 512²) is written with exportScenePackage to
 // validation/out/tmp-c0b/ and rendered instead.
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, rmdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import path from 'node:path';
@@ -29,6 +29,7 @@ import { decodePFM } from '../../src/core/io/pfm.ts';
 import { exportScenePackage } from '../../src/core/scene/scene-package.ts';
 import type { SceneData } from '../../src/core/scene/types.ts';
 import type { RenderBatchesReport, ValidationKernel } from './batch-run.ts';
+import { acquireGpuLock, GPU_LOCK } from './gpu-lock.ts';
 import type { GlassPlant, PtEnvOptions, PtEnvPlant, PtPlant, PtTechnique } from '../../src/core/render/pt-kernel.ts';
 
 const GLASS_PLANTS: readonly GlassPlant[] = ['eta2', 'pr-half', 'tint', 'side', 'shadow'];   // pt-kernel.ts order
@@ -37,7 +38,6 @@ const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const OUT = path.join(ROOT, 'validation/out');
 const PYTHON = path.join(ROOT, 'validation/.venv/bin/python');
 const MARKER_CHECK = path.join(ROOT, 'validation/tools/marker_check.py');
-const GPU_LOCK = '/tmp/restirpt-gpu.lock';
 
 const { values: args } = parseArgs({
   options: {
@@ -69,23 +69,7 @@ const { values: args } = parseArgs({
   },
 });
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
-
-let lockHeld = false;
-async function acquireGpuLock(): Promise<number> {
-  const t0 = performance.now();
-  for (;;) {
-    try { mkdirSync(GPU_LOCK); lockHeld = true; return performance.now() - t0; } catch { await sleep(5000); }
-  }
-}
-function releaseGpuLock(): void {
-  if (!lockHeld) return;
-  try { rmdirSync(GPU_LOCK); } catch { /* gone */ }
-  lockHeld = false;
-}
-for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => { releaseGpuLock(); process.exit(130); });
-process.on('exit', releaseGpuLock);
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -196,7 +180,8 @@ async function main(): Promise<number> {
     for (const frame of frames) {
       const runId = frame === undefined ? base : `${base}-f${frame}`;
       console.log(`acquiring GPU lock (${GPU_LOCK}) ...`);
-      const waited = await acquireGpuLock();
+      const releaseGpuLock = await acquireGpuLock('run-batches');
+      const waited = releaseGpuLock.waitedMs;
       let rep: RenderBatchesReport;
       try {
         rep = await page.evaluate((o) => window.__harness!.renderBatches(o), {
@@ -237,4 +222,4 @@ async function main(): Promise<number> {
   return failures ? 1 : 0;
 }
 
-main().then((c) => { releaseGpuLock(); process.exit(c); }, (e: unknown) => { releaseGpuLock(); console.error(e); process.exit(1); });
+main().then((c) => process.exit(c), (e: unknown) => { console.error(e); process.exit(1); });

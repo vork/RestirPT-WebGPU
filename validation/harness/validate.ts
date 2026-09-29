@@ -18,13 +18,14 @@
 //     planted biases, negative controls and an A/A test. `--only pkg,pkg` restricts Gate 2 to a scene subset.
 //   npm run validate -- --milestone M0|M1|M2|M3a|M3b|M3c [--only ...]
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { milestoneM3a } from './gate-m3a.ts';
 import { milestoneM3b } from './gate-m3b.ts';
 import { milestoneM3c } from './gate-m3c.ts';
+import { withGpuLockSync } from './gpu-lock.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const { values: args } = parseArgs({ options: { milestone: { type: 'string', default: 'M0' }, only: { type: 'string' } } });
@@ -63,7 +64,7 @@ function milestoneM0(): void {
   run('typecheck', 'npx', ['tsc', '--noEmit']);
   run('vitest cpu + node-dawn', 'npx', ['vitest', 'run', '--project', 'cpu', '--project', 'node-dawn']);
   run('vitest chrome', 'npx', ['vitest', 'run', '--project', 'chrome']);
-  // Takes /tmp/restirpt-gpu.lock itself around the allocation probes.
+  // Takes the GPU lock itself around the allocation probes.
   run('chrome smoke', 'npx', ['tsx', 'validation/harness/run-chrome.ts', '--smoke']);
   file('validation/budget.json', budgetPopulated);
   file('docs/decisions/usd.md', (t) => (/^## Decision:/m.test(t) ? null : 'no "## Decision:" heading'));
@@ -71,15 +72,8 @@ function milestoneM0(): void {
   file('docs/math.md');
 }
 
-// Shared GPU lock (plan §1.8: GPU-heavy jobs never overlap). Scripts that take the lock themselves run outside it.
-const GPU_LOCK = '/tmp/restirpt-gpu.lock';
-function withGpuLock(fn: () => void): void {
-  const nap = new Int32Array(new SharedArrayBuffer(4));
-  for (;;) { try { mkdirSync(GPU_LOCK); break; } catch { console.log('waiting for the GPU lock ...'); Atomics.wait(nap, 0, 0, 5000); } }
-  const release = () => { try { rmdirSync(GPU_LOCK); } catch { /* gone */ } };
-  process.once('exit', release);
-  try { fn(); } finally { release(); process.removeListener('exit', release); }
-}
+// Shared GPU lock (plan §1.8: GPU-heavy jobs never overlap; validation/harness/gpu-lock.ts). Scripts that take the lock
+// themselves run outside it.
 
 const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
 
@@ -99,7 +93,7 @@ function milestoneM1(): void {
   m1Assets();
   run('typecheck', 'npx', ['tsc', '--noEmit']);
   run('vitest cpu (ENV-U1 RGBE/EXR vs OIIO, loader, BVH, layouts)', 'npx', ['vitest', 'run', '--project', 'cpu']);
-  withGpuLock(() => {
+  withGpuLockSync('validate-m1', () => {
     run('vitest node-dawn (pre-check)', 'npx', ['vitest', 'run', '--project', 'node-dawn']);
     run('T12 BVH brute force / watertight / offsets / overflow (chrome)', 'npx', ['vitest', 'run', '--project', 'chrome', 'validation/gpu-tests/bvh.gpu.test.ts']);
     run('ENV-U2 mapping + ENV-U7 bilinear/pole-wrap (chrome)', 'npx', ['vitest', 'run', '--project', 'chrome', 'validation/gpu-tests/env.gpu.test.ts']);

@@ -17,11 +17,11 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { withGpuLockSync } from './gpu-lock.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const PY = path.join(ROOT, 'validation/.venv/bin/python');
 const BLENDER = process.env.BLENDER ?? '/Applications/Blender.app/Contents/MacOS/Blender';
-const GPU_LOCK = '/tmp/restirpt-gpu.lock';
 const REFS_M2 = 'validation/out/m2/refs'; // reused so the M2 references stay cache hits
 const REFS = 'validation/out/m3a/refs';
 const IX_FRAMES = [0, 8, 16, 24, 32, 40, 48];
@@ -114,14 +114,6 @@ function sh(cmd: string, argv: string[], echo: (l: string) => boolean = () => tr
   return { code: r.status ?? 1, out, seconds: (performance.now() - t0) / 1000 };
 }
 
-function withGpuLock<T>(fn: () => T): T {
-  const nap = new Int32Array(new SharedArrayBuffer(4));
-  for (;;) { try { mkdirSync(GPU_LOCK); break; } catch { console.log('waiting for the GPU lock ...'); Atomics.wait(nap, 0, 0, 5000); } }
-  const release = () => { try { rmSync(GPU_LOCK, { recursive: true, force: true }); } catch { /* gone */ } };
-  process.once('exit', release);
-  try { return fn(); } finally { release(); process.removeListener('exit', release); }
-}
-
 /** run-batches.ts writes validation/out/<run>/; file finished runs under the gate dir. */
 function fileRun(run: string, dest: string): string {
   const to = path.join(dest, run);
@@ -158,7 +150,7 @@ export function milestoneM3a(record: Rec, only?: Set<string>): void {
     runStep('vitest cpu', 'npx', ['vitest', 'run', '--project', 'cpu'], (l) => /Test Files|Tests |FAIL|✗|×/.test(l));
     runStep('python stats tests (validation/tools/tests)', PY, ['-m', 'pytest', 'validation/tools/tests', '-q'], (l) => /passed|failed|error/i.test(l));
     packagesCurrent(dir, add);
-    withGpuLock(() => {
+    withGpuLockSync('gate-m3a', () => {
       for (const [name, file] of [
         ['T1 path RNG + T13b jitter i.i.d. (chrome)', 'rng'],
         ['T8 BSDF χ²/weights/LUT vectors = gap-bsdf U-1…U-10 (chrome)', 'bsdf'],

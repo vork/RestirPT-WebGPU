@@ -5,7 +5,7 @@
 //   "Export for Cycles" → /api/reference → headless Blender at tiny spp (GPU lock released while Blender renders),
 //   and the compare view auto-loading the EXRs (split / relative error / t-map screenshots).
 //   npx tsx tests/editor/e2e-editor.ts [--no-blender] [--out validation/out/m3a-editor-e2e]
-import { existsSync, mkdirSync, readFileSync, rmdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -18,11 +18,11 @@ import { dragScreen, gizmoLayout, type HandleId } from '../../src/app/editor/giz
 import { projectPoint, sunScreenPosition, type ViewInfo } from '../../src/app/editor/picking.ts';
 import { presetOrbit } from '../../src/core/scene/animation.ts';
 import { isRigid } from '../../src/core/scene/scene-package.ts';
+import { acquireGpuLock } from '../../validation/harness/gpu-lock.ts';
 
 declare global { interface Window { __app?: App; __integration?: Integration; __editor?: EditorHandle; __webgpuErrors?: string[] } }
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const LOCK = '/tmp/restirpt-gpu.lock';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const { values: args } = parseArgs({ options: { 'no-blender': { type: 'boolean', default: false }, out: { type: 'string', default: 'validation/out/m3a-editor-e2e' } } });
 const OUT = path.resolve(ROOT, args.out!);
@@ -30,11 +30,9 @@ const OUT = path.resolve(ROOT, args.out!);
 const checks: { name: string; ok: boolean; detail?: string }[] = [];
 const check = (name: string, ok: boolean, detail?: string) => { checks.push({ name, ok, detail }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  (${detail})` : ''}`); return ok; };
 
-let locked = false;
-async function lock(): Promise<void> { while (!locked) { try { mkdirSync(LOCK); locked = true; } catch { await sleep(2000); } } }
-function unlock(): void { if (locked) { try { rmdirSync(LOCK); } catch { /* gone */ } locked = false; } }
-process.on('exit', unlock);
-for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => { unlock(); process.exit(130); });
+let release: (() => void) | undefined;
+async function lock(): Promise<void> { release ??= await acquireGpuLock('e2e-editor', { pollMs: 2000 }); }
+function unlock(): void { release?.(); release = undefined; }
 
 async function frames(page: Page, n: number): Promise<void> {
   const f0 = await page.evaluate(() => window.__app!.frameCounter);

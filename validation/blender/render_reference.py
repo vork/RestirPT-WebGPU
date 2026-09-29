@@ -10,21 +10,20 @@ Output: <out>/<package name>-<key16>/f{frame:04d}_s{seed:03d}.exr (+ manifest.js
 Cache: key = sha256 over (package file hashes, render args, sha256 of every validation/blender/*.py, Blender
 version). If <out>/<name>-<key16>/manifest.json is complete and every EXR exists, nothing is rendered.
 
-GPU lock: renders run inside the /tmp/restirpt-gpu.lock mkdir lock (plan §7.5 Orchestration), released in a
-finally block and atexit / SIGINT / SIGTERM.
+GPU lock: renders run inside the shared GPU lock (gpu_lock.py; plan §7.5 Orchestration) with the holder file
+render_reference-<pid>, released in a finally block and atexit / SIGINT / SIGTERM. A lock left by a dead holder (e.g.
+a Blender abort that skipped atexit) is reclaimed by the next waiter.
 
 The last stdout line is  `[render_reference] RESULT {json}`  with keys dir, cache_hit, key, renders.
 """
 from __future__ import annotations
 
 import argparse
-import atexit
 import contextlib
 import hashlib
 import json
 import os
 import shutil
-import signal
 import sys
 import time
 from pathlib import Path
@@ -36,55 +35,26 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import build_scene as bs  # noqa: E402
 import cycles_settings as cs  # noqa: E402
+from gpu_lock import gpu_lock as _gpu_lock  # noqa: E402
 from verify_exr import verify_exr  # noqa: E402
 
-LOCK = Path("/tmp/restirpt-gpu.lock")
-_lock_held = False
 MASK64 = (1 << 64) - 1
 
 
-# --- GPU lock -----------------------------------------------------------------------------------
+# --- GPU lock (validation/blender/gpu_lock.py; protocol in validation/harness/gpu-lock.ts) ---------------------------
 
 
-HOLDER = LOCK / f"render_reference-{os.getpid()}"  # lets a supervisor detect a lock left by an aborted Blender
-
-
-def _release_lock() -> None:
-    global _lock_held
-    if _lock_held:
-        with contextlib.suppress(OSError):
-            HOLDER.unlink()
-        with contextlib.suppress(OSError):
-            LOCK.rmdir()
-        _lock_held = False
+def _log(msg: str) -> None:
+    print(f"[render_reference] {msg}", flush=True)
 
 
 @contextlib.contextmanager
-def gpu_lock() -> Iterator[float]:
-    """until mkdir /tmp/restirpt-gpu.lock; do sleep 5; done ... rmdir. Yields the seconds waited."""
-    global _lock_held
-    t0 = time.perf_counter()
-    while True:
-        try:
-            LOCK.mkdir()
-            break
-        except FileExistsError:
-            time.sleep(5)
-    _lock_held = True
-    with contextlib.suppress(OSError):
-        HOLDER.touch()
-    waited = time.perf_counter() - t0
-    if waited > 1:
-        print(f"[render_reference] waited {waited:.0f} s for the GPU lock", flush=True)
-    try:
+def gpu_lock(tag: str = "render_reference") -> Iterator[float]:
+    """Hold the shared GPU lock (holder file render_reference-<pid>). Yields the seconds waited."""
+    with _gpu_lock(tag, log=_log) as waited:
+        if waited > 1:
+            _log(f"waited {waited:.0f} s for the GPU lock")
         yield waited
-    finally:
-        _release_lock()
-
-
-atexit.register(_release_lock)
-for _sig in (signal.SIGINT, signal.SIGTERM):
-    signal.signal(_sig, lambda s, f: (_release_lock(), sys.exit(128 + s)))
 
 
 # --- seeds, args, cache key ---------------------------------------------------------------------
