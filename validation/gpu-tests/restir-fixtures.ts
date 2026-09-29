@@ -145,6 +145,8 @@ export interface RestirRigOptions {
   members?: number;
   memberBase?: number;
   env?: PtEnvOptions;
+  initialDefines?: Record<string, number | boolean | string>;
+  extraSources?: Record<string, string>;
 }
 
 export interface RestirRig {
@@ -159,7 +161,7 @@ export async function restirRig(scene: SceneData, W: number, H: number, o: Resti
   const g = await gpuScene(scene);
   const kernel = await RestirKernel.create(g.device, g.gpu, g.env, {
     settings: restirSettings(o.preset ?? 'initial', o.settings), features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures,
-    instrumentation: { dumpCandidates: o.dumpCandidates }, env: o.env,
+    instrumentation: { dumpCandidates: o.dumpCandidates, initialDefines: o.initialDefines, extraSources: o.extraSources }, env: o.env,
   });
   kernel.setView({ camera: o.cam ?? boxCamera(), width: W, height: H, runSeed: o.seed ?? 11, jitterMode: o.jitterMode ?? JITTER_IID, members: o.members, memberBase: o.memberBase });
   await kernel.prepare();

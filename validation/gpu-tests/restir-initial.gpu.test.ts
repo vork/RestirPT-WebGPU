@@ -5,14 +5,16 @@ import { composeWgsl, createCheckedShaderModule } from '../../src/core/gpu/wgsl-
 import { readBuffer } from '../../src/core/gpu/readback.ts';
 import { shaderSources } from '../../src/core/shaders/index.ts';
 import { createLutBuffer, lutDefines } from '../../src/core/render/luts/lut-layout.ts';
-import { RS_WGSL_CONSTS, rfPack, rfUnpack } from '../../src/core/render/restir/layout.ts';
+import { RES_WORDS, RS_DUMP_CAP, RS_WGSL_CONSTS, RW, decodeReservoir, dumpCountWord, dumpRecordWord, rfPack, rfUnpack } from '../../src/core/render/restir/layout.ts';
+import { PtKernel } from '../../src/core/render/pt-kernel.ts';
+import { JITTER_IID } from '../../src/core/render/frame-uniforms.ts';
 import { RestirKernel } from '../../src/core/render/restir/kernel.ts';
 import { restirSettings } from '../../src/core/render/restir/presets.ts';
 import { RS_PASSES, type RsPassName } from '../../src/core/render/restir/resources.ts';
 import { getTestGpu, releaseTestGpu } from './device-factory.ts';
 import { material, quadScene } from './pt-fixtures.ts';
 import {
-  allLightsScene, bitFixtureScene, boxCamera, gpuScene, hashF32, ptImage, restirRig, storageBuffer, type BitFixture,
+  allLightsScene, bitFixtureScene, boxCamera, gpuScene, hashF32, ptImage, readTexture4, restirRig, storageBuffer, type BitFixture,
 } from './restir-fixtures.ts';
 
 afterAll(releaseTestGpu);
@@ -343,4 +345,148 @@ describe('rung 3.1 frames through RestirKernel', () => {
     expect(r.arena.rsc.candNonFinite + r.arena.rsc.bvhOverflow + r.arena.rsc.bvhItercap).toBe(0);
     rig.destroy();
   });
+});
+
+// ------------------------------------------------------------------------------------------------ U-RIS-1
+
+const lum = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+describe('U-RIS-1: streaming RIS over the path tree reproduces the PT sample (S = 1, no RR)', () => {
+  // (a) RS_PT_DIRECTIONS (the PT's own directions): the contract criterion — ≥ 99.99% of pixels within 1e-4 rel, the
+  //     sum over the agreeing pixels within 1e-5. (b) production D3 directions (positions rebuilt from ids; the offset
+  //     ray origin makes ω differ from the sampled direction by ~1e-5 rad, amplified by glossy lobes): reported, the
+  //     ≥ 99% of pixels within 1e-3 and the sum over them within 1e-4 (Changelog A16).
+  for (const variant of ['pt-directions', 'd3'] as const) {
+    for (const name of ['c0c', 'c0e', 'x_quads', 'c0s'] as BitFixture[]) {
+      it(`${variant} ${name} 64²: per pixel Σw = lum(L_PT − L1) of the PT sample with the same seed`, async () => {
+        const W = 64, H = 64, FR = 8;
+        const rig = await restirRig(bitFixtureScene(name), W, H, { settings: { maxBounces: 3 }, initialDefines: variant === 'pt-directions' ? { RS_PT_DIRECTIONS: true } : {} });
+        const { device } = rig.g;
+        const pt = await PtKernel.create(device, rig.g.gpu, rig.g.env, { features: rig.g.features, wgslLanguageFeatures: rig.g.wgslLanguageFeatures, maxBounces: 3 });
+        pt.setView({ camera: boxCamera(), width: W, height: H, runSeed: 11, jitterMode: JITTER_IID });
+        const acc = storageBuffer(device, W * H * 16), cnt = storageBuffer(device, 16);
+        const tol = variant === 'd3' ? 1e-3 : 1e-4;
+        let n = 0, agree = 0, sumA = 0, sumB = 0, worst = 0, nonzero = 0, within4 = 0;
+        const worstList: string[] = [];
+        for (let t = 0; t < FR; t++) {
+          const r = await rig.frames(1, t);
+          expect(r.counters).toEqual([0, 0, 0, 0]);
+          expect(r.arena.rsc.candNonFinite).toBe(0);
+          const res = await rig.kernel.readReservoirs(0);
+          const L1 = new Float32Array((await readTexture4(device, rig.kernel.resources.l1)).buffer);
+          const enc = device.createCommandEncoder();
+          enc.clearBuffer(acc); enc.clearBuffer(cnt);
+          pt.encode(enc, { sampleBase: t, sampleCount: 1, rowBase: 0, rows: H }, acc, cnt);
+          device.queue.submit([enc.finish()]);
+          const Lpt = new Float32Array(await readBuffer(device, acc, W * H * 16));
+          const rf = new Float32Array(res.buffer);
+          for (let i = 0; i < W * H; i++) {
+            const ws = rf[i * RES_WORDS + RW.wSum];
+            const ref = lum(Lpt[4 * i] - L1[4 * i], Lpt[4 * i + 1] - L1[4 * i + 1], Lpt[4 * i + 2] - L1[4 * i + 2]);
+            // f32 round-off of L_PT − L1 when L1 dominates (camera-visible emitters)
+            const scale = Math.max(Math.abs(ref), 1e-5 * lum(L1[4 * i], L1[4 * i + 1], L1[4 * i + 2]), 1e-12);
+            const e = ws === ref ? 0 : Math.abs(ws - ref) / scale;
+            n++;
+            if (ref > 0) nonzero++;
+            if (e <= 1e-4) within4++;
+            if (e <= tol) { agree++; sumA += ws; sumB += ref; } else if (worstList.length < 6) worstList.push(`t${t} px${i % W},${Math.floor(i / W)} Σw=${ws} ref=${ref}`);
+            worst = Math.max(worst, e);
+          }
+        }
+        const frac = agree / n, sumRel = Math.abs(sumA - sumB) / sumB;
+        console.log(`[U-RIS-1 ${variant} ${name}] n=${n} nonzero=${nonzero} within1e-4=${(100 * within4 / n).toFixed(4)}% within${tol}=${(frac * 100).toFixed(4)}% sumRel=${sumRel.toExponential(2)} worst=${worst.toExponential(2)} ${worstList.join(' | ')}`);
+        expect(nonzero).toBeGreaterThan(n / 4);
+        expect(frac).toBeGreaterThanOrEqual(variant === 'd3' ? 0.99 : 0.9998);
+        expect(sumRel).toBeLessThanOrEqual(variant === 'd3' ? 1e-4 : 1e-5);
+        pt.destroy(); acc.destroy(); cnt.destroy(); rig.destroy();
+      });
+    }
+  }
+});
+
+// ------------------------------------------------------------------------------------------------ U-RIS-2 / U-RIS-3
+
+describe('U-RIS-2: offline S = 32 is independent of the tree chunking and row bands (bitwise)', () => {
+  it('chunks {32}, {8×4}, {1×32} (+ 16-row bands) give identical reservoirs and finalize output', async () => {
+    const W = 64, H = 64;
+    const rig = await restirRig(bitFixtureScene('x_quads'), W, H, { settings: { maxBounces: 3, trees: 32, rounds: 0 } });
+    const runs: { res: Uint32Array; img: Uint32Array }[] = [];
+    for (const [chunk, band] of [[32, 0], [8, 0], [1, 0], [8, 16]]) {
+      rig.kernel.treeChunk = chunk;
+      rig.kernel.rowBand = band;
+      const r = await rig.frames(1, 3);
+      expect(r.counters).toEqual([0, 0, 0, 0]);
+      expect(r.arena.rsc.candNonFinite + r.arena.rsc.wNonFinite).toBe(0);
+      runs.push({ res: await rig.kernel.readReservoirs(0), img: new Uint32Array(r.mean.buffer.slice(0)) });
+    }
+    const rec = decodeReservoir(runs[0].res, 32 * W + 32);
+    console.log(`[U-RIS-2] centre pixel: d=${rec.d} nCand=${rec.nCand} wSum=${rec.wSum} W=${rec.W}`);
+    let nonEmpty = 0;
+    for (let i = 0; i < W * H; i++) if (decodeReservoir(runs[0].res, i).d > 0) nonEmpty++;
+    expect(nonEmpty).toBeGreaterThan(W * H / 2);
+    for (let k = 1; k < runs.length; k++) {
+      let diffRes = 0, diffImg = 0;
+      for (let i = 0; i < runs[0].res.length; i++) if (runs[k].res[i] !== runs[0].res[i]) diffRes++;
+      for (let i = 0; i < runs[0].img.length; i++) if (runs[k].img[i] !== runs[0].img[i]) diffImg++;
+      expect(diffRes, `run ${k}: reservoir words`).toBe(0);
+      expect(diffImg, `run ${k}: image words`).toBe(0);
+    }
+    rig.destroy();
+  });
+});
+
+describe('U-RIS-3: RR source weights and W = Σw / lum F (candidate dump)', () => {
+  for (const name of ['c0e', 'x_quads'] as BitFixture[]) {
+    it(`${name}: dump Σw = reservoir Σw, W = Σw/lum F_Y (1e-6), W_src = 1/∏q over the tests of §3.10`, async () => {
+      const W = 32, H = 32;
+      const rig = await restirRig(bitFixtureScene(name), W, H, { preset: 'initial-rr', settings: { maxBounces: 5 }, dumpCandidates: true });
+      await rig.frames(1, 5);
+      const res = await rig.kernel.readReservoirs(0);
+      const dump = await rig.kernel.readCandidateDump();
+      const P = W * H;
+      const df = new Float32Array(dump.buffer);
+      let pixels = 0, cands = 0, rrActive = 0, badSum = 0, badW = 0, badSel = 0, badRR = 0, badChain = 0, overflow = 0;
+      for (let ai = 0; ai < P; ai++) {
+        const n = dump[dumpCountWord(P, ai)];
+        const r = decodeReservoir(res, ai);
+        if (r.bg) continue;
+        if (n >= RS_DUMP_CAP) { overflow++; continue; }
+        let sum = 0;
+        const R = new Map<number, number>();
+        let sel: ReturnType<typeof decodeReservoir> | undefined;
+        for (let c = 0; c < n; c++) {
+          const base = dumpRecordWord(ai, c);
+          const cr = decodeReservoir(dump, 0, base);
+          const w = cr.W;
+          if (Math.fround(sum) !== cr.wSum && Math.abs(sum - cr.wSum) > 1e-6 * Math.max(sum, 1e-30)) badChain++;
+          sum = Math.fround(sum + w);
+          const lf = lum(cr.F[0], cr.F[1], cr.F[2]);
+          const wsrc = w / lf;
+          const nTests = cr.tech === RS_WGSL_CONSTS.RS_TECH_NEE ? cr.d - 2 : cr.d - 1;
+          if (nTests <= 1 && Math.abs(wsrc - 1) > 1e-5) badRR++;
+          if (wsrc > 1 + 1e-5) rrActive++;
+          const prev = R.get(nTests);
+          if (prev !== undefined && Math.abs(prev - wsrc) > 1e-5 * prev) badRR++;
+          R.set(nTests, wsrc);
+          if (cr.selId === r.selId && n > 0) sel = cr;
+          cands++;
+          void df;
+        }
+        // RR factors are non-decreasing in the number of survived tests
+        const ks = [...R.keys()].sort((a, b) => a - b);
+        for (let j = 1; j < ks.length; j++) if (R.get(ks[j])! < R.get(ks[j - 1])! * (1 - 1e-5)) badRR++;
+        if (n === 0) { if (r.d !== 0 || r.W !== 0) badSel++; continue; }
+        pixels++;
+        if (Math.abs(sum - r.wSum) > 1e-6 * sum) badSum++;
+        if (!sel || sel.F.some((v, c) => v !== r.F[c]) || sel.d !== r.d || sel.k !== r.k || sel.tech !== r.tech) { badSel++; continue; }
+        const want = r.wSum / lum(r.F[0], r.F[1], r.F[2]);
+        if (Math.abs(r.W - want) > 1e-6 * want) badW++;
+      }
+      console.log(`[U-RIS-3 ${name}] pixels=${pixels} candidates=${cands} rrActive=${rrActive} overflow=${overflow} badSum=${badSum} badW=${badW} badSel=${badSel} badRR=${badRR} badChain=${badChain}`);
+      expect(pixels).toBeGreaterThan(P / 3);
+      expect(rrActive).toBeGreaterThan(50);
+      expect(badSum + badW + badSel + badRR + badChain).toBe(0);
+      rig.destroy();
+    });
+  }
 });

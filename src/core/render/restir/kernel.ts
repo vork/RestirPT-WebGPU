@@ -64,7 +64,8 @@ export interface RestirKernelOptions {
   debug?: DebugResources;
   features?: Set<string>;
   wgslLanguageFeatures?: Set<string>;
-  instrumentation?: { dumpCandidates?: boolean };
+  /** Tests: candidate dump; extra defines of rs_initial (e.g. RS_PT_DIRECTIONS, RS_RNG_OVERRIDE). */
+  instrumentation?: { dumpCandidates?: boolean; initialDefines?: Defines; extraSources?: Record<string, string> };
 }
 
 const ENV_BINDING_BASE = 1;
@@ -173,8 +174,9 @@ export class RestirKernel {
     if (!p) {
       const d = RS_PASSES[name];
       const std = Object.keys(extra).length === 0;
-      p = this.compile(d.file, d.entry, this.defines(name, { ...extra, ...(colorFormat ? { COLOR_FORMAT: colorFormat } : {}) }),
-        this.pipelineLayout(name, colorFormat), `${name}${std ? '' : ':' + JSON.stringify(extra)}`)
+      const inst = (name === 'rs_initial' || name === 'rs_initial_dump') ? this.o.instrumentation?.initialDefines ?? {} : {};
+      p = this.compile(d.file, d.entry, this.defines(name, { ...inst, ...extra, ...(colorFormat ? { COLOR_FORMAT: colorFormat } : {}) }),
+        this.pipelineLayout(name, colorFormat), `${name}${std ? '' : ':' + JSON.stringify(extra)}`, this.o.instrumentation?.extraSources ?? {})
         .then((pl) => { if (std) this.ready.set(`${name}:${colorFormat ?? ''}`, pl); return pl; });
       this.pipelines.set(key, p);
       p.catch(() => this.pipelines.delete(key));

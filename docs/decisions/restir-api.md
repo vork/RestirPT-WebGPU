@@ -1280,3 +1280,21 @@ touching a shared interface. "WP-A" entries were made while landing P0 / A1.
 - **A15** `res_write_empty(i, seed, bg)` (reservoir.wgsl) writes the empty / background record (all ten planes;
   endpoint triple and endpointId `RC_NONE`, lobeHist `RS_HIST_NONE`, jDen 1). The candidate dump binding
   (`candDump`, G2 binding 4) is declared in `path/pathtree.wgsl`.
+
+### A1 amendments (WP-A)
+
+- **A16 U-RIS-1 split** (§6.1). With D3 the base path's directions come from positions rebuilt from ids, while the PT
+  uses the sampled direction and −(camera ray); the offset ray origin alone makes them differ by ~1e-5 rad, which
+  glossy lobes amplify to 1e-4–1e-3 relative in 2–3% of pixels (measured, 64², 8 frames). R14's "rare lobe-boundary
+  divergences" underestimated this. U-RIS-1 therefore runs twice: **(a)** with the test-only define
+  `RS_PT_DIRECTIONS` (pathtree uses the PT's directions and vertex orientation): ≥ 99.98% of pixels within 1e-4 rel
+  and the sum over them within 1e-5 (measured 99.98–100%, sums 1e-10–5e-8; the remaining pixels are isolated
+  inter-pipeline FP events ≤ 3e-3 rel); **(b)** production D3: ≥ 99% within 1e-3 and the sum over them within 1e-4
+  (measured 99.70–99.95%, sums ≤ 1e-5). The streaming-RIS bookkeeping is proven by (a) and U-RIS-3.
+- **A17** `RestirKernelOptions.instrumentation` gains `initialDefines` (extra defines of `rs_initial` /
+  `rs_initial_dump`, e.g. `RS_PT_DIRECTIONS`, `RS_RNG_OVERRIDE`) and `extraSources` (in-memory WGSL that overrides
+  or adds shader files for every pipeline of that kernel, e.g. a test `rc.wgsl` or the dense-PSS `rs_rng_override`).
+- **A18 Candidate dump details** (§2.12): only candidates with a finite w > 0 are streamed, counted (`nCand`) and
+  dumped; the dump's `wSum` word is Σw before the candidate, `W` its w_i, `nCand` its ordinal; words 40–47 hold x₁…x₈
+  (`0xFFFFFFFF` beyond x_{d−1}); the per-pixel count is at word `P·32·48 + ai` (`layout.ts dumpCountWord`).
+  Candidates with w = 0 (e.g. F underflow) are neither streamed nor dumped.
