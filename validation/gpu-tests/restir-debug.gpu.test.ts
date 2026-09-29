@@ -27,7 +27,7 @@ import { RS_PASSES, restirCommonDefines } from '../../src/core/render/restir/res
 import { composeWgsl } from '../../src/core/gpu/wgsl-composer.ts';
 import { shaderSources } from '../../src/core/shaders/index.ts';
 import { releaseTestGpu } from './device-factory.ts';
-import { bitFixtureScene, boxCamera, gpuScene, readTexture4, restirRig, storageBuffer, type GpuScene } from './restir-fixtures.ts';
+import { allLightsScene, bitFixtureScene, boxCamera, gpuScene, readTexture4, restirRig, storageBuffer, type GpuScene } from './restir-fixtures.ts';
 
 afterAll(releaseTestGpu);
 
@@ -412,6 +412,19 @@ describe('U-DBG-1 (c) / U-DBG-3: real frames', () => {
     for (let i = 0; i < P; i++) if (kv.aov[4 * i] > 0 && kv.aov[4 * i] !== NONE) withPartners++;
     console.log(`[U-DBG-2] max |461| ${worst[RS_VIEW.misSumM]}, max |462| ${worst[RS_VIEW.misLumL]}; pixels with k > 0: ${withPartners}/${P}`
       + `${withPartners === 0 ? ' (VACUOUS: no spatial MIS records yet)' : ''}; rounds ${rig.kernel.lastRounds}`);
+    rig.destroy();
+  });
+});
+
+describe('arena HUD counters on an env + analytic-light scene (the app smoke\'s HDRI case)', () => {
+  it('the spatial stage runs and counts (accepted > 0, SC histogram non-empty) with env NEE and analytic lights', async () => {
+    const W = 48, H = 32;
+    const rig = await restirRig(allLightsScene(), W, H, { preset: 'interactive', settings: { maxBounces: 3 } });
+    const r = await rig.frames(2, 0);
+    const hist = r.arena.codes.reduce((a, b) => a + b, 0);
+    console.log(`[env+lights] rounds ${rig.kernel.lastRounds} accepted ${r.arena.rsc.accepted} queued ${r.arena.rsc.queued} SC total ${hist} finalize ${r.counters}`);
+    expect(r.arena.rsc.accepted, 'accepted slots').toBeGreaterThan(0);
+    expect(hist, 'SC histogram').toBeGreaterThan(0);
     rig.destroy();
   });
 });
