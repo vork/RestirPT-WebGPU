@@ -946,6 +946,17 @@ jitter seed    = initSeed.x                                           (the jitte
   - **Pairing transforms:** per frame and round, `h(runSeed, t, round, member, PAIRING)`.
 - **Ensemble mode:** the member id is part of every seed.
 
+**[M4 addition, restir-api.md]** Concrete formulas of the separate streams (docs/decisions/restir-api.md §5):
+```
+key          = pcg3d(runSeed ⊕ member·φ, t, localIdx).xy        (= initSeed of tree 0; jitter uses key.x)
+tree seed    = s = 0: key;  s ≥ 1: pcg4d(key.x, key.y, s, STREAM_TREE).xy          (offline S trees)
+resampling   = u01(pcg4d(key.x, key.y ⊕ passId·φ, counter, STREAM_RESAMPLE).x)   key of the RESAMPLING pixel
+               counter: initial (tree<<20)|(B<<12)|slotInVertex (0 NEE, 1 BSDF end, 2… Mode-B crossings);
+                        spatial 0 = canonical, 1+s = slot s
+pairing      = pcg4d(runSeed ⊕ member·φ, t, (round<<8)|slot, STREAM_PAIRING): dihedral code = .x & 7, offset = (.y, .z) mod W_s
+```
+The counters depend only on (tree, vertex, candidate kind), so splitting trees across dispatches is bitwise neutral.
+
 ---
 
 <a id="path-tree"></a>
@@ -989,12 +1000,28 @@ finalize:              W = Σw / lum(F_Y)     (tree M = 1);  c = 1;  W = 0 if Σ
 - **Offline mode** uses S = 32 i.i.d. trees. This is two-level RIS: stream all candidates with
   weights `(1/S)·w_i`, then `W = Σ_all w / lum(F_Y)`. Σw persists across split dispatches. The
   result is bitwise equal to a single dispatch.
+  - **[M4 addition, restir-api.md]** The common factor 1/S is applied once at finalisation, `W = Σ_all w_i / (S·lum(F_Y))`,
+    so the persisted Σw is the plain sum of `lum(F_i)·W_src,i`.
 - **k\*** is decided **per candidate** and streamed with it (deferred k*, no lobe revocation;
   [rc-predicate](#rc-predicate)).
+- **[M4 addition, restir-api.md]** **Same-formula directions.** Every direction between two stored vertices is
+  `normalize(pos(b) − pos(a))` with positions rebuilt from ids (`vertex_from_ids`), in the base path, in replay and in
+  every shift: incoming directions V, the direction whose p̄ / joint pdf enters the predicate, jDen and jNum, and the
+  stored `rcWi` of a continuing x_k. Sampled bits are used only to trace the ray and as the escape direction of a
+  `BSDF_ENV` ending. Base-path throughput factors may use the sampler's `weight` (a few-ulp difference in F is not a
+  bias: F is a target and a fixed function of the path).
+- **[M4 addition, restir-api.md]** **Base NEE endpoint.** The NEE candidate stores its endpoint as the sampler's own light-local
+  coordinates (alias entry, `u01(h_l0)`, `u01(h_l1)`; for emissive triangles these are the `(u₁, u₂)` of the
+  area-uniform map; env `(i<<16)|j, h2`) and evaluates it with the same per-entry function as the PT, so every later
+  evaluation (shift cases (a), (b), (f); refresh) reproduces z, Λ, q and p1 bit-identically.
 - **Suffix cache** for the selected candidate (gap-temporal §5.5, plan §1.9):
   - x_{d−1} hit, ω_o at x_{d−1}, and β_s = the post-rc throughput;
   - plus `(lightIdx, uv)` for an NEE end, or `(t_occ, p2)` for a BSDF end;
   - an escape sets a flag with t_occ = FLT_MAX.
+  - **[M4 addition, restir-api.md]** Pinned: NEE end `β_s = ∏_{j=k+1}^{d−2} f_j cos/p_j`, direction = ω_o at x_{d−1};
+    BSDF end `β_s = ∏_{j=k+1}^{d−1}` (includes x_{d−1}'s factor), direction = ω_{d−1}, `t_occ` = t of the final ray to
+    the first triangle, `p2` = marginal pdf of ω_{d−1} at x_{d−1}. The cache is meaningful only for `k ≤ d−1`
+    (x_{d−1} on the copied suffix) and is copied verbatim by spatial selection.
 
 **Length-1 terms (outside the reservoir, weight 1).**
 ```
@@ -1019,8 +1046,8 @@ belongs to `restir/reservoir.wgsl`. This section defines the semantics.
 |---|---|---|
 | `W` | f32 | UCW in PSS |
 | `F` | f32×3 | PSS integrand of the stored path **in this reservoir's own pixel domain and frame**; p̂ = lum(F) (invariant I1, [temporal](#temporal)) |
-| `initSeed` | u32 | path-stream seed for prefix replay; also the dupmap identity |
-| `endpointId` | u32 | stable lightId, global emissive-triangle id, or `ENV_ID` (the repurposed `rcVertexRandomSeed`) |
+| `initSeed` | u32×2 | path-stream seed for prefix replay; also the dupmap identity. **[M4 addition, restir-api.md]** 64 bits (two words), per the M3c finding in [rng-layout](#rng-layout) |
+| `endpointId` | u32 | stable lightId, global emissive-triangle id, or `ENV_ID` (the repurposed `rcVertexRandomSeed`). **[M4 addition, restir-api.md]** M4 values: analytic light = its alias entry index in the reservoir's frame (renumbered on temporal selection), emissive triangle = `primId`, env = `0xFFFFFFFE` |
 | `flags.d` | 4 bit | light-vertex index, 2 … 15 |
 | `flags.k` | 4 bit | rc index 2 … d; **0 = ∅** |
 | `flags.technique` | 2 bit | NEE, BSDF_TRI, BSDF_ANALYTIC, BSDF_ENV |
@@ -1038,6 +1065,12 @@ belongs to `restir/reservoir.wgsl`. This section defines the semantics.
 | `aux` | f32 | case (b)/(c) p1 measured at x_{d−1}. Valid **within a frame only**, and only because x_{d−1} is the copied rc vertex |
 | suffix cache | ~12 words | `x_{d−1}` (primId, bary f32×2), `ω_o` at x_{d−1} (f32×3), `β_s` (f32×3), then either `(lightIdx, u, v)` (NEE end) or `(t_occ, p2)` (BSDF end; escape ⇒ t_occ = FLT_MAX and an escape flag) |
 
+- **[M4 addition, restir-api.md]** Encodings (word layout in restir-api.md §2.2–2.3): surface vertex `(primId, bits(bary.u),
+  bits(bary.v))`; NEE light vertex `(0x80000000|entry, bits(u), bits(v))` with `(u, v) = (u01(h_l0), u01(h_l1))` for
+  area lights and emissive triangles and `(0, 0)` for delta lights and the sun; env NEE `(0x80000000|envEntry,
+  (i<<16)|j, h2)`; BSDF_ENV `(0xFFFFFFF1, 0, 0)` with ω in rcWi; none `0xFFFFFFFF`. The endpoint triple is stored for
+  every path in addition to the rc triple. **Empty** reservoir ⇔ `d = 0` (W = 0, F = 0, c = 1 on a hit pixel);
+  **background** ⇔ bg flag, d = 0, c = 0.
 - Class is derivable and **not stored** ([light-changes](#light-changes)):
   - L: k = d ∧ NEE
   - N1: k = d−1 ∧ NEE
@@ -1231,6 +1264,11 @@ bijectivity; "undefined" must be decided by identical code in T and T⁻¹.
   - f = 0;
   - Mode-B full replay that no longer crosses L.
 
+- **[M4 addition, restir-api.md]** In the paired slots, "defined with F = 0" and "undefined" share the J word `FAILED`
+  (both give w = 0 and p̂_← = 0, [paired-mis](#paired-mis)); a separate per-slot code keeps the distinction
+  (`SC_O0_*`, `SC_O1`, `SC_O2`, `SC_O3`, `SC_J_INVALID` = undefined; `SC_OCCLUDED`, `SC_ZERO` = defined zero). The
+  order of evaluation puts every undefined decision before any zero decision, so the code is identical in T and T⁻¹.
+
 **Violation classes** (gap-rc §10.3):
 - **LOGIC:** |margin| ≥ 2⁻¹⁶ (for roughness, |α − α_min| ≥ 1e-6), any signature mismatch not
   explained by a margin flip, any T3-3 asymmetry, or any disagreement with the T3-D f64 dual.
@@ -1285,6 +1323,9 @@ A0(a,b) = a.hit ∧ b.hit ∧ dot(a.n^g, b.n^g) ≥ 0.5 ∧ |a.z − b.z| ≤ 0.
 ```
 - A never depends on reservoir contents. The shift pass (S2) never re-evaluates A; it reads the
   slot status.
+- **[M4 addition, restir-api.md]** `z` is the camera distance ‖x₁ − x₀‖ of the jittered primary hit, stored once per pixel as f32 bits
+  (`rsVbuf.w`); `n^g` is oriented toward the camera. "Once per pair" is literal: the thread of the smaller pixel index
+  evaluates `A0(G[min], G[max])` and writes the acceptance of both slots.
 - Background pixels are never accepted, and cross-member partners are NOT_ACCEPTED.
 
 **Slot status** (in the J word, compared as integers):
@@ -1347,6 +1388,11 @@ c_out = c_c + Σ_{j∈S_c} c_j                   (FAILED partners still count; u
   symmetrically.
 - σ = sqrt(8/(9π))·R ≈ 0.5319·R, so R = 30 px gives σ = 16.0.
 - The M4 uniform-disk involution maps are replaced by these in M6 without kernel changes.
+- **[M4 addition, restir-api.md]** **M4 uniform-disk involution maps**: same texture format and transform. Each layer is a W_s-torus
+  involution built on the CPU by greedy random matching: texels in random order; an unmatched texel a draws up to 64
+  integer offsets d uniformly from `0 < |d|² ≤ R²` and is matched with the first unmatched `b = (a + d) mod W_s`
+  (`d(b) = −d(a)`); leftovers keep d = 0 ("no partner", NOT_ACCEPTED). R = 30 px interactive, 10 px offline. Offsets
+  are only approximately uniform (late matches are constrained); this changes variance only.
 
 ---
 
@@ -1498,6 +1544,9 @@ Sources: plan §2 rule 11, enh §6.5, enh-verify O3, review R14.
   Recommended: Cycles' form `q_i = min( sqrt(max_c |β_c|), 1 )` on the RR-free prefix throughput
   β, with no RR while i ≤ minBounces.
 - Gate ladder: 3.1b tests RR alone. RR stays off in rungs 3.2–3.6 and is toggled in 3.7.
+- **[M4 addition, restir-api.md]** Pinned for ReSTIR (resolves open item 34 for the ReSTIR paths): exactly the reference PT's rule,
+  `q_B = min(sqrt(max_c β_c), 1)` on the RR-free prefix throughput, tested at x_B for `B > rrMinBounces` (rung 3.1b uses
+  rrMinBounces = 1), drawn from slot `u_rr` of the path seed.
 
 ---
 
@@ -1773,5 +1822,22 @@ that implementers do not follow the superseded text.
 35. **Background-pixel thr.** gap-env §3.6 says "thr undefined" for misses. Since misses are never
     accepted as partners or temporal sources, thr is never read there. Write thr = 0 and flag it,
     so no NaN enters the planes.
-</content>
-</invoke>
+36. **[M4 addition, restir-api.md]** **initSeed width in the reservoir.** §17 listed `initSeed` as u32; §15 (M3c) requires 64 bits.
+    **Resolution:** two words in the reservoir (restir-api.md D2).
+37. **[M4 addition, restir-api.md]** **Triangle NEE endpoints.** PLAN §1.9 lists `(primId, bary)` for triangle rc vertices. For an
+    NEE-sampled triangle the reservoir stores the sampler's `(u₁, u₂)` with the alias entry instead, so the endpoint is
+    re-evaluated by the PT's own sampler function; BSDF-hit triangles keep `(primId, bary)`. Both are lossless in
+    validation; the encodings differ by technique (restir-api.md D4).
+38. **[M4 addition, restir-api.md]** **Shift status vs. "undefined/zero".** math §22 FAILED = "undefined or p̂ = 0"; gap-light §5.6
+    separates undefined and zero. Resolution: one J word (FAILED) plus a detailed code word (see §20 addition).
+39. **[M4 addition, restir-api.md]** **Glass and alpha scenes in M4.** PLAN §5 M4 exit lists (i)–(vi) and (xii); §7.1 puts rungs 3.9
+    (glass) and 3.10 (alpha) in M6. Resolution: M4 gates (vi) Mode A and (xii) at rungs 3.1–3.2; M6's rungs add Mode B,
+    the glass scene set, rough-glass reconnection and cutouts on shift segments (restir-api.md D13, §6.5).
+40. **[M4 addition, restir-api.md]** **Ensemble tile size.** PLAN §3 fixes 256² member tiles; the Stage-B scenes are mostly 512².
+    Resolution: the member tile is the scene's render resolution, `E·W·H ≤ 2²²`; the M4 Stage-B rungs use sequential
+    independent frames, which is valid with temporal reuse off (restir-api.md D14, D15).
+41. **[M4 addition, restir-api.md]** **Single-engine build.** gap-rc §8.3 recommends it for FP-BOUNDARY = 0; PLAN §5 M4 exit only requires
+    FP-BOUNDARY ≤ 1e-5. Deferred unless the measured rate exceeds the limit (restir-api.md D21).
+42. **[M4 addition, restir-api.md]** **Case (b)/(c) cached end terms.** PLAN §1.9 stores `rcRadiance` and `aux` for cases (b)/(c).
+    M4 shifts re-evaluate these end terms at the copied x_{d−1} from the stored endpoint (bit-identical within a frame)
+    and use the stored values only as a debug cross-check (restir-api.md D6).
