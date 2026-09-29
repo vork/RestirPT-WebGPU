@@ -16,7 +16,12 @@
 // M3c: validation/harness/gate-m3c.ts — Gate 0 (ENV-U3/U4/U5/U6/U8 + regressions), Gate 2 Stage A on the env scenes
 //     (C0q both world variants, C0r, C0s NEE on/off, (xiii), (xiv); analytic quadrature on both renderers), the env
 //     planted biases, negative controls and an A/A test. `--only pkg,pkg` restricts Gate 2 to a scene subset.
-//   npm run validate -- --milestone M0|M1|M2|M3a|M3b|M3c [--only ...]
+// M4: validation/harness/gate-m4.ts — Gate 0 (tests/restir cpu lane, the four Chrome ReSTIR suites + M3 regressions,
+//     make-m4.ts determinism, budget rows, M4 app smoke), Gate 3 Stage B (our ReSTIR ≡ our PT) on the rung ladder
+//     3.1 → 3.1b → 3.2 per scene with cached PT references and pilot sizing, the ensemble and 2022-criteria units, the
+//     planted controls (omitted spatial J, marginal J, W x1.003) and a ReSTIR A/A. `--only pkg,pkg` restricts Gate 3;
+//     `--pilot-only` runs the pilots + sizing only; `--write-budget` merges the M4 rows into validation/budget.json.
+//   npm run validate -- --milestone M0|M1|M2|M3a|M3b|M3c|M4 [--only ...] [--pilot-only] [--write-budget]
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -25,10 +30,14 @@ import { parseArgs } from 'node:util';
 import { milestoneM3a } from './gate-m3a.ts';
 import { milestoneM3b } from './gate-m3b.ts';
 import { milestoneM3c } from './gate-m3c.ts';
+import { milestoneM4 } from './gate-m4.ts';
 import { withGpuLockSync } from './gpu-lock.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const { values: args } = parseArgs({ options: { milestone: { type: 'string', default: 'M0' }, only: { type: 'string' } } });
+const { values: args } = parseArgs({ options: {
+  milestone: { type: 'string', default: 'M0' }, only: { type: 'string' },
+  'pilot-only': { type: 'boolean', default: false }, 'write-budget': { type: 'boolean', default: false },
+} });
 
 interface Step { name: string; ok: boolean; detail?: string }
 const steps: Step[] = [];
@@ -362,6 +371,7 @@ const gates: Record<string, () => void> = {
   M3A: () => milestoneM3a(record, args.only ? new Set(args.only.split(',')) : undefined),
   M3B: () => milestoneM3b(record, args.only ? new Set(args.only.split(',')) : undefined),
   M3C: () => milestoneM3c(record, args.only ? new Set(args.only.split(',')) : undefined),
+  M4: () => milestoneM4(record, { only: args.only ? new Set(args.only.split(',')) : undefined, pilotOnly: args['pilot-only'], writeBudget: args['write-budget'] }),
 };
 const gate = gates[args.milestone!.toUpperCase()];
 if (!gate) {

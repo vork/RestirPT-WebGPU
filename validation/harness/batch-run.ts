@@ -67,12 +67,12 @@ export interface RenderBatchesReport {
   errors: string[];
 }
 
-const stable = (v: unknown): string => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x)
+export const stable = (v: unknown): string => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x)
   ? Object.fromEntries(Object.entries(x as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
 
 interface FrameOverride { env?: { rotationZ?: number; strength?: number; tint?: [number, number, number] } }
 
-async function loadSource(o: RenderBatchesOptions): Promise<{ scene: SceneData; camera: { camToWorld: ArrayLike<number>; yfov: number }; size?: [number, number]; source: Record<string, unknown>; frame?: FrameOverride }> {
+export async function loadSource(o: Pick<RenderBatchesOptions, 'package' | 'sceneUrl' | 'frame'>): Promise<{ scene: SceneData; camera: { camToWorld: ArrayLike<number>; yfov: number }; size?: [number, number]; source: Record<string, unknown>; frame?: FrameOverride }> {
   if (o.package) {
     const p = await fetchScenePackage(o.package);
     const hash = await packageSha256(p.files); // exactly the files build_scene.py hashes

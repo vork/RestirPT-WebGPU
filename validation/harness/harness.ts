@@ -3,6 +3,7 @@ import { createGpuContext, describeContext, type GpuContext } from '../../src/co
 import { encodePFM, orientationPattern } from '../../src/core/io/pfm.ts';
 import { allocProbe, type AllocProbeOptions, type AllocProbeReport } from './alloc-probe.ts';
 import { renderBatches, type RenderBatchesOptions, type RenderBatchesReport } from './batch-run.ts';
+import { renderRestirBatches, type RenderRestirBatchesOptions, type RenderRestirBatchesReport } from './restir-batch-run.ts';
 import { exportAndUpload } from './export-package.ts';
 import { fetchScenePackage, type ExportScenePackageOptions } from '../../src/core/scene/scene-package.ts';
 
@@ -25,6 +26,8 @@ export interface Harness {
   log(run: string, entry: Record<string, unknown>): Promise<void>;
   /** M2: render `batches` × `spp` with a validation kernel; uploads batch_###.pfm + meta.json to validation/out/<run>/. */
   renderBatches(opts: RenderBatchesOptions): Promise<RenderBatchesReport>;
+  /** M4 (restir-api.md §6.4): Stage-B ReSTIR batches (rung preset, frames per batch, ensemble members, plants). */
+  renderRestirBatches(opts: RenderRestirBatchesOptions): Promise<RenderRestirBatchesReport>;
   /** M2: re-export a scene package (read from `packageUrl`) to validation/out/<run>/ (bridge round trip). */
   reexportPackage(packageUrl: string, run: string, overrides?: Partial<ExportScenePackageOptions>): Promise<{ files: string[]; sha256: string }>;
 }
@@ -93,6 +96,11 @@ const harness: Harness = {
   async renderBatches(opts) {
     const ctx = await getContext();
     return renderBatches(ctx, opts);
+  },
+
+  async renderRestirBatches(opts) {
+    const ctx = await getContext();
+    return renderRestirBatches(ctx, opts);
   },
 
   async reexportPackage(packageUrl, run, overrides = {}) {
