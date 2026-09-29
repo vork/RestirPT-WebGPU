@@ -524,3 +524,16 @@ Most of the 484-file diff is refactoring:
 - The bundled OIIO version of 5.1.2 (only 5.2.2 is installed), and the blackbody code (pinned off).
 - The OSL and Hydra paths, which are unused.
 - Commit intent. The clone is shallow; conclusions come from code and comments.
+
+## Result: gates re-run on Blender 5.2.2 (2026-09-29)
+
+Every Cycles reference was re-rendered with 5.2.2, using the pins above plus D7. Every gate passes:
+
+| Gate | Result | Notes |
+|---|---|---|
+| M2 | 24/24 | Second run. The first run failed one unit on a 3600 s GPU-lock timeout (no render) and hit the old `Resources/5.1` python path, which is fixed in e63367b. |
+| M3a | 175/175 | |
+| M3b | 96/96 | |
+| M3c | 173/173 | |
+
+No Blender crash occurred in about 9 h of rendering. The source-level verdict "no radiance change under our pins" is therefore confirmed at gate level.
