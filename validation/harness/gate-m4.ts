@@ -46,6 +46,14 @@ const NUM_EPS_NOTE = 'two f32 implementations (cycles-deviations.md D2; restir-a
 /** Per-side GPU time above which a unit's tiles are enlarged to 64² (restir-api.md §6.3). */
 export const SIDE_CAP_S = 3600;
 export const SIZING_MARGIN = 1.25;
+/**
+ * Floors of the per-batch sample counts, so every batch mean averages enough i.i.d. samples for the replicate
+ * statistics (Welch/TOST, mean-t, KS/AD) to see a near-normal statistic even on the smoothest scenes (a 1-frame
+ * batch of c0r_mirror would be a single heavy-tailed sample): PT 256 spp, rungs 3.1/3.1b 128 frames, 3.2 8 frames
+ * (8 × S = 256 path trees). They only ever raise a size.
+ */
+export const MIN_PT_SPP = 256;
+export const minFramesPerBatch = (rung: string): number => (rung === '3.2' ? 8 : 128);
 const TIMEOUT_MS = 12 * 3600_000;   // a run may wait hours for the shared GPU lock
 
 export type RungId = '3.1' | '3.1b' | '3.2';
@@ -229,7 +237,7 @@ export interface SceneSizing {
  * × margin and round per batch with niceCeil. A side above SIDE_CAP_S enlarges that rung's tiles to 64² (the PT side
  * above the cap enlarges every rung); δ is never loosened.
  */
-export function sizeScene(pt: PilotSide, rungsIn: RungSizingInput[], o: { B: number; deltaGlobal?: number; deltaTile?: number; margin?: number; capS?: number; minPtSpp?: number }): SceneSizing {
+export function sizeScene(pt: PilotSide, rungsIn: RungSizingInput[], o: { B: number; deltaGlobal?: number; deltaTile?: number; margin?: number; capS?: number; minPtSpp?: number; minFrames?: (id: string) => number }): SceneSizing {
   const dG = o.deltaGlobal ?? 0.002, dT = o.deltaTile ?? 0.01, margin = o.margin ?? SIZING_MARGIN, cap = o.capS ?? SIDE_CAP_S;
   const rungs = rungsIn.map((r) => ({ ...r }));
   const notes: string[] = [];
@@ -280,12 +288,12 @@ export function sizeScene(pt: PilotSide, rungsIn: RungSizingInput[], o: { B: num
     if (!changed) break;
     sol = solve();
   }
-  const ptSpp = Math.max(o.minPtSpp ?? 16, niceCeil((sol.NR * margin) / o.B));
+  const ptSpp = Math.max(o.minPtSpp ?? MIN_PT_SPP, niceCeil((sol.NR * margin) / o.B));
   const out: SceneSizing = {
     B: o.B, ptSamples: ptSpp * o.B, ptSpp, ptSeconds: (ptSpp * o.B * pt.msPerSample) / 1000, rungs: {}, feasible: true, notes,
   };
   rungs.forEach((r, j) => {
-    const f = niceCeil((sol.NK[j] * margin) / o.B);
+    const f = Math.max((o.minFrames ?? minFramesPerBatch)(r.id), niceCeil((sol.NK[j] * margin) / o.B));
     const seconds = (f * o.B * r.side.msPerSample) / 1000;
     out.rungs[r.id] = { tile: r.tile, samples: f * o.B, framesPerBatch: f, seconds, msPerFrame: r.side.msPerSample, enlarged: r.tile !== rungsIn[j].tile };
     if (seconds > cap) { out.feasible = false; notes.push(`rung ${r.id}: ${(seconds / 60).toFixed(0)} min even at 64² tiles (weekly tier)`); }

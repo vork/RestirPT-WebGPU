@@ -110,7 +110,7 @@ describe('sizing rule (PLAN §7.3, stats.sizing_target)', () => {
 
   it('the allocation satisfies SE_Δ ≤ target on every aggregate and favours the cheaper side', () => {
     const pt = side(1, 2, 64, 16, 1, 64, 64, 3), rs = side(1, 2, 64, 16, 4, 64, 64, 5);   // same variance, ReSTIR 4× dearer
-    const z = sizeScene(pt, [{ id: '3.1', side: rs, tile: 32 }], { B: 16, margin: 1, minPtSpp: 1 });
+    const z = sizeScene(pt, [{ id: '3.1', side: rs, tile: 32 }], { B: 16, margin: 1, minPtSpp: 1, minFrames: () => 1 });
     const ref = aggregateSide(pt, 32), s = aggregateSide(rs, 32);
     const uR = uVector({ sd: ref.sd, n: pt.n }, ref, { deltaGlobal: 0.002, deltaTile: 0.01, B: 16 });
     const uK = uVector({ sd: s.sd, n: rs.n }, ref, { deltaGlobal: 0.002, deltaTile: 0.01, B: 16 });
@@ -131,6 +131,14 @@ describe('sizing rule (PLAN §7.3, stats.sizing_target)', () => {
     const zz = sizeScene(pt, [{ id: '3.2', side: rs, tile: 32 }], { B: 16, capS: 1e9 });
     expect(zz.rungs['3.2'].tile).toBe(32);
     expect(z.rungs['3.2'].samples).toBeLessThan(zz.rungs['3.2'].samples);
+  });
+
+  it('per-batch floors only raise sizes (PT 256 spp, 3.1 128 frames, 3.2 8 frames)', () => {
+    const pt = side(1, 1e-3, 64, 16, 1, 64, 64, 11), rs = side(1, 1e-3, 64, 16, 1, 64, 64, 13);
+    const z = sizeScene(pt, [{ id: '3.1', side: rs, tile: 32 }, { id: '3.2', side: rs, tile: 32 }], { B: 16 });
+    expect(z.ptSpp).toBe(256);
+    expect(z.rungs['3.1'].framesPerBatch).toBe(128);
+    expect(z.rungs['3.2'].framesPerBatch).toBe(8);
   });
 
   it('ensemble shape holds the rung total in member-frames', () => {
