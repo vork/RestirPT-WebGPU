@@ -75,6 +75,8 @@ export const UNIT_CAP_RAISED_S = 90 * 60;
 /** Plan above this ⇒ the two-part split (Q3). */
 export const SPLIT_HOURS = 14;
 export const CALIB_FACTOR = 4;
+/** Wall seconds per run-batches invocation outside the GPU batches (Vite + Chrome start, compiles, probe), for the plan. */
+export const INVOCATION_OVERHEAD_S = 30;
 export const STATIC = { T: 25, testFrames: [1, 24] } as const;
 export const AVG = { T: 288, from: 32, to: 287 } as const;
 export const DELTA = { B: { global: 0.002, tile: 0.01, mask: 0.01, tile0: 32 }, dyn: { global: 0.002, tile: 0.02, mask: 0.03, tile0: 64 } } as const;
@@ -718,6 +720,7 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
           (l) => /Tests |FAIL|✗|×|AssertionError|LOGIC|FP-BOUNDARY|violation/.test(l), GPU_SUITE_ENV[file]);
       });
     }
+    uTr1(dir, add);
     if (existsSync(path.join(ROOT, 'validation/harness/m5-app-smoke.ts'))) {
       runStep('M5 app smoke (interactive temporal, animated camera/lights/env, HUD, map swap reset, pause)', 'npx', ['tsx', 'validation/harness/m5-app-smoke.ts', '--run', `${runId}-app-smoke`], (l) => /^(PASS|FAIL)\s/.test(l));
     } else add('M5 app smoke (validation/harness/m5-app-smoke.ts, T-D)', false, 0, undefined, 'missing');
@@ -755,7 +758,9 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
   const ptPlans = new Map<string, PtPlan>();
   const pilotDirs: Record<string, string> = {};
   sizeAll(units, ptPlans, pilotDirs, add);
-  const planHours = (units.reduce((a, u) => a + u.chainSeconds, 0) + [...ptPlans.values()].reduce((a, p) => a + p.seconds, 0)) / 3600;
+  // + a per-invocation overhead (Vite + Chrome start, pipeline compiles, chunking probe): one per lock chunk
+  const invocations = units.reduce((a, u) => a + chainChunks(u.R || E_MEMBERS, E_MEMBERS, u.chainSeconds * 1.2).length, 0) + [...ptPlans.values()].reduce((a, p) => a + Math.ceil(p.B / chunkBatches(p.B, p.seconds * 1.2)), 0);
+  const planHours = (units.reduce((a, u) => a + u.chainSeconds, 0) + [...ptPlans.values()].reduce((a, p) => a + p.seconds, 0) + INVOCATION_OVERHEAD_S * invocations) / 3600;
   const sizing = { units: units.map((u) => ({ id: u.id, R: u.R, frames: u.frames, testFrames: u.testFrames, tile: u.tile, minutes: r4(u.chainSeconds / 60), msPerChain: r4(u.msPerChain), cap: u.cap, notes: u.notes })),
     pt: [...ptPlans.values()].map((p) => ({ ...p, minutes: r4(p.seconds / 60) })), planHours: r4(planHours), split: planHours > SPLIT_HOURS, pilots: pilotDirs };
   writeFileSync(path.join(ROOT, dir, 'sizing.json'), `${JSON.stringify(sizing, null, 1)}\n`);
@@ -836,6 +841,21 @@ function packagesDeterministic(dir: string, add: Add): void {
     diffs.length ? `diffs: ${diffs.slice(0, 6).join(', ')}` : `${fa.length} files`);
 }
 
+/** U-TR-1 (§6.1): two chain runs with the same seed are bitwise identical (ensemble rows, counters) — 16 chains of
+ *  ixs_e_addremove frames 0…15 (light add / intensity step: refresh frames), preset full. */
+function uTr1(dir: string, add: Add): void {
+  const t0 = performance.now();
+  const runs = [0, 1].map((i) => chainRun({ pkg: 'ixs_e_addremove_256', preset: 'full', R: E_MEMBERS, seed: SEEDS.chains, frames: 16, testFrames: [8, 15] }, path.join(dir, 'u-tr-1', `run${i}`), 60));
+  const diffs: string[] = [];
+  if (runs.some((r) => !r.dir)) diffs.push('run failed');
+  else for (const f of ['f8', 'f15']) {
+    const a = readFileSync(path.join(ROOT, runs[0].dir!, f, 'ensemble.npz')), b = readFileSync(path.join(ROOT, runs[1].dir!, f, 'ensemble.npz'));
+    if (!a.equals(b)) diffs.push(`${f}/ensemble.npz differs`);
+  }
+  if (runs.every((r) => r.meta) && stableJson(runs[0].meta!.restir?.counters) !== stableJson(runs[1].meta!.restir?.counters)) diffs.push('RSC counters differ');
+  add('U-TR-1: two chain runs bitwise identical (ensemble rows, counters)', diffs.length === 0, (performance.now() - t0) / 1000, { diffs }, diffs.join('; ') || undefined);
+}
+
 // ---- sizing of every unit ---------------------------------------------------------------------------------------------------
 
 function ptPilotSide(pkg: string, frame: number | undefined, add: Add): { ms: number; dir?: string } {
@@ -869,7 +889,7 @@ function sizeAll(units: UnitPlan[], ptPlans: Map<string, PtPlan>, pilotDirs: Rec
         const pilot = pilotChains({ pkg, preset: u.preset, R: PILOT_CHAINS, seed: SEEDS.chainPilot, frames: u.frames, testFrames: u.average ? [] : u.testFrames, average: u.average, masks: u.masks, extra: u.extra }, add);
         if (!pilot) return undefined;
         pilotDirs[u.id] = pilot.dir;
-        const msPerChain = (pilot.meta.timings.totalMs as number) / PILOT_CHAINS;
+        const msPerChain = (pilot.meta.timings.batchMs as number[]).reduce((a2, b2) => a2 + b2, 0) / PILOT_CHAINS;   // GPU batches only (setup and the chunking probe are per invocation)
         const um = new Map<number, Float64Array>(), ug = new Map<number, Float64Array>();
         for (const f of frames) {
           const sub = u.average ? 'avg' : `f${f < 0 ? u.testFrames[0] : f}`;
@@ -899,11 +919,12 @@ function sizeAll(units: UnitPlan[], ptPlans: Map<string, PtPlan>, pilotDirs: Rec
     let res = tryTile(tile);
     if (!res) { add(`sizing ${key}`, false, 0, undefined, 'pilot failed'); continue; }
     const dec = (id: string) => capDecision(res!.z.chains[id].seconds, res!.zg.chains[id].seconds, tile !== (dyn ? 64 : 32));
+    const res0 = res;
     if (us.some((u) => dec(u.id).status === 'enlarge')) {
       tile *= 2;
       const r2 = tryTile(tile);
       if (r2) res = r2;
-      for (const u of us) u.notes.push(`tile aggregate enlarged to ${tile}² (unit cap ${UNIT_CAP_S / 60} min)`);
+      for (const u of us) u.notes.push(`tile aggregate enlarged to ${tile}² (unit cap ${UNIT_CAP_S / 60} min; at ${tile / 2}²: R ${res0.z.chains[u.id].R}, ${(res0.z.chains[u.id].seconds / 60).toFixed(0)} min)`);
     }
     for (const u of us) {
       const c = res.z.chains[u.id], dd = dec(u.id);
@@ -919,7 +940,7 @@ function sizeAll(units: UnitPlan[], ptPlans: Map<string, PtPlan>, pilotDirs: Rec
       if (!p.fixed) { mkdirSync(path.dirname(path.join(ROOT, sf)), { recursive: true }); writeFileSync(path.join(ROOT, sf), `${JSON.stringify({ pkg, frame: frame ?? null, spp: p.spp, B: B_PT, created: new Date().toISOString() }, null, 1)}\n`); }
     }
     add(`sizing ${key} (tile ${tile}², x${SIZING_MARGIN})`, true, (performance.now() - t0) / 1000, res.z,
-      us.map((u) => `${u.id}: R ${u.R} (${(u.chainSeconds / 60).toFixed(1)} min${u.cap !== 'ok' ? `, ${u.cap}` : ''})`).join(', ') + `; PT ${Object.entries(res.z.pt).map(([f, p]) => `f${f}: ${p.spp}x${B_PT}`).join(' ')}`);
+      us.map((u) => `${u.id}: R ${u.R} (${(u.chainSeconds / 60).toFixed(1)} min${u.cap !== 'ok' ? `, ${u.cap}` : ''})`).join(', ') + `; PT ${Object.entries(res.z.pt).map(([f, p]) => `${Number(f) < 0 ? 'base' : `f${f}`}: ${p.spp}x${B_PT} (${(p.seconds / 60).toFixed(1)} min)`).join(' ')}`);
   }
 }
 

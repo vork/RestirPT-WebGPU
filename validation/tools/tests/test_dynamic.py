@@ -211,3 +211,13 @@ def test_plant_sign_region_missing(tmp_path: Path):
     (tmp_path / "plant.json").write_text(json.dumps(cfg))
     rep = PS.run(tmp_path / "plant.json", tmp_path / "out")
     assert rep["detected"] and rep["evaluated_predictions"] == 0 and rep["ok"] is False
+
+
+def test_merge_npz_deterministic(tmp_path: Path):
+    rng = np.random.default_rng(8)
+    _npz(tmp_path / "c0", rng.random((4, 32, 32, 3)))
+    DY.merge_npz(tmp_path / "a", [tmp_path / "c0"])
+    DY.merge_npz(tmp_path / "b", [tmp_path / "c0"])
+    assert (tmp_path / "a/ensemble.npz").read_bytes() == (tmp_path / "b/ensemble.npz").read_bytes()
+    z = np.load(tmp_path / "a/ensemble.npz")
+    assert int(z["count"]) == 4 and str(z["channels"][0]) == "R"

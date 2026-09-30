@@ -145,6 +145,17 @@ def sequence(spec_path: Path, out: Path) -> dict:
     return res
 
 
+def save_npz_deterministic(path: Path, arrays: dict) -> None:
+    """np.savez layout (stored .npy members) with fixed zip timestamps: equal arrays give equal bytes (U-TR-1)."""
+    import io
+    import zipfile
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_STORED) as z:
+        for k in arrays:
+            buf = io.BytesIO()
+            np.lib.format.write_array(buf, np.asanyarray(arrays[k]), allow_pickle=False)
+            z.writestr(zipfile.ZipInfo(f"{k}.npy", date_time=(1980, 1, 1, 0, 0, 0)), buf.getvalue())
+
+
 def merge_npz(out: Path, chunks: list[Path]) -> dict:
     """Concatenate the per-chain rows of ensemble.npz chunks (batch order) and add the pixel moments."""
     zs = [dict(np.load(c / "ensemble.npz", allow_pickle=False)) for c in chunks]
@@ -164,7 +175,7 @@ def merge_npz(out: Path, chunks: list[Path]) -> dict:
                     raise ValueError(f"merge-npz: key {k} differs between chunks")
             m[k] = zs[0][k]
     out.mkdir(parents=True, exist_ok=True)
-    np.savez(out / "ensemble.npz", **m)
+    save_npz_deterministic(out / "ensemble.npz", m)
     metas = [json.loads((c / "meta.json").read_text()) for c in chunks]
     meta = dict(metas[0])
     meta["seeds"] = [s for x in metas for s in x.get("seeds", [])]
