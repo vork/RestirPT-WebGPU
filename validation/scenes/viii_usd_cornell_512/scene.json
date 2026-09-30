@@ -1,6 +1,6 @@
 {
  "format": "restir-scene-package",
- "version": 1,
+ "version": 2,
  "name": "viii_usd_cornell_512",
  "source": {
   "uri": "validation/assets/cornell/cornell.usda via loadUsdInline (validation/scenes/make-m3a.ts (viii))",
@@ -45,6 +45,37 @@
   }
  },
  "flatShaded": true,
+ "quant": {
+  "mode": "quantized",
+  "posLog2": -21,
+  "uv": [
+   {
+    "ku": -24,
+    "kv": -24,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   },
+   {
+    "ku": -24,
+    "kv": -24,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   },
+   {
+    "ku": -24,
+    "kv": -24,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   }
+  ],
+  "uvTolerance": 0.125,
+  "normal": "oct16",
+  "tangent": "oct15",
+  "color": "none"
+ },
  "materials": [
   {
    "name": "white",

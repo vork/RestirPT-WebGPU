@@ -1,6 +1,6 @@
 {
  "format": "restir-scene-package",
- "version": 1,
+ "version": 2,
  "name": "c0k_glass_shadow_256",
  "source": {
   "uri": "validation/scenes/make-m3b.ts (C0k glass shadow = 0)"
@@ -44,6 +44,30 @@
   }
  },
  "flatShaded": true,
+ "quant": {
+  "mode": "quantized",
+  "posLog2": -17,
+  "uv": [
+   {
+    "ku": -15,
+    "kv": -15,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   },
+   {
+    "ku": -15,
+    "kv": -15,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   }
+  ],
+  "uvTolerance": 0.125,
+  "normal": "oct16",
+  "tangent": "oct15",
+  "color": "none"
+ },
  "materials": [
   {
    "name": "floor",

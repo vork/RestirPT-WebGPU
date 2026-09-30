@@ -1,6 +1,6 @@
 {
  "format": "restir-scene-package",
- "version": 1,
+ "version": 2,
  "name": "ix_e_steps_256",
  "source": {
   "uri": "validation/scenes/make-m3a.ts (ix-e add / remove / intensity steps (step keys; removed = power 0); frames 0,8,16,24,32,40,48 of 0..48 @ 24 fps resolved with src/core/scene/animation.ts)"
@@ -44,6 +44,37 @@
   }
  },
  "flatShaded": true,
+ "quant": {
+  "mode": "quantized",
+  "posLog2": -21,
+  "uv": [
+   {
+    "ku": -24,
+    "kv": -24,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   },
+   {
+    "ku": -24,
+    "kv": -24,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   },
+   {
+    "ku": -24,
+    "kv": -24,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   }
+  ],
+  "uvTolerance": 0.125,
+  "normal": "oct16",
+  "tangent": "oct15",
+  "color": "none"
+ },
  "materials": [
   {
    "name": "white",

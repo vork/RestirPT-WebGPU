@@ -1,6 +1,6 @@
 {
  "format": "restir-scene-package",
- "version": 1,
+ "version": 2,
  "name": "c0l_sun_256",
  "source": {
   "uri": "validation/scenes/make-m3a.ts (C0l sun, elevation 40 deg, over a floor with a shadow-casting box)"
@@ -44,6 +44,30 @@
   }
  },
  "flatShaded": true,
+ "quant": {
+  "mode": "quantized",
+  "posLog2": -18,
+  "uv": [
+   {
+    "ku": -15,
+    "kv": -15,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   },
+   {
+    "ku": -15,
+    "kv": -15,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   }
+  ],
+  "uvTolerance": 0.125,
+  "normal": "oct16",
+  "tangent": "oct15",
+  "color": "none"
+ },
  "materials": [
   {
    "name": "floor",

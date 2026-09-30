@@ -1,6 +1,6 @@
 {
  "format": "restir-scene-package",
- "version": 1,
+ "version": 2,
  "name": "c0p_640x360",
  "source": {
   "uri": "validation/blender/calib_scenes.py",
@@ -6342,6 +6342,15 @@
     ]
    }
   }
+ },
+ "quant": {
+  "mode": "quantized",
+  "posLog2": -96,
+  "uv": [],
+  "uvTolerance": 0.125,
+  "normal": "oct16",
+  "tangent": "oct15",
+  "color": "none"
  },
  "buffers": {
   "positions": {
