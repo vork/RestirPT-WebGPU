@@ -1,5 +1,5 @@
 // Paired spatial reuse stage (restir-api.md §4.1, §3.8–§3.9, §2.6–§2.8; PLAN §3 step 5, §1.8 queues). OWNER WP-C.
-// Per round r (reads res[r % 2], writes res[(r + 1) % 2]):
+// Per round r (reads res[(w + r) % 2], writes res[(w + r + 1) % 2]; w = k.resBase(), 0 with temporal off — M5 TD2):
 //   clear queue-0 {counter, n} (8 B; overflow stays sticky) → rs_pair_accept (row bands) → per replay chunk:
 //   rs_args (1 thread) + rs_spatial_replay (2D indirect over the chunk; one chunk per row band, Changelog C7) →
 //   rs_spatial_shift (row bands) → rs_spatial_resample (row bands; RSD_FINAL_ROUND on the last round writes rsShade).
@@ -50,7 +50,7 @@ export class SpatialStage implements RestirStage {
     const units: WorkUnit[] = [];
     const slotWork = (r0: number, r1: number) => a.atlasW * (r1 - r0) * s.slots;
     for (let r = 0; r < s.rounds; r++) {
-      const inIdx = r % 2;
+      const inIdx = (k.resBase() + r) % 2;
       const final = r === s.rounds - 1;
       const d = { t, passId: K.RS_PASS_SPATIAL + r, round: r };
       bands.forEach(([r0, r1], bi) => units.push({

@@ -14,8 +14,13 @@ struct ShiftArenaRW { hdr: array<atomic<u32>, 64>, words: array<u32> }
 struct ShiftArenaRO { hdr: array<u32, 64>, words: array<u32> }
 
 fn rs_atlas_pixels() -> u32 { return rsParams.atlasSize.x * rsParams.atlasSize.y; }
-/// Queue capacity (every queue is worst-case sized: one item per (pixel, slot)).
-fn queue_capacity() -> u32 { return rs_atlas_pixels() * rsParams.numSlots; }
+/// NS_alloc (restir-temporal-api.md TD16, B.3): the arena's slot count; max(numSlots, 2) with RSF_TEMPORAL so the
+/// item region holds Q_f and Q_i (P items each). Temporal off: numSlots (bitwise M4).
+fn rs_ns_alloc() -> u32 {
+  return select(rsParams.numSlots, max(rsParams.numSlots, 2u), (rsParams.flags & RSF_TEMPORAL) != 0u);
+}
+/// Queue capacity of q0 = the arena's region sizes (every region is worst-case sized: one item per (pixel, slot)).
+fn queue_capacity() -> u32 { return rs_atlas_pixels() * rs_ns_alloc(); }
 fn slot_index(ai: u32, s: u32) -> u32 { return ai * rsParams.numSlots + s; }
 fn arena_slot_word(ai: u32, s: u32) -> u32 { return 4u * slot_index(ai, s); }
 fn arena_code_word(ai: u32, s: u32) -> u32 { return 4u * queue_capacity() + slot_index(ai, s); }

@@ -1195,3 +1195,54 @@ fn queue_capacity_q(q: u32) -> u32;                       // P·NS (q0), P (q1, 
 
 Amendments made while implementing this contract. Numbering is append-only (T-prefixed per work package: `A-n`,
 `B-n`, `C-n`, `D-n`, `E-n`, coordinator `Q-n`). Every WP reads this section before touching a shared interface.
+
+### Coordinator decisions on §7 (2026-09-30)
+
+- **Q1** Yes: T-A lands P0 now (branch `m5-temporal` on main e251b43 incl. the dataformats merge).
+- **Q2** Yes: static temporal rungs 3.3–3.5 at 256² on the 8-scene subset (TD28); (xiii) and kloof reported only.
+- **Q3** Accepted: gate budget ≈ 12 h, plus the two-part split (`--part core` / `--part static`) when the pilot plan exceeds 14 h.
+- **Q4** A unit whose global aggregate misses its SE target within 30 min gets its cap raised **once** to 90 min; beyond
+  that it escalates to the coordinator. δ is never loosened.
+- **Q5** Yes to both: N4 as a synthetic RIS re-draw; N6 detection without a predicted sign.
+- **Q6** Yes: U8 subset 1, 3, 4, 6, 9 + temporal variants of 2 and 5; 7, 8, 10 move to M6.
+- **Q7** Yes: boost default on in interactive, off in validation except the gating ixs_d unit.
+- **Q8** Dual MVs are deferred to M6.
+- **Q9** Yes: rung 3.5 = per-chain mean over frames 32…287 on three scenes.
+- **Q10** `rs_refresh_inv` scope = Q_i only.
+- **Q11** Yes: Talbot and E2 each gate on ixs_b_area and ixs_e_addremove; E3 is not implemented.
+- **Q12** New `ixs_*` packages (the M3a `ix_*` packages stay untouched).
+
+### P0 amendments (T-A)
+
+- **A-1 Arena indexing and NS_alloc** (affects T-B, T-C, T-D, T-E: every arena accessor). The WGSL accessors of B.3
+  (`arena_tbase`, `ts_word`, `sfx_word`) return **words[] indices** (after the 64-word header), like queue.wgsl's
+  `arena_*_word` (M4 A10): `arena_tbase() = 6·P·NS_alloc` there, i.e. global word `64 + 6·P·NS_alloc` of §2.8. The TS
+  mirror `arenaWords(P, NS)` gains `tState`, `sfxOut`, `end` in the same indexing; `arenaBytes(P, NS, temporal)`,
+  `nsAlloc(numSlots, temporal)`. NS_alloc enters the M4 layout through one line of `restir/queue.wgsl` (P0 edit of a
+  T-B file): `queue_capacity() = P·rs_ns_alloc()` with `rs_ns_alloc() = RSF_TEMPORAL ? max(numSlots, 2) : numSlots`
+  (bitwise M4 with temporal off; q0's capacity is P·NS_alloc). `RestirAllocation.slots` is NS_alloc.
+- **A-2 `restir/tmis.wgsl`** (new file, owner T-B; affects T-B). `rs_t_select` has no scene group and cannot include
+  `shift.wgsl`, so the pure `tmis_*` functions live in `restir/tmis.wgsl` (real since P0), included by `tshift.wgsl`
+  and `t-select.wgsl`. The write-back `res_select_temporal` must likewise stay scene-free (T-B's choice of file).
+- **A-3 Interactive preset in P0** (affects T-D). `interactive` has `temporal: true` (TD24) but `boostSlots: 0` until T-D
+  lands the boost acceptance, then T-D sets 3 in `presets.ts` (T-D may touch that one line). The kernel emits temporal
+  units only on frames prepared by `advance()` / `advanceInteractive()`; `frameUnits()` without a preceding advance is a
+  reset frame (h = −1, w = 0, no temporal units), so every M4 caller, and the app until T-D wires
+  `advanceInteractive`, is bitwise M4. `numSlots = slots + boostSlots` only with temporal on (`presets.ts numSlotsOf`).
+- **A-4 G-buffer ping-pong and bind-group keys** (affects T-B, T-C, T-D, T-E). The second `rsVbuf`/`rsGeo` pair is
+  allocated only with `settings.temporal` (else both entries alias one texture). `RestirResources.vbuf`, `.geo`,
+  `.views.vbuf`, `.views.geo` are getters of the **current** parity; `vbufPrev`, `geoPrev` (and views) of 1 − g.
+  `res.parity` is flipped by `advance()`. Every `g2()` cache key carries the parity; `render/restir/debug.ts` caches its
+  G2 per (reservoir index, parity) (P0 edit beyond the input index). `g2(name, idx)` index semantics: `rs_initial` /
+  `rs_initial_dump` idx = w (the output buffer); `rs_refresh_fwd`, `rs_t_classify`, `rs_t_forward` idx = h (resIn);
+  `rs_t_select` idx = h (resIn = res[h], resOut = res[1 − h] = res[w]); `rs_refresh_inv` idx = w (resIn), `rs_t_inverse`
+  idx = w (resOut).
+- **A-5 tframe.wgsl extras** (affects T-B, T-C, T-D). Besides B.3: `TSW_*` word indices of §2.8 (TS mirror `TSW`),
+  `TS_QPRIME_NONE`, `rs_tf(bit)`, `rs_tplant(bit)`, `rs_tmode(bit)`, `ts_load/ts_loadf`, `ts_store/ts_storef`,
+  `ts_clear(ai, flags)` (T1's cleared record), and `struct SfxRec` itself (`sfx_store`/`sfx_load` need it). The temporal
+  debug hooks of §2.11 are declared in `debug/restir-views.wgsl` only under `RS_TEMPORAL` (which includes tframe.wgsl),
+  so no M4 module changes (checked by tests/restir/tframe.test.ts).
+- **A-6 Kernel API** (affects T-B, T-D, T-E). `RestirKernel` gains `historyIndex()` (h, −1 = none), `resBase()` (w),
+  `finalResIndex()`, `currentAdvance`, `frameState` (frame-state.ts `FrameStateTracker`), `rsTemporal` (the uniform
+  buffer), `envParamsWords()`; `readTemporalState()` returns the words from tState to the end of sfxOut (decode with
+  `layout.ts decodeTStateLocal / decodeSfxLocal`). `readReservoirs('final')` reads `res[finalResIndex()]`.

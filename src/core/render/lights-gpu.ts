@@ -179,6 +179,22 @@ export interface LightsUpdate {
   reallocated: boolean;
 }
 
+/** M5 (restir-temporal-api.md §2.4): what the ONE light commit of a frame changed. */
+export interface LightsCommit {
+  /** Nothing changed: the slot did not flip, prev ≡ cur (TF_LIGHTS_SAME). */
+  same: boolean;
+  /** The alias table / realized pmf changed (TF_PMF_CHANGED). */
+  pmfChanged: boolean;
+  /** Some analytic light has LCB_MOVED / LCB_RADIO in its change word (word 26). */
+  anyMoved: boolean;
+  anyRadio: boolean;
+  /** Stable ids of added / removed analytic lights. */
+  added: number[];
+  removed: number[];
+  /** The records buffer was re-laid out (capacity growth, env table change): a config-hash input (reset). */
+  reallocated: boolean;
+}
+
 /** The environment as a light (M3c): importance tables + the radiometric parameters that enter Φ_env. */
 export interface EnvLightInput {
   table: EnvImportance;

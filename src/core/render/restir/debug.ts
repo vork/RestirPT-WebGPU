@@ -299,12 +299,14 @@ export class RestirDebugPass {
     return new RestirDebugPass(kernel, debug, views, fill, g2);
   }
 
-  /** G2 with the reservoir buffer the last spatial round read (res[(rounds − 1) % 2], the slots' source paths). */
+  /** G2 with the reservoir buffer the last spatial round read (res[(w + rounds − 1) % 2], the slots' source paths;
+   *  w = kernel.resBase(), M5 TD2) and the current-parity G-buffer (M5 §2.6). */
   private group(rounds: number): GPUBindGroup {
     const r = this.kernel.resources;
     if (this.g2Key !== r) { this.g2.clear(); this.g2Key = r; }
-    const src = rounds > 0 ? (rounds - 1) % 2 : 0;
-    let g = this.g2.get(src);
+    const src = (this.kernel.resBase() + Math.max(rounds - 1, 0)) % 2;
+    const key = src + 2 * r.parity;
+    let g = this.g2.get(key);
     if (!g) {
       g = this.kernel.device.createBindGroup({
         label: `rs-debug-g2-${src}`, layout: this.layout,
@@ -313,7 +315,7 @@ export class RestirDebugPass {
           { binding: 2, resource: r.views.vbuf }, { binding: 3, resource: r.views.geo }, { binding: 4, resource: r.views.pair },
         ],
       });
-      this.g2.set(src, g);
+      this.g2.set(key, g);
     }
     return g;
   }

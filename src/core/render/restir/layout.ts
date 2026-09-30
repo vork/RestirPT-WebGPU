@@ -35,6 +35,25 @@ export const RS_WGSL_CONSTS = {
   RSD_ACCUMULATE: 8, RSD_ADVANCED: 16,
   SFX_BSDF_END: 1, SFX_ESCAPE: 2, SFX_VALID: 4,
   RS_HIST_NONE: 0xFFFFFFFF,
+  // M5 (restir-temporal-api.md §2.1, appendix B.1)
+  RS_FS_CUR: 0, RS_FS_PREV: 1,
+  TF_HIST_VALID: 1, TF_LIGHTS_SAME: 2, TF_ENV_SAME: 4, TF_REFRESH: 8, TF_PMF_CHANGED: 16, TF_ENV_MOVED: 32,
+  TF_ENV_RADIO: 64, TF_LIGHT_MOVED: 128, TF_RESET: 256, TF_CAM_SAME: 512,
+  TM_TALBOT: 1, TM_PP_RECOMPUTE: 2, TM_ROBUST: 4, TM_E2: 8,
+  TP_N1_MIXED: 1, TP_NO_JP: 2, TP_NO_JP_ENV: 4, TP_N3_STALE: 8, TP_N4_RIS: 16, TP_N5_PIXEL_CENTRE: 32, TP_N6_CUR_CAM: 64,
+  TP_N7_PER_LIGHT: 128, TP_ENV_NO_ROT_VIS: 256, TP_ENV_GAMMA_T: 512, TP_CP_PLUS1: 1024, TP_U8_STALE_AUX: 2048,
+  TP_U8_SPOT_PREV_AXIS: 4096,
+  RSF_TEMPORAL: 64,
+  RSF_PLANT_U8_W1DELTA: 256, RSF_PLANT_U8_NO_PK: 512, RSF_PLANT_U8_T2: 1024, RSF_PLANT_U8_ONESIDED: 2048, RSF_PLANT_U8_FAILED_K: 4096,
+  RSD_QUEUE_SHIFT: 8, RSD_PHASE_B: 32,
+  LCB_MOVED: 1, LCB_RADIO: 2, LCB_ADDED: 4,
+  RS_PASS_T_REFRESH_FWD: 9, RS_PASS_T_CLASSIFY: 10, RS_PASS_T_FWD: 11, RS_PASS_T_REFRESH_INV: 12, RS_PASS_T_INV: 13, RS_PASS_T_PLANT: 14,
+  STREAM_TEMPORAL_PICK: 0x2c1b3c6d,
+  SFX_DELTA_END: 8,
+  RSC_T_QVALID: 48, RSC_T_DISOCC: 49, RSC_T_FWD_QUEUED: 50, RSC_T_FWD_OK: 51, RSC_T_SEL_P: 52, RSC_T_INV_QUEUED: 53,
+  RSC_T_INV_OK: 54, RSC_T_EMPTY_OUT: 55, RSC_T_LIGHT_UNDEF: 56, RSC_T_CLASS_UNDEF: 57, RSC_T_REFRESH_RECS: 58,
+  RSC_T_REFRESH_RAYS: 59, RSC_T_E2_ZEROED: 60, RSC_T_ROBUST_MISMATCH: 61, RSC_T_NONFINITE: 62, RSC_T_PENDING_LEFT: 63,
+  RS_Q_SPATIAL: 0, RS_Q_FWD: 1, RS_Q_INV: 2,
 } as const;
 const K = RS_WGSL_CONSTS;
 
@@ -54,6 +73,11 @@ export const RSC = {
   shiftNonFinite: K.RSC_SHIFT_NONFINITE, pendingLeft: K.RSC_PENDING_LEFT, slotMismatch: K.RSC_SLOT_MISMATCH,
   wNonFinite: K.RSC_W_NONFINITE, baseJdenInvalid: K.RSC_BASE_JDEN_INVALID, accepted: K.RSC_ACCEPTED,
   queued: K.RSC_QUEUED, selectedShifted: K.RSC_SELECTED_SHIFTED, emptyCanon: K.RSC_EMPTY_CANON,
+  // M5 temporal counters (header words 48–63, restir-temporal-api.md §2.1)
+  tQvalid: K.RSC_T_QVALID, tDisocc: K.RSC_T_DISOCC, tFwdQueued: K.RSC_T_FWD_QUEUED, tFwdOk: K.RSC_T_FWD_OK, tSelP: K.RSC_T_SEL_P,
+  tInvQueued: K.RSC_T_INV_QUEUED, tInvOk: K.RSC_T_INV_OK, tEmptyOut: K.RSC_T_EMPTY_OUT, tLightUndef: K.RSC_T_LIGHT_UNDEF,
+  tClassUndef: K.RSC_T_CLASS_UNDEF, tRefreshRecs: K.RSC_T_REFRESH_RECS, tRefreshRays: K.RSC_T_REFRESH_RAYS, tE2Zeroed: K.RSC_T_E2_ZEROED,
+  tRobustMismatch: K.RSC_T_ROBUST_MISMATCH, tNonFinite: K.RSC_T_NONFINITE, tPendingLeft: K.RSC_T_PENDING_LEFT,
 } as const;
 export type RscName = keyof typeof RSC;
 
@@ -141,6 +165,8 @@ export const RESTIR_PARAMS_LAYOUT = {
   atlasSize: 0, memberSize: 8, memberCols: 16, memberCount: 20, maxBounces: 24, flags: 28, numTrees: 32, numSlots: 36,
   numRounds: 40, rrMinBounces: 44, tau: 48, alphaMin: 52, wScale: 56, crit2022MinDist: 60, pairTexSize: 64,
   pairTexSize2: 80, lightMode: 96, memberBase: 100,
+  // M5 (restir-temporal-api.md §2.7, appendix B.2; were pad1 … pad3)
+  boostSlots: 104, tMode: 108, cCap: 112, tPlants: 116, pad4: 120, pad5: 124,
 } as const;
 
 export interface RestirParamsCpu {
@@ -148,6 +174,8 @@ export interface RestirParamsCpu {
   maxBounces: number; flags: number; numTrees: number; numSlots: number; numRounds: number; rrMinBounces: number;
   tau: number; alphaMin: number; wScale: number; crit2022MinDist: number; pairTexSize: number[]; lightMode: number;
   memberBase: number;
+  /** M5 (appendix B.2): boost slots NB (numSlots already includes them), TM_* word, c cap (20), TP_* word. */
+  boostSlots?: number; tMode?: number; cCap?: number; tPlants?: number;
 }
 
 export function packRestirParams(p: RestirParamsCpu, out = new ArrayBuffer(RESTIR_PARAMS_SIZE)): ArrayBuffer {
@@ -161,6 +189,8 @@ export function packRestirParams(p: RestirParamsCpu, out = new ArrayBuffer(RESTI
   f[L.tau / 4] = p.tau; f[L.alphaMin / 4] = p.alphaMin; f[L.wScale / 4] = p.wScale; f[L.crit2022MinDist / 4] = p.crit2022MinDist;
   for (let i = 0; i < 8; i++) u[L.pairTexSize / 4 + i] = p.pairTexSize[i] ?? 0;
   u[L.lightMode / 4] = p.lightMode; u[L.memberBase / 4] = p.memberBase;
+  u[L.boostSlots / 4] = p.boostSlots ?? 0; u[L.tMode / 4] = (p.tMode ?? 0) >>> 0; f[L.cCap / 4] = p.cCap ?? 20;
+  u[L.tPlants / 4] = (p.tPlants ?? 0) >>> 0;
   return out;
 }
 
@@ -175,10 +205,15 @@ export function packRsDispatch(d: RsDispatchCpu): Uint32Array {
 // ------------------------------------------------------------------------------------------------ shift arena, dump
 
 export const ARENA_HDR_BYTES = 256;
-/** Arena size for P atlas pixels and NS slots (§2.6). */
-export const arenaBytes = (P: number, NS: number): number => ARENA_HDR_BYTES + 24 * P * NS;
-/** Word offsets inside the arena's words[] (after the 64-word header). */
-export const arenaWords = (P: number, NS: number) => ({ slots: 0, codes: 4 * P * NS, items: 5 * P * NS });
+/** NS_alloc (restir-temporal-api.md TD16, B.3): numSlots, or max(numSlots, 2) with temporal on (Q_f + Q_i need 2P items). */
+export const nsAlloc = (numSlots: number, temporal = false): number => (temporal ? Math.max(numSlots, 2) : numSlots);
+/** Arena size for P atlas pixels and NS (= NS_alloc) slots (§2.6; M5 §2.8: + 36·P words of tState / sfxOut). */
+export const arenaBytes = (P: number, NS: number, temporal = false): number => ARENA_HDR_BYTES + 24 * P * NS + (temporal ? 144 * P : 0);
+/** Word offsets inside the arena's words[] (after the 64-word header). M5: tState at `tState`, sfxOut at `sfxOut`
+ *  (words[] indices = global word − 64, as every WGSL arena accessor; restir-temporal-api.md Changelog A-1). */
+export const arenaWords = (P: number, NS: number) => ({
+  slots: 0, codes: 4 * P * NS, items: 5 * P * NS, tState: 6 * P * NS, sfxOut: 6 * P * NS + 20 * P, end: 6 * P * NS + 36 * P,
+});
 /** Queue q header words {counter, n, capacity, overflow}. */
 export const queueHdr = (q: number) => ({ counter: 4 * q, n: 4 * q + 1, capacity: 4 * q + 2, overflow: 4 * q + 3 });
 
@@ -200,3 +235,81 @@ export const RS_PROBE_TAG = { plane: 64, header: 65, candidate: 66, vertex: 67, 
 
 /** 4-bit lobe history nibble of vertex b (1…8) of a record's lobeHist (0xF = none). */
 export const lobeHistAt = (h: number, b: number): number => (h >>> (4 * (b - 1))) & 0xF;
+
+// ------------------------------------------------------------------------------------------------ M5 temporal (§2.7–§2.8)
+
+/** RsTemporal uniform (tframe.wgsl, G0 binding 8, appendix B.2). */
+export const RS_TEMPORAL_SIZE = 128;
+export const RS_TEMPORAL_LAYOUT = { flags: 0, histFrames: 4, frameGen: 8, prevGen: 12, envPrev: 16, gens: 48, gensPrev: 64, configHash: 80 } as const;
+export interface RsTemporalCpu {
+  flags: number; histFrames: number; frameGen: number; prevGen: number;
+  /** Verbatim packed EnvParams bytes of frame t−1 (env-gpu.ts packEnvParams, 32 B). */
+  envPrev: ArrayBuffer | Uint32Array;
+  gens: [number, number, number, number]; gensPrev: [number, number, number, number]; configHash: number;
+}
+export function packRsTemporal(t: RsTemporalCpu, out = new ArrayBuffer(RS_TEMPORAL_SIZE)): ArrayBuffer {
+  const u = new Uint32Array(out), L = RS_TEMPORAL_LAYOUT;
+  u.fill(0);
+  u[L.flags / 4] = t.flags >>> 0; u[L.histFrames / 4] = t.histFrames >>> 0; u[L.frameGen / 4] = t.frameGen >>> 0; u[L.prevGen / 4] = t.prevGen >>> 0;
+  const env = t.envPrev instanceof Uint32Array ? t.envPrev : new Uint32Array(t.envPrev);
+  if (env.length !== 8) throw new Error(`packRsTemporal: envPrev must be 8 words (got ${env.length})`);
+  u.set(env, L.envPrev / 4);
+  u.set(t.gens.map((x) => x >>> 0), L.gens / 4); u.set(t.gensPrev.map((x) => x >>> 0), L.gensPrev / 4);
+  u[L.configHash / 4] = t.configHash >>> 0;
+  return out;
+}
+export function unpackRsTemporal(u: Uint32Array): RsTemporalCpu {
+  const L = RS_TEMPORAL_LAYOUT;
+  return {
+    flags: u[L.flags / 4], histFrames: u[L.histFrames / 4], frameGen: u[L.frameGen / 4], prevGen: u[L.prevGen / 4],
+    envPrev: u.slice(L.envPrev / 4, L.envPrev / 4 + 8), gens: Array.from(u.subarray(L.gens / 4, L.gens / 4 + 4)) as RsTemporalCpu['gens'],
+    gensPrev: Array.from(u.subarray(L.gensPrev / 4, L.gensPrev / 4 + 4)) as RsTemporalCpu['gensPrev'], configHash: u[L.configHash / 4],
+  };
+}
+
+/** tState flags TS_* and sfxOut status SXS_* (tframe.wgsl, appendix B.3). */
+export const TS_CONSTS = {
+  TS_QVALID: 1, TS_DISOCC: 2, TS_FWD_QUEUED: 4, TS_FWD_DONE: 8, TS_SEL_P: 16, TS_SEL_C: 32, TS_INV_QUEUED: 64, TS_INV_DONE: 128,
+  TS_EMPTY_OUT: 256, TS_NO_HIST: 512, TS_PICK_RING: 1024, TS_ROBUST: 2048, TS_E2_ZERO: 4096, TS_FINAL: 8192, TS_BG: 16384,
+  SXS_DONE: 1, SXS_UNDEF: 2, SXS_VIS: 4, SXS_RAY: 8, SXS_DEEP: 16, SXS_N1: 32, SXS_B1: 64, SXS_ZERO: 128, SXS_E2: 256, SXS_PLANT: 512,
+  SFX_FWD: 0, SFX_INV: 1,
+} as const;
+export const TS_WORDS = 20;
+export const SFX_REC_WORDS = 8;
+/** tState word names (§2.8; word index inside the 20-word per-pixel block). */
+export const TSW = {
+  fwdF: 0, fwdJ: 3, invF: 4, invJ: 7, qPrime: 8, cP: 9, fwdCode: 10, flags: 11, jP: 12, wc: 13, wp: 14, invCode: 15,
+  piStored: 16, piRecomp: 17, xpEntry: 18, cPrev: 19,
+} as const;
+/** words[] index of tState[ai] word w / sfxOut[dir][ai] word w (mirror of tframe.wgsl ts_word / sfx_word). */
+export const tsWord = (P: number, NS: number, ai: number, w: number): number => arenaWords(P, NS).tState + TS_WORDS * ai + w;
+export const sfxWord = (P: number, NS: number, dir: number, ai: number, w: number): number => arenaWords(P, NS).sfxOut + 16 * ai + 8 * dir + w;
+/** Queue item base (within the item region) and capacity of queue q (tframe.wgsl queue_item_base / queue_capacity_q). */
+export const queueItemBase = (P: number, q: number): number => (q === 2 ? P : 0);
+export const queueCapacityQ = (P: number, NS: number, q: number): number => (q === 0 ? P * NS : P);
+
+export interface TStateRecord {
+  fwdF: [number, number, number]; fwdJ: number; invF: [number, number, number]; invJ: number; qPrime: number; cP: number;
+  fwdCode: number; flags: number; jP: number; wc: number; wp: number; invCode: number; piStored: number; piRecomp: number;
+  xpEntry: number; cPrev: number;
+}
+export interface SfxRecord { rad: [number, number, number]; aux: number; status: number; entryTo: number; jp: number; gen: number }
+
+/** Decode tState[ai] from the arena's words[] (read back as u32, header excluded; `base` = words[] offset of 0). */
+export function decodeTState(words: Uint32Array, P: number, NS: number, ai: number, base = 0): TStateRecord {
+  const o = base + tsWord(P, NS, ai, 0);
+  const f = new Float32Array(words.buffer, words.byteOffset, words.length);
+  return {
+    fwdF: [f[o], f[o + 1], f[o + 2]], fwdJ: words[o + 3], invF: [f[o + 4], f[o + 5], f[o + 6]], invJ: words[o + 7],
+    qPrime: words[o + 8], cP: f[o + 9], fwdCode: words[o + 10], flags: words[o + 11], jP: f[o + 12], wc: f[o + 13], wp: f[o + 14],
+    invCode: words[o + 15], piStored: f[o + 16], piRecomp: f[o + 17], xpEntry: words[o + 18], cPrev: f[o + 19],
+  };
+}
+export function decodeSfx(words: Uint32Array, P: number, NS: number, dir: number, ai: number, base = 0): SfxRecord {
+  const o = base + sfxWord(P, NS, dir, ai, 0);
+  const f = new Float32Array(words.buffer, words.byteOffset, words.length);
+  return { rad: [f[o], f[o + 1], f[o + 2]], aux: f[o + 3], status: words[o + 4], entryTo: words[o + 5], jp: f[o + 6], gen: words[o + 7] };
+}
+/** Decoders for RestirKernel.readTemporalState() (words start at tState). */
+export const decodeTStateLocal = (words: Uint32Array, P: number, NS: number, ai: number): TStateRecord => decodeTState(words, P, NS, ai, -arenaWords(P, NS).tState);
+export const decodeSfxLocal = (words: Uint32Array, P: number, NS: number, dir: number, ai: number): SfxRecord => decodeSfx(words, P, NS, dir, ai, -arenaWords(P, NS).tState);

@@ -36,6 +36,8 @@ fn rf_pack(d: u32, k: u32, tech: u32, ep: u32, isDelta: bool, lkm1: u32, dkm1: b
   return f;
 }
 fn res_empty(f: u32) -> bool { return rf_d(f) == 0u; }
+/// M5 (TD11): the final BSDF event of a BSDF-ended path was a delta lobe (suffix flags word 27 bit 3).
+fn sfx_delta_end(sfxFlags: u32) -> bool { return (sfxFlags & SFX_DELTA_END) != 0u; }
 /// Streaming RIS update (math.md#path-tree): true if the candidate with weight w replaces the selection.
 fn ris_update(wSum: ptr<function, f32>, w: f32, u: f32) -> bool {
   if (!rs_pos_finite(w)) { return false; }
@@ -64,5 +66,10 @@ fn res_write_empty(i: u32, seed: vec2u, bg: bool) {
   resout_set(i, RP_SFX1, vec4u(0u));
   resout_set(i, RP_SFX2, vec4u(0u));
   resout_set(i, RP_DIAG, vec4u(0u, 0u, 0u, RC_NONE));
+}
+/// M5 (TD13/TD14): empty record of a hit pixel with confidence c (temporal empty output: c = 1 + c_p).
+fn res_write_empty_c(i: u32, seed: vec2u, c: f32) {
+  res_write_empty(i, seed, false);
+  resout_set(i, RP_SEED, vec4u(seed, 0u, bitcast<u32>(c)));
 }
 #endif

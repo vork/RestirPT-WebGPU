@@ -163,3 +163,15 @@ fn rsdbg_mis(px: vec2u, k: u32, mc: f32, sumM: f32, lumRel: f32, s: u32, mj: f32
   }
 #endif
 }
+
+// ---- M5 temporal hooks (restir-temporal-api.md §2.11; T-D fills the bodies; P0: empty). Compiled only into the
+// temporal / refresh passes (define RS_TEMPORAL), which include restir/tframe.wgsl (SfxRec, tState accessors).
+#if RS_TEMPORAL
+#include "restir/tframe.wgsl"
+/// After T3 phase A/B finalised the pixel (reads resOut + tState).
+fn rsdbg_temporal(px: vec2u, ai: u32, phase: u32) { }
+/// T1, probe only: the back-projected position s′, the chosen tap and validity.
+fn rsdbg_tpick(px: vec2u, sp: vec2f, tap: u32, valid: bool) { }
+/// Refresh passes, probe only.
+fn rsdbg_refresh(ai: u32, dir: u32, rec: SfxRec) { }
+#endif

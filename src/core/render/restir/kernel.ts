@@ -5,6 +5,12 @@
 // Frame schedule (§4.1): rs_primary (row bands) → rs_initial × tree chunks (row bands) → spatial stage units (rounds)
 // → rs_finalize (+ ensemble stage units). The estimate in finalize is rsShade when the spatial stage emitted units
 // for this frame, else F·W of res[0] (rung 3.1; also the canonical-only output while the spatial stage is stubbed).
+// M5 (restir-temporal-api.md §4.1, TD2, TD15; P0/A by T-A): with settings.temporal, advance(state) runs once per frame
+// before frameUnits(t): it commits the light state, flips the G-buffer parity g and rotates the reservoir roles —
+// h = history (the previous frame's final buffer, −1 after a reset), w = 1 − h (0 after a reset): rs_initial writes
+// res[w], the temporal stage (stage-temporal.ts) reads res[h] and writes res[w] in place, spatial round r reads
+// res[(w + r) % 2], finalize reads res[finalResIndex()]. Without a preceding advance() (temporal off, M4 callers) the
+// frame is a reset: w = 0 and no temporal unit is emitted — bitwise the M4 schedule.
 import { composeWgsl, createCheckedShaderModule, type Defines } from '../../gpu/wgsl-composer.ts';
 import { readBuffer } from '../../gpu/readback.ts';
 import { shaderSources } from '../../shaders/index.ts';
@@ -13,18 +19,22 @@ import type { DebugResources } from '../debug-views.ts';
 import { envBindGroupEntries, envBindGroupLayoutEntries, type EnvGpuResources } from '../env-gpu.ts';
 import { FrameUniformBuffer, JITTER_IID, JITTER_NONE, boundsDiagonal, type CameraState, type JitterMode } from '../frame-uniforms.ts';
 import { LightsGpu, type LightMode, type LightsUpdate } from '../lights-gpu.ts';
+import { packEnvParams } from '../env-gpu.ts';
 import { applyEnvLighting, type PtEnvOptions } from '../pt-kernel.ts';
 import { recentrePositions, type SceneGpu } from '../scene-gpu.ts';
 import {
-  RES_BYTES, RESTIR_PARAMS_SIZE, RS_DISPATCH_RING, RS_DISPATCH_SIZE, RS_DISPATCH_STRIDE, RSC, RS_WGSL_CONSTS as K,
-  packRestirParams, packRsDispatch, queueHdr, type RscName, type RsDispatchCpu,
+  RES_BYTES, RESTIR_PARAMS_SIZE, RS_DISPATCH_RING, RS_DISPATCH_SIZE, RS_DISPATCH_STRIDE, RS_TEMPORAL_SIZE, RSC, RS_WGSL_CONSTS as K,
+  ARENA_HDR_BYTES, arenaWords, nsAlloc, packRestirParams, packRsDispatch, packRsTemporal, queueHdr, type RscName, type RsDispatchCpu,
 } from './layout.ts';
-import { PAIR_TEX_SIZES, restirFlags, restirSettings, validateSettings, type RestirSettings } from './presets.ts';
+import { PAIR_TEX_SIZES, numSlotsOf, restirFlags, restirSettings, tModeOf, tPlantsOf, validateSettings, type RestirSettings } from './presets.ts';
 import { G0_BINDING, RS_PASSES, RestirResources, createUniforms, g2LayoutEntries, restirCommonDefines, restirDefines, type RsPassName } from './resources.ts';
 import { SpatialStage } from './stage-spatial.ts';
 import { EnsembleStage } from './ensemble.ts';
+import { TemporalStage } from './stage-temporal.ts';
+import { FrameStateTracker, type RestirAdvance, type RestirFrameState, type RestirInteractiveAdvance } from './frame-state.ts';
 
 export type { RestirSettings } from './presets.ts';
+export type { RestirAdvance, RestirFrameState } from './frame-state.ts';
 export { RESTIR_PRESETS } from './presets.ts';
 
 export interface WorkUnit { label: string; costHint: number; encode(enc: GPUCommandEncoder): void }
@@ -78,6 +88,10 @@ export class RestirKernel {
   readonly envOptions: PtEnvOptions;
   readonly spatial: RestirStage;
   readonly ensemble: RestirStage;
+  /** M5 temporal stage (T-B, stage-temporal.ts); emits units only on frames prepared by advance() with temporal on. */
+  readonly temporal: RestirStage;
+  /** M5 per-frame state (frame-state.ts): light commit, env record, config hash, history validity, RsTemporal. */
+  readonly frameState: FrameStateTracker;
   /** Rows per work unit for per-pixel passes (default: the whole atlas) and trees per rs_initial unit (default S). */
   rowBand = 0;
   treeChunk = 0;
@@ -88,6 +102,17 @@ export class RestirKernel {
   private external: { frameUniforms: GPUBuffer; width: number; height: number } | undefined;
   private readonly params: GPUBuffer;
   private readonly ring: GPUBuffer;
+  /** RsTemporal uniform (G0 binding 8, restir-temporal-api.md §2.7). */
+  readonly rsTemporal: GPUBuffer;
+  /** Reservoir roles of the current frame (TD2): h = history index (−1: none), w = the non-history buffer. */
+  private roleH = -1;
+  private roleW = 0;
+  /** advance() prepared the next frameUnits() call (temporal units allowed). */
+  private advanced: RestirAdvance | undefined;
+  /** Final reservoir index of the last frameUnits() (the next frame's history when it stays valid). */
+  private lastFinal = 0;
+  /** The last frame whose units were built had temporal units (its final buffer is a valid history candidate). */
+  private lastWasAdvanced = false;
   private ringCursor = 0;
   private g0: GPUBindGroup | undefined;
   private g0Key = '';
@@ -105,6 +130,7 @@ export class RestirKernel {
     this.envOptions = { ...o.env };
     this.frame = new FrameUniformBuffer(device);
     ({ params: this.params, ring: this.ring } = createUniforms(device));
+    this.rsTemporal = device.createBuffer({ label: 'rs-temporal', size: RS_TEMPORAL_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.lights = new LightsGpu(device, scene.scene, scene.origin, recentrePositions(scene.scene.geometry.positions, scene.origin), { lightMode: 'A', label: 'rs-lights' });
     applyEnvLighting(this.lights, env, this.envOptions);
     const c = GPUShaderStage.COMPUTE;
@@ -119,6 +145,7 @@ export class RestirKernel {
           { binding: G0_BINDING.lights, visibility: c, buffer: { type: 'uniform' } },
           { binding: G0_BINDING.records, visibility: c, buffer: { type: 'read-only-storage' } },
           { binding: G0_BINDING.dispatch, visibility: c, buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: RS_DISPATCH_SIZE } },
+          { binding: G0_BINDING.temporal, visibility: c, buffer: { type: 'uniform', minBindingSize: RS_TEMPORAL_SIZE } },
         ],
       }),
       g1Scene: device.createBindGroupLayout({ label: 'rs-g1', entries: scene.layoutEntries(c) }),
@@ -130,6 +157,8 @@ export class RestirKernel {
     this.g3Empty = this.g1Empty;
     this.spatial = new SpatialStage();
     this.ensemble = new EnsembleStage();
+    this.temporal = new TemporalStage();
+    this.frameState = new FrameStateTracker();
   }
 
   static async create(device: GPUDevice, scene: SceneGpu, env: EnvGpuResources, o: RestirKernelOptions): Promise<RestirKernel> {
@@ -203,10 +232,11 @@ export class RestirKernel {
 
   /** Compile the stages the current settings / view need (spatial when rounds > 0, ensemble when E > 1). */
   async prepare(): Promise<void> {
-    const key = `${this.settings.rounds > 0}:${(this.view?.members ?? 1) > 1}`;
+    const key = `${this.settings.rounds > 0}:${(this.view?.members ?? 1) > 1}:${this.settings.temporal}`;
     if (key === this.prepared) return;
     if (this.settings.rounds > 0) await this.spatial.prepare?.(this);
     if ((this.view?.members ?? 1) > 1) await this.ensemble.prepare?.(this);
+    if (this.settings.temporal) await this.temporal.prepare?.(this);
     this.prepared = key;
   }
 
@@ -231,7 +261,7 @@ export class RestirKernel {
   setSettings(s: Partial<RestirSettings>): void {
     const next = { ...this.settings, ...s };
     validateSettings(next);
-    const realloc = next.slots !== this.settings.slots;
+    const realloc = numSlotsOf(next) !== numSlotsOf(this.settings) || next.temporal !== this.settings.temporal;
     this.settings = next;
     if (realloc && this.res) this.allocate();
     this.writeParams();
@@ -275,10 +305,17 @@ export class RestirKernel {
     const memberCols = Math.min(E, Math.floor(16384 / W));
     const atlasW = memberCols * W, atlasH = Math.ceil(E / memberCols) * H;
     if (E * W * H > 2 ** 22) throw new Error(`RestirKernel: E·W·H = ${E * W * H} > 2^22 (restir-api.md D15)`);
-    const a = { atlasW, atlasH, memberW: W, memberH: H, members: E, memberCols, slots: this.settings.slots, dump: !!this.o.instrumentation?.dumpCandidates };
+    const temporal = !!this.settings.temporal;
+    const a = {
+      atlasW, atlasH, memberW: W, memberH: H, members: E, memberCols, slots: nsAlloc(numSlotsOf(this.settings), temporal),
+      dump: !!this.o.instrumentation?.dumpCandidates, temporal,
+    };
     const old = this.res;
     if (old && JSON.stringify(old.alloc) === JSON.stringify(a)) return;
     old?.destroy();
+    // A new allocation holds no history (TD19: the kernel was (re)allocated ⇒ reset).
+    this.roleH = -1; this.roleW = 0; this.lastFinal = 0; this.lastWasAdvanced = false; this.advanced = undefined;
+    this.frameState.invalidate('reallocated');
     this.device.pushErrorScope('out-of-memory');
     this.res = new RestirResources(this.device, a, (name) => this.g2Layout(name, name === 'rs_finalize_frame' ? this.colorFormat : undefined));
     void this.device.popErrorScope().then((e) => { if (e) console.error(`RestirKernel: out of memory allocating the ${atlasW}×${atlasH} atlas: ${e.message}`); });
@@ -296,9 +333,10 @@ export class RestirKernel {
     if (this.external) flags |= K.RSF_INTERACTIVE;
     this.device.queue.writeBuffer(this.params, 0, packRestirParams({
       atlasSize: [a.atlasW, a.atlasH], memberSize: [a.memberW, a.memberH], memberCols: a.memberCols, memberCount: a.members,
-      maxBounces: s.maxBounces, flags, numTrees: s.trees, numSlots: s.slots, numRounds: s.rounds, rrMinBounces: s.rrMinBounces,
+      maxBounces: s.maxBounces, flags, numTrees: s.trees, numSlots: numSlotsOf(s), numRounds: s.rounds, rrMinBounces: s.rrMinBounces,
       tau: s.tau, alphaMin: s.alphaMin, wScale: s.plant?.wScale ?? 1, crit2022MinDist: Number.isFinite(minExtent) ? 0.02 * minExtent : 0,
       pairTexSize: PAIR_TEX_SIZES, lightMode: 0, memberBase: this.view?.memberBase ?? 0,
+      boostSlots: s.temporal ? s.boostSlots : 0, tMode: tModeOf(s), cCap: s.cCap, tPlants: tPlantsOf(s),
     }));
   }
 
@@ -315,6 +353,7 @@ export class RestirKernel {
         { binding: G0_BINDING.lights, resource: { buffer: this.lights.params } },
         { binding: G0_BINDING.records, resource: { buffer: this.lights.records } },
         { binding: G0_BINDING.dispatch, resource: { buffer: this.ring, size: RS_DISPATCH_SIZE } },
+        { binding: G0_BINDING.temporal, resource: { buffer: this.rsTemporal } },
       ],
     });
     this.g0Key = key;
@@ -398,11 +437,60 @@ export class RestirKernel {
     return p;
   }
 
+  // ---------------------------------------------------------------------------------------------- M5 frame state
+
+  /** M5 (restir-temporal-api.md §3.8, §4.1): prepare frame `state.t` of a validation run / chain. Exactly one call per
+   *  frame, before frameUnits(state.t): one light commit (TD4), the env record of t−1, prevCam, the G-buffer parity,
+   *  the reservoir roles h/w, the config hash (TD19) and the RsTemporal uniform. */
+  advance(state: RestirFrameState): RestirAdvance {
+    if (!this.view) throw new Error('RestirKernel.advance: setView() first (interactive kernels use advanceInteractive)');
+    const r = this.frameState.advance(this, state);
+    this.applyAdvance(r);
+    return r;
+  }
+
+  /** Interactive variant (T-D wires it in renderer.ts): the renderer owns the frame uniforms; `reset` forces a history
+   *  reset (freeze seed, "reset history", config changes of the app). */
+  advanceInteractive(frameUniforms: GPUBuffer, o: RestirInteractiveAdvance): RestirAdvance {
+    if (!this.external || this.external.frameUniforms !== frameUniforms) throw new Error('RestirKernel.advanceInteractive: setExternalFrame(frameUniforms, …) first');
+    const r = this.frameState.advanceInteractive(this, o);
+    this.applyAdvance(r);
+    return r;
+  }
+
+  private applyAdvance(r: RestirAdvance): void {
+    const res = this.resources;
+    // History = the previous frame's final buffer, only if that frame was itself an advanced frame of this allocation.
+    const hist = r.histValid && this.lastWasAdvanced;
+    if (r.histValid && !hist) throw new Error('RestirKernel.advance: history valid but the previous frame was not advanced (frame-state bug)');
+    this.roleH = hist ? this.lastFinal : -1;
+    this.roleW = this.roleH < 0 ? 0 : 1 - this.roleH;
+    if (res.alloc.temporal) res.parity ^= 1;           // rs_primary of this frame writes the other G-buffer (§2.6)
+    this.device.queue.writeBuffer(this.rsTemporal, 0, packRsTemporal(r.temporal));
+    this.advanced = r;
+  }
+
+  /** Index of the buffer rs_initial writes (w; 0 with temporal off or after a reset). */
+  resBase(): number { return this.roleW; }
+  /** History buffer index h of the current frame (−1: no history). */
+  historyIndex(): number { return this.roleH; }
+  /** The buffer holding the frame's final reservoirs: res[(w + executed spatial rounds) % 2]. */
+  finalResIndex(): number { return (this.roleW + this.lastRounds) % 2; }
+  /** The RestirAdvance of the frame being built (undefined: not advanced ⇒ no temporal units). */
+  get currentAdvance(): RestirAdvance | undefined { return this.advanced; }
+  /** Packed EnvParams words of the env currently bound (the next frame's envPrev, §2.5). */
+  envParamsWords(): ArrayBuffer { return packEnvParams(this.env.params, this.env.present); }
+  get envResources(): EnvGpuResources { return this.env; }
+
   /** The work units of frame t (§4.1, §4.4). */
   frameUnits(t: number, out: RestirFrameOut): WorkUnit[] {
     const res = this.resources;
     const a = res.alloc, s = this.settings;
     const units: WorkUnit[] = [];
+    const adv = this.advanced;
+    this.advanced = undefined;
+    if (!adv) { this.roleH = -1; this.roleW = 0; }        // not advanced: a reset frame (bitwise M4 schedule)
+    const w = this.roleW;
     const bands = this.rowBands();
     const primary = this.pipelineSync('rs_primary');
     for (const [r0, r1] of bands) {
@@ -423,22 +511,26 @@ export class RestirKernel {
           label: `rs_initial[${tb}+${tc}][${r0}]`, costHint: a.atlasW * (r1 - r0) * tc * (s.maxBounces + 1),
           encode: (enc) => {
             if (dump && tb === 0 && r0 === 0) enc.clearBuffer(res.candDump!);
-            this.encodePass(enc, initName, initial, res.g2(initName), { t, passId: K.RS_PASS_INITIAL, treeBase: tb, treeCount: tc, flags, rowBase: r0, rowEnd: r1 }, this.perPixelWorkgroups(r0, r1));
+            this.encodePass(enc, initName, initial, res.g2(initName, w), { t, passId: K.RS_PASS_INITIAL, treeBase: tb, treeCount: tc, flags, rowBase: r0, rowEnd: r1 }, this.perPixelWorkgroups(r0, r1));
           },
         });
       }
     }
+    // Temporal stage (TD15: before spatial), only on frames prepared by advance() with temporal on.
+    if (adv && s.temporal && a.temporal) units.push(...this.temporal.frameUnits(this, t));
     const spatial = s.rounds > 0 ? this.spatial.frameUnits(this, t) : [];
     units.push(...spatial);
     const rounds = spatial.length > 0 ? s.rounds : 0;
     this.lastRounds = rounds;
+    this.lastFinal = this.finalResIndex();
+    this.lastWasAdvanced = !!adv && s.temporal && !!a.temporal;
     const interactive = !!out.interactive;
     const fname: RsPassName = interactive ? 'rs_finalize_frame' : 'rs_finalize';
     if (!out.accum || !out.counters) throw new Error('RestirKernel.frameUnits: out.accum and out.counters are required');
     const colour = interactive ? out.colorTarget?.createView() : undefined;
     const fin = this.pipelineSync(fname, interactive ? this.colorFormat : undefined);
     const fflags = interactive ? ((out.interactive!.accumulate ? K.RSD_ACCUMULATE : 0) | (out.interactive!.advanced ? K.RSD_ADVANCED : 0)) : 0;
-    const g2 = res.g2(fname, rounds % 2, { accum: out.accum, counters: out.counters, colour });
+    const g2 = res.g2(fname, this.lastFinal, { accum: out.accum, counters: out.counters, colour });
     for (const [r0, r1] of bands) {
       units.push({
         label: `rs_finalize[${r0}]`, costHint: a.atlasW * (r1 - r0),
@@ -467,8 +559,25 @@ export class RestirKernel {
   /** Read back a reservoir buffer ('final' = the output of the last frame's last stage). */
   async readReservoirs(which: 'final' | 0 | 1): Promise<Uint32Array> {
     const res = this.resources;
-    const idx = which === 'final' ? this.lastRounds % 2 : which;
+    const idx = which === 'final' ? this.lastFinal : which;
     return new Uint32Array(await readBuffer(this.device, res.res[idx], res.pixels * RES_BYTES));
+  }
+
+  /** M5 (§3.8): the arena's tState + sfxOut region as u32 words, starting at tState (decode with layout.ts
+   *  decodeTStateLocal / decodeSfxLocal). */
+  async readTemporalState(): Promise<Uint32Array> {
+    const res = this.resources;
+    if (!res.alloc.temporal) throw new Error('RestirKernel.readTemporalState: temporal is off');
+    const aw = arenaWords(res.pixels, res.alloc.slots);
+    const off = ARENA_HDR_BYTES + 4 * aw.tState;
+    const bytes = 4 * (aw.end - aw.tState);
+    const staging = this.device.createBuffer({ label: 'rs-tstate-copy', size: bytes, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
+    const enc = this.device.createCommandEncoder({ label: 'rs-tstate-copy' });
+    enc.copyBufferToBuffer(res.arena, off, staging, 0, bytes);
+    this.device.queue.submit([enc.finish()]);
+    const out = new Uint32Array(await readBuffer(this.device, staging, bytes));
+    staging.destroy();
+    return out;
   }
 
   /** Read back the candidate dump (instrumentation.dumpCandidates). */
@@ -485,6 +594,8 @@ export class RestirKernel {
     this.frame.destroy();
     this.params.destroy();
     this.ring.destroy();
+    this.rsTemporal.destroy();
+    this.temporal.destroy?.();
     this.lights.destroy();
   }
 }
