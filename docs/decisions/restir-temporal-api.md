@@ -1324,6 +1324,17 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   inverse keep C-5. Loader side (T-B): `tsrc_load` takes `sfx.rad` for every deep record (no N3 check; the refresh
   already serves the stale values). Measured (restir-refresh T6(b) chain, box, 12 frames): robust mismatches exact 0,
   N3 574, N7 170. Rendered N3 / N7 units (contribution MIS, no robust check) are unchanged.
+- **C-9 Env-escape end terms are not bit-reproducible across pipelines (OPEN, decision for the coordinator / T-A;
+  affects T-B T3-2, T6(b))**. `L_env(envUV(ω))` of a stored direction (B1 and D-BSDF env escapes, technique 3; also the
+  shift's cases (c)-env / (e)) differs between the path-tree pipeline and any other pipeline by up to 2·10⁻³ relative on
+  a high-frequency HDRI: envUV (atan2 / acos) differs at the ulp level between pipelines and the hardware bilinear filter
+  (8-bit sub-texel weights, cf. platform-lanes Q4) amplifies it. Measured (restir-refresh, t3_rare_256 + studio_small_09
+  at 128²): same-frame idempotence and cache round trips 10 of 14 522 env-escape records > 10⁻⁴ (max 1.8·10⁻³); 0 for
+  every other technique (env NEE ends use the stored cell, no direction round trip), 0 on the smooth synthetic env.
+  Not a refresh logic error; T-B's T3-2 rare-light "LOGIC" cases (12–16 per 2·10⁶, env escapes only) are this effect.
+  Options: (a) an explicit f32 bilinear in `envRadianceScaled` (4 × textureLoad, f32 weights: continuous in uv, so ulp
+  jitter stays ≈ 10⁻⁷; changes the PT's env bits, U-PT-BITS / U-M4-BITS goldens re-recorded); (b) classify as
+  FP-BOUNDARY (rate-bounded) in T3-2 / T6(b). Recommendation: (a) (owner T-A, `lights/env.wgsl`).
 
 ### T-D amendments (debug views, interactive integration, boost)
 

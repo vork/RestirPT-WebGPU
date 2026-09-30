@@ -961,3 +961,98 @@ describe('T6(b) robust mode detects the stale-suffix plants N3 and N7 (Changelog
     expect(n7.mismatch).toBeGreaterThan(Math.max(50, 20 * exactRadio.mismatch));
   });
 });
+
+// ------------------------------------------------------------------------------------------------ high-frequency HDRI
+
+describe('§9.3-3 / §9.3-4 on t3_rare_256 with the studio_small_09 HDRI (T-B T3-2 follow-up: D-BSDF env escapes)', () => {
+  it('idempotence (same frame) and refresh vs re-trace (lights moved + env rotation/strength) per technique', async () => {
+    const { loadHdri } = await import('./env-fixtures.ts');
+    const { T3_ENV_ID, t3Scene } = await import('../scenes/make-m4.ts');
+    const env = await loadHdri(`${T3_ENV_ID}_1k.hdr`);
+    if (!env) { console.warn('studio_small_09_1k.hdr missing: skipped'); return; }
+    const t = t3Scene('t3_rare_256', env);
+    const W = 128, P = W * W;
+    const sources = { 'restir/rc.wgsl': TEST_RC_DR };
+    const rig = await restirRig(t.scene, W, W, {
+      preset: 'temporal', dumpCandidates: true, cam: { camToWorld: t.camera.matrix, yfov: t.camera.yfov }, extraSources: sources,
+      settings: { maxBounces: t.maxBounces }, env: { nee: true }, seed: 19,
+    });
+    const k = rig.kernel;
+    const byTech = (r: Recs, o: Uint32Array, ref: (i: number) => Float32Array | undefined) => {
+      const of = new Float32Array(o.buffer);
+      const st: Record<string, { n: number; max: number; bad: number; worst?: string }> = {};
+      for (let i = 0; i < r.n; i++) {
+        const c = recClass(r, i);
+        if (!(c === C.DNEE || c === C.DBSDF || c === C.N1 || c === C.B1) || (o[OUT_WORDS * i + 4] & S.SXS_UNDEF)) continue;
+        const exp = ref(i);
+        if (!exp) continue;
+        const key = `${PATH_CLASS_NAMES[c]}/${rfUnpack(recFlags(r, i)).tech}`;
+        const e = rel3(of, exp, OUT_WORDS * i, 0);
+        const s = (st[key] ??= { n: 0, max: 0, bad: 0 });
+        s.n++;
+        if (e > s.max) { s.max = e; s.worst = `${of[OUT_WORDS * i].toExponential(5)} vs ${exp[0].toExponential(5)}`; }
+        if (e > 1e-4) s.bad++;
+      }
+      return st;
+    };
+    // (1) idempotence: the same frame's refresh vs the stored cache (fsFrom = fsTo = CUR)
+    const idem: Record<string, unknown>[] = [];
+    let idemBad = 0;
+    for (let f = 0; f < 3; f++) {
+      await rig.frames(1, 3 + f);
+      const r = harvest(await k.readCandidateDump(), P);
+      const o = await runRefresh(k, r, K.RS_FS_CUR, K.RS_FS_CUR, { sources });
+      const recF32 = new Float32Array(r.rec.buffer);
+      const st = byTech(r, o, (i) => recF32.subarray(i * RES_WORDS + RW.rcRad, i * RES_WORDS + RW.rcRad + 3));
+      idem.push(st);
+      idemBad += Object.values(st).reduce((a, s) => a + s.bad, 0);
+    }
+    // (2) change frame: lights moved / power steps + env rotation / strength; refresh vs re-trace, forward and inverse
+    const L0 = t.scene.lights.map((l) => ({ ...l, matrix: new Float32Array(l.matrix) }));
+    const L1 = L0.map((l, j) => (j % 2 === 0 ? { ...l, matrix: move(l.matrix, [0.03, 0.01, -0.02]) } : { ...l, power: l.power * 1.7 }));
+    const E0: EnvParamsCpu = { rotationZ: 0.1, strength: 1, tint: [1, 1, 1], visibleToCamera: true };
+    const E1: EnvParamsCpu = { rotationZ: 0.13, strength: 1.3, tint: [1, 1, 1], visibleToCamera: true };
+    await canonicalFrame(rig, 10, L0, E0);
+    const r0 = harvest(await k.readCandidateDump(), P);
+    const a1 = await canonicalFrame(rig, 11, L1, E1);
+    expect(a1.histValid).toBe(true);
+    const r1 = harvest(await k.readCandidateDump(), P);
+    const fwd = compareRetrace(r0, await runRefresh(k, r0, K.RS_FS_PREV, K.RS_FS_CUR, { sources }), await runRetrace(k, r0, k.resources.views.vbufPrev, K.RS_FS_PREV, K.RS_FS_CUR, sources));
+    const inv = compareRetrace(r1, await runRefresh(k, r1, K.RS_FS_CUR, K.RS_FS_PREV, { sources }), await runRetrace(k, r1, k.resources.views.vbuf, K.RS_FS_CUR, K.RS_FS_PREV, sources));
+    // (3) round trip of the cache: frame-0 records refreshed to CUR, then back to PREV ≡ the stored cache
+    const fw = await runRefresh(k, r0, K.RS_FS_PREV, K.RS_FS_CUR, { sources });
+    const y = { rec: r0.rec.slice(), ai: r0.ai, n: r0.n };
+    for (let i = 0; i < r0.n; i++) {
+      const b = i * RES_WORDS, o = OUT_WORDS * i;
+      if (fw[o + 4] & S.SXS_UNDEF) continue;
+      const c = recClass(r0, i);
+      if (c === C.DNEE || c === C.DBSDF || c === C.N1 || c === C.B1) for (let j = 0; j < 3; j++) y.rec[b + RW.rcRad + j] = fw[o + j];
+      if (rfUnpack(recFlags(r0, i)).tech === K.RS_TECH_NEE) {
+        const e = (K.RC_TAG_NEE | (fw[o + 5] & K.RC_ENTRY_MASK)) >>> 0;
+        y.rec[b + RW.end] = e;
+        if (rfUnpack(recFlags(r0, i)).k === rfUnpack(recFlags(r0, i)).d) y.rec[b + RW.rc] = e;
+      }
+    }
+    const back = await runRefresh(k, y, K.RS_FS_CUR, K.RS_FS_PREV, { sources });
+    const rec0 = new Float32Array(r0.rec.buffer);
+    const rt = byTech(r0, back, (i) => ((fw[OUT_WORDS * i + 4] & S.SXS_UNDEF) ? undefined : rec0.subarray(i * RES_WORDS + RW.rcRad, i * RES_WORDS + RW.rcRad + 3)));
+    const rtBad = Object.values(rt).reduce((a, s) => a + s.bad, 0);
+    const strip = ({ bad, n, ...rest }: CmpRep) => { void bad; void n; return rest; };
+    console.log(`[t3_rare HDRI] idempotence ${JSON.stringify(idem)}\n fwd ${JSON.stringify(strip(fwd))}\n inv ${JSON.stringify(strip(inv))}\n round trip ${JSON.stringify(rt)}`);
+    // Env-escape ends (technique 3, B1 and D-BSDF) evaluate L_env(envUV(ω)) from a direction: envUV differs between
+    // pipelines at the ulp level and the hardware bilinear filter (8-bit sub-texel weights) turns that into ≤ 2·10⁻³ on
+    // a high-frequency HDRI (Changelog C-9; open). Every other technique must be exact; env escapes are bounded in rate.
+    const envKeys = (st: Record<string, { n: number; bad: number }>) => Object.entries(st).filter(([kk]) => kk.endsWith('/3'));
+    const other = (st: Record<string, { n: number; bad: number }>) => Object.entries(st).filter(([kk]) => !kk.endsWith('/3')).reduce((a, [, v]) => a + v.bad, 0);
+    const idemSt = idem as Record<string, { n: number; bad: number }>[];
+    expect(idemSt.reduce((a, st) => a + other(st), 0) + other(rt)).toBe(0);
+    const envN = [...idemSt, rt].flatMap(envKeys).reduce((a, [, v]) => a + v.n, 0), envBad = [...idemSt, rt].flatMap(envKeys).reduce((a, [, v]) => a + v.bad, 0);
+    console.log(`[t3_rare HDRI] env-escape filter flips ${envBad} / ${envN} (idempotence + round trip); idemBad ${idemBad}, rtBad ${rtBad}`);
+    expect(envBad / Math.max(envN, 1)).toBeLessThanOrEqual(5e-3);
+    for (const x of [fwd, inv]) {
+      expect(x.bad.every((b) => b === 0)).toBe(true);
+      expect(x.undefMismatch + x.entryBad + x.visMismatch + x.replayFail + x.idsMismatch + x.endMismatch).toBe(0);
+    }
+    rig.destroy();
+  });
+});
