@@ -1459,3 +1459,21 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
 - **E-10 U8 rungs 3.1/3.1b/3.2** run through the M4 sequential harness (run-batches --kernel restir) and are sized by
   gate-m4's `sizeScene` (M4 pilots 128 / 8 frames × 16) around the u8 package's frozen base-state PT reference, which
   they share with the package's 3.3 / 3.4 chain units.
+- **B-7 T3-2 harness hook instead of `RS_TEMPORAL_TRACE`** (affects nobody). The composer has no `#define` and the kernel
+  passes extra defines only to `rs_initial`, so the T3-2 / T4-t harness does not use a define: `t-select.wgsl` has
+  `const TSEL_TRACE_FORCE_P: bool = false`, which the test flips to `true` through `instrumentation.extraSources` (every
+  defined forward shift is then selected, robust mode runs T⁻¹(T(X_p)) through the production T1/T2/T3/refresh/T4
+  passes on every pixel with a valid q′). Frames alternate reset / test so each test frame round-trips fresh canonical
+  samples. Classification as M4 B-4 (FP-BOUNDARY iff the deciding pair's |margin| < 2⁻¹⁶; the replay-divergence rule
+  needs the path trace and is not applied: such events count as LOGIC and are investigated).
+- **B-8 U8 plants in the shift** (TD30; affects T-E's plant units only). `RSF_PLANT_U8_W1DELTA`: ω1 := 1/(1 + p2) for
+  delta lights in every shift; `RSF_PLANT_U8_NO_PK`: J_rc without the p^y_k factor (cases (c) and deep);
+  `RSF_PLANT_U8_ONESIDED`: back-side rect / disk samples at the offset emit with |cos| (Λ, q, p1 recomputed);
+  `TP_U8_STALE_AUX`: cases (b)/(c) use the stored `aux` as p1 in ω1 / ω2 and the write-back keeps the copied `aux`;
+  `TP_U8_SPOT_PREV_AXIS`: on history frames with a light change, CUR-frame shifts evaluate the spot profile with the
+  spot axis of frame t−1. `RSF_PLANT_U8_T2` (J = t_x²/t_y² for point lights) is **not implemented yet**: the shift source
+  carries no x_{d−1} for case (a) (see the T-B report / open issues). **Lesson (U-M4-BITS):** a plant written as a
+  branch that reassigns an arithmetic result on the default path (`jNum = …; if (plant) { jNum = … }`) changed the Metal
+  code of the spatial shift with the plant off (xq-3.2 / i-3.2 reservoirs differed from the M4 goldens); plants must
+  enter as `select` on an input factor (`pKj = select(…, 1.0, plant)`) or as a separate call whose result replaces a
+  value only under the uniform, and every plant edit re-runs U-M4-BITS.

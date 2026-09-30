@@ -297,7 +297,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   if (pr.valid || a0 || d.x != 1 || w < 0.0 || res_needs_replay(src.flags)) { queue_append(0u, (p.ai << 3u) | 0u); }
   rs_count(RSC_CODE_BASE + rs_slot_code_sc(o.code), 1u);
   spatial_resample(p, 0u, true);
-  let r = replay_prefix(src.seed, vertex_from_ids(dst.prim, dst.bary.x, dst.bary.y, dst.camPos), dst.prim, dst.camPos, dst.thr, 3u, 4u, 0u);
+  let r = replay_prefix(src.seed, vertex_from_ids(dst.prim, dst.bary.x, dst.bary.y, dst.camPos), dst.prim, dst.camPos, dst.thr, 3u, 4u, 0u, RS_FS_CUR);
   rs_count(RSC_CODE_BASE + rs_slot_code_sc(r.code), 1u);
   pathtree_run(p, rs_frame_key(p.member, rs_t(), p.localIdx), 0u, 1u, true, true);
   rsdbg_slot(p.px, 0u, o.code, o.J, false);

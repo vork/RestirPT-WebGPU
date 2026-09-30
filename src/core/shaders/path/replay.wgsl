@@ -18,6 +18,7 @@
 // §3.7); F = 0 becomes SC_ZERO in the shift. Inline budget (§4.5): one material_eval, bsdf_sample, bsdf_query site.
 // RS_SHIFT_TRACE (tests): the includer defines rs_trace_vertex / rs_trace_pair / rs_trace_escape (restir-shift.gpu.test.ts).
 #include "restir/rc.wgsl"
+#include "restir/tframe.wgsl"
 #include "path/path-weight.wgsl"
 #include "restir/frame.wgsl"
 #include "lights/env-sample.wgsl"
@@ -34,8 +35,9 @@ struct ReplayOut {
   F: vec3f,              // ∅ mode: the replayed path's own integrand incl. ω2
 }
 
-/// kIdx = k (prefix mode, 3 ≤ k ≤ d) or 0 (∅ mode, d ≥ 2). tech = the source's technique (∅ mode).
-fn replay_prefix(seed: vec2u, y1: SurfaceHit, y1Prim: u32, camPos: vec3f, thr: f32, kIdx: u32, d: u32, tech: u32) -> ReplayOut {
+/// kIdx = k (prefix mode, 3 ≤ k ≤ d) or 0 (∅ mode, d ≥ 2). tech = the source's technique (∅ mode). fs = the frame
+/// whose light / env state evaluates the ∅ end term (M5, restir-temporal-api.md §3.4; RS_FS_CUR spatially).
+fn replay_prefix(seed: vec2u, y1: SurfaceHit, y1Prim: u32, camPos: vec3f, thr: f32, kIdx: u32, d: u32, tech: u32, fs: u32) -> ReplayOut {
   var r: ReplayOut;
   r.code = rs_slot_code(SC_OK, RCT_NONE, 0u, 0.0);
   var cur = y1;
@@ -96,16 +98,17 @@ fn replay_prefix(seed: vec2u, y1: SurfaceHit, y1Prim: u32, camPos: vec3f, thr: f
       var w2 = 1.0;
       var endV = RcVertex(cur.pos + bs.L, vec3f(0.0), RCK_ENV, 0u);
       if (tech == RS_TECH_BSDF_ENV) {
-        if (isHit || (envParams.flags & ENV_FLAG_PRESENT) == 0u) { r.code = rs_slot_code(SC_O0_TECH, RCT_NONE, d, 0.0); return r; }
-        w2 = env_bsdf_mis_weight(bs.L, qb.p_marg, b, bs.is_delta);
-        Le = envRadiance(envUV(bs.L, envParams.cg, envParams.sg));
+        let er = lf_env(fs);
+        if (isHit || (er.flags & ENV_FLAG_PRESENT) == 0u) { r.code = rs_slot_code(SC_O0_TECH, RCT_NONE, d, 0.0); return r; }
+        w2 = env_bsdf_mis_weight_s(bs.L, qb.p_marg, b, bs.is_delta, lf_slot(fs), er);
+        Le = envRadiance_s(envUV(bs.L, er.cg, er.sg), er);
       } else {
         if (tech != RS_TECH_BSDF_TRI || !isHit || (nxt.triFlags & TRI_EMISSIVE) == 0u) {
           r.code = rs_slot_code(SC_O0_TECH, RCT_NONE, d, 0.0);
           return r;
         }
         Le = tri_emission(h.primId, h.u, h.v);
-        if (!bs.is_delta) { w2 = mis_w2(tri_light_p1(cur.pos, nxt.pos, nxt.ng, h.primId), qb.p_marg, b); }
+        if (!bs.is_delta) { w2 = mis_w2(tri_light_p1_s(cur.pos, nxt.pos, nxt.ng, h.primId, lf_slot(fs)), qb.p_marg, b); }
         endV = RcVertex(nxt.pos, nxt.ng, RCK_LIGHT, 0u);
       }
       let pt = rcPairTest(curV, eB, endV, rc_event_none(), thr);
