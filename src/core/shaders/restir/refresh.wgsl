@@ -16,6 +16,7 @@
 // Deep records under TM_E2 (TD23) are undefined without evaluation (SXS_UNDEF | SXS_E2). Plants (validation only):
 //   TP_N3_STALE        no refresh: stored rcRad / aux, stale end visibility (entry and J_P are still translated)
 //   TP_N7_PER_LIGHT    records whose own light neither MOVED nor changed radiometrically keep the stored values
+//                      (N3 / N7 are ignored by the robust check's inverse refresh, TM_ROBUST with fsTo = PREV: C-8)
 //   TP_N4_RIS          forward only (frame-t random numbers): the D-NEE endpoint is re-drawn by RIS over 8 alias
 //                      candidates (target lum(f_all·Λ), source q) and rad = the single-sample value of the pick
 //                      (restir-temporal-api.md Changelog C-3)
@@ -243,8 +244,11 @@ fn refresh_record(ai: u32, fsFrom: u32, fsTo: u32) -> SfxRec {
   let deep = cls == RFC_DNEE || cls == RFC_DBSDF;
   if (deep && rs_tmode(TM_E2)) { r.status |= SXS_UNDEF | SXS_E2; return r; }
   if (!(deep || cls == RFC_N1 || cls == RFC_B1)) { return r; }        // L, E, R: the shift re-evaluates everything
-  // stale plants: the stored cache values (N3 always; N7 when the endpoint's own light is unchanged)
-  if (rs_tplant(TP_N3_STALE) || (rs_tplant(TP_N7_PER_LIGHT) && (bits & (LCB_MOVED | LCB_RADIO)) == 0u)) {
+  // stale plants: the stored cache values (N3 always; N7 when the endpoint's own light is unchanged). Not in the robust
+  // check's inverse (TM_ROBUST, fsTo = PREV): T6(b) compares the stored π_p(Y_p) with a FRESH inverse evaluation
+  // (gap-temporal §9.2; Changelog C-8, B-10)
+  let stale = rs_tplant(TP_N3_STALE) || (rs_tplant(TP_N7_PER_LIGHT) && (bits & (LCB_MOVED | LCB_RADIO)) == 0u);
+  if (stale && !(rs_tmode(TM_ROBUST) && fsTo == RS_FS_PREV)) {
     r.rad = bitcast<vec3f>(resin_plane(ai, RP_RAD).xyz);
     var cs = SXS_B1;
     if (deep) { cs = SXS_DEEP; } else if (cls == RFC_N1) { cs = SXS_N1 | SXS_VIS; }

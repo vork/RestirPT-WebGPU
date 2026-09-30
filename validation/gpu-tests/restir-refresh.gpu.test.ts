@@ -437,7 +437,7 @@ function compareRetrace(r: Recs, o: Uint32Array, ref: Uint32Array): CmpRep {
 }
 
 describe('§9.3-4 / T-ENV-temporal: cached refresh ≡ full re-trace on light- and env-change frames, forward and inverse (≤ 1e-4)', () => {
-  for (const variant of ['every change class + env rotation/strength/tint', 'radiometric only (visibility rule: no rays)'] as const) {
+  for (const variant of ['every change class + env rotation/strength/tint', 'radiometric only (visibility rule: no rays)', 'point light moved only (analytic rays)'] as const) {
     it(variant, async () => {
       const W = 32, H = 32, P = W * H;
       const scene = allLightsScene();
@@ -445,11 +445,13 @@ describe('§9.3-4 / T-ENV-temporal: cached refresh ≡ full re-trace on light- a
       const rig = await restirRig(scene, W, H, { preset: 'temporal', settings: { maxBounces: 5 }, dumpCandidates: true, extraSources: sources, seed: 31 });
       const k = rig.kernel;
       const { L0, L1, L1radio } = changeSets(scene);
-      const all = variant.startsWith('every');
+      const all = variant.startsWith('every'), pointOnly = variant.startsWith('point');
+      const L1point = L0.map((l) => (l.id === 1 ? { ...l, matrix: move(l.matrix, [0.12, -0.05, 0.1]) } : l));
       const a0 = await canonicalFrame(rig, 0, L0, ENV0);
       expect(a0.histValid).toBe(false);
       const r0 = harvest(await k.readCandidateDump(), P);
-      const a1 = await canonicalFrame(rig, 1, all ? L1 : L1radio, all ? ENV1 : ENV0);
+      const a1 = await canonicalFrame(rig, 1, all ? L1 : pointOnly ? L1point : L1radio, all ? ENV1 : ENV0);
+      if (pointOnly) expect(a1.flags & K.TF_LIGHT_MOVED).not.toBe(0);
       expect(a1.histValid).toBe(true);
       expect(a1.flags & K.TF_REFRESH).not.toBe(0);
       expect(a1.flags & K.TF_LIGHTS_SAME).toBe(0);
@@ -463,7 +465,7 @@ describe('§9.3-4 / T-ENV-temporal: cached refresh ≡ full re-trace on light- a
         expect(x.bad.every((b) => b === 0)).toBe(true);
         expect(x.undefMismatch + x.entryBad + x.visMismatch + x.replayFail + x.idsMismatch + x.endMismatch).toBe(0);
         for (const c of [C.N1, C.B1, C.DNEE, C.DBSDF]) expect(x.n[c], PATH_CLASS_NAMES[c]).toBeGreaterThan(50);
-        if (all) { expect(x.rays).toBeGreaterThan(0); expect(x.undefRefresh).toBeGreaterThan(0); } else expect(x.rays).toBe(0);
+        if (all) { expect(x.rays).toBeGreaterThan(0); expect(x.undefRefresh).toBeGreaterThan(0); } else if (pointOnly) expect(x.rays).toBeGreaterThan(0); else expect(x.rays).toBe(0);
       }
       rig.destroy();
     });
@@ -549,7 +551,7 @@ describe('E2 (TD23) and the refresh plants on a change frame', () => {
     const r0 = harvest(await k.readCandidateDump(), P);
     await canonicalFrame(rig, 1, L1, ENV1);
     const run = async (s: Partial<RestirSettings>, fsFrom: number = K.RS_FS_PREV, fsTo: number = K.RS_FS_CUR) => {
-      k.setSettings({ refresh: 'exact', tPlant: {}, ...s });
+      k.setSettings({ refresh: 'exact', temporalCheck: 'none', tPlant: {}, ...s });
       return runRefresh(k, r0, fsFrom, fsTo, { sources });
     };
     const base = await run({});
@@ -626,8 +628,18 @@ describe('E2 (TD23) and the refresh plants on a change frame', () => {
         if ([0, 1, 2].some((j) => word(n4a, i, j) !== word(base, i, j))) cnt.n4Diff++;
       } else if (!same(n4a, base, i)) cnt.n4Bad++;
     }
+    // C-8: the robust check's inverse (TM_ROBUST, CUR → PREV) is always fresh; the forward stays stale
+    let robustBad = 0;
+    const robN3inv = await run({ temporalCheck: 'robust', tPlant: { n3Stale: true } }, K.RS_FS_CUR, K.RS_FS_PREV);
+    const robN7inv = await run({ temporalCheck: 'robust', tPlant: { n7PerLight: true } }, K.RS_FS_CUR, K.RS_FS_PREV);
+    const robN3fwd = await run({ temporalCheck: 'robust', tPlant: { n3Stale: true } });
+    for (let i = 0; i < r0.n; i++) {
+      if (cls(i) < 0) continue;
+      if (!same(robN3inv, inv0, i) || !same(robN7inv, inv0, i) || !same(robN3fwd, n3, i)) robustBad++;
+    }
     void recs;
-    console.log(`[plants] ${JSON.stringify(cnt)}`);
+    console.log(`[plants] ${JSON.stringify({ ...cnt, robustBad })}`);
+    expect(robustBad).toBe(0);
     expect(cnt.e2Bad + cnt.n3Bad + cnt.n7Bad + cnt.noJpBad + cnt.noJpEnvBad + cnt.rotVisBad + cnt.n4Bad).toBe(0);
     for (const x of [cnt.e2, cnt.n3, cnt.n7Stored, cnt.n7Refreshed, cnt.envNee, cnt.n4, cnt.n4Diff]) expect(x).toBeGreaterThan(10);
     rig.destroy();
@@ -816,4 +828,136 @@ describe('§9.3-2 (b) / T-ENV-temporal: PSS change of variables E_prev[h(Tx)·J_
       rig.destroy();
     });
   }
+});
+
+// ------------------------------------------------------------------------------------------------ interactive path
+
+describe('interactive RestirFramePass: a moving point light is refreshed with shadow rays (m5 app smoke follow-up)', () => {
+  it('c0c-like box, point light moved every frame through setLights + advanceInteractive: refresh rays > 0 on history frames', async () => {
+    const pointAt = (p: V3) => [light({ id: 1, type: 'point', power: 60, matrix: lightMatrixToward([0, -1, 0], p) }),
+      light({ id: 2, type: 'rect', power: 40, sizeX: 0.5, sizeY: 0.3, matrix: lightMatrixToward([0, -1, 0], [-0.4, 1.9, -1.0]) })];
+    const scene = boxScene(pointAt([0.2, 1.7, -0.5]));
+    const { gpuScene } = await import('./restir-fixtures.ts');
+    const g = await gpuScene(scene);
+    const dev = g.device;
+    const { FrameUniformBuffer, JITTER_IID } = await import('../../src/core/render/frame-uniforms.ts');
+    const { RestirKernel } = await import('../../src/core/render/restir/kernel.ts');
+    const { restirSettings } = await import('../../src/core/render/restir/presets.ts');
+    const W = 64, H = 48;
+    const pass = await RestirKernel.interactive(dev, g.gpu, g.env, 'rgba16float', { settings: restirSettings('interactive', { maxBounces: 3 }), features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
+    const color = dev.createTexture({ size: [W, H], format: 'rgba16float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC });
+    const fu = new FrameUniformBuffer(dev);
+    pass.setTargets({ width: W, height: H, color, frameUniforms: fu.buffer });
+    const k = pass.kernel;
+    const rows: string[] = [];
+    let histFrames = 0, raysOnHist = 0, framesWithRays = 0;
+    for (let f = 0; f < 10; f++) {
+      pass.setLights(pointAt([0.2 + 0.03 * f, 1.7, -0.5 + 0.02 * f]));
+      fu.write({ camera: boxCamera(), prevCamera: boxCamera(), width: W, height: H, frameIndex: f, seedIndex: f, runSeed: 7, flags: 0,
+        jitterMode: JITTER_IID, jitter: [0.5, 0.5], origin: g.gpu.origin, exposure: 1, time: 0, dt: 0, sceneDiag: 1 });
+      await k.readCounters(true);
+      const enc = dev.createCommandEncoder();
+      const adv = k.advanceInteractive(fu.buffer, { reset: false });
+      pass.encode(enc, { advanced: true, accumulate: true });
+      dev.queue.submit([enc.finish()]);
+      await dev.queue.onSubmittedWorkDone();
+      const c = await k.readCounters(true);
+      rows.push(`f${f} flags ${adv.flags} recs ${c.rsc.tRefreshRecs} rays ${c.rsc.tRefreshRays}`);
+      if (adv.histValid && (adv.flags & K.TF_LIGHT_MOVED)) { histFrames++; raysOnHist += c.rsc.tRefreshRays; if (c.rsc.tRefreshRays > 0) framesWithRays++; }
+    }
+    console.log(`[interactive moving point] ${rows.join(' | ')}`);
+    expect(histFrames).toBeGreaterThan(5);
+    expect(framesWithRays).toBe(histFrames);
+    pass.destroy(); color.destroy(); fu.destroy(); g.destroy();
+  });
+});
+
+describe('interactive RestirFramePass on the smoke set-up (cornell_i + point 30 W + rect 20 W, point on the smoke loop)', () => {
+  it('refresh rays > 0 on every history frame with LIGHT_MOVED', async () => {
+    const { fetchScenePackage } = await import('../../src/core/scene/scene-package.ts');
+    const pkg = await fetchScenePackage('/validation/scenes/cornell_i_512/');
+    const scene = pkg.scene;
+    const pt = (s: number) => light({ id: 901, type: 'point', power: 30, matrix: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.1 + 0.12 * Math.sin(0.09 * s), 0.35, -0.2 + 0.1 * Math.cos(0.09 * s), 1]) });
+    const rect = light({ id: 902, type: 'rect', power: 20, sizeX: 0.15, sizeY: 0.1, visibleToCamera: false, matrix: new Float32Array([1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, 0.5, -0.28, 1]) });
+    const lightsAt = (s: number) => [...scene.lights, pt(s), rect];
+    scene.lights = lightsAt(0);
+    const { gpuScene } = await import('./restir-fixtures.ts');
+    const g = await gpuScene(scene);
+    const dev = g.device;
+    const { FrameUniformBuffer, JITTER_IID } = await import('../../src/core/render/frame-uniforms.ts');
+    const { RestirKernel } = await import('../../src/core/render/restir/kernel.ts');
+    const { restirSettings } = await import('../../src/core/render/restir/presets.ts');
+    const W = 128, H = 128;
+    const pass = await RestirKernel.interactive(dev, g.gpu, g.env, 'rgba16float', { settings: restirSettings('interactive', { maxBounces: 3 }), features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
+    const color = dev.createTexture({ size: [W, H], format: 'rgba16float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC });
+    const fu = new FrameUniformBuffer(dev);
+    pass.setTargets({ width: W, height: H, color, frameUniforms: fu.buffer });
+    const k = pass.kernel;
+    const cam = { camToWorld: Array.from(pkg.camera.matrix), yfov: pkg.camera.yfov };
+    const rows: string[] = [];
+    let hist = 0, withRays = 0;
+    for (let f = 0; f < 12; f++) {
+      pass.setLights(lightsAt(f));
+      fu.write({ camera: cam, prevCamera: cam, width: W, height: H, frameIndex: f, seedIndex: f, runSeed: 7, flags: 0,
+        jitterMode: JITTER_IID, jitter: [0.5, 0.5], origin: g.gpu.origin, exposure: 1, time: 0, dt: 0, sceneDiag: 1 });
+      await k.readCounters(true);
+      const enc = dev.createCommandEncoder();
+      const adv = k.advanceInteractive(fu.buffer, { reset: false });
+      pass.encode(enc, { advanced: true, accumulate: true });
+      dev.queue.submit([enc.finish()]);
+      await dev.queue.onSubmittedWorkDone();
+      const c = await k.readCounters(true);
+      rows.push(`f${f} ${adv.flags} ${c.rsc.tRefreshRecs}/${c.rsc.tRefreshRays}`);
+      if (adv.histValid && (adv.flags & K.TF_LIGHT_MOVED)) { hist++; if (c.rsc.tRefreshRays > 0) withRays++; }
+    }
+    console.log(`[interactive smoke set-up] ${rows.join(' | ')}`);
+    expect(hist).toBeGreaterThan(5);
+    expect(withRays).toBe(hist);
+    pass.destroy(); color.destroy(); fu.destroy(); g.destroy();
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ T6(b) with N3 / N7
+
+describe('T6(b) robust mode detects the stale-suffix plants N3 and N7 (Changelog C-8 / B-10)', () => {
+  it('box with point + rect, maxBounces 6, 12 chain frames: exact ≈ 0 mismatches; N3 (point moving + rect power steps) and N7 (rect power steps) ≫ 0', async () => {
+    const W = 48, H = 48;
+    const lights = (f: number, move: boolean, radio: boolean) => [
+      light({ id: 1, type: 'point', power: 60, matrix: lightMatrixToward([0, -1, 0], [0.2 + (move ? 0.08 * f : 0), 1.7, -0.5]) }),
+      light({ id: 2, type: 'rect', power: radio ? 40 * (1 + 0.5 * (f % 2)) : 40, sizeX: 0.5, sizeY: 0.3, matrix: lightMatrixToward([0, -1, 0], [-0.4, 1.9, -1.0]) }),
+    ];
+    const run = async (tPlant: RestirSettings['tPlant'], move: boolean, radio: boolean) => {
+      const scene = boxScene(lights(0, move, radio));
+      // Until T-B drops the N3 check of tsrc_load (B-10 loader side: since C-5 the refresh serves the stale values, and
+      // under TM_ROBUST the inverse must stay fresh, C-8), the test runs the loader without it; a no-op afterwards.
+      const { shaderSources } = await import('../../src/core/shaders/index.ts');
+      const OLD = 'if (tcls_deep(f) && !rs_tplant(TP_N3_STALE)) {';
+      const ts = shaderSources['restir/tshift.wgsl'];
+      const extraSources: Record<string, string> = ts.includes(OLD) ? { 'restir/tshift.wgsl': ts.replace(OLD, 'if (tcls_deep(f)) {') } : {};
+      const rig = await restirRig(scene, W, H, { preset: 'temporal', settings: { maxBounces: 6, temporalCheck: 'robust', tPlant }, seed: 77, extraSources });
+      const k = rig.kernel, device = rig.g.device;
+      let mismatch = 0, invOk = 0, selP = 0;
+      for (let t = 0; t < 12; t++) {
+        await k.readCounters(true);
+        k.advance({ t, camera: boxCamera(), lights: lights(t, move, radio) });
+        k.beginSubmit();
+        const enc = device.createCommandEncoder();
+        for (const u of k.frameUnits(t, { accum: rig.accum, counters: rig.counters })) u.encode(enc);
+        device.queue.submit([enc.finish()]);
+        await device.queue.onSubmittedWorkDone();
+        const c = await k.readCounters(true);
+        if (t > 0) { mismatch += c.rsc.tRobustMismatch; invOk += c.rsc.tInvOk; selP += c.rsc.tSelP; }
+      }
+      rig.destroy();
+      return { mismatch, invOk, selP };
+    };
+    const exactMove = await run({}, true, true);
+    const n3 = await run({ n3Stale: true }, true, true);
+    const exactRadio = await run({}, false, true);
+    const n7 = await run({ n7PerLight: true }, false, true);
+    console.log(`[T6(b) plants] exact/move ${JSON.stringify(exactMove)} N3 ${JSON.stringify(n3)} exact/radio ${JSON.stringify(exactRadio)} N7 ${JSON.stringify(n7)}`);
+    for (const e of [exactMove, exactRadio]) expect(e.mismatch).toBeLessThanOrEqual(Math.max(2, 1e-3 * e.selP));
+    expect(n3.mismatch).toBeGreaterThan(Math.max(100, 20 * exactMove.mismatch));
+    expect(n7.mismatch).toBeGreaterThan(Math.max(50, 20 * exactRadio.mismatch));
+  });
 });

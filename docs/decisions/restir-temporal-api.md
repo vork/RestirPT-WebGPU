@@ -1318,6 +1318,12 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   row band, restir-api C7) `rs_args` with queue q2 + indirect `rs_refresh_inv` at args byte 32 over `res[w]`; not
   emitted under `TP_N1_MIXED`. Bind groups are resolved at build time. The per-pixel entry adds `RsDispatch.rowBase` to
   `gid.y` (the P0 stub did not).
+- **C-8 Robust check stays fresh under N3 / N7** (with B-10; affects T-B). Under `TM_ROBUST` the inverse refresh
+  (`fsTo = PREV`, `rs_refresh_inv`) ignores `TP_N3_STALE` and `TP_N7_PER_LIGHT` and serves fresh rad / aux / VIS, so T6(b)
+  compares the stored π_p(Y_p) with a fresh inverse evaluation (gap-temporal §9.2); the forward and every non-robust
+  inverse keep C-5. Loader side (T-B): `tsrc_load` takes `sfx.rad` for every deep record (no N3 check; the refresh
+  already serves the stale values). Measured (restir-refresh T6(b) chain, box, 12 frames): robust mismatches exact 0,
+  N3 574, N7 170. Rendered N3 / N7 units (contribution MIS, no robust check) are unchanged.
 
 ### T-D amendments (debug views, interactive integration, boost)
 
