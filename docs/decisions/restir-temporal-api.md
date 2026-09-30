@@ -1284,6 +1284,41 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   `frameUnits()` builds the stage units (TF_REFRESH, TF_HIST_VALID for the temporal stage and the refresh builders);
   undefined on a non-advanced (reset) frame.
 
+### T-C amendments (suffix refresh, change taxonomy)
+
+- **C-1 `SFX_DELTA_END` only with `RSF_TEMPORAL`** (affects T-A U-M4-BITS). The path tree sets word 27 bit 3 only when
+  `RSF_TEMPORAL` is set, so every temporal-off reservoir is bitwise M4. A kernel with temporal settings that is never
+  advanced (the interactive preset "as shipped" before T-D's wiring) may differ from the pre-M5 build in that bit on
+  delta BSDF endings; images and counters are unaffected (no M4 code reads the bit).
+- **C-2 Undefined predicate of the refresh** (affects nobody; T-B consumes `SXS_UNDEF`). `refresh_entry` marks an NEE
+  record undefined iff `e_to` is missing or `pmf_to(e_to)`, `pmf_from(e)` or `J_P` fails the bit test `rs_pos_finite`
+  (the same predicate in T and T⁻¹; §3.2 plus the source pmf, which is > 0 for every served record). BSDF_ANALYTIC
+  records (Mode B, unreachable in M5) are undefined.
+- **C-3 N4 plant = single-sample value of the RIS pick, forward only** (affects T-E's N4 unit: prediction unchanged,
+  Δ > 0). §3.5's `rad = β_s ⊙ N(new)·W_RIS` is an unbiased RIS estimate of the NEE integral and would not reproduce the
+  +64 % of gap-temporal §5.2, which comes from keeping the per-sample integrand `F(new) = f/p` of a target-distributed
+  pick. The plant draws 8 alias candidates under the frame-t slot, picks ∝ `lum(f_all·Λ)/q` and sets
+  `rad = β_s ⊙ (ω1/q)·f_all·Λ` of the pick (shadow ray always traced). It acts on `fsTo = CUR` only (frame-t random
+  numbers; the inverse is evaluated under S_{t−1}). Stream: `pcg4d(key.x, key.y ^ RS_PASS_T_PLANT·φ, j,
+  STREAM_RESAMPLE)`: counter j < 8 gives (u_sel, u_sel2, h_l0, h_l1) of candidate j, counter 8 + j gives (h_l2, u_pick).
+- **C-4 U-SFX-2 lives in `validation/gpu-tests/restir-refresh.gpu.test.ts`** (affects nobody), not in
+  restir-initial.gpu.test.ts, which T-B edits concurrently.
+- **C-5 Stale plants are delivered by the refresh** (affects T-B: the loader's "unless `TP_N3_STALE`" check becomes
+  redundant, both are consistent). `TP_N3_STALE`: every served class returns the stored `rcRad` / `aux` and N1 gets
+  `SXS_VIS` without a ray (stale visibility); entry and `J_P` are still translated. `TP_N7_PER_LIGHT`: the same for records
+  whose endpoint has neither `LCB_MOVED` nor `LCB_RADIO`; for BSDF ends the endpoint is the hit emitter (triangles never
+  change, env escapes use `TF_ENV_MOVED` / `TF_ENV_RADIO`). Plant outputs carry `SXS_PLANT`.
+- **C-6 Details of §3.5** (affects nobody). N1 on a moved light: no ray and `SXS_VIS` clear when the re-evaluated end is
+  invalid or Λ = 0 (F = 0 either way). `TP_ENV_NO_ROT_VIS` skips the ray for env NEE ends of N1 and D-NEE. D-BSDF uses
+  the path tree's grouping `(β_s·ω2)·L`; `SXS_ZERO` is set on any deep record with rad = 0. Counters: `RSC_T_REFRESH_RECS`
+  (non-empty records) and `RSC_T_REFRESH_RAYS`. Test-only define `RS_REFRESH_FORCE_MOVED`.
+- **C-7 Unit builders** (affects T-B). `refreshFwdUnits(k, t, flags?)` / `refreshInvUnits(k, t, flags?)`: `flags` defaults
+  to `k.currentAdvance?.flags` (A-10); with unknown flags the units are emitted and the entry points return early without
+  `TF_REFRESH` (fwd also without `TF_HIST_VALID`). fwd: one unit per row band over `res[h]`; inv: per item chunk (one per
+  row band, restir-api C7) `rs_args` with queue q2 + indirect `rs_refresh_inv` at args byte 32 over `res[w]`; not
+  emitted under `TP_N1_MIXED`. Bind groups are resolved at build time. The per-pixel entry adds `RsDispatch.rowBase` to
+  `gid.y` (the P0 stub did not).
+
 ### T-D amendments (debug views, interactive integration, boost)
 
 - **D-1 Temporal debug data paths and probe formats** (affects T-B only through the §2.11 hook call sites, which

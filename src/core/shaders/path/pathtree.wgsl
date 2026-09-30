@@ -301,7 +301,9 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
           if (s == 0u && nDump < RS_DUMP_CAP) { di = nDump; nDump++; }
 #endif
           let flags = rf_pack(B + 1u, k, tech, select(LT_ENV, LT_TRI, isHit), false, lkm1 & 7u, (lkm1 & 8u) != 0u, lk & 7u, (lk & 8u) != 0u, false);
-          let sfxFlags = SFX_BSDF_END | select(SFX_ESCAPE, 0u, isHit) | select(0u, SFX_VALID, k != 0u && k <= B);
+          // M5 TD11 (T-C): SFX_DELTA_END = the final BSDF event was delta; written only with RSF_TEMPORAL (bitwise M4 off)
+          let sfxFlags = SFX_BSDF_END | select(SFX_ESCAPE, 0u, isHit) | select(0u, SFX_VALID, k != 0u && k <= B)
+            | select(0u, SFX_DELTA_END, bs.is_delta && (rsParams.flags & RSF_TEMPORAL) != 0u);
           pt_emit(ai, sel, di, w, endF, seed, flags, rc, jDen, rcWi, aux, rcRad, wBefore, endW, hist, curIds, sfxFlags, wOut,
                   select(FLT_MAX, h.t, isHit), select(vec3f(1.0), betaPost, k != 0u && k <= B - 1u), qb.p_marg, nCand, counter,
                   margin, select(RS_ENV_ID, h.primId, isHit));
