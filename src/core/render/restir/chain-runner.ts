@@ -38,6 +38,9 @@ export interface ChainSpec {
   masks?(t: number): ChainMasks | undefined;
   /** Rung 3.5: per-chain mean over frames [from, to] (inclusive), reduced as frame "avg". */
   average?: { from: number; to: number };
+  /** Called after frame t's GPU work completed (every submit of the frame done; before advance(t + 1)): per-frame
+   *  readback of tState / reservoirs / counters (T-B's T6(b) robust-mode checks). Unset: no behaviour change. */
+  afterFrame?(t: number, k: RestirKernel): Promise<void> | void;
 }
 
 /** Per-chain rows of one reduced frame (one batch = E rows). Sums, not means (compare.py ensemble.npz format). */
@@ -356,6 +359,7 @@ export class ChainRunner {
       const rest = packer.drain();                          // TD26: a submit never spans a frame boundary
       if (rest) { ms += await submit(rest); submits++; }
       records.push({ t, histValid: adv.histValid, flags: adv.flags, reasons: adv.reasons, temporalUnits, units: units.length, submits, ms });
+      await spec.afterFrame?.(t, k);
     }
     // ---- readback + counters
     const rc: RestirCounters = await k.readCounters(true);

@@ -56,54 +56,54 @@ const OUT = path.join(ROOT, 'validation/out');
 const PYTHON = path.join(ROOT, 'validation/.venv/bin/python');
 const MARKER_CHECK = path.join(ROOT, 'validation/tools/marker_check.py');
 
-const { values: args } = parseArgs({
-  options: {
-    package: { type: 'string' },
-    scene: { type: 'string' },
-    kernel: { type: 'string', default: 'emission' },
-    spp: { type: 'string', default: '64' },
-    batches: { type: 'string', default: '4' },
-    width: { type: 'string' },
-    height: { type: 'string' },
-    seed: { type: 'string' },
-    run: { type: 'string' },
-    frames: { type: 'string' },
-    check: { type: 'boolean', default: false },
-    'make-c0b': { type: 'boolean', default: false },
-    'max-bounces': { type: 'string' },
-    rr: { type: 'boolean', default: false },
-    technique: { type: 'string' },
-    'plant-emit-scale': { type: 'string' },
-    'plant-drop': { type: 'string' },
-    'light-mode': { type: 'string' },
-    'plant-glass': { type: 'string' },
-    'env-nee': { type: 'string' },
-    'env-cap': { type: 'string' },
-    'env-no-floors': { type: 'boolean', default: false },
-    'env-mis-power': { type: 'boolean', default: false },
-    'env-plant': { type: 'string' },
-    'env-strength-scale': { type: 'string' },
-    preset: { type: 'string', default: 'initial' },
-    'batch-offset': { type: 'string' },
-    'frames-per-batch': { type: 'string' },
-    members: { type: 'string' },
-    plant: { type: 'string' },
-    'w-scale': { type: 'string' },
-    chains: { type: 'string' },
-    'chain-base': { type: 'string' },
-    'chain-frames': { type: 'string' },
-    'test-frames': { type: 'string' },
-    average: { type: 'string' },
-    masks: { type: 'string' },
-    'temporal-mis': { type: 'string' },
-    'temporal-check': { type: 'string' },
-    refresh: { type: 'string' },
-    boost: { type: 'string' },
-    tplant: { type: 'string' },
-    'u8-plant': { type: 'string' },
-    mode: { type: 'string' },
-  },
-});
+const OPTIONS = {
+  package: { type: 'string' },
+  scene: { type: 'string' },
+  kernel: { type: 'string', default: 'emission' },
+  spp: { type: 'string', default: '64' },
+  batches: { type: 'string', default: '4' },
+  width: { type: 'string' },
+  height: { type: 'string' },
+  seed: { type: 'string' },
+  run: { type: 'string' },
+  frames: { type: 'string' },
+  check: { type: 'boolean', default: false },
+  'make-c0b': { type: 'boolean', default: false },
+  'max-bounces': { type: 'string' },
+  rr: { type: 'boolean', default: false },
+  technique: { type: 'string' },
+  'plant-emit-scale': { type: 'string' },
+  'plant-drop': { type: 'string' },
+  'light-mode': { type: 'string' },
+  'plant-glass': { type: 'string' },
+  'env-nee': { type: 'string' },
+  'env-cap': { type: 'string' },
+  'env-no-floors': { type: 'boolean', default: false },
+  'env-mis-power': { type: 'boolean', default: false },
+  'env-plant': { type: 'string' },
+  'env-strength-scale': { type: 'string' },
+  preset: { type: 'string', default: 'initial' },
+  'batch-offset': { type: 'string' },
+  'frames-per-batch': { type: 'string' },
+  members: { type: 'string' },
+  plant: { type: 'string' },
+  'w-scale': { type: 'string' },
+  chains: { type: 'string' },
+  'chain-base': { type: 'string' },
+  'chain-frames': { type: 'string' },
+  'test-frames': { type: 'string' },
+  average: { type: 'string' },
+  masks: { type: 'string' },
+  'temporal-mis': { type: 'string' },
+  'temporal-check': { type: 'string' },
+  refresh: { type: 'string' },
+  boost: { type: 'string' },
+  tplant: { type: 'string' },
+  'u8-plant': { type: 'string' },
+  mode: { type: 'string' },
+  } as const;
+const parse = (argv?: string[]) => parseArgs({ options: { ...OPTIONS, jobs: { type: 'string' } }, ...(argv ? { args: argv } : {}) }).values;
+let args = parse();
 
 const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
 
@@ -158,7 +158,10 @@ async function makeC0b(dir: string): Promise<void> {
   for (const [k, v] of pkg.files) await writeFile(path.join(dir, k), v);
 }
 
-async function main(): Promise<number> {
+/** A shared page when running a --jobs list (one Vite/Chrome, one GPU-lock hold for the whole list). */
+interface SharedPage { page: import('playwright').Page; chromeVersion: string }
+
+async function main(shared?: SharedPage): Promise<number> {
   if (!args.package && !args.scene) {
     console.error('usage: run-batches.ts (--package DIR | --scene URL) [--spp 64] [--batches 4] [--frames 0,1] [--check] [--make-c0b]');
     return 2;
@@ -215,30 +218,14 @@ async function main(): Promise<number> {
     if (args.plant && !['no-j', 'marginal-j'].includes(args.plant)) { console.error('--plant no-j|marginal-j'); return 2; }
     if (args.frames || args.scene || args.check) { console.error('--kernel restir: --frames/--scene/--check are not supported'); return 2; }
   }
-  const port = await freePort();
-  const vite: ViteDevServer = await createServer({
-    // no HMR / file watching: a source edit elsewhere in the tree (another agent, an editor) must never reload the
-    // harness page in the middle of a run ("Execution context was destroyed"); the page loads its modules once
-    root: ROOT, configFile: path.join(ROOT, 'vite.config.ts'), server: { port, strictPort: true, host: '127.0.0.1', hmr: false, watch: null }, logLevel: 'warn',
-    // a git worktree whose node_modules is a symlink to another checkout keeps its own dep-optimizer cache (never
-    // rewrite the other checkout's node_modules/.vite while its jobs run)
-    ...(worktreeCacheDir() ? { cacheDir: worktreeCacheDir() } : {}),
-  });
-  await vite.listen();
-  let browser: Browser | undefined;
+  const own = shared ? undefined : await openHarness();
   let failures = 0;
   try {
-    browser = await chromium.launch({ channel: 'chrome', headless: true });
-    const chromeVersion = browser.version();
-    const page = await browser.newPage();
-    page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.log(`[page:${m.type()}] ${m.text()}`); });
-    page.on('pageerror', (e) => console.log(`[pageerror] ${e.message}`));
-    await page.goto(`http://127.0.0.1:${port}/validation/harness/harness.html`);
-    await page.waitForFunction(() => window.__harness !== undefined, undefined, { timeout: 60_000 });
+    const { page, chromeVersion } = shared ?? own!;
     for (const frame of frames) {
       const runId = frame === undefined ? base : `${base}-f${frame}`;
-      console.log(`acquiring GPU lock (${GPU_LOCK}) ...`);
-      const releaseGpuLock = await acquireGpuLock('run-batches');
+      if (!shared) console.log(`acquiring GPU lock (${GPU_LOCK}) ...`);
+      const releaseGpuLock = shared ? Object.assign(() => undefined, { waitedMs: 0, holder: 'jobs' }) : await acquireGpuLock('run-batches');
       const waited = releaseGpuLock.waitedMs;
       let rep: RenderBatchesReport;
       try {
@@ -309,11 +296,65 @@ async function main(): Promise<number> {
       }
     }
   } finally {
-    await browser?.close();
-    await vite.close();
+    await own?.close();
   }
   console.log(failures ? `RESULT: FAIL (${failures})` : 'RESULT: PASS');
   return failures ? 1 : 0;
 }
 
-main().then((c) => process.exit(c), (e: unknown) => { console.error(e); process.exit(1); });
+/** Vite (no HMR / watching) + headless Chrome on the harness page. */
+async function openHarness(): Promise<SharedPage & { close(): Promise<void> }> {
+  const port = await freePort();
+  const vite: ViteDevServer = await createServer({
+    // no HMR / file watching: a source edit elsewhere in the tree (another agent, an editor) must never reload the
+    // harness page in the middle of a run ("Execution context was destroyed"); the page loads its modules once
+    root: ROOT, configFile: path.join(ROOT, 'vite.config.ts'), server: { port, strictPort: true, host: '127.0.0.1', hmr: false, watch: null }, logLevel: 'warn',
+    // a git worktree whose node_modules is a symlink to another checkout keeps its own dep-optimizer cache (never
+    // rewrite the other checkout's node_modules/.vite while its jobs run)
+    ...(worktreeCacheDir() ? { cacheDir: worktreeCacheDir() } : {}),
+  });
+  await vite.listen();
+  let browser: Browser | undefined;
+  try {
+    browser = await chromium.launch({ channel: 'chrome', headless: true });
+    const chromeVersion = browser.version();
+    const page = await browser.newPage();
+    page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.log(`[page:${m.type()}] ${m.text()}`); });
+    page.on('pageerror', (e) => console.log(`[pageerror] ${e.message}`));
+    await page.goto(`http://127.0.0.1:${port}/validation/harness/harness.html`);
+    await page.waitForFunction(() => window.__harness !== undefined, undefined, { timeout: 60_000 });
+    return { page, chromeVersion, close: async () => { await browser?.close(); await vite.close(); } };
+  } catch (e) {
+    await browser?.close(); await vite.close();
+    throw e;
+  }
+}
+
+/**
+ * --jobs FILE (M5 gate, restir-temporal-api.md Changelog E-11): a JSON array of argument lists, each one ordinary
+ * run-batches invocation, run on ONE harness page under ONE GPU-lock hold (the caller keeps the list's GPU time ≤ 12
+ * min). Many small renders (mask references, pilots, disocclusion flags) otherwise pay one lock wait each.
+ */
+async function jobsMain(file: string): Promise<number> {
+  const jobs = JSON.parse(await readFile(path.resolve(ROOT, file), 'utf8')) as string[][];
+  const h = await openHarness();
+  let failures = 0;
+  console.log(`acquiring GPU lock (${GPU_LOCK}) for ${jobs.length} jobs ...`);
+  const release = await acquireGpuLock('run-batches-jobs');
+  console.log(`     lock wait ${release.waitedMs.toFixed(0)} ms`);
+  try {
+    for (const j of jobs) {
+      args = parse(j);
+      console.log(`--- job ${j.join(' ')}`);
+      const c = await main(h).catch((e: unknown) => { console.error(e); return 1; });
+      if (c) failures++;
+    }
+  } finally {
+    release();
+    await h.close();
+  }
+  console.log(failures ? `JOBS: FAIL (${failures}/${jobs.length})` : `JOBS: PASS (${jobs.length})`);
+  return failures ? 1 : 0;
+}
+
+(args.jobs ? jobsMain(args.jobs) : main()).then((c) => process.exit(c), (e: unknown) => { console.error(e); process.exit(1); });

@@ -147,7 +147,7 @@ export interface PlantSpec {
 }
 const P = (id: string, name: string, pkg: string, rung: PlantSpec['rung'], args: string[], predict: Prediction[], o: Partial<PlantSpec> = {}): PlantSpec => ({ id, name, pkg, rung, args, predict, ...o });
 const pr = (frames: number[], region: string, sign: Prediction['sign']): Prediction[] => frames.map((frame) => ({ frame, region, sign }));
-/** §6.5 rendered plants (21). Regions: mask names of dyn_masks.py; `global` = the image mean. */
+/** §6.5 rendered plants (20; U8-4 deferred to M6, B-9). Regions: mask names of dyn_masks.py; `global` = the image mean. */
 export const M5_PLANTS: PlantSpec[] = [
   P('N1-mixed', 'N1 mixed E_{t-1} (TP_N1_MIXED)', 'ixs_e_addremove_256', '3.6', ['--tplant', 'n1Mixed'],
     [...pr([14, 15], 'M_light:A', '-'), ...pr([8], 'M_light:C', '-')], { dominance: { frames: [8, 14, 15], names: ['A', 'C'] } }),
@@ -166,11 +166,18 @@ export const M5_PLANTS: PlantSpec[] = [
   P('cp-plus1', 'c_p + 1 in the MIS denominator (TP_CP_PLUS1)', 'm5s_cornell_i', '3.4', ['--tplant', 'cpPlus1'], pr([24], 'global', '-')),
   P('U8-1', 'U8-1 w1 < 1 for delta (RSF_PLANT_U8_W1DELTA)', 'u8_c0c_point_b1', '3.4', ['--u8-plant', 'u8W1Delta'], pr([24], 'global', '-')),
   P('U8-3', 'U8-3 no p_k ratio (RSF_PLANT_U8_NO_PK)', 'u8_c0e_rect_b1', '3.4', ['--u8-plant', 'u8NoPk'], pr([24], 'global', 'detect')),
-  P('U8-4', 'U8-4 J = t_x^2/t_y^2 (RSF_PLANT_U8_T2)', 'u8_c0c_point_b0', '3.4', ['--u8-plant', 'u8T2'], pr([24], 'global', 'detect')),
   P('U8-6', 'U8-6 one-sided ignored (RSF_PLANT_U8_ONESIDED)', 'u8_c0e_rect_b1', '3.4', ['--u8-plant', 'u8OneSided'], pr([24], 'global', '+')),
   P('U8-9', 'U8-9 FAILED dropped from k (RSF_PLANT_U8_FAILED_K)', 'u8_c0e_rect_b1', '3.4', ['--u8-plant', 'u8FailedK'], pr([24], 'global', '-')),
   P('U8-2t', 'U8-2t stale aux across frames (TP_U8_STALE_AUX)', 'ixs_b_area_256', '3.6', ['--tplant', 'u8StaleAux'], pr([16, 24], 'global', 'detect')),
   P('U8-5t', 'U8-5t spot profile of t-1 (TP_U8_SPOT_PREV_AXIS)', 'ixs_c_spot_b03_256', '3.6', ['--tplant', 'u8SpotPrevAxis'], pr([20], 'global', 'detect')),
+];
+/** U8 plants deferred to M6 (Q6; B-9: U8-4 J = t_x²/t_y² needs x_{d−1} of case (a) in the shift source). Listed in the
+ *  summary as "deferred to M6", never silently absent. */
+export const M5_DEFERRED_PLANTS = [
+  { id: 'U8-4', name: 'U8-4 J = t_x^2/t_y^2 (RSF_PLANT_U8_T2)', why: 'coordinator B-9: the shift source carries no x_{d-1} for case (a)' },
+  { id: 'U8-7', name: 'U8-7 (Mode B)', why: 'Q6: Mode B temporal is M6' },
+  { id: 'U8-8', name: 'U8-8 (RIS-NEE tiles)', why: 'Q6: light tiles are M6' },
+  { id: 'U8-10', name: 'U8-10 (RIS-NEE tiles)', why: 'Q6: light tiles are M6' },
 ];
 export const AA_PKG = 'm5s_cornell_i';
 export const U8_SCENES = ['u8_c0c_point_b0', 'u8_c0c_point_b1', 'u8_c0d_spot_b0', 'u8_c0d_spot_b1', 'u8_c0e_rect_b0', 'u8_c0e_rect_b1'];
@@ -452,6 +459,44 @@ type Add = (name: string, ok: boolean, seconds: number, data?: unknown, detail?:
 type Rec = (name: string, ok: boolean, detail?: string) => void;
 interface Run { dir: string; meta: Record<string, any>; seconds: number; cacheHit?: boolean }
 
+// ------------------------------------------------------------------------------------------------ job collection (Changelog E-11)
+
+/** A deferred run-batches invocation: collected in a dry pass, then run in `--jobs` groups (one Chrome, one GPU-lock hold
+ *  per ≤ 10 min of GPU work), then post-processed into its cache directory by `finish`. */
+interface Job { argv: string[]; est: number; label: string; finish(): void }
+let collect: Job[] | undefined;
+const DEFERRED = -999;
+const JOB_GROUP_S = 600;
+const JOB_OVERHEAD_S = 5;
+const noAdd: Add = () => undefined;
+
+/** Run `fn` as a dry pass collecting every small cacheable render, run them grouped, then return (the caller re-runs
+ *  the phase for real: every collected render is now a cache hit). */
+function prefetch(label: string, dir: string, add: Add, fn: (a: Add) => void): void {
+  collect = [];
+  try { fn(noAdd); } finally { /* keep what was collected */ }
+  const jobs = collect;
+  collect = undefined;
+  if (!jobs.length) return;
+  const groups: Job[][] = [];
+  let cur: Job[] = [], est = 0;
+  for (const j of jobs) {
+    if (cur.length && est + j.est + JOB_OVERHEAD_S > JOB_GROUP_S) { groups.push(cur); cur = []; est = 0; }
+    cur.push(j); est += j.est + JOB_OVERHEAD_S;
+  }
+  if (cur.length) groups.push(cur);
+  groups.forEach((g, i) => {
+    const file = path.join(dir, 'jobs', `${safe(label)}-${i}.json`);
+    mkdirSync(path.dirname(path.join(ROOT, file)), { recursive: true });
+    writeFileSync(path.join(ROOT, file), JSON.stringify(g.map((j) => j.argv), null, 1));
+    console.log(`\n--- ${label}: job group ${i + 1}/${groups.length} (${g.length} runs, est ${g.reduce((a, j) => a + j.est + JOB_OVERHEAD_S, 0).toFixed(0)} s)`);
+    const r = sh('npx', ['tsx', 'validation/harness/run-batches.ts', '--jobs', file], (l) => /^(FAIL)\s|errors:|Error|lock wait|JOBS:/.test(l));
+    let failed = 0;
+    for (const j of g) { try { j.finish(); } catch (e) { failed++; console.log(`  finish ${j.label}: ${e instanceof Error ? e.message : e}`); } }
+    add(`${label}: job group ${i + 1}/${groups.length} (${g.length} runs under one GPU-lock hold)`, r.code === 0 && !failed, r.seconds, { file }, r.code === 0 ? undefined : r.out.slice(-300));
+  });
+}
+
 // ------------------------------------------------------------------------------------------------ PT runs (cached, chunked)
 
 const rbEcho = (l: string) => /^(FAIL)\s|errors:|Error|lock wait/.test(l);
@@ -466,6 +511,29 @@ function ptRunInto(pdir: string, frame: number | undefined, spp: number, B: numb
   const metas: Record<string, any>[] = [];
   let seconds = 0, out = '';
   mkdirSync(path.join(ROOT, dest), { recursive: true });
+  const finalize = () => {
+    const meta = metas.length === 1 ? { ...metas[0], files: metas[0].files } : mergeChunkMetas(metas);
+    const files = readdirSync(path.join(ROOT, dest)).filter((f) => /^batch_\d{3}\.pfm$/.test(f)).sort();
+    const imgs = files.map((f) => decodePFM(new Uint8Array(readFileSync(path.join(ROOT, dest, f)))));
+    const mean = new Float32Array(imgs[0].data.length);
+    for (const im of imgs) for (let i = 0; i < mean.length; i++) mean[i] += im.data[i] / imgs.length;
+    writeFileSync(path.join(ROOT, dest, 'mean.pfm'), encodePFM({ width: imgs[0].width, height: imgs[0].height, channels: 3, data: mean }));
+    writeFileSync(path.join(ROOT, dest, 'meta.json'), JSON.stringify(meta, null, 1));
+    return meta;
+  };
+  if (collect && k >= B) {
+    const run = `m5pt-${sha(dest).slice(0, 10)}-c0`;
+    collect.push({ argv: [...base, '--batches', String(B), '--run', run], est: estSeconds, label: dest, finish: () => {
+      const from = produced(run);
+      const meta = tryJson(path.relative(ROOT, path.join(from, 'meta.json')));
+      if (!meta) throw new Error(`${run}: no meta.json`);
+      for (const f of readdirSync(from)) if (/^batch_\d{3}\.pfm$/.test(f)) renameSync(path.join(from, f), path.join(ROOT, dest, f));
+      rmSync(from, { recursive: true, force: true });
+      metas.push(meta);
+      finalize();
+    } });
+    return { code: DEFERRED, out: '', seconds: 0 };
+  }
   for (let off = 0; off < B; off += k) {
     const n = Math.min(k, B - off);
     const run = `m5pt-${sha(dest).slice(0, 10)}-c${off}`;
@@ -478,13 +546,7 @@ function ptRunInto(pdir: string, frame: number | undefined, spp: number, B: numb
     rmSync(from, { recursive: true, force: true });
     metas.push(meta);
   }
-  const meta = metas.length === 1 ? { ...metas[0], files: metas[0].files } : mergeChunkMetas(metas);
-  const files = readdirSync(path.join(ROOT, dest)).filter((f) => /^batch_\d{3}\.pfm$/.test(f)).sort();
-  const imgs = files.map((f) => decodePFM(new Uint8Array(readFileSync(path.join(ROOT, dest, f)))));
-  const mean = new Float32Array(imgs[0].data.length);
-  for (const im of imgs) for (let i = 0; i < mean.length; i++) mean[i] += im.data[i] / imgs.length;
-  writeFileSync(path.join(ROOT, dest, 'mean.pfm'), encodePFM({ width: imgs[0].width, height: imgs[0].height, channels: 3, data: mean }));
-  writeFileSync(path.join(ROOT, dest, 'meta.json'), JSON.stringify(meta, null, 1));
+  const meta = finalize();
   return { code: meta.ok ? 0 : 1, out, seconds, dir: dest, meta };
 }
 
@@ -497,8 +559,9 @@ function ptRef(pkg: string, frame: number | undefined, spp: number, B: number, s
   const n = existsSync(path.join(ROOT, dest)) ? readdirSync(path.join(ROOT, dest)).filter((f) => /^batch_\d{3}\.pfm$/.test(f)).length : 0;
   const step = `PT ${tag} ${pkg}${dirOverride ? ` (${path.basename(dirOverride)} only)` : ''} f${frame ?? 'base'} (${spp} spp x ${B}, seed ${seed})`;
   if (meta?.ok && n === B) { add(step, true, 0, { dir: dest, cache_hit: true }, 'cache hit'); return { dir: dest, meta, seconds: 0, cacheHit: true }; }
-  console.log(`\n--- ${step}`);
+  if (!collect) console.log(`\n--- ${step}`);
   const r = ptRunInto(pdir, frame, spp, B, seed, dest, estSeconds, extra);
+  if (r.code === DEFERRED) return undefined;
   const ok = r.code === 0 && !!r.meta?.ok;
   if (r.dir) writeFileSync(path.join(ROOT, dest, 'cache-key.json'), `${JSON.stringify(keyObj, null, 1)}\n`);
   add(step, ok, r.seconds, { dir: dest, cache_hit: false }, ok ? `rendered in ${(r.meta!.timings.totalMs / 1000).toFixed(1)} s` : `exit ${r.code} ${r.out.slice(-300)}`);
@@ -519,6 +582,14 @@ function chainRun(a: ChainArgs, dest: string, estSeconds: number): { dir?: strin
     ...(a.average ? ['--average', `${a.average.from}:${a.average.to}`] : []), ...(a.masks ? ['--masks', a.masks] : []), ...(a.extra ?? [])];
   let seconds = 0, out = '', b0 = 0;
   const parts: string[] = [];
+  if (collect && chunks.length === 1) {
+    const run = `m5ch-${sha(dest).slice(0, 10)}-b0`;
+    collect.push({ argv: [...base, '--chains', String(a.R), '--batch-offset', '0', '--run', run], est: estSeconds, label: dest, finish: () => {
+      const r = finishChainParts(a, [path.join('validation/out', run)], dest, 0, '');
+      if (!r.dir) throw new Error(r.out.slice(-300));
+    } });
+    return { code: DEFERRED, out: '', seconds: 0 };
+  }
   for (const nb of chunks) {
     const run = `m5ch-${sha(dest).slice(0, 10)}-b${b0}`;
     console.log(`  chains batches ${b0}..${b0 + nb - 1} of ${a.R / E_MEMBERS}`);
@@ -529,6 +600,12 @@ function chainRun(a: ChainArgs, dest: string, estSeconds: number): { dir?: strin
     parts.push(from);
     b0 += nb;
   }
+  return finishChainParts(a, parts, dest, seconds, out);
+}
+
+/** Merge the chunk runs of one chain unit into `dest` (per test frame: dynamic.py merge-npz; meta.json summed). */
+function finishChainParts(a: ChainArgs, parts: string[], dest: string, seconds: number, out: string): { dir?: string; meta?: Record<string, any>; code: number; out: string; seconds: number } {
+  if (parts.some((p) => !tryJson(path.join(p, 'meta.json')))) return { code: 1, out: `${out}\nmissing meta.json`, seconds };
   const subs = [...(a.testFrames.map((t) => `f${t}`)), ...(a.average ? ['avg'] : [])];
   for (const s of subs) {
     const inputs = parts.map((p) => path.join(p, s)).filter((p) => existsSync(path.join(ROOT, p, 'ensemble.npz')));
@@ -553,8 +630,9 @@ function pilotChains(a: ChainArgs, add: Add): Run | undefined {
   const meta = tryJson(path.join(dest, 'meta.json'));
   const step = `pilot chains ${a.pkg} ${a.preset} ${a.extra?.join(' ') ?? ''} (${a.R} chains)`;
   if (meta?.ok !== undefined && a.testFrames.every((t) => existsSync(path.join(ROOT, dest, `f${t}`, 'ensemble.npz')))) { add(step, true, 0, { dir: dest, cache_hit: true }, 'cache hit'); return { dir: dest, meta: meta!, seconds: 0, cacheHit: true }; }
-  console.log(`\n--- ${step}`);
-  const r = chainRun(a, dest, 0);
+  if (!collect) console.log(`\n--- ${step}`);
+  const r = chainRun(a, dest, a.frames ? (a.frames * (a.R / E_MEMBERS) * (a.preset === 'full' ? 0.04 : 0.025)) : 30);
+  if (r.code === DEFERRED) return undefined;
   // pilots are sized even when T16 fails (e.g. P0 stubs); the unit runs gate T16
   const ok = !!r.dir && !!r.meta;
   if (ok) writeFileSync(path.join(ROOT, dest, 'cache-key.json'), `${JSON.stringify(keyObj, null, 1)}\n`);
@@ -578,18 +656,29 @@ function buildMasks(pkg: string, frames: number[], add: Add, o: { partition?: bo
   const need = frames.filter((t) => !existsSync(path.join(ROOT, disDir, `f${t}`, 'disocc.bin')));
   if (partition && need.length) {
     const run = `m5dis-${pkg}-${stamp()}`;
-    const r = sh('npx', ['tsx', 'validation/harness/run-batches.ts', '--package', pkgDir(pkg), '--kernel', 'restir', '--preset', 'temporal', '--mode', 'disocc', '--test-frames', need.join(','), '--seed', String(SEEDS.ptMask), '--run', run], rbEcho);
-    for (const t of need) {
-      const src = path.join(ROOT, 'validation/out', run, `f${t}`, 'disocc.bin');
-      if (existsSync(src)) { mkdirSync(path.join(ROOT, disDir, `f${t}`), { recursive: true }); renameSync(src, path.join(ROOT, disDir, `f${t}`, 'disocc.bin')); }
+    const argv = ['--package', pkgDir(pkg), '--kernel', 'restir', '--preset', 'temporal', '--mode', 'disocc', '--test-frames', need.join(','), '--seed', String(SEEDS.ptMask), '--run', run];
+    const absorb = () => {
+      for (const t of need) {
+        const src = path.join(ROOT, 'validation/out', run, `f${t}`, 'disocc.bin');
+        if (existsSync(src)) { mkdirSync(path.join(ROOT, disDir, `f${t}`), { recursive: true }); renameSync(src, path.join(ROOT, disDir, `f${t}`, 'disocc.bin')); }
+      }
+      rmSync(path.join(ROOT, 'validation/out', run), { recursive: true, force: true });
+    };
+    if (collect) collect.push({ argv, est: 2 * need.length, label: `disocc ${pkg}`, finish: absorb });
+    else {
+      const r = sh('npx', ['tsx', 'validation/harness/run-batches.ts', ...argv], rbEcho);
+      absorb();
+      add(`M_disocc harness ${pkg} f${need.join(',')}`, r.code === 0, r.seconds, undefined, r.code === 0 ? undefined : r.out.slice(-300));
     }
-    rmSync(path.join(ROOT, 'validation/out', run), { recursive: true, force: true });
-    add(`M_disocc harness ${pkg} f${need.join(',')}`, r.code === 0, r.seconds, undefined, r.code === 0 ? undefined : r.out.slice(-300));
   }
   const set: MaskSet = { dir, names: [], testMasks: [], bits: new Map() };
   for (const t of frames) {
     const refT = ptRef(pkg, t, MASK_PT.spp, MASK_PT.B, SEEDS.ptMask, add, est, 'mask');
     const refP = partition ? ptRef(pkg, t - 1, MASK_PT.spp, MASK_PT.B, SEEDS.ptMask, add, est, 'mask') : undefined;
+    if (collect) {
+      for (const n of o.dominance?.frames.includes(t) ? o.dominance.names : []) ptRef(pkg, t, MASK_PT.spp, MASK_PT.B, SEEDS.ptMask, add, est, 'mask', [], dominancePackage(pkg, n));
+      continue;
+    }
     if (!refT || (partition && !refP)) return undefined;
     const domArgs: string[] = [];
     if (o.dominance?.frames.includes(t)) {
@@ -606,7 +695,7 @@ function buildMasks(pkg: string, frames: number[], add: Add, o: { partition?: bo
     add(`masks ${pkg} f${t} (${tag})`, r.code === 0 && !!mj, r.seconds, mj && { names: mj.names, dropped: mj.dropped, pixels: mj.pixels }, r.code === 0 ? mj?.names.join(' ') : r.out.slice(-300));
     if (!mj) return undefined;
   }
-  return set;
+  return collect ? undefined : set;
 }
 
 function masksOf(dir: string, t: number): { names: string[]; test: { name: string; file: string }[]; perMask: Uint8Array[] } {
@@ -749,7 +838,9 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
 
   // ---- masks (dyn units) + pilots + sizing -------------------------------------------------------------------------------
   const maskDirs = new Map<string, string>();
-  for (const pkg of [...new Set(units.filter((u) => u.kind === 'dyn').map((u) => u.pkg))]) {
+  const dynPkgs = [...new Set(units.filter((u) => u.kind === 'dyn').map((u) => u.pkg))];
+  prefetch('mask references + disocclusion flags', dir, add, (a) => { for (const pkg of dynPkgs) buildMasks(pkg, M5_SEQUENCES.find((x) => x.pkg === pkg)!.testFrames, a); });
+  for (const pkg of dynPkgs) {
     const s = M5_SEQUENCES.find((x) => x.pkg === pkg)!;
     const m = buildMasks(pkg, s.testFrames, add);
     if (m) maskDirs.set(pkg, m.dir);
@@ -757,6 +848,7 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
   for (const u of units) if (u.kind === 'dyn') u.masks = maskDirs.get(u.pkg);
   const ptPlans = new Map<string, PtPlan>();
   const pilotDirs: Record<string, string> = {};
+  prefetch('pilots', dir, add, (a) => sizeAll(units.map((u) => ({ ...u, notes: [...u.notes] })), new Map(), {}, a));
   sizeAll(units, ptPlans, pilotDirs, add);
   // + a per-invocation overhead (Vite + Chrome start, pipeline compiles, chunking probe): one per lock chunk
   const invocations = units.reduce((a, u) => a + chainChunks(u.R || E_MEMBERS, E_MEMBERS, u.chainSeconds * 1.2).length, 0) + [...ptPlans.values()].reduce((a, p) => a + Math.ceil(p.B / chunkBatches(p.B, p.seconds * 1.2)), 0);
@@ -774,6 +866,10 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
   const results: Record<string, any>[] = [];
   if (o.prerenderPtRefs) {
     for (const p of ptPlans.values()) ptRef(p.pkg, p.frame, p.spp, p.B, SEEDS.pt, add, p.seconds * 1.2);
+  }
+  if (!o.pilotOnly) {
+    // every PT reference that fits one GPU-lock hold, grouped (the larger ones run chunked when their unit needs them)
+    prefetch('PT references', dir, add, (a) => { for (const p of ptPlans.values()) ptRef(p.pkg, p.frame, p.spp, p.B, SEEDS.pt, a, p.seconds * 1.2); });
   }
   if (!o.pilotOnly && !o.prerenderPtRefs) {
     // ---- static ladders (3.3 → 3.4 → 3.5) and U8 chains ----------------------------------------------------------------------
@@ -793,6 +889,7 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
       results.push(...aaAndSynthetic(units, ptPlans, dir, runId, nU, add));
     }
   }
+  results.push(...M5_DEFERRED_PLANTS.map((p) => ({ unit: `plant-${p.id}`, kind: 'plant-deferred', status: 'deferred to M6', ok: true, note: `${p.name}: ${p.why}` })));
   results.push(...M5_REPORT_ONLY.map((pkg) => ({ unit: `${pkg}@3.3-3.5`, kind: 'report-only', status: 'not run', ok: true, note: 'reported, not gating (Q2); gated again by M8 validate --all' })));
 
   // ---- summary --------------------------------------------------------------------------------------------------------
@@ -880,14 +977,14 @@ function sizeAll(units: UnitPlan[], ptPlans: Map<string, PtPlan>, pilotDirs: Rec
         const pf = f < 0 ? undefined : f;
         const masks = dyn && us[0].masks ? { dir: us[0].masks!, t: f } : undefined;
         const s = ptPilotSideTile(pkg, pf, tile, add, masks, pilotDirs);
-        if (!s) return undefined;
+        if (!s) { if (collect) continue; return undefined; }
         ptSides.set(f, s);
       }
       const variants: { id: string; u: Map<number, Float64Array>; msPerChain: number; rFloor: number }[] = [];
       const gvariants: typeof variants = [];
       for (const u of us) {
         const pilot = pilotChains({ pkg, preset: u.preset, R: PILOT_CHAINS, seed: SEEDS.chainPilot, frames: u.frames, testFrames: u.average ? [] : u.testFrames, average: u.average, masks: u.masks, extra: u.extra }, add);
-        if (!pilot) return undefined;
+        if (!pilot || collect) { if (collect) continue; return undefined; }
         pilotDirs[u.id] = pilot.dir;
         const msPerChain = (pilot.meta.timings.batchMs as number[]).reduce((a2, b2) => a2 + b2, 0) / PILOT_CHAINS;   // GPU batches only (setup and the chunking probe are per invocation)
         const um = new Map<number, Float64Array>(), ug = new Map<number, Float64Array>();
@@ -908,6 +1005,7 @@ function sizeAll(units: UnitPlan[], ptPlans: Map<string, PtPlan>, pilotDirs: Rec
         variants.push({ id: u.id, u: um, msPerChain, rFloor: u.average ? R_FLOOR_AVG : R_FLOOR });
         gvariants.push({ id: u.id, u: ug, msPerChain, rFloor: u.average ? R_FLOOR_AVG : R_FLOOR });
       }
+      if (collect) return undefined;
       const frozen = frames.map((f) => ({ f, z: tryJson(ptSizeFile(pkg, f < 0 ? undefined : f)) as { spp: number } | undefined }));
       const ptIn = frames.map((f, j) => ({ frame: f, u: uVec(ptSides.get(f)!.side, ptSides.get(f)!.side, d), msPerSample: ptSides.get(f)!.ms, fixedSpp: frozen[j].z?.spp }));
       const z = sizeGroup(ptIn, variants);

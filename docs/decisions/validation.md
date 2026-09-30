@@ -353,7 +353,7 @@ which changes only the interactive `RestirFramePass.encode`, not the batch path)
   multiples of 16, PT spp per batch niceCeil ≥ 256, B = 16. Unit cap 30 min per side: the tile aggregate is enlarged
   one step (32² → 64², 64² → 128²; masks unchanged); a unit whose global aggregate alone exceeds the cap gets 90 min once
   (Q4), beyond that it is `infeasible` and goes to the coordinator. Plan > 14 h ⇒ `--part core` + `--part static` (Q3).
-- **Plants** (§6.5, TD29; plant_sign.py): 21 rendered plants at 1× chains against 4× PT references (seed 7201), chains
+- **Plants** (§6.5, TD29; plant_sign.py): 20 rendered plants (U8-4 is deferred to M6 with U8-7, 8, 10 by B-9 / Q6 and listed as such in the summary) at 1× chains against 4× PT references (seed 7201), chains
   cut after the last predicted frame; a plant passes iff detected (half of the planted chains vs a PT half fails in
   ≥ 9/10 repeats, PT A/A ≥ 9/10, E-5; full comparison not `pass`) AND every evaluable prediction holds (one-sided z ≥ 3
   on its region; "only" predictions: no opposite-sign region/tile with z ≥ 4; empty regions are "not evaluable", E-6).

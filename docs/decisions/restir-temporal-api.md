@@ -1459,6 +1459,13 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
 - **E-10 U8 rungs 3.1/3.1b/3.2** run through the M4 sequential harness (run-batches --kernel restir) and are sized by
   gate-m4's `sizeScene` (M4 pilots 128 / 8 frames × 16) around the u8 package's frozen base-state PT reference, which
   they share with the package's 3.3 / 3.4 chain units.
+- **E-11 Grouped GPU-lock holds for small renders** (§6.6 control 7; affects nobody: run-batches.ts, T-E may touch).
+  `run-batches.ts --jobs FILE` runs a JSON list of ordinary invocations on one harness page under ONE lock hold.
+  gate-m5 collects the small cacheable renders of a phase in a dry pass (mask references at t and t−1, the
+  disocclusion runs, the dominance renders, the PT and chain pilots, every PT reference that fits one hold), runs them
+  in groups of ≤ 10 min of estimated GPU work, then runs the phase for real on the caches. With the main checkout's
+  gates holding the lock for hours, one lock wait per group instead of per render is the difference between hours and
+  days of wall time; each hold stays ≤ 12 min.
 - **B-7 T3-2 harness hook instead of `RS_TEMPORAL_TRACE`** (affects nobody). The composer has no `#define` and the kernel
   passes extra defines only to `rs_initial`, so the T3-2 / T4-t harness does not use a define: `t-select.wgsl` has
   `const TSEL_TRACE_FORCE_P: bool = false`, which the test flips to `true` through `instrumentation.extraSources` (every
