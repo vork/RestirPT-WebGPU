@@ -569,7 +569,7 @@ export class RestirKernel {
     const interactive = !!out.interactive;
     const fname: RsPassName = interactive ? 'rs_finalize_frame' : 'rs_finalize';
     if (!out.accum || !out.counters) throw new Error('RestirKernel.frameUnits: out.accum and out.counters are required');
-    const colour = interactive ? out.colorTarget?.createView() : undefined;
+    const colour = interactive && out.colorTarget ? this.colourView(out.colorTarget) : undefined;
     const fin = this.pipelineSync(fname, interactive ? this.colorFormat : undefined);
     const fflags = interactive ? ((out.interactive!.accumulate ? K.RSD_ACCUMULATE : 0) | (out.interactive!.advanced ? K.RSD_ADVANCED : 0)) : 0;
     const g2 = res.g2(fname, this.lastFinal, { accum: out.accum, counters: out.counters, colour });
@@ -582,6 +582,17 @@ export class RestirKernel {
     if (a.members > 1 || out.ensemble) units.push(...this.ensemble.frameUnits(this, t));
     return units;
   }
+
+  /** One view per interactive colour target (M5 T-D, restir-temporal-api.md Changelog D-4): a fresh createView() per
+   *  frame gave the finalize bind group a new cache key every frame (the resources' group cache grew without bound).
+   *  A new target (resize, format change) is a new texture, hence a new view; RestirFramePass.setTargets drops the
+   *  finalize groups of the old one (forgetExternalGroups). */
+  colourView(tex: GPUTexture): GPUTextureView {
+    let v = this.colourViews.get(tex);
+    if (!v) { v = tex.createView(); this.colourViews.set(tex, v); }
+    return v;
+  }
+  private readonly colourViews = new WeakMap<GPUTexture, GPUTextureView>();
 
   /** Read (and optionally clear) the arena header: queue headers, RSC_* counters, the SC histogram, f_r. */
   async readCounters(reset: boolean): Promise<RestirCounters> {
@@ -700,13 +711,11 @@ export class RestirFramePass {
     if (!t || !this.accum) return false;
     k.beginSubmit();
     const a = k.resources.alloc;
-    this.holdView = this.holdView?.tex === t.color ? this.holdView : { tex: t.color, view: t.color.createView() };
-    const g2 = k.resources.g2('rs_finalize_frame', k.finalResIndex(), { accum: this.accum, counters: this.counters, colour: this.holdView.view });
+    const g2 = k.resources.g2('rs_finalize_frame', k.finalResIndex(), { accum: this.accum, counters: this.counters, colour: k.colourView(t.color) });
     k.encodePass(encoder, 'rs_finalize_frame', k.pipelineSync('rs_finalize_frame', this.colorFormat), g2,
       { t: 0, passId: 0, round: k.lastRounds, flags: frame.accumulate ? K.RSD_ACCUMULATE : 0, rowBase: 0, rowEnd: a.atlasH }, k.perPixelWorkgroups(0, a.atlasH));
     return true;
   }
-  private holdView: { tex: GPUTexture; view: GPUTextureView } | undefined;
 
   destroy(): void {
     this.counters.destroy();

@@ -505,8 +505,8 @@ function qvalidCode(f: number): number {
   if (f & TS.TS_QVALID) return f & TS.TS_PICK_RING ? 2 : 1;
   return f & TS.TS_NO_HIST ? 4 : 3;
 }
-function refreshClass(tf: number, st: number, gen: number): number {
-  if (!(tf & K.TF_REFRESH) || gen !== GEN || !(st & TS.SXS_DONE)) return 0;
+function refreshClass(tf: number, st: number, gen: number, frameGen = GEN): number {
+  if (!(tf & K.TF_REFRESH) || gen !== frameGen || !(st & TS.SXS_DONE)) return 0;
   if (st & TS.SXS_E2) return 4;
   if (st & TS.SXS_UNDEF) return 3;
   if (st & TS.SXS_ZERO) return 5;
@@ -573,7 +573,8 @@ function synthTemporal(P: number, NS: number, seed: number): TSynth {
 }
 
 /** Expected value of temporal view `id` at pixel ai (mirror of rsdbg_temporal / rsdbg_tpick). */
-function expectedTemporalView(id: number, x: TSynth, P: number, NS: number, ai: number, tf: number): { code?: number; v?: number[] } {
+function expectedTemporalView(id: number, x: TSynth, P: number, NS: number, ai: number, tf: number,
+  frameGen = GEN, lcb: (entryCur: number) => number = () => 0): { code?: number; v?: number[] } {
   const t = decodeTStateLocal(x.words, P, NS, ai);
   const qvalid = (t.flags & TS.TS_QVALID) !== 0, invq = (t.flags & TS.TS_INV_QUEUED) !== 0;
   const fwdOk = qvalid && jwValid(t.fwdJ);
@@ -582,8 +583,8 @@ function expectedTemporalView(id: number, x: TSynth, P: number, NS: number, ai: 
   const hist = decodeReservoir(x.resIn, qp);
   switch (id) {
     case RS_VIEW_T.qvalid: return { code: qvalidCode(t.flags) };
-    case RS_VIEW_T.refreshFwd: { const s = decodeSfxLocal(x.words, P, NS, 0, qp); return { code: qvalid ? refreshClass(tf, s.status, s.gen) : 0 }; }
-    case RS_VIEW_T.refreshInv: { const s = decodeSfxLocal(x.words, P, NS, 1, ai); return { code: invq ? refreshClass(tf, s.status, s.gen) : 0 }; }
+    case RS_VIEW_T.refreshFwd: { const s = decodeSfxLocal(x.words, P, NS, 0, qp); return { code: qvalid ? refreshClass(tf, s.status, s.gen, frameGen) : 0 }; }
+    case RS_VIEW_T.refreshInv: { const s = decodeSfxLocal(x.words, P, NS, 1, ai); return { code: invq ? refreshClass(tf, s.status, s.gen, frameGen) : 0 }; }
     case RS_VIEW_T.fwdCode: return { code: qvalid ? t.fwdCode & 0xFF : NONE };
     case RS_VIEW_T.invCode: return { code: invq ? t.invCode & 0xFF : NONE };
     case RS_VIEW_T.logJ: return { v: [fwdOk ? log2pos(f32(t.fwdJ)) : 0] };
@@ -601,8 +602,9 @@ function expectedTemporalView(id: number, x: TSynth, P: number, NS: number, ai: 
       if (hist.tech === K.RS_TECH_BSDF_ENV) return { code: (tf & K.TF_ENV_MOVED ? 1 : 0) | (tf & K.TF_ENV_RADIO ? 2 : 0) };
       if (hist.tech !== K.RS_TECH_NEE) return { code: 0 };
       const s = decodeSfxLocal(x.words, P, NS, 0, qp);
-      if (s.gen !== GEN || s.status & TS.SXS_UNDEF || s.entryTo === 0xFFFFFFFF) return { code: 4 };
-      return { code: 0 };     // TF_LIGHTS_SAME: analytic change bits 0
+      if (s.gen !== frameGen || s.status & TS.SXS_UNDEF || s.entryTo === 0xFFFFFFFF) return { code: 4 };
+      const b = lcb(s.entryTo);
+      return { code: (b & K.LCB_MOVED ? 1 : 0) | (b & K.LCB_RADIO ? 2 : 0) };     // synthetic: TF_LIGHTS_SAME ⇒ 0
     }
   }
   throw new Error(`not a temporal view ${id}`);
@@ -843,5 +845,104 @@ describe('U-TD-2: view 493 (forward vs stored p̂) = 0 on static identity frames
     expect(worst).toBeLessThanOrEqual(1e-5);
     expect(motion, 'static camera, jitter off: s′ − q = 0 (A-7; f32 re-projection)').toBeLessThan(1e-4);
     rig.destroy();
+  });
+});
+
+describe('U-TD-1 (d): views 482, 483, 493, 494, 496 on real frames with light changes (robust mode)', () => {
+  it('moving + brightening lights, moving camera, temporalCheck robust (rounds 0: res[h] still readable): views ≡ tState / sfxOut / res read back', async () => {
+    const W = 48, H = 32, P = W * H;
+    const rig = await debugRig(W, H, 'temporal', { maxBounces: 3, temporalCheck: 'robust' });
+    const k = rig.kernel;
+    const NS = k.resources.alloc.slots;
+    const base = rig.g.gpu.scene.lights;
+    const lightsAt = (t: number) => base.map((l) => {
+      const m = Float32Array.from(l.matrix);
+      if (l.id === 1) m[12] += 0.03 * t;                                   // point light moves (LCB_MOVED)
+      return { ...l, matrix: m, power: l.id === 3 ? l.power * (1 + 0.5 * (t % 2)) : l.power };   // rect power steps (RADIO)
+    });
+    const frame = async (t: number, s: Partial<DebugSettings>) => {
+      const adv = k.advance({ t, camera: camAt(0.003 * t), lights: lightsAt(t) });
+      const h = k.historyIndex();
+      const fr = await rig.frame(t, s, {
+        custom: (enc) => {
+          rig.pass.encodeBegin(enc);
+          for (const u of k.frameUnits(t, { accum: rig.accum, counters: rig.counters })) u.encode(enc);
+          rig.pass.encodeViews(enc, { rounds: k.lastRounds, t });
+        },
+      });
+      expect(k.lastRounds, 'temporal preset: no spatial round (res[h] intact)').toBe(0);
+      const tw = await k.readTemporalState();
+      const resOut = await k.readReservoirs(k.resBase() as 0 | 1);
+      const resIn = h < 0 ? resOut : await k.readReservoirs(h as 0 | 1);   // h = −1: first frame (no history)
+      const st = k.lights.state, slot = st.curSlot;
+      const lcb = (e: number) => {
+        if (e === slot.envEntry) return (adv.flags & K.TF_ENV_MOVED ? K.LCB_MOVED : 0) | (adv.flags & K.TF_ENV_RADIO ? K.LCB_RADIO : 0);
+        if (e < slot.nAnalytic) return adv.flags & K.TF_LIGHTS_SAME ? 0 : st.records[slot.lightOff + 28 * e + 26];
+        return 0;
+      };
+      return { fr, adv, x: { words: tw, resIn, resOut, base: 0 } as TSynth, lcb };
+    };
+    let t = 1;
+    for (; t <= 3; t++) await frame(t, {});
+    const bad: string[] = [];
+    const stats: Record<number, Record<string, number>> = {};
+    for (const id of [RS_VIEW_T.refreshFwd, RS_VIEW_T.refreshInv, RS_VIEW_T.phatRel, RS_VIEW_T.robust, RS_VIEW_T.lightsChanged]) {
+      const { fr, adv, x, lcb } = await frame(t, { mode: id });
+      t++;
+      expect(adv.histValid, adv.reasons.join(',')).toBe(true);
+      expect(adv.flags & K.TF_REFRESH, 'refresh frame').toBe(K.TF_REFRESH);
+      const hist: Record<string, number> = {};
+      let nb = 0;
+      for (let ai = 0; ai < P; ai++) {
+        const ts = decodeTStateLocal(x.words, P, NS, ai);
+        if (ts.flags & TS.TS_BG) continue;                                // T3 skips background (fill / cleared AOV)
+        const e = expectedTemporalView(id, x, P, NS, ai, adv.flags, adv.temporal.frameGen, lcb);
+        const got = e.code !== undefined ? fr.aov[4 * ai] >>> 0 : fr.aovF[4 * ai];
+        const want = e.code !== undefined ? e.code >>> 0 : e.v![0];
+        const ok = e.code !== undefined ? got === want : Math.abs(got - want) <= 1e-6 || relErr(got, want) <= 1e-5;
+        const key = e.code !== undefined ? String(want) : want === 0 ? '0' : '≠0';
+        hist[key] = (hist[key] ?? 0) + 1;
+        if (!ok && nb++ < 3) bad.push(`view ${id} px ${ai}: ${got} ≠ ${want} (flags ${ts.flags})`);
+      }
+      stats[id] = hist;
+    }
+    console.log(`[U-TD-1d] value histograms (hit pixels): ${JSON.stringify(stats)}`);
+    expect(bad, bad.join('\n')).toEqual([]);
+    // non-vacuous: refreshed records of both directions, robust comparisons, light-change bits
+    const nz = (id: number, keys: string[]) => keys.reduce((a, kk) => a + (stats[id][kk] ?? 0), 0);
+    expect(nz(RS_VIEW_T.refreshFwd, ['1', '2', '3', '4', '5']), 'fwd refresh classes').toBeGreaterThan(0);
+    expect(nz(RS_VIEW_T.refreshInv, ['1', '2', '3', '4', '5']), 'inv refresh classes').toBeGreaterThan(0);
+    expect(nz(RS_VIEW_T.robust, ['≠0']) + (stats[RS_VIEW_T.robust]['0'] ?? 0)).toBeGreaterThan(0);
+    expect(nz(RS_VIEW_T.lightsChanged, ['1', '2', '3', '4', '5', '6', '7']), 'lightsChanged bits').toBeGreaterThan(0);
+    rig.destroy();
+  });
+});
+
+describe('interactive RestirFramePass: the finalize bind-group cache stays bounded (Changelog D-4)', () => {
+  it('N advanced + held frames reuse one colour view: the group cache size is constant after the first frames', async () => {
+    const g = await gpuScene(bitFixtureScene('x_quads'));
+    const dev = g.device;
+    const { FrameUniformBuffer } = await import('../../src/core/render/frame-uniforms.ts');
+    const W = 64, H = 48;
+    const pass = await RestirKernel.interactive(dev, g.gpu, g.env, 'rgba16float', { settings: restirSettings('interactive', { maxBounces: 3 }), features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
+    const color = dev.createTexture({ size: [W, H], format: 'rgba16float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC });
+    const fu = new FrameUniformBuffer(dev);
+    pass.setTargets({ width: W, height: H, color, frameUniforms: fu.buffer });
+    const k = pass.kernel;
+    const groups = () => (k.resources as unknown as { groups: Map<string, GPUBindGroup> }).groups.size;
+    const sizes: number[] = [];
+    for (let f = 0; f < 24; f++) {
+      fu.write({ camera: boxCamera(), prevCamera: boxCamera(), width: W, height: H, frameIndex: f, seedIndex: f, runSeed: 7, flags: 0,
+        jitterMode: JITTER_IID, jitter: [0.5, 0.5], origin: g.gpu.origin, exposure: 1, time: 0, dt: 0, sceneDiag: 1 });
+      const enc = dev.createCommandEncoder();
+      if (f % 4 === 3) pass.encodeHold(enc, { accumulate: true });
+      else { k.advanceInteractive(fu.buffer, { reset: false }); pass.encode(enc, { advanced: true, accumulate: true }); }
+      dev.queue.submit([enc.finish()]);
+      await dev.queue.onSubmittedWorkDone();
+      sizes.push(groups());
+    }
+    console.log(`[bind-group cache] sizes ${sizes.join(',')}`);
+    expect(sizes[23], 'no growth after the warm-up frames').toBe(sizes[7]);
+    pass.destroy(); color.destroy(); fu.destroy(); g.destroy();
   });
 });

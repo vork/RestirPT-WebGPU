@@ -1477,3 +1477,9 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   code of the spatial shift with the plant off (xq-3.2 / i-3.2 reservoirs differed from the M4 goldens); plants must
   enter as `select` on an input factor (`pKj = select(…, 1.0, plant)`) or as a separate call whose result replaces a
   value only under the uniform, and every plant edit re-runs U-M4-BITS.
+- **D-4 Interactive colour view cached** (affects T-A: `kernel.ts`, one method; nobody's interface). `frameUnits()`
+  created a new view of the interactive colour target every frame, so the finalize bind group got a new cache key (and
+  a new entry in `RestirResources`' group cache) every frame, without bound (an M4 leak). `RestirKernel.colourView(tex)`
+  keeps one view per colour texture (WeakMap); `frameUnits()` and `RestirFramePass.encodeHold()` use it. A new target
+  is a new texture (resize, format change) and `setTargets` still drops the old finalize groups. Test: restir-debug
+  "finalize bind-group cache stays bounded" (24 advanced + held frames, constant group count).
