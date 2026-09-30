@@ -19,8 +19,10 @@ import {
 
 afterAll(releaseTestGpu);
 
-// U-PT-BITS (1): hashes of 64-spp PT images recorded on the pre-refactor tree (commit 6efd0bd, Chrome lane / Metal).
-const PT_BITS: Record<BitFixture, string> = { c0c: '10d55063', c0e: '87ffe26f', c0m: '2aa85291', x_quads: '194ab49b', c0s: '378997d3' };
+// U-PT-BITS (1): hashes of 64-spp PT images (Chrome lane / Metal). Recorded on the pre-refactor tree (commit 6efd0bd:
+// c0c 10d55063, c0e 87ffe26f, c0m 2aa85291, x_quads 194ab49b, c0s 378997d3) and re-recorded on the quantized fixture
+// geometry (data-formats.md P1: lattice positions, TRI_FLAT, oct normals, vertex arena).
+const PT_BITS: Record<BitFixture, string> = { c0c: 'fbc9b735', c0e: 'beac8da6', c0m: '7302afbf', x_quads: '0d5a782a', c0s: '384b0b6b' };
 
 describe('U-PT-BITS: the PT is bit-identical after the env-sample / length1 / bsdf_query refactors', () => {
   it('(1) image hashes of 64 spp on C0c, C0e, C0m, (x) quads, C0s', async () => {
@@ -355,53 +357,75 @@ describe('rung 3.1 frames through RestirKernel', () => {
 const lum = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
 
 describe('U-RIS-1: streaming RIS over the path tree reproduces the PT sample (S = 1, no RR)', () => {
-  // (a) RS_PT_DIRECTIONS (the PT's own directions): the contract criterion — ≥ 99.99% of pixels within 1e-4 rel, the
+  // (a) RS_PT_DIRECTIONS (the PT's own directions): the contract criterion — ≥ 99.98% of pixels within 1e-4 rel, the
   //     sum over the agreeing pixels within 1e-5. (b) production D3 directions (positions rebuilt from ids; the offset
   //     ray origin makes ω differ from the sampled direction by ~1e-5 rad, amplified by glossy lobes): reported, the
   //     ≥ 99% of pixels within 1e-3 and the sum over them within 1e-4 (Changelog A16).
+  // Discrete flips (restir-api.md Changelog DF-1): the tree re-tests its rc segment with visible() (B-5), the PT does
+  // not, so where that segment passes within f32 resolution of a silhouette edge the tree drops candidates the PT keeps
+  // (c0e px 55,30 frame 2 on the quantized fixtures: 1.9e-8 m from the mirror's bottom edge). Each case runs the tree
+  // twice: production, and RS_TEST_NO_RC_VIS (re-test off, the PT's visibility exactly). The CONTINUOUS criteria apply
+  // to the re-test-off run. A pixel that disagrees only with the re-test on is a B-5 flip: it must be a pure drop
+  // (Σw_prod < Σw_noVis, the re-test only removes candidates) and their rate is bounded by 1e-3 of the pixels.
   for (const variant of ['pt-directions', 'd3'] as const) {
     for (const name of ['c0c', 'c0e', 'x_quads', 'c0s'] as BitFixture[]) {
       it(`${variant} ${name} 64²: per pixel Σw = lum(L_PT − L1) of the PT sample with the same seed`, async () => {
         const W = 64, H = 64, FR = 8;
-        const rig = await restirRig(bitFixtureScene(name), W, H, { settings: { maxBounces: 3 }, initialDefines: variant === 'pt-directions' ? { RS_PT_DIRECTIONS: true } : {} });
+        const base: Record<string, boolean> = variant === 'pt-directions' ? { RS_PT_DIRECTIONS: true } : {};
+        const rig = await restirRig(bitFixtureScene(name), W, H, { settings: { maxBounces: 3 }, initialDefines: base });
+        const rigNv = await restirRig(bitFixtureScene(name), W, H, { settings: { maxBounces: 3 }, initialDefines: { ...base, RS_TEST_NO_RC_VIS: true } });
         const { device } = rig.g;
         const pt = await PtKernel.create(device, rig.g.gpu, rig.g.env, { features: rig.g.features, wgslLanguageFeatures: rig.g.wgslLanguageFeatures, maxBounces: 3 });
         pt.setView({ camera: boxCamera(), width: W, height: H, runSeed: 11, jitterMode: JITTER_IID });
         const acc = storageBuffer(device, W * H * 16), cnt = storageBuffer(device, 16);
         const tol = variant === 'd3' ? 1e-3 : 1e-4;
-        let n = 0, agree = 0, sumA = 0, sumB = 0, worst = 0, nonzero = 0, within4 = 0;
-        const worstList: string[] = [];
+        let n = 0, agree = 0, sumA = 0, sumB = 0, worst = 0, nonzero = 0, within4 = 0, agreeProd = 0, flips = 0, flipsNotDrop = 0;
+        const worstList: string[] = [], flipList: string[] = [];
         for (let t = 0; t < FR; t++) {
           const r = await rig.frames(1, t);
+          const rn = await rigNv.frames(1, t);
           expect(r.counters).toEqual([0, 0, 0, 0]);
+          expect(rn.counters).toEqual([0, 0, 0, 0]);
           expect(r.arena.rsc.candNonFinite).toBe(0);
-          const res = await rig.kernel.readReservoirs(0);
+          const rf = new Float32Array((await rig.kernel.readReservoirs(0)).buffer);
+          const rfN = new Float32Array((await rigNv.kernel.readReservoirs(0)).buffer);
           const L1 = new Float32Array((await readTexture4(device, rig.kernel.resources.l1)).buffer);
           const enc = device.createCommandEncoder();
           enc.clearBuffer(acc); enc.clearBuffer(cnt);
           pt.encode(enc, { sampleBase: t, sampleCount: 1, rowBase: 0, rows: H }, acc, cnt);
           device.queue.submit([enc.finish()]);
           const Lpt = new Float32Array(await readBuffer(device, acc, W * H * 16));
-          const rf = new Float32Array(res.buffer);
           for (let i = 0; i < W * H; i++) {
-            const ws = rf[i * RES_WORDS + RW.wSum];
+            const ws = rf[i * RES_WORDS + RW.wSum], wn = rfN[i * RES_WORDS + RW.wSum];
             const ref = lum(Lpt[4 * i] - L1[4 * i], Lpt[4 * i + 1] - L1[4 * i + 1], Lpt[4 * i + 2] - L1[4 * i + 2]);
             // f32 round-off of L_PT − L1 when L1 dominates (camera-visible emitters)
             const scale = Math.max(Math.abs(ref), 1e-5 * lum(L1[4 * i], L1[4 * i + 1], L1[4 * i + 2]), 1e-12);
-            const e = ws === ref ? 0 : Math.abs(ws - ref) / scale;
+            const err = (x: number) => (x === ref ? 0 : Math.abs(x - ref) / scale);
+            const e = err(wn), eProd = err(ws);
             n++;
             if (ref > 0) nonzero++;
             if (e <= 1e-4) within4++;
-            if (e <= tol) { agree++; sumA += ws; sumB += ref; } else if (worstList.length < 6) worstList.push(`t${t} px${i % W},${Math.floor(i / W)} Σw=${ws} ref=${ref}`);
+            if (eProd <= tol) agreeProd++;
+            if (e <= tol) {
+              agree++; sumA += wn; sumB += ref;
+              if (eProd > tol) {                         // B-5 flip: disagrees only with the re-test on
+                flips++;
+                if (!(ws < wn)) flipsNotDrop++;
+                if (flipList.length < 4) flipList.push(`t${t} px${i % W},${Math.floor(i / W)} Σw=${ws} (re-test off ${wn}) ref=${ref}`);
+              }
+            } else if (worstList.length < 6) worstList.push(`t${t} px${i % W},${Math.floor(i / W)} Σw=${wn} ref=${ref}`);
             worst = Math.max(worst, e);
           }
         }
         const frac = agree / n, sumRel = Math.abs(sumA - sumB) / sumB;
-        console.log(`[U-RIS-1 ${variant} ${name}] n=${n} nonzero=${nonzero} within1e-4=${(100 * within4 / n).toFixed(4)}% within${tol}=${(frac * 100).toFixed(4)}% sumRel=${sumRel.toExponential(2)} worst=${worst.toExponential(2)} ${worstList.join(' | ')}`);
+        console.log(`[U-RIS-1 ${variant} ${name}] n=${n} nonzero=${nonzero} (re-test off) within1e-4=${(100 * within4 / n).toFixed(4)}% within${tol}=${(frac * 100).toFixed(4)}% sumRel=${sumRel.toExponential(2)} worst=${worst.toExponential(2)} ${worstList.join(' | ')}` +
+          ` · production within${tol}=${(100 * agreeProd / n).toFixed(4)}% · B-5 flips ${flips} (${(flips / n).toExponential(2)}), not a drop ${flipsNotDrop} ${flipList.join(' | ')}`);
         expect(nonzero).toBeGreaterThan(n / 4);
         expect(frac).toBeGreaterThanOrEqual(variant === 'd3' ? 0.99 : 0.9998);
         expect(sumRel).toBeLessThanOrEqual(variant === 'd3' ? 1e-4 : 1e-5);
-        pt.destroy(); acc.destroy(); cnt.destroy(); rig.destroy();
+        expect(flips / n).toBeLessThanOrEqual(1e-3);
+        expect(flipsNotDrop).toBe(0);
+        pt.destroy(); acc.destroy(); cnt.destroy(); rig.destroy(); rigNv.destroy();
       });
     }
   }

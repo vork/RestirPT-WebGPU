@@ -313,7 +313,7 @@ describe('PT: interactive pass (PtFramePass, renderer PT mode)', () => {
     const batch = await ptRig(scene, Wf, Hf, camf, { maxBounces: 3, seed });
     const ref = await batch.acc.runBatch((enc, d, a, c) => batch.kernel.encode(enc, { ...d, sampleBase: t }, a, c), 1, 0);
     expectCounters(ref.counters);
-    const origin = computeRenderOrigin(scene.bounds);
+    const origin = computeRenderOrigin(scene.bounds, scene.quant);
     const gpu = await SceneGpu.create(device, scene, origin, {
       textureMode: 'validation', watertight: true, buildBvh: async (p, i) => buildBvh(p, i, { mt: true, woop: true }), features, wgslLanguageFeatures,
     });

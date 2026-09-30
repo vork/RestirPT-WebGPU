@@ -14,6 +14,10 @@
 // RS_PT_DIRECTIONS (tests only, U-RIS-1 part a): the PT's directions instead of D3 (V₁ = −camera ray, ω = the
 // sampled direction, vertices oriented against the ray), so the tree reproduces pt_trace's contributions up to
 // expression order. Never used by production pipelines.
+// RS_TEST_NO_RC_VIS (tests only, U-RIS-1 flip attribution): skips the B-5 re-test of the rc segment with visible()
+// (visOk ≡ true), so the tree's visibility is exactly the PT's (closest hit along the sampled ray + NEE shadow ray).
+// Pixels that disagree with the PT only while the re-test is on are discrete FP boundary flips of that test.
+// Never used by production pipelines.
 // RS_DUMP_CANDIDATES (tests, §2.12): every streamed candidate of tree 0 (≤ RS_DUMP_CAP per pixel) is also written to
 // candDump as a full record (W = its RIS weight w_i, wSum = Σw before it, nCand = its ordinal) + the primIds of the
 // base path's x₁…x₈ (BVH_MISS beyond x_{d−1}); the per-pixel count follows the records.
@@ -163,6 +167,9 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
             var visOk = true;
             if (k == B) { visOk = visible(prevV.pos, prevV.ng, prevPrim, cur.pos, cur.ng, curPrim); }
             else if (k <= B - 1u) { visOk = treeVis; }
+#if RS_TEST_NO_RC_VIS
+            visOk = true;
+#endif
             let w = select(0.0, luminance(F) * rrInv, visOk);
             let counter = (s << 20u) | (B << 12u);
             let wBefore = wSum;
@@ -278,6 +285,9 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
         var visOk = true;                            // B-5 (env rc: the same ray as visibleInf, no extra test)
         if (k == B + 1u && isHit) { visOk = visible(cur.pos, cur.ng, curPrim, nxt.pos, nxt.ng, h.primId); }
         else if (k != 0u && k <= B) { visOk = treeVis; }
+#if RS_TEST_NO_RC_VIS
+        visOk = true;
+#endif
         let w = select(0.0, luminance(endF) * rrInv, visOk);
         let counter = (s << 20u) | (B << 12u) | 1u;
         let wBefore = wSum;

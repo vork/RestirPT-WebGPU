@@ -71,7 +71,7 @@ export async function renderRestirBatches(ctx: GpuContext, o: RenderRestirBatche
   if (!src.size) throw new Error(`${o.package}: package without a render size`);
   const [W, H] = src.size;   // internal scale 1 (T16): always the package's resolution
   const tLoad = performance.now();
-  const origin = computeRenderOrigin(src.scene.bounds);
+  const origin = computeRenderOrigin(src.scene.bounds, src.scene.quant);
   const watertight = o.watertight ?? true;
   const gpu = await SceneGpu.create(device, src.scene, origin, { textureMode: 'validation', watertight, features, wgslLanguageFeatures });
   const env = await createEnvResources(device, src.scene.env);

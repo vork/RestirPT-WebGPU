@@ -150,7 +150,7 @@ describe('WGSL composition', () => {
   it('material-eval.wgsl composes with the scene group and textures', () => {
     const code = composeWgsl('material/material-eval.wgsl', {
       sources: shaderSources,
-      defines: { ...base, SCENE_GROUP: 1, CUSTOM_ALPHA: false, TEX_GROUP: 1, TEX_BINDING_BASE: 8, TEX_ARRAYS: 2, TEX_SAMPLERS: 1 },
+      defines: { ...base, SCENE_GROUP: 1, CUSTOM_ALPHA: false, VERTEX_FORMAT: 1, TEX_GROUP: 1, TEX_BINDING_BASE: 8, TEX_ARRAYS: 2, TEX_SAMPLERS: 1 },
     }).code;
     expect(code).toContain('fn material_eval(hit: SurfaceHit, V: vec3f) -> MatEval');
     expect(code.match(/^struct MatEval \{/gm)).toHaveLength(1);

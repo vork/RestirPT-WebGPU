@@ -7,6 +7,7 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { quantizeScene } from '../../src/core/scene/quantize.ts';
 import { exportScenePackage } from '../../src/core/scene/scene-package.ts';
 import type { SceneData } from '../../src/core/scene/types.ts';
 
@@ -54,7 +55,7 @@ async function main(): Promise<void> {
     { name: 'spot_c0d_blend0.16_512', blend: 0.16, plant: { of: 'spot_c0d_512', what: 'spotBlend 0.15 -> 0.16' } },
   ];
   for (const v of variants) {
-    const pkg = await exportScenePackage(scene(v.blend), {
+    const pkg = await exportScenePackage(quantizeScene(scene(v.blend)).scene, {
       camera, render: { width: 512, height: 512, maxBounces: 0 }, lightMode: 'A', flatShaded: true, name: v.name,
       source: { uri: 'validation/scenes/make-spot-c0d.ts' },
     });

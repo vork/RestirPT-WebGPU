@@ -1,4 +1,4 @@
-# Scene bridge format (scene package v1)
+# Scene bridge format (scene package v2)
 
 A **scene package** is the exact scene our renderer draws, exported so that Blender can rebuild it for Cycles
 (plan §5 M2, §7.5). It is written by `src/core/scene/scene-package.ts` (browser or Node) and read by
@@ -22,7 +22,7 @@ A **scene package** is the exact scene our renderer draws, exported so that Blen
 
 ```jsonc
 {
-  "format": "restir-scene-package", "version": 1,
+  "format": "restir-scene-package", "version": 2,
   "name": "cornell",
   "source": { "uri": "validation/assets/cornell/cornell.glb", "sha256": "..." },      // informational
   "buffers": {                                  // byte ranges in geometry.bin (offset, length in bytes, dtype)
@@ -31,9 +31,17 @@ A **scene package** is the exact scene our renderer draws, exported so that Blen
     "uv0":       { ..., "dtype": "f32", "components": 2 },            // glTF UV convention (origin top-left)
     "color0":    { ..., "dtype": "f32", "components": 4 },            // optional
     "indices":   { ..., "dtype": "u32", "components": 3 },            // one entry per triangle, primId order
-    "triMaterial": { ..., "dtype": "u32", "components": 1 }
+    "triMaterial": { ..., "dtype": "u32", "components": 1 },
+    "triFlags":  { ..., "dtype": "u32", "components": 1 }             // optional (TRI_* bits, types.ts); readers may ignore it
   },
   "flatShaded": true,                           // Blender: shade_flat on all faces; else custom split normals
+  "quant": {                                    // v2 (data-formats.md §B0): the lattices every geometry value lies on
+    "mode": "quantized" | "lossless",
+    "posLog2": -16,                             // positions: global lattice, step 2^posLog2 m (P21)
+    "uv": [ { "ku": -15, "kv": -16, "baseU": 0, "baseV": 0, "wide": false } ],   // one per material: uv = (q + base)·2^k
+    "uvTolerance": 0.125,                       // τ (texels) the UV lattices were chosen with
+    "normal": "oct16", "tangent": "oct15", "color": "rgba8" | "rgba16" | "none"
+  },
   "materials": [ {
       "name": "white", "model": "v1" | "principled",
       // model v1 (validation BSDF, plan §1.5): Diffuse BSDF + Glossy BSDF(GGX) mixed by 'mix' (0 = pure diffuse)
@@ -65,6 +73,23 @@ A **scene package** is the exact scene our renderer draws, exported so that Blen
   ]
 }
 ```
+
+## Package v2: quantized geometry (docs/decisions/data-formats.md §B0)
+
+- Every loader runs `quantizeScene` once (the only lossy step). The buffers hold the **dequantized f32 values** — exactly
+  what the GPU vertex arena decodes — so Blender renders the GPU geometry bit for bit. `quant` records the lattices.
+- `readScenePackage` (TS) **verifies** every referenced value against `quant` (positions integral multiples of
+  2^posLog2 with |n| < 2^24, normals exact oct16 codes, UVs on their material's lattice unless `wide`, COLOR_0 exact
+  unorm8/16 products) and refuses the package otherwise (hard error). `build_scene.py` re-checks the positions.
+- `flatShaded` ⇔ every triangle carries `TRI_FLAT` (the GPU shades flat faces with ns = ng, as Cycles does). A quantized
+  scene that mixes flat and smooth faces is exported smooth, with a scene.json warning: Blender then uses the flat faces'
+  stored (oct-snapped face) normals where the GPU uses ng.
+- The UV flip `v_b = 1 − v` is exact on the dyadic UV lattices.
+- Tangents are not exported (Blender recomputes MikkTSpace; data-formats.md E-7).
+- `"mode": "lossless"` (loader-fidelity / E2E stock-import gates): the geometry is the loader's f32 output; no lattice
+  checks, `flatShaded` detected from the normals as in v1.
+- v1 packages (no `quant`) are still read: TRI_FLAT everywhere when `flatShaded`, then re-quantized with a warning (their
+  Cycles references are stale). `build_scene.py` accepts v1 and v2.
 
 ## Rules
 

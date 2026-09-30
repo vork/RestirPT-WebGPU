@@ -1,4 +1,4 @@
-// Scene package v1 (docs/decisions/scene-bridge.md — THE contract with validation/blender/build_scene.py).
+// Scene package v2 (docs/decisions/scene-bridge.md — THE contract with validation/blender/build_scene.py).
 // exportScenePackage: SceneData (+ camera, render settings, light mode, frames) → { scene.json, geometry.bin,
 // tex_<i>.png, env.exr }. readScenePackage: the inverse (round-trip tested in tests/scene/scene-package.test.ts).
 // Works in the browser, in Workers and in Node (CompressionStream + WebCrypto only).
@@ -9,17 +9,22 @@
 // - env.exr: the exact float32 GPU texels (RGBA) flipped to TOP-DOWN rows, ZIP compressed. scene.json env.sha256 =
 //   SHA-256 of that top-down little-endian float32 RGBA array (ENV-U9 pixel-hash definition).
 // - Anything the bridge cannot represent exactly is a hard error (contract "Rules").
+// - v2 (data-formats.md §B0): scene.json `quant` holds the quantization parameters (position lattice exponent,
+//   per-material UV lattices, normal / colour encodings). The geometry arrays are the DEQUANTIZED f32 values, so
+//   Blender renders exactly the GPU geometry; the reader re-verifies that every value is on its stored lattice (hard
+//   error). flatShaded ⇔ every triangle is TRI_FLAT. v1 packages are read and re-quantized with a warning.
 import { encodeExr, flipRows } from '../io/exr.ts';
 import { decodePng, encodePng } from '../io/png.ts';
 import { sha256Hex } from '../io/zlib.ts';
 import { decodeExr } from './env/exr.ts';
+import { QuantizationError, assertQuantized, quantizeScene } from './quantize.ts';
 import {
-  TRI_ALPHA_MASK, TRI_EMISSIVE, type CameraData, type EnvironmentData, type LightData, type MaterialData, type SceneData,
-  type SceneGeometry, type TextureData, type TextureRef,
+  TRI_ALPHA_MASK, TRI_EMISSIVE, TRI_FLAT, type CameraData, type EnvironmentData, type LightData, type MaterialData, type SceneData,
+  type SceneGeometry, type SceneQuant, type TextureData, type TextureRef,
 } from './types.ts';
 
 export const SCENE_PACKAGE_FORMAT = 'restir-scene-package';
-export const SCENE_PACKAGE_VERSION = 1;
+export const SCENE_PACKAGE_VERSION = 2;
 
 /** plan §1.4 Modes (A′ = pass-through only after delta lobes; its Cycles reference is Mode B: per-light MIS on). */
 export type LightMode = 'A' | 'B' | 'A′';
@@ -40,7 +45,8 @@ export interface ExportScenePackageOptions {
   render: PackageRender;
   lightMode: LightMode;
   frames?: PackageFrame[];
-  /** Default: detected (every vertex normal equals its face's geometric normal). */
+  /** Quantized scenes: must agree with TRI_FLAT (default: every triangle TRI_FLAT). Lossless scenes: default detected
+   *  (every vertex normal equals its face's geometric normal). */
   flatShaded?: boolean;
   name?: string;
   source?: { uri: string; sha256?: string };
@@ -108,6 +114,8 @@ export interface SceneJson {
   render: PackageRender;
   frames?: { frame: number; label?: string; camera?: { matrix: number[]; yfov: number }; lights?: Record<string, { matrix?: number[]; power?: number }>; env?: { rotationZ?: number; strength?: number } }[];
   warnings?: string[];
+  /** v2: quantization parameters (data-formats.md §B0); the geometry is on these lattices. */
+  quant?: SceneQuant;
 }
 
 export interface ScenePackage { files: Map<string, Uint8Array>; json: SceneJson }
@@ -133,6 +141,24 @@ export async function exportScenePackage(scene: SceneData, opts: ExportScenePack
   }
   if (g.normals.length !== nVerts * 3 || g.uv0.length !== nVerts * 2 || g.triMaterial.length !== nTris) fail('inconsistent SceneGeometry lengths');
   for (let i = 0; i < g.triMaterial.length; i++) if (g.triMaterial[i] >= scene.materials.length) fail(`triangle ${i} references material ${g.triMaterial[i]}`);
+  // ---- quantization (v2) ----
+  const quant = scene.quant ?? fail('scene is not quantized (run quantizeScene after loading; data-formats.md §B0)');
+  const exportWarnings: string[] = [];
+  let flatShaded: boolean;
+  if (quant.mode === 'quantized') {
+    try { assertQuantized(g, quant); } catch (e) { fail(e instanceof QuantizationError ? e.message : String(e)); }
+    if (quant.uv.length !== scene.materials.length) fail(`quant.uv has ${quant.uv.length} lattices for ${scene.materials.length} materials`);
+    let nFlat = 0;
+    for (let t = 0; t < nTris; t++) if (g.triFlags[t] & TRI_FLAT) nFlat++;
+    const allFlat = nFlat === nTris;
+    if (opts.flatShaded === true && !allFlat) fail(`flatShaded package but ${nTris - nFlat} of ${nTris} triangles are not TRI_FLAT (the GPU would shade them smooth)`);
+    flatShaded = opts.flatShaded ?? allFlat;
+    if (!flatShaded && nFlat > 0) {
+      exportWarnings.push(`${nFlat} TRI_FLAT triangle(s) in a smooth package: Blender shades them with their stored (flat) vertex normals, the GPU with ng`);
+    }
+  } else {
+    flatShaded = opts.flatShaded ?? detectFlatShaded(g);
+  }
 
   // ---- geometry.bin ----
   const parts: { key: string; data: Float32Array | Uint32Array; components: number }[] = [
@@ -246,7 +272,8 @@ export async function exportScenePackage(scene: SceneData, opts: ExportScenePack
     name: opts.name ?? scene.name,
     ...(opts.source ? { source: opts.source } : {}),
     buffers,
-    flatShaded: opts.flatShaded ?? detectFlatShaded(g),
+    flatShaded,
+    quant: { ...quant, uv: quant.uv.map((l) => ({ ku: l.ku, kv: l.kv, baseU: l.baseU, baseV: l.baseV, wide: l.wide })) },
     materials,
     textures,
     lights,
@@ -263,7 +290,7 @@ export async function exportScenePackage(scene: SceneData, opts: ExportScenePack
         env: f.env,
       })),
     } : {}),
-    ...(scene.warnings.length ? { warnings: [...scene.warnings] } : {}),
+    ...(scene.warnings.length || exportWarnings.length ? { warnings: [...scene.warnings, ...exportWarnings] } : {}),
   };
   files.set('scene.json', new TextEncoder().encode(JSON.stringify(json, null, 1)));
   return { files, json };
@@ -345,7 +372,8 @@ export async function readScenePackage(input: PackageFiles): Promise<LoadedScene
   };
   const json = JSON.parse(new TextDecoder().decode(get('scene.json'))) as SceneJson;
   if (json.format !== SCENE_PACKAGE_FORMAT) throw new ScenePackageError(`not a scene package (format '${json.format}')`);
-  if (json.version !== SCENE_PACKAGE_VERSION) throw new ScenePackageError(`unsupported package version ${json.version}`);
+  if (json.version !== SCENE_PACKAGE_VERSION && json.version !== 1) throw new ScenePackageError(`unsupported package version ${json.version}`);
+  if (json.version === 2 && !json.quant) throw new ScenePackageError('package v2 without a quant block');
   const bin = get('geometry.bin');
   const bdv = new DataView(bin.buffer, bin.byteOffset, bin.byteLength);
   const view = (key: string, required: boolean): Float32Array | Uint32Array | undefined => {
@@ -363,7 +391,7 @@ export async function readScenePackage(input: PackageFiles): Promise<LoadedScene
   const nVerts = positions.length / 3;
   const materials: MaterialData[] = json.materials.map(materialFromJson);
   const color0 = view('color0', false) as Float32Array | undefined;
-  const triFlags = (view('triFlags', false) as Uint32Array | undefined) ?? computeTriFlags(triMaterial, materials, color0, indices);
+  const triFlags = (view('triFlags', false) as Uint32Array | undefined) ?? computeTriFlags(triMaterial, materials, json.version === 2 && json.flatShaded);
   const geometry: SceneGeometry = {
     positions,
     normals: view('normals', true) as Float32Array,
@@ -399,11 +427,27 @@ export async function readScenePackage(input: PackageFiles): Promise<LoadedScene
       tint: [...(e.tint ?? [1, 1, 1])] as V3, rotationZ: e.rotationZ ?? 0, visibleToCamera: e.visibleToCamera ?? true,
     };
   }
-  const scene: SceneData = {
+  let scene: SceneData = {
     name: json.name, geometry, materials, textures, lights, cameras: [{ ...camera, matrix: new Float32Array(camera.matrix) }], env,
     bounds: boundsOf(positions, indices), warnings: [...(json.warnings ?? [])],
   };
   if (!scene.env) delete scene.env;
+  if (json.version === 1) {
+    // v1: no stored lattice. Flat packages are TRI_FLAT everywhere (Blender shades them flat), then re-quantize.
+    if (json.flatShaded) for (let t = 0; t < triFlags.length; t++) triFlags[t] |= TRI_FLAT;
+    scene = quantizeScene(scene).scene;
+    scene.warnings.push('package v1 re-quantized on read (data-formats.md §B0): its Cycles references are stale');
+  } else {
+    const q = json.quant!;
+    if (q.mode === 'quantized') {
+      if (q.uv.length !== materials.length) throw new ScenePackageError(`quant.uv has ${q.uv.length} lattices for ${materials.length} materials`);
+      try { assertQuantized(geometry, q, 'package'); } catch (e) { throw new ScenePackageError(e instanceof Error ? e.message : String(e)); }
+      let nFlat = 0;
+      for (let t = 0; t < triFlags.length; t++) if (triFlags[t] & TRI_FLAT) nFlat++;
+      if (json.flatShaded && nFlat !== triFlags.length) throw new ScenePackageError(`flatShaded package with ${triFlags.length - nFlat} non-TRI_FLAT triangle(s)`);
+    }
+    scene.quant = { ...q, uv: q.uv.map((l) => ({ ...l })) };
+  }
   const lightMode: LightMode = (json.lightMode as string) === "A'" ? 'A′' : json.lightMode;   // ASCII spelling accepted
   return { scene, camera, render: json.render, lightMode, flatShaded: json.flatShaded, frames: json.frames, json };
 }
@@ -464,14 +508,16 @@ function materialFromJson(mj: Partial<MaterialJson> & { name: string; model: Mat
   return stripUndefined(md);
 }
 
-/** triFlags when the package has none: emissive materials, and MASK materials (conservatively always tested). */
-function computeTriFlags(triMaterial: Uint32Array, materials: MaterialData[], _color0: Float32Array | undefined, _indices: Uint32Array): Uint32Array {
+/** triFlags when the package has none (calib_scenes.py): emissive materials, MASK materials (conservatively always
+ *  tested), and TRI_FLAT everywhere for a flat-shaded v2 package. */
+function computeTriFlags(triMaterial: Uint32Array, materials: MaterialData[], flat: boolean): Uint32Array {
   const out = new Uint32Array(triMaterial.length);
   for (let t = 0; t < out.length; t++) {
     const m = materials[triMaterial[t]];
     let f = 0;
     if (Math.max(...m.emissiveFactor) * m.emissiveStrength > 0) f |= TRI_EMISSIVE;
     if (m.alphaMode === 'MASK') f |= TRI_ALPHA_MASK;
+    if (flat) f |= TRI_FLAT;
     out[t] = f;
   }
   return out;

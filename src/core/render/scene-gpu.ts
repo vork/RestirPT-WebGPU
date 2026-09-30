@@ -3,25 +3,29 @@
 //   the BVH, the vertex buffer and the camera all live in the same f32 internal frame. `origin` is kept for exports.
 // - The SAH BVH is built in its Worker (browser) or inline (Node); both MT and Woop layouts are kept on the CPU so
 //   the watertight toggle only re-uploads the triangle buffer.
-// - Storage buffers of the scene group (5 of the 10 per stage): bvh nodes, bvh tris, vertices (position, normal,
-//   uv0 and COLOR_0 merged, 48 B), triangles (indices + material + flags merged, 16 B), materials (336 B).
-//   Tangents are uploaded as their own buffer for later passes (normal maps, M7) but are not bound in M1.
+// - Storage buffers of the scene group (5 of the 10 per stage): bvh nodes, bvh tris, the vertex arena
+//   (gpu/vertex-format.ts: 16 B quantized records + wide-UV / COLOR_0 sections, or 48 B f32 records for lossless
+//   scenes), triangles (indices + material + flags merged, 16 B), materials (336 B).
+// - Quantized scenes (SceneData.quant, data-formats.md §B0): the packer is a lossless recoding and THROWS unless every
+//   value round-trips bit-exactly; the render origin must be a lattice point (computeRenderOrigin(bounds, quant)).
+// - Tangents are not uploaded until M7 binds them (data-formats.md P0; then oct 2 × 15 + sign, 4 B).
 // - Textures: validation path by default (plan §1.6), interactive on request.
 import { buildBvh } from '../bvh/sah-builder.ts';
 import { uploadBvh, type BvhData, type BvhGpuBuffers } from '../bvh/layout.ts';
 import type { Defines } from '../gpu/wgsl-composer.ts';
-import type { MaterialData, SceneData, SceneGeometry } from '../scene/types.ts';
+import { materialUvWords, packVertexArena, VERTEX_BYTES_F32, VERTEX_BYTES_Q, type VertexArena } from '../gpu/vertex-format.ts';
+import type { MaterialData, SceneData, SceneGeometry, SceneQuant } from '../scene/types.ts';
 import { createGpuTextures, packTexSlot, type GpuTextures, type TexturePathMode } from './textures-gpu.ts';
 
 export const SCENE_GROUP_DEFAULT = 1;
 export const SCENE_BINDING = { bvhNodes: 0, bvhTris: 1, vertices: 2, tris: 3, materials: 4, textureBase: 8 } as const;
-export const VERTEX_BYTES = 48;
+export { VERTEX_BYTES_F32, VERTEX_BYTES_Q };
 export const TRI_BYTES = 16;
 /** Byte offsets of MaterialGpu (scene-data.wgsl); tests/render/scene-gpu.test.ts checks them against the WGSL. */
 export const MATERIAL_LAYOUT = {
   baseColor: 0, emission: 16, alphaCutoff: 28, metallic: 32, roughness: 36, ior: 40, flags: 44,
   specularColor: 48, specularFactor: 60, v1Diffuse: 64, transmission: 76, v1Glossy: 80, v1Roughness: 92,
-  v1Mix: 96, normalScale: 100,
+  v1Mix: 96, normalScale: 100, uvBaseU: 104, uvBaseV: 108,
   texBaseColor: 112, texMetalRough: 144, texNormal: 176, texEmissive: 208, texTransmission: 240, texSpecular: 272,
   texSpecularColor: 304,
   size: 336,
@@ -32,6 +36,8 @@ export const MAT_V1 = 4;
 /** Cycles Glass BSDF node (model 'glass') / Refraction BSDF node (model 'refraction'), M3b (math.md#glass). */
 export const MAT_GLASS_NODE = 8;
 export const MAT_REFRACTION_NODE = 16;
+/** VERTEX_FORMAT 1: f32 UVs for this material (flags bits 16..31 hold the UV lattice exponents otherwise). */
+export { MAT_UV_WIDE } from '../gpu/vertex-format.ts';
 export const TRI_MAT_MASK = 0xffffff;
 export const TRI_FLAGS_SHIFT = 24;
 
@@ -56,7 +62,10 @@ export interface SceneGpuStats {
   bvhMs: number;
   uploadMs: number;
   textureMs: number;
+  /** Every scene-group buffer except textures (BVH nodes + tris, vertex arena, triangles, materials). */
   geometryBytes: number;
+  vertexBytes: number;
+  vertexFormat: 'q' | 'f32';
   textureBytes: number;
 }
 
@@ -71,20 +80,9 @@ export function recentrePositions(positions: Float32Array, origin: readonly numb
   return out;
 }
 
-/** SceneVertex records (48 B): p (recentred), uv.x, n, uv.y, COLOR_0 (1 when absent). */
-export function packVertices(g: SceneGeometry, recentred: Float32Array): Float32Array {
-  const n = recentred.length / 3;
-  const out = new Float32Array(Math.max(1, n) * (VERTEX_BYTES / 4));
-  for (let i = 0; i < n; i++) {
-    const o = i * 12;
-    out[o] = recentred[3 * i]; out[o + 1] = recentred[3 * i + 1]; out[o + 2] = recentred[3 * i + 2];
-    out[o + 3] = g.uv0[2 * i] ?? 0;
-    out[o + 4] = g.normals[3 * i]; out[o + 5] = g.normals[3 * i + 1]; out[o + 6] = g.normals[3 * i + 2];
-    out[o + 7] = g.uv0[2 * i + 1] ?? 0;
-    if (g.color0) { for (let c = 0; c < 4; c++) out[o + 8 + c] = g.color0[4 * i + c]; }
-    else { out[o + 8] = 1; out[o + 9] = 1; out[o + 10] = 1; out[o + 11] = 1; }
-  }
-  return out;
+/** The vertex arena for `origin` (see gpu/vertex-format.ts). Throws if a quantized value does not round-trip. */
+export function packSceneVertices(scene: SceneData, recentred: Float32Array, origin: readonly number[]): VertexArena {
+  return packVertexArena(scene.geometry, recentred, scene.quant, origin);
 }
 
 /** Triangle records (vec4u): i0, i1, i2, material | triFlags << 24. */
@@ -100,8 +98,8 @@ export function packTris(g: SceneGeometry): Uint32Array {
   return out;
 }
 
-/** MaterialGpu records. `textures` null → every slot invalid (tex_sample returns 1). */
-export function packMaterials(materials: MaterialData[], textures: Pick<GpuTextures, 'slot'> | null): ArrayBuffer {
+/** MaterialGpu records. `textures` null → every slot invalid (tex_sample returns 1). `quant` → UV lattice words. */
+export function packMaterials(materials: MaterialData[], textures: Pick<GpuTextures, 'slot'> | null, quant?: SceneQuant): ArrayBuffer {
   const L = MATERIAL_LAYOUT;
   const buf = new ArrayBuffer(Math.max(1, materials.length) * L.size);
   const dv = new DataView(buf);
@@ -121,7 +119,11 @@ export function packMaterials(materials: MaterialData[], textures: Pick<GpuTextu
     if (m.model === 'v1') flags |= MAT_V1;
     if (m.model === 'glass') flags |= MAT_GLASS_NODE;
     if (m.model === 'refraction') flags |= MAT_REFRACTION_NODE;
-    dv.setUint32(b + L.flags, flags, true);
+    const uvw = materialUvWords(quant?.mode === 'quantized' ? quant.uv[i] : undefined);
+    flags |= uvw.flagBits;
+    dv.setUint32(b + L.flags, flags >>> 0, true);
+    dv.setInt32(b + L.uvBaseU, uvw.baseU, true);
+    dv.setInt32(b + L.uvBaseV, uvw.baseV, true);
     v3(b + L.specularColor, m.specularColorFactor);
     f(b + L.specularFactor, m.specularFactor);
     v3(b + L.v1Diffuse, m.v1?.diffuse ?? [0, 0, 0]);
@@ -169,7 +171,7 @@ export class SceneGpu {
     readonly vertices: GPUBuffer,
     readonly tris: GPUBuffer,
     readonly materials: GPUBuffer,
-    readonly tangents: GPUBuffer,
+    readonly vertexArena: Omit<VertexArena, 'words'>,
     readonly textures: GpuTextures,
     readonly stats: SceneGpuStats,
     readonly warnings: string[],
@@ -180,6 +182,8 @@ export class SceneGpu {
     const label = opts.label ?? 'scene';
     const g = scene.geometry;
     const pos = recentrePositions(g.positions, origin);
+    // Before the BVH / texture work: a quantized scene must recode losslessly (throws otherwise).
+    const arena = packSceneVertices(scene, pos, origin);
     let t0 = performance.now();
     const bvhP = (opts.buildBvh ?? defaultBuilder)(pos, g.indices);
     bvhP.catch(() => undefined); // observed below; avoids an unhandled rejection if the texture upload throws first
@@ -198,17 +202,16 @@ export class SceneGpu {
     const keep = (b: GPUBuffer): GPUBuffer => { created.push(b); return b; };
     device.pushErrorScope('out-of-memory');
     device.pushErrorScope('validation');
-    let up: { bvhBuffers: BvhGpuBuffers; vertices: GPUBuffer; tris: GPUBuffer; materials: GPUBuffer; tangents: GPUBuffer } | undefined;
+    let up: { bvhBuffers: BvhGpuBuffers; vertices: GPUBuffer; tris: GPUBuffer; materials: GPUBuffer } | undefined;
     let thrown: unknown;
     try {
       const bvhBuffers = uploadBvh(device, bvh, { watertight: opts.watertight, label });
       keep(bvhBuffers.nodes); keep(bvhBuffers.tris);
       up = {
         bvhBuffers,
-        vertices: keep(storageBuffer(device, packVertices(g, pos), `${label}.vertices`, VERTEX_BYTES)),
+        vertices: keep(storageBuffer(device, arena.words, `${label}.vertices`, 48)),
         tris: keep(storageBuffer(device, packTris(g), `${label}.tris`, TRI_BYTES)),
-        materials: keep(storageBuffer(device, packMaterials(scene.materials, textures), `${label}.materials`, MATERIAL_LAYOUT.size)),
-        tangents: keep(storageBuffer(device, g.tangents, `${label}.tangents`, 16)),
+        materials: keep(storageBuffer(device, packMaterials(scene.materials, textures, scene.quant), `${label}.materials`, MATERIAL_LAYOUT.size)),
       };
     } catch (e) { thrown = e ?? new Error('scene upload failed'); }
     const valErr = await device.popErrorScope();
@@ -219,14 +222,16 @@ export class SceneGpu {
       if (thrown !== undefined) throw thrown;
       throw new Error(`scene upload failed: ${(oom ?? valErr)!.message}`);
     }
-    const { bvhBuffers, vertices, tris, materials, tangents } = up;
+    const { bvhBuffers, vertices, tris, materials } = up;
     const uploadMs = performance.now() - t0;
-    const geometryBytes = bvhBuffers.nodes.size + bvhBuffers.tris.size + vertices.size + tris.size + materials.size + tangents.size;
+    const geometryBytes = bvhBuffers.nodes.size + bvhBuffers.tris.size + vertices.size + tris.size + materials.size;
     const warnings = [...textures.warnings];
     if (bvh.stats.skippedNonFinite) warnings.push(`${bvh.stats.skippedNonFinite} non-finite triangle(s) left out of the BVH`);
-    return new SceneGpu(device, scene, origin, bvh, bvhBuffers, vertices, tris, materials, tangents, textures, {
+    if (!scene.quant && g.indices.length) warnings.push('scene was not quantized (no quantizeScene): f32 vertex format');
+    const { words: _w, ...arenaInfo } = arena;
+    return new SceneGpu(device, scene, origin, bvh, bvhBuffers, vertices, tris, materials, arenaInfo, textures, {
       triangles: g.indices.length / 3, vertices: g.positions.length / 3, materials: scene.materials.length,
-      bvhMs, uploadMs, textureMs, geometryBytes, textureBytes: textures.bytes,
+      bvhMs, uploadMs, textureMs, geometryBytes, vertexBytes: vertices.size, vertexFormat: arena.format === 1 ? 'q' : 'f32', textureBytes: textures.bytes,
     }, warnings);
   }
 
@@ -249,6 +254,7 @@ export class SceneGpu {
       BVH_DECLARE_BINDINGS: true, BVH_GROUP: group, BVH_BINDING_NODES: SCENE_BINDING.bvhNodes, BVH_BINDING_TRIS: SCENE_BINDING.bvhTris,
       WATERTIGHT: this.watertight,
       CUSTOM_ALPHA: true,
+      VERTEX_FORMAT: this.vertexArena.format,
       ...this.textures.defines(group, SCENE_BINDING.textureBase),
     };
   }
@@ -273,7 +279,7 @@ export class SceneGpu {
   }
 
   destroy(): void {
-    for (const b of [this.bvhBuffers.nodes, this.bvhBuffers.tris, this.vertices, this.tris, this.materials, this.tangents]) b.destroy();
+    for (const b of [this.bvhBuffers.nodes, this.bvhBuffers.tris, this.vertices, this.tris, this.materials]) b.destroy();
     this.textures.destroy();
   }
 }
@@ -289,5 +295,6 @@ export function emptyScene(name = 'empty'): SceneData {
     materials: [], textures: [], lights: [], cameras: [],
     bounds: { min: [-1, -1, -1], max: [1, 1, 1] },
     warnings: [],
+    quant: { mode: 'lossless', posLog2: 0, uv: [], uvTolerance: 0, normal: 'f32', tangent: 'f32', color: 'none' }, // nothing to quantize
   };
 }

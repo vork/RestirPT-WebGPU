@@ -4,6 +4,7 @@
 //   L_env outside, one-sided (a light facing away is invisible), spread < π attenuation vs an f64 reference;
 // - Cornell box interior (non-emissive walls) + emissive ceiling patch: walls 0, emitter L_e, no NaN/BVH overflow;
 // - sub-submit row bands and k-sample dispatches give bit-identical batches (submit-budget splitting is exact).
+import { quantizeScene } from '../../src/core/scene/quantize.ts';
 import { afterAll, describe, expect, it } from 'vitest';
 import { getTestGpu, releaseTestGpu } from './device-factory.ts';
 import { buildBvh } from '../../src/core/bvh/sah-builder.ts';
@@ -44,13 +45,13 @@ function quadScene(quads: { p: number[][]; mat: number }[], materials: MaterialD
   const P = Float32Array.from(pos);
   const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
   for (let i = 0; i < P.length; i += 3) for (let c = 0; c < 3; c++) { mn[c] = Math.min(mn[c], P[i + c]); mx[c] = Math.max(mx[c], P[i + c]); }
-  return {
+  return quantizeScene({
     name: 'quads',
     geometry: { positions: P, normals: Float32Array.from(nrm), tangents: new Float32Array(P.length / 3 * 4), uv0: new Float32Array(P.length / 3 * 2),
       indices: Uint32Array.from(idx), triMaterial: Uint32Array.from(tm), triFlags: Uint32Array.from(tf) },
     materials, textures: [], lights: [], cameras: [],
     bounds: { min: mn as [number, number, number], max: mx as [number, number, number] }, warnings: [],
-  };
+  }).scene; // data-formats.md §B0: GPU tests run the quantized vertex format
 }
 
 function constEnv(v: [number, number, number], o: Partial<EnvironmentData> = {}): EnvironmentData {
@@ -65,7 +66,7 @@ interface Rig { kernel: EmissionKernel; acc: BatchAccumulator; W: number; H: num
 async function rig(scene: SceneData, W: number, H: number, cam: { camToWorld: number[]; yfov: number }, seed = 7,
   jitterMode?: typeof JITTER_NONE, budget?: ConstructorParameters<typeof BatchAccumulator>[3]): Promise<Rig> {
   const { device, features, wgslLanguageFeatures } = await getTestGpu();
-  const origin = computeRenderOrigin(scene.bounds);
+  const origin = computeRenderOrigin(scene.bounds, scene.quant);
   const gpu = await SceneGpu.create(device, scene, origin, {
     textureMode: 'validation', watertight: true, buildBvh: async (p, i) => buildBvh(p, i, { mt: true, woop: true }), features, wgslLanguageFeatures,
   });

@@ -2,10 +2,13 @@
 // (quads, boxes, icospheres), V1 / Principled materials, light and camera matrices, procedural RGBA8 textures, the
 // Cornell base (cornell.glb + cornell.meta.json) and the package writer (exportScenePackage + extra scene.json keys).
 // Frame: glTF canonical (+Y up, metres, un-recentred), docs/decisions/scene-bridge.md.
+// Every scene is quantized ONCE, in sceneOf (docs/decisions/data-formats.md §B0): assets are loaded lossless here
+// (cornellBase) so the only lossy step is the final scene's lattice snap; the packages are v2.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadGltf } from '../../src/core/scene/gltf-loader.ts';
+import { quantizeScene } from '../../src/core/scene/quantize.ts';
 import { exportScenePackage, type ExportScenePackageOptions } from '../../src/core/scene/scene-package.ts';
 import {
   TRI_ALPHA_MASK, TRI_EMISSIVE, type LightData, type MaterialData, type SceneData, type SceneGeometry, type TextureData,
@@ -224,9 +227,10 @@ export function boundsOf(g: SceneGeometry): SceneData['bounds'] {
   return { min: mn, max: mx };
 }
 
+/** The scene of `mb`, quantized (data-formats.md §B0: global position lattice, TRI_FLAT, UV lattices, re-weld). */
 export function sceneOf(name: string, mb: MeshBuilder, materials: MaterialData[], lights: LightData[], textures: TextureData[] = []): SceneData {
   const geometry = mb.build(materials);
-  return { name, geometry, materials, textures, lights, cameras: [], bounds: boundsOf(geometry), warnings: [] };
+  return quantizeScene({ name, geometry, materials, textures, lights, cameras: [], bounds: boundsOf(geometry), warnings: [] }).scene;
 }
 
 // ---- lights --------------------------------------------------------------------------------------------------------
@@ -278,7 +282,7 @@ export async function cornellBase(): Promise<CornellBase & { glbSha: string }> {
     camera: { position: V3; vfov_deg: number }; lights: { position: V3; size_x: number; size_along_minus_z_gltf: number; power_W: number }[]; reflectance: Record<string, V3>;
   };
   const glb = new Uint8Array(readFileSync(path.join(dir, 'cornell.glb')));
-  const base = (await loadGltf({ kind: 'glb', bytes: glb, name: 'cornell.glb' }, { tangents: false })).scene;
+  const base = (await loadGltf({ kind: 'glb', bytes: glb, name: 'cornell.glb' }, { tangents: false, quantize: 'lossless' })).scene;
   const materials = base.materials.map((m) => v1(m.name, { diffuse: meta.reflectance[m.name] }));
   const L = meta.lights[0];
   return {

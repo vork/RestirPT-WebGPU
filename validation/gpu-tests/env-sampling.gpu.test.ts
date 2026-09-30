@@ -126,7 +126,7 @@ async function rig(envData: EnvironmentData, o: { lights?: LightData[]; floors?:
   const { device, features, wgslLanguageFeatures } = await getTestGpu();
   const S = 2;
   const scene: SceneData = { ...quadScene([{ p: [[-S, 0, S], [S, 0, S], [S, 0, -S], [-S, 0, -S]], mat: 0 }], MATS.map((m) => m.mat), o.lights ?? []), env: envData };
-  const origin = computeRenderOrigin(scene.bounds);
+  const origin = computeRenderOrigin(scene.bounds, scene.quant);
   const gpu = await SceneGpu.create(device, scene, origin, {
     textureMode: 'validation', watertight: true, buildBvh: async (p, i) => buildBvh(p, i, { mt: true, woop: true }), features, wgslLanguageFeatures,
   });

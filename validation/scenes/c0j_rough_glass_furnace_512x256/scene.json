@@ -1,6 +1,6 @@
 {
  "format": "restir-scene-package",
- "version": 1,
+ "version": 2,
  "name": "c0j_rough_glass_furnace_512x256",
  "source": {
   "uri": "validation/scenes/make-m3b.ts (C0j rough glass furnace)"
@@ -44,6 +44,58 @@
   }
  },
  "flatShaded": true,
+ "quant": {
+  "mode": "quantized",
+  "posLog2": -15,
+  "uv": [
+   {
+    "ku": -24,
+    "kv": -24,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   },
+   {
+    "ku": -24,
+    "kv": -24,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   },
+   {
+    "ku": -24,
+    "kv": -24,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   },
+   {
+    "ku": -24,
+    "kv": -24,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   },
+   {
+    "ku": -24,
+    "kv": -24,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   },
+   {
+    "ku": -24,
+    "kv": -24,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   }
+  ],
+  "uvTolerance": 0.125,
+  "normal": "oct16",
+  "tangent": "oct15",
+  "color": "none"
+ },
  "materials": [
   {
    "name": "enclosure",

@@ -19,6 +19,7 @@
 // 1 − 0.8e-5, mix 1 − 1.2e-5, specular level ~1e-5).
 import type { EnvironmentData, LightData, MaterialData, SceneData, SceneGeometry } from '../../src/core/scene/types.ts';
 import { TRI_EMISSIVE } from '../../src/core/scene/types.ts';
+import { quantizeScene } from '../../src/core/scene/quantize.ts';
 
 export type V3 = [number, number, number];
 export type T3Variant = 't3_cases_256' | 't3_cases_256_noenv' | 't3_cases_256_envonly' | 't3_cases_256_b2' | 't3_glass_256' | 't3_rare_256' | 't3_cutoff_256';
@@ -186,7 +187,8 @@ export function t3Scene(variant: T3Variant, env?: EnvironmentData): T3Scene {
   const geometry = mb.build(materials);
   const mn: V3 = [Infinity, Infinity, Infinity], mx: V3 = [-Infinity, -Infinity, -Infinity];
   for (let i = 0; i < geometry.positions.length; i += 3) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], geometry.positions[i + k]); mx[k] = Math.max(mx[k], geometry.positions[i + k]); }
-  const scene: SceneData = { name: variant, geometry, materials, textures: [], lights, cameras: [], bounds: { min: mn, max: mx }, warnings: [] };
+  // package v2 / GPU: the one lossy step (data-formats.md §B0), before the env is attached
+  const scene: SceneData = quantizeScene({ name: variant, geometry, materials, textures: [], lights, cameras: [], bounds: { min: mn, max: mx }, warnings: [] }).scene;
   if (withEnv) scene.env = { ...env!, name: `${T3_ENV_ID}_1k`, strength: 1, tint: [1, 1, 1], rotationZ: 0.6, visibleToCamera: true };
   return {
     scene, camera: { matrix: lookAt([0, 1.1, 3.6], [0, 0.8, -0.4]), yfov: 50 * Math.PI / 180 },

@@ -11,15 +11,17 @@ export interface LoadSceneOptions {
   useWorker?: boolean;
   /** MikkTSpace tangents for normal-mapped primitives (default true). */
   tangents?: boolean;
+  /** quantizeScene mode (default 'quantized'; data-formats.md §B0). */
+  quantize?: 'quantized' | 'lossless';
 }
 
 export async function loadScene(input: SceneInput, opts: LoadSceneOptions = {}): Promise<GltfLoadResult> {
   const { source, transfer } = await toSource(input);
   const useWorker = opts.useWorker ?? typeof Worker !== 'undefined';
   if (!useWorker) {
-    return loadGltf(source, { decodeImage: canDecodeInThisRuntime() ? browserImageDecoder : undefined, tangents: opts.tangents });
+    return loadGltf(source, { decodeImage: canDecodeInThisRuntime() ? browserImageDecoder : undefined, tangents: opts.tangents, quantize: opts.quantize });
   }
-  return runInWorker({ id: nextId++, source, tangents: opts.tangents }, transfer);
+  return runInWorker({ id: nextId++, source, tangents: opts.tangents, quantize: opts.quantize }, transfer);
 }
 
 let nextId = 1;
