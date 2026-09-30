@@ -59,7 +59,7 @@ fn res_select_temporal(q: u32, qP: u32, W: f32, c: f32) {
   resout_set(q, RP_RC, p2);
   let deep = k != 0u && k + 2u <= d;
   let bc = k != 0u && k + 1u == d;
-  if ((deep && (r.status & SXS_DEEP) != 0u && !rs_tplant(TP_N3_STALE)) || (bc && (r.status & (SXS_N1 | SXS_B1)) != 0u)) {
+  if ((deep && (r.status & SXS_DEEP) != 0u) || (bc && (r.status & (SXS_N1 | SXS_B1)) != 0u)) {   // N3: stale values from the refresh (C-5)
     let p4 = resin_plane(qP, RP_RAD);
     resout_set(q, RP_RAD, vec4u(bitcast<vec3u>(r.rad), p4.w));
   }

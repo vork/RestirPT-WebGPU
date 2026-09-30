@@ -8,15 +8,24 @@
 //                 E_{t−1}), the W_Y formula on every finalised pixel, counters (non-finite, pending, overflow) 0
 import { afterAll, describe, expect, it } from 'vitest';
 import { RestirKernel } from '../../src/core/render/restir/kernel.ts';
-import { RES_WORDS, RW, RS_WGSL_CONSTS as K, SC_NAMES, TS_CONSTS as T, arenaWords } from '../../src/core/render/restir/layout.ts';
-import { restirSettings } from '../../src/core/render/restir/presets.ts';
-import { JITTER_IID, JITTER_NONE, type CameraState, type JitterMode } from '../../src/core/render/frame-uniforms.ts';
+import { RES_WORDS, RW, RS_WGSL_CONSTS as K, SC_NAMES, TS_CONSTS as T, arenaWords, decodeSfxLocal } from '../../src/core/render/restir/layout.ts';
+import { restirSettings, type RestirSettings } from '../../src/core/render/restir/presets.ts';
+import { ChainRunner, type ChainSpec } from '../../src/core/render/restir/chain-runner.ts';
+import { BASE_ENV_MAP, fetchScenePackage, resolvePackageFrame } from '../../src/core/scene/scene-package.ts';
+import { SceneGpu } from '../../src/core/render/scene-gpu.ts';
+import { createEnvResources, destroyEnvResources, writeEnvParams } from '../../src/core/render/env-gpu.ts';
+import { JITTER_IID, JITTER_NONE, computeRenderOrigin, type CameraState, type JitterMode } from '../../src/core/render/frame-uniforms.ts';
 import { releaseTestGpu } from './device-factory.ts';
-import { allLightsScene, bitFixtureScene, boxCamera, gpuScene, restirRig, storageBuffer } from './restir-fixtures.ts';
+import { allLightsScene, bitFixtureScene, boxCamera, gpuScene, light, readTexture4, restirRig, storageBuffer } from './restir-fixtures.ts';
 import { shaderSources } from '../../src/core/shaders/index.ts';
 import type { LightData } from '../../src/core/scene/types.ts';
-import { lightMatrixToward } from './pt-fixtures.ts';
-import { animatedLights, hashU32, movedCamera, readU32, recLumF, runChain, temporalSnapshot, type ChainFrame, type TemporalSnapshot } from './restir-temporal-fixtures.ts';
+import { lightMatrixToward, material, quadScene } from './pt-fixtures.ts';
+import { evalLocal, type V1Params } from '../../tests/material/bsdf-ref.ts';
+import { recentrePositions } from '../../src/core/render/scene-gpu.ts';
+import { T32Harness, animatedLights, hashU32, movedCamera, readU32, recLumF, runChain, temporalSnapshot, type ChainFrame, type FrameResult, type T32Result, type TemporalSnapshot } from './restir-temporal-fixtures.ts';
+import type { SceneData } from '../../src/core/scene/types.ts';
+import { loadHdri, synthEnvData } from './env-fixtures.ts';
+import { T3_ENV_ID, t3Scene } from '../scenes/make-m4.ts';
 import { tmisContribW, tmisTalbotMc, tmisTalbotMp } from '../../tests/restir/tmis-ref.ts';
 
 afterAll(releaseTestGpu);
@@ -351,66 +360,8 @@ describe('B1 unbiasedness smoke: temporal chains ≡ canonical-only in expectati
   }
 });
 
-// ------------------------------------------------------------------------------------------------ T3-2 / T4-t (camera)
 
-/** M4 T3 case bins (restir-shift.gpu.test.ts t3_case): letter by (d, k, technique, endpoint), × k = 2 | k > 2. */
-export function t3CaseName(flags: number): string {
-  const d = flags & 0xf, k = (flags >>> 4) & 0xf, tech = (flags >>> 8) & 3, ep = (flags >>> 10) & 7;
-  let c: string;
-  if (k === 0) c = tech === K.RS_TECH_BSDF_ENV ? '∅-env' : '∅-tri';
-  else if (tech === K.RS_TECH_NEE && k === d) c = ep === 1 || ep === 2 ? 'a-delta' : ep === 3 || ep === 4 ? 'a-area' : ep === 0 ? 'a-tri' : ep === 5 ? 'a-sun' : 'f-env';
-  else if (tech === K.RS_TECH_NEE && k === d - 1) c = ep === 7 ? 'b-env' : 'b';
-  else if (k === d - 1) c = tech === K.RS_TECH_BSDF_ENV ? 'c-env' : 'c-tri';
-  else if (k === d) c = tech === K.RS_TECH_BSDF_ENV ? 'e' : 'd';
-  else c = tech === K.RS_TECH_NEE ? 'deep-nee' : 'deep-bsdf';
-  const hi = k === 0 ? d > 2 : k > 2;
-  return `${c}/${hi ? 'k>2' : 'k2'}`;
-}
-const halfToF = (h: number) => {
-  const s = h & 0x8000 ? -1 : 1, e = (h >>> 10) & 0x1f, m = h & 0x3ff;
-  if (e === 0) return s * m * 2 ** -24;
-  if (e === 31) return m ? NaN : s * Infinity;
-  return s * (1 + m / 1024) * 2 ** (e - 15);
-};
-const marginOf = (code: number) => halfToF(code >>> 16);
-
-export interface RoundTripStats { trials: number; fwdOk: number; rtOk: number; logic: number; fp: number; fBad: number; jBad: number; codes: Record<string, number> }
-
-/** Round trips of one test frame (forced s = p, robust mode): T⁻¹(T(X_p)) against X_p for every pixel with a valid q′
- *  and a defined forward shift. LOGIC: an inverse that is undefined / ZERO / OCCLUDED with a decisive margin, or
- *  F / J reciprocity > 1e-4; FP-BOUNDARY: the deciding pair's |margin| < 2⁻¹⁶ (M4 B-4). */
-export function roundTrips(s: TemporalSnapshot, bins: Map<string, RoundTripStats>, viol: string[]): void {
-  for (let ai = 0; ai < s.P; ai++) {
-    const ts = s.ts(ai);
-    if (!(ts.flags & T.TS_QVALID)) continue;
-    const fl = s.rec(s.hist, ts.qPrime, RW.flags);
-    if ((fl & 0xf) === 0) continue;                        // empty X_p
-    const name = t3CaseName(fl);
-    let b = bins.get(name);
-    if (!b) { b = { trials: 0, fwdOk: 0, rtOk: 0, logic: 0, fp: 0, fBad: 0, jBad: 0, codes: {} }; bins.set(name, b); }
-    b.trials++;
-    const fsc = scOf(ts.fwdCode);
-    b.codes[`f:${SC_NAMES[fsc]}`] = (b.codes[`f:${SC_NAMES[fsc]}`] ?? 0) + 1;
-    if (fsc !== K.SC_OK) continue;
-    b.fwdOk++;
-    if (!(ts.flags & T.TS_INV_DONE)) { b.logic++; viol.push(`${name} ai${ai}: forward OK, no inverse`); continue; }
-    const isc = scOf(ts.invCode);
-    b.codes[`i:${SC_NAMES[isc]}`] = (b.codes[`i:${SC_NAMES[isc]}`] ?? 0) + 1;
-    if (isc !== K.SC_OK) {
-      const m = marginOf(ts.invCode);
-      if (Math.abs(m) < 2 ** -16 && isc !== K.SC_ZERO && isc !== K.SC_OCCLUDED) b.fp++;
-      else { b.logic++; if (viol.length < 24) viol.push(`${name} ai${ai} q'${ts.qPrime}: inverse ${SC_NAMES[isc]} pair ${(ts.invCode >>> 12) & 0xf} margin ${m} (fwd J ${u2f(ts.fwdJ)})`); }
-      continue;
-    }
-    const Fx = [0, 1, 2].map((c) => s.recF(s.histF, ts.qPrime, RW.F + c));
-    const eF = Math.max(...[0, 1, 2].map((c) => (Fx[c] === 0 && ts.invF[c] === 0 ? 0 : relErr(ts.invF[c], Fx[c]))));
-    const eJ = Math.abs(Math.log(u2f(ts.fwdJ) * u2f(ts.invJ)));
-    if (eF > 1e-4) b.fBad++;
-    if (eJ > 1e-4) b.jBad++;
-    if (eF > 1e-4 || eJ > 1e-4) { b.logic++; if (viol.length < 24) viol.push(`${name} ai${ai}: F rel ${eF.toExponential(2)} |log JJ⁻¹| ${eJ.toExponential(2)}`); continue; }
-    b.rtOk++;
-  }
-}
+// ------------------------------------------------------------------------------------------------ T3-2 / T4-t
 
 /** t-select with every defined forward shift selected (TSEL_TRACE_FORCE_P, Changelog B-7). */
 export function tselectTraceSource(): Record<string, string> {
@@ -420,46 +371,102 @@ export function tselectTraceSource(): Record<string, string> {
   return { 'passes/restir/t-select.wgsl': out };
 }
 
-export function reportBins(tag: string, bins: Map<string, RoundTripStats>): { trials: number; logic: number; fp: number; rtOk: number } {
-  const tot = { trials: 0, logic: 0, fp: 0, rtOk: 0 };
-  const lines = [...bins.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([n, b]) => {
-    tot.trials += b.trials; tot.logic += b.logic; tot.fp += b.fp; tot.rtOk += b.rtOk;
-    return `  ${n.padEnd(14)} trials=${b.trials} fwdOk=${b.fwdOk} rtOk=${b.rtOk} LOGIC=${b.logic} FP=${b.fp} F=${b.fBad} J=${b.jBad} ${JSON.stringify(b.codes)}`;
-  });
-  console.log(`[${tag}] ${JSON.stringify(tot)}\n${lines.join('\n')}`);
-  return tot;
+type LightScript = (base: LightData[], t: number) => LightData[];
+type EnvScript = (t: number) => { rotationZ: number; strength: number; tint: [number, number, number] };
+const withLight = (base: LightData[], id: number, f: (l: LightData) => LightData | undefined): LightData[] =>
+  base.flatMap((l) => (l.id === id ? (f(l) ? [f(l)!] : []) : [l]));
+
+/** Pairs (reset frame, test frame) per case and resolution. The M5 gate raises the `rare` cases (t3_rare_256: every
+ *  bin populated) with VITE_T32_RARE_PAIRS / VITE_T32_RARE_RES so every bin of the camera, light and env change types
+ *  reaches ≥ 10⁶ round trips (B-9; budget: restir-temporal-api.md B-11). */
+const T32_PAIRS = Number(import.meta.env?.VITE_T32_PAIRS ?? 12);
+const T32_RES = Number(import.meta.env?.VITE_T32_RES ?? 128);
+const T32_RARE_PAIRS = Number(import.meta.env?.VITE_T32_RARE_PAIRS ?? T32_PAIRS);
+const T32_RARE_RES = Number(import.meta.env?.VITE_T32_RARE_RES ?? T32_RES);
+const T32_MIN_BIN = Number(import.meta.env?.VITE_T32_MIN_BIN ?? 0);
+
+interface T32Case { name: string; scene: 'all' | 'rare'; cam: (base: CameraState, t: number) => CameraState; jitter?: JitterMode; lights?: LightScript; env?: EnvScript; lightClass?: 'zero' | 'positive' }
+const moved = (base: CameraState, dx: number, dy: number, dz: number, yaw = 0, yfov?: number): CameraState => {
+  const m = Array.from(base.camToWorld as ArrayLike<number>);
+  const cs = Math.cos(yaw), sn = Math.sin(yaw);
+  for (const col of [0, 4, 8]) { const x = m[col], z = m[col + 2]; m[col] = cs * x + sn * z; m[col + 2] = -sn * x + cs * z; }
+  m[12] += dx; m[13] += dy; m[14] += dz;
+  return { camToWorld: m, yfov: yfov ?? base.yfov };
+};
+const T32_CASES_LIST: T32Case[] = [
+  // camera part (frame selector with TF_LIGHTS_SAME, previous camera / V-buffer)
+  { name: 'translate', scene: 'all', cam: (c, t) => moved(c, 0.05 * t, 0.01 * t, 0), lightClass: 'zero' },
+  { name: 'rotate', scene: 'all', cam: (c, t) => moved(c, 0, 0, 0, 0.02 * t), lightClass: 'zero' },
+  { name: 'zoom-in', scene: 'all', cam: (c, t) => moved(c, 0, 0, -0.04 * t), lightClass: 'zero' },
+  { name: 'zoom-out+fov', scene: 'all', cam: (c, t) => moved(c, 0, 0, 0.04 * t, 0, c.yfov * (1 + 0.01 * (t % 7))), lightClass: 'zero' },
+  { name: 'translate, jitter off', scene: 'all', cam: (c, t) => moved(c, 0.05 * t, 0.01 * t, 0), jitter: JITTER_NONE, lightClass: 'zero' },
+  { name: 'rare bins: translate', scene: 'rare', cam: (c, t) => moved(c, 0.03 * t, 0, 0.01 * t), lightClass: 'zero' },
+  // light / env part (refresh, entry renumbering, J_P)
+  { name: 'moving point + rect', scene: 'all', cam: (c, t) => moved(c, 0.02 * t, 0, 0), lights: (b, t) => animatedLights(b, t, [{ id: 1, dp: [0.04, 0, 0.03] }, { id: 3, dp: [0.02, -0.01, 0] }]), lightClass: 'zero' },
+  { name: 'resized + rotated rect', scene: 'all', cam: (c, t) => moved(c, 0.02 * t, 0, 0), lights: (b, t) => withLight(b, 3, (l) => ({ ...l, sizeX: (l.sizeX ?? 0.5) * (1 + 0.1 * t), matrix: lightMatrixToward([Math.sin(0.08 * t), -0.3, Math.cos(0.08 * t)], [0.3, 1.3, -1.9]) })), lightClass: 'zero' },
+  { name: 'rotating spot', scene: 'all', cam: (c, t) => moved(c, 0.02 * t, 0, 0), lights: (b, t) => withLight(b, 2, (l) => ({ ...l, matrix: lightMatrixToward([0.2 + 0.05 * t, -1, -0.3], [-0.5, 1.8, 0.2]) })), lightClass: 'zero' },
+  { name: 'intensity steps', scene: 'all', cam: (c, t) => moved(c, 0.02 * t, 0, 0), lights: (b, t) => animatedLights(b, t, [{ id: 2, power: (u) => (u % 2 ? 2 : 1) }, { id: 4, power: (u) => (u % 2 ? 0.5 : 1) }]), lightClass: 'zero' },
+  { name: 'add / remove', scene: 'all', cam: (c, t) => moved(c, 0.02 * t, 0, 0), lights: (b, t) => (t % 2 ? withLight(b, 4, () => undefined) : withLight(b, 1, () => undefined)), lightClass: 'positive' },
+  { name: 'env rotation + strength', scene: 'all', cam: (c, t) => moved(c, 0.02 * t, 0, 0), env: (t) => ({ rotationZ: 0.05 * t, strength: t % 2 ? 1.5 : 1, tint: [1, 1, 1] }), lightClass: 'zero' },
+  { name: 'rare bins: add / remove + intensity', scene: 'rare', cam: (c, t) => moved(c, 0.02 * t, 0, 0), lights: (b: LightData[], t: number) => (t % 2 ? b.slice(1) : b.map((l) => ({ ...l, power: l.power * 1.5 }))), lightClass: 'positive' },
+  { name: 'rare bins: moving lights + env', scene: 'rare', cam: (c, t) => moved(c, 0.02 * t, 0, 0), lights: (b: LightData[], t: number) => b.map((l) => animatedLights([l], t, [{ id: l.id, dp: [0.02, 0, 0.01], power: (u) => (u % 3 ? 1 : 1.5) }])[0]), env: (t) => ({ rotationZ: 0.03 * t, strength: 1, tint: [1, 1, 1] }), lightClass: 'zero' },
+];
+
+async function t32Scene(which: 'all' | 'rare'): Promise<{ scene: SceneData; cam: CameraState; maxBounces: number }> {
+  if (which === 'all') return { scene: allLightsScene(), cam: boxCamera(), maxBounces: 4 };
+  const env = (await loadHdri(`${T3_ENV_ID}_1k.hdr`)) ?? synthEnvData(256, 128);
+  const t = t3Scene('t3_rare_256', env);
+  return { scene: t.scene, cam: { camToWorld: t.camera.matrix, yfov: t.camera.yfov }, maxBounces: t.maxBounces };
 }
 
-const T32_PAIRS = Number(import.meta.env?.VITE_T32_PAIRS ?? 12);
+export async function runT32(c: T32Case, pairs = T32_PAIRS, W = T32_RES): Promise<{ r: T32Result; ms: number; lightClass: number; refreshFrames: number; frames: FrameResult[] }> {
+  const s = await t32Scene(c.scene);
+  const rig = await restirRig(s.scene, W, W, { preset: 'temporal', settings: { maxBounces: s.maxBounces, temporalCheck: 'robust' }, jitterMode: c.jitter ?? JITTER_IID, cam: { camToWorld: Array.from(s.cam.camToWorld as ArrayLike<number>), yfov: s.cam.yfov }, seed: 3201, extraSources: tselectTraceSource() });
+  const h = await T32Harness.create(rig.kernel);
+  const frames: ChainFrame[] = [];
+  for (let i = 0; i < 2 * pairs; i++) {
+    frames.push({ t: i, camera: c.cam(s.cam, i), lights: c.lights ? c.lights(s.scene.lights, i) : s.scene.lights, reset: i % 2 === 0,
+      env: c.env ? { params: { ...c.env(i), visibleToCamera: true }, mapId: 'env' } : undefined });
+  }
+  let lightClass = 0, refreshFrames = 0;
+  const bad: FrameResult[] = [];
+  const t0 = performance.now();
+  await runChain(rig, frames, (f, r) => {
+    lightClass += r.counters.rsc.tLightClass;
+    if (r.counters.rsc.tNonFinite || r.counters.rsc.tPendingLeft) bad.push(r);
+    if (f.reset) return;
+    if (r.flags & K.TF_REFRESH) refreshFrames++;
+    h.frame(f.t);
+  }, false);
+  const ms = performance.now() - t0;
+  const r = await h.result();
+  h.destroy(); rig.destroy();
+  return { r, ms, lightClass, refreshFrames, frames: bad };
+}
 
-describe('T3-2 / T4-t (camera part): production round trips T⁻¹(T(X_p)) with forced s = p (robust mode)', () => {
-  const cases: [string, (t: number) => CameraState, JitterMode][] = [
-    ['translate', (t) => movedCamera(0.05 * t, 0.01 * t, 0, 0), JITTER_IID],
-    ['rotate', (t) => movedCamera(0, 0, 0, 0.02 * t), JITTER_IID],
-    ['zoom-in', (t) => movedCamera(0, 0, -0.04 * t, 0), JITTER_IID],
-    ['zoom-out+fov', (t) => movedCamera(0, 0, 0.04 * t, 0, (55 + 0.5 * (t % 7)) * Math.PI / 180), JITTER_IID],
-    ['translate, jitter off', (t) => movedCamera(0.05 * t, 0.01 * t, 0, 0), JITTER_NONE],
-  ];
-  for (const [name, cam, jitter] of cases) {
-    it(name, async () => {
-      const scene = allLightsScene();
-      const rig = await restirRig(scene, 128, 128, { preset: 'temporal', settings: { maxBounces: 4, temporalCheck: 'robust' }, jitterMode: jitter, seed: 3201, extraSources: tselectTraceSource() });
-      const bins = new Map<string, RoundTripStats>();
-      const viol: string[] = [];
-      const frames: ChainFrame[] = [];
-      for (let i = 0; i < 2 * T32_PAIRS; i++) frames.push({ t: i, camera: cam(i), lights: scene.lights, reset: i % 2 === 0 });
-      const res = await runChain(rig, frames, async (f, r) => {
-        if (f.reset) return;
-        expect(r.histValid).toBe(true);
-        roundTrips(await temporalSnapshot(rig.kernel), bins, viol);
-      });
-      const tot = reportBins(`T3-2 ${name}`, bins);
-      if (viol.length) console.log(viol.join('\n'));
-      for (const r of res) expect([r.counters.rsc.tNonFinite, r.counters.rsc.tPendingLeft], `t=${r.t}`).toEqual([0, 0]);
-      expect(tot.rtOk).toBeGreaterThan(1000);
-      expect(tot.logic).toBe(0);
-      expect(tot.fp / Math.max(tot.trials, 1)).toBeLessThanOrEqual(1e-5);
-      rig.destroy();
+function reportT32(tag: string, x: Awaited<ReturnType<typeof runT32>>, pairs: number): void {
+  const lines = x.r.bins.filter((b) => b.trials).map((b) => `  ${b.name.padEnd(14)} trials=${b.trials} fwdOk=${b.fwdOk} rtOk=${b.rtOk} LOGIC=${b.logic} FP=${b.fp} F=${b.fBad} J=${b.jBad} fwd=${JSON.stringify(b.fwd)} inv=${JSON.stringify(b.inv)}`);
+  if (x.r.envFilterSamples.length) console.log(`[T3-2 ${tag}] C-9 env-filter: ${x.r.envFilterSamples.join('; ')}`);
+  console.log(`[T3-2 ${tag}] ${JSON.stringify(x.r.total)} platform ${x.r.platform} lightClass ${x.lightClass} refresh ${x.refreshFrames}/${pairs} ${(x.ms / pairs).toFixed(1)} ms/pair\n${lines.join('\n')}${x.r.logicSamples.length ? '\n  LOGIC: ' + x.r.logicSamples.join('\n  LOGIC: ') : ''}`);
+}
+
+describe('T3-2 / T4-t: production round trips T⁻¹(T(X_p)) with forced s = p (robust mode), camera and light / env changes', () => {
+  for (const c of T32_CASES_LIST) {
+    it(c.name, async () => {
+      const pairs = c.scene === 'rare' ? T32_RARE_PAIRS : T32_PAIRS;
+      const x = await runT32(c, pairs, c.scene === 'rare' ? T32_RARE_RES : T32_RES);
+      reportT32(c.name, x, pairs);
+      if (c.scene === 'rare' && T32_MIN_BIN > 0) for (const b of x.r.bins) expect(b.rtOk, b.name).toBeGreaterThanOrEqual(T32_MIN_BIN);
+      for (const r of x.frames) expect([r.counters.rsc.tNonFinite, r.counters.rsc.tPendingLeft], `t=${r.t}`).toEqual([0, 0]);
+      if (c.lights || c.env) expect(x.refreshFrames).toBe(pairs);
+      if (c.lightClass === 'zero') expect(x.lightClass).toBe(0);
+      if (c.lightClass === 'positive') expect(x.lightClass).toBeGreaterThan(0);
+      expect(x.r.candOverflow).toBe(0);
+      expect(x.r.platform).toBe(0);
+      expect(x.r.total.rtOk).toBeGreaterThan(1000);
+      expect(x.r.total.logic).toBe(0);
+      expect(x.r.total.fp / Math.max(x.r.total.trials, 1)).toBeLessThanOrEqual(1e-5);
+      expect(x.r.total.envFilter / Math.max(x.r.total.trials, 1)).toBeLessThanOrEqual(2e-5);   // C-9 (open), bounded rate
     });
   }
 });
@@ -522,52 +529,298 @@ describe('U-TE-1: atlas member m of an E = 4 temporal ensemble ≡ the sequentia
   });
 });
 
-// ------------------------------------------------------------------------------------------------ T3-2 / T4-t (lights)
 
-type LightScript = (base: LightData[], t: number) => LightData[];
-const withLight = (base: LightData[], id: number, f: (l: LightData) => LightData | undefined): LightData[] =>
-  base.flatMap((l) => (l.id === id ? (f(l) ? [f(l)!] : []) : [l]));
-const LIGHT_CASES: [string, LightScript, ((t: number) => { rotationZ: number; strength: number; tint: [number, number, number] }) | undefined][] = [
-  ['moving point + rect', (b, t) => animatedLights(b, t, [{ id: 1, dp: [0.04, 0, 0.03] }, { id: 3, dp: [0.02, -0.01, 0] }]), undefined],
-  ['resized + rotated rect', (b, t) => withLight(b, 3, (l) => ({ ...l, sizeX: (l.sizeX ?? 0.5) * (1 + 0.1 * t), matrix: lightMatrixToward([Math.sin(0.08 * t), -0.3, Math.cos(0.08 * t)], [0.3, 1.3, -1.9]) })), undefined],
-  ['rotating spot', (b, t) => withLight(b, 2, (l) => ({ ...l, matrix: lightMatrixToward([0.2 + 0.05 * t, -1, -0.3], [-0.5, 1.8, 0.2]) })), undefined],
-  ['intensity steps', (b, t) => animatedLights(b, t, [{ id: 2, power: (u) => (u % 2 ? 2 : 1) }, { id: 4, power: (u) => (u % 2 ? 0.5 : 1) }]), undefined],
-  ['add / remove', (b, t) => (t % 2 ? withLight(b, 4, () => undefined) : withLight(b, 1, () => undefined)), undefined],
-  ['env rotation + strength', (b) => b, (t) => ({ rotationZ: 0.05 * t, strength: t % 2 ? 1.5 : 1, tint: [1, 1, 1] })],
-];
+// ------------------------------------------------------------------------------------------------ T6(b): ixs sequences
 
-describe('T3-2 / T4-t (light part): production round trips under light and env changes (refresh C1/C2)', () => {
-  for (const [name, lights, env] of LIGHT_CASES) {
-    it(name, async () => {
-      const scene = allLightsScene();
-      const rig = await restirRig(scene, 128, 128, { preset: 'temporal', settings: { maxBounces: 4, temporalCheck: 'robust' }, jitterMode: JITTER_IID, seed: 3202, extraSources: tselectTraceSource() });
-      const bins = new Map<string, RoundTripStats>();
-      const viol: string[] = [];
-      const frames: ChainFrame[] = [];
-      for (let i = 0; i < 2 * T32_PAIRS; i++) {
-        frames.push({
-          t: i, camera: movedCamera(0.02 * i, 0, 0, 0), lights: lights(scene.lights, i), reset: i % 2 === 0,
-          env: env ? { params: { ...env(i), visibleToCamera: true }, mapId: 'env' } : undefined,
-        });
+const IXS = ['ixs_a_point_256', 'ixs_b_area_256', 'ixs_c_spot_b0_256', 'ixs_c_spot_b03_256', 'ixs_d_camera_256', 'ixs_d0_jitter_256',
+  'ixs_d_glossy_256', 'ixs_e_addremove_256', 'ixs_e_half_256', 'ixs_f_combined_256', 'ixs_g_sun_256', 'ixs_n4_twolights_256'];
+const IXS_ENV = ['ixs_h_envrot_256', 'ixs_i_envradio_256', 'ixs_j_envcombo_256', 'ixs_k_envswap_256'];   // validation/out/m5/scenes
+const T6B_MEMBERS = Number(import.meta.env?.VITE_T6B_MEMBERS ?? 2);
+
+interface RobustFrame { t: number; histValid: boolean; flags: number; robust: number; mism: number; selP: number }
+
+/** One robust-mode chain batch (E members, `full` preset) through a sequence package with T-E's ChainRunner; per frame
+ *  the robust checks (= temporal selections, RSC_T_SEL_P) and RSC_T_ROBUST_MISMATCH from the cumulative counters. */
+async function robustSequence(pkgName: string, o: { tPlant?: RestirSettings['tPlant']; frames?: number } = {}): Promise<{ frames: RobustFrame[]; testFrames: number[] }> {
+  const base = IXS_ENV.includes(pkgName) ? '/validation/out/m5/scenes/' : '/validation/scenes/';
+  const p = await fetchScenePackage(`${base}${pkgName}/`);
+  const seq = p.sequence!;
+  const { device, features, wgslLanguageFeatures } = await (await import('./device-factory.ts')).getTestGpu();
+  const origin = computeRenderOrigin(p.scene.bounds, p.scene.quant);
+  const gpu = await SceneGpu.create(device, p.scene, origin, { textureMode: 'validation', watertight: true, features, wgslLanguageFeatures });
+  const f0 = resolvePackageFrame(p, 0);
+  let envMapId = f0.env?.mapId ?? BASE_ENV_MAP;
+  let env = await createEnvResources(device, f0.env?.map ?? p.scene.env);
+  const envs = [env];
+  if (f0.env) writeEnvParams(device, env, f0.env.params);
+  const settings = restirSettings('full', { maxBounces: p.render.maxBounces ?? 3, temporalCheck: 'robust', ...(o.tPlant ? { tPlant: o.tPlant } : {}) });
+  const k = await RestirKernel.create(device, gpu, env, { settings, lightMode: 'A', env: { nee: (p.json.env?.sampling ?? 'AUTOMATIC') !== 'NONE' }, features, wgslLanguageFeatures });
+  const W = p.render.width, H = p.render.height;
+  k.setView({ camera: { camToWorld: Array.from(f0.camera.camToWorld), yfov: f0.camera.yfov }, width: W, height: H, runSeed: 7002, members: T6B_MEMBERS, jitterMode: JITTER_IID });
+  await k.prepare();
+  const nFrames = o.frames ?? Math.max(...seq.testFrames) + 1;
+  const frames: RobustFrame[] = [];
+  let last = { selP: 0, mism: 0 };
+  const runner = new ChainRunner(k, { runSeed: 7002 });
+  const spec: ChainSpec = {
+    frames: nFrames, testFrames: [],
+    state: (t) => {
+      const r = resolvePackageFrame(p, t);
+      return { t, camera: { camToWorld: Array.from(r.camera.camToWorld), yfov: r.camera.yfov }, lights: r.lights, ...(r.env ? { env: { params: r.env.params, mapId: r.env.mapId } } : {}) };
+    },
+    beforeFrame: async (t) => {
+      const r = resolvePackageFrame(p, t);
+      if (r.env && r.env.mapId !== envMapId) {
+        env = await createEnvResources(device, r.env.map);
+        envs.push(env);
+        writeEnvParams(device, env, r.env.params);
+        k.setEnvironment(env);
+        envMapId = r.env.mapId;
       }
-      let refreshFrames = 0, classUndef = 0, lightUndef = 0;
-      const res = await runChain(rig, frames, async (f, r) => {
-        if (f.reset) return;
-        expect(r.histValid).toBe(true);
-        if (r.flags & K.TF_REFRESH) refreshFrames++;
-        classUndef += r.counters.rsc.tClassUndef;
-        lightUndef += r.counters.rsc.tLightUndef;
-        roundTrips(await temporalSnapshot(rig.kernel), bins, viol);
-      });
-      const tot = reportBins(`T3-2 lights ${name}`, bins);
-      console.log(`[T3-2 lights ${name}] refresh frames ${refreshFrames}, §9.3-6′ class-change (undefined) ${classUndef} = ${(classUndef / Math.max(tot.trials, 1)).toExponential(2)} per trial, light-undefined ${lightUndef}`);
-      if (viol.length) console.log(viol.join('\n'));
-      for (const r of res) expect([r.counters.rsc.tNonFinite, r.counters.rsc.tPendingLeft], `t=${r.t}`).toEqual([0, 0]);
-      expect(refreshFrames).toBe(T32_PAIRS);
-      expect(tot.rtOk).toBeGreaterThan(1000);
-      expect(tot.logic).toBe(0);
-      expect(tot.fp / Math.max(tot.trials, 1)).toBeLessThanOrEqual(1e-5);
-      rig.destroy();
+    },
+    afterFrame: async (t, kk) => {
+      const c = await kk.readCounters(false);
+      const adv = kk.currentAdvance!;
+      frames.push({ t, histValid: adv.histValid, flags: adv.flags, robust: c.rsc.tSelP - last.selP, mism: c.rsc.tRobustMismatch - last.mism, selP: c.rsc.tSelP });
+      last = { selP: c.rsc.tSelP, mism: c.rsc.tRobustMismatch };
+    },
+  };
+  await runner.runBatch(spec, 0, 0, () => undefined);
+  k.destroy(); gpu.destroy();
+  for (const e of envs) destroyEnvResources(e);
+  return { frames, testFrames: seq.testFrames };
+}
+
+describe('T6(b): robust mode (stored route ≡ π_p(Y_p) recomputed by E_{t−1}) on every ixs sequence at its test frames', () => {
+  for (const pkg of [...IXS, ...IXS_ENV]) {
+    it(pkg, async () => {
+      const { frames, testFrames } = await robustSequence(pkg);
+      const at = frames.filter((f) => testFrames.includes(f.t));
+      const robust = at.reduce((a, f) => a + f.robust, 0), mism = at.reduce((a, f) => a + f.mism, 0);
+      const allR = frames.reduce((a, f) => a + f.robust, 0), allM = frames.reduce((a, f) => a + f.mism, 0);
+      console.log(`[T6(b) ${pkg}] test frames ${testFrames.join(',')}: robust ${robust} mismatch ${mism}; all frames: robust ${allR} mismatch ${allM}; per test frame ${JSON.stringify(at.map((f) => [f.t, f.robust, f.mism]))}`);
+      expect(robust).toBeGreaterThan(0);
+      expect(mism / robust).toBeLessThanOrEqual(1e-5);
+      expect(allM / Math.max(allR, 1)).toBeLessThanOrEqual(1e-5);
     });
   }
+});
+
+describe('T6(b) planted: N1-mixed fails exactly on the light-change frames; N3 fails after a move (pending T-C, B-10)', () => {
+  it('N1-mixed on ixs_e_addremove: mismatches iff the frame changes lights (8, 14, 20), 0 on every other history frame', async () => {
+    const { frames } = await robustSequence('ixs_e_addremove_256', { tPlant: { n1Mixed: true }, frames: 24 });
+    const changed = frames.filter((f) => f.histValid && !(f.flags & K.TF_LIGHTS_SAME));
+    const same = frames.filter((f) => f.histValid && (f.flags & K.TF_LIGHTS_SAME));
+    console.log(`[T6(b) N1-mixed] changed ${JSON.stringify(changed.map((f) => [f.t, f.robust, f.mism]))}; unchanged mismatches ${same.reduce((a, f) => a + f.mism, 0)} of ${same.reduce((a, f) => a + f.robust, 0)}`);
+    expect(changed.map((f) => f.t)).toEqual([8, 14, 20]);
+    for (const f of changed) expect(f.mism, `t=${f.t}`).toBeGreaterThan(0.01 * f.robust);
+    expect(same.reduce((a, f) => a + f.mism, 0)).toBe(0);
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ T6(c)
+
+/** Provenance hooks (T6(c) part i, restir-temporal-api.md §6.1): every frame-state accessor ORs a (kind, frame) bit into
+ *  a private mask (kind 0 camera, 1 G-buffer, 2 light slot, 3 env record; frame bit 1 = t−1); the temporal passes store
+ *  the mask of their shift call in tState word xpEntry (forward: bits 0–7, inverse: bits 16–23). Test-only sources. */
+function provenanceSources(): Record<string, string> {
+  const sub = (file: string, pairs: [string, string][]) => {
+    let s = shaderSources[file];
+    for (const [a, b] of pairs) { if (!s.includes(a)) throw new Error(`${file}: '${a}' not found`); s = s.replace(a, b); }
+    return s;
+  };
+  const P = (k: number, prev: string) => `prov(${k}u, ${prev});`;
+  return {
+    'restir/frame.wgsl': sub('restir/frame.wgsl', [
+      ['#include "restir/types.wgsl"', '#include "restir/types.wgsl"\nvar<private> provMask: u32;\nfn prov(k: u32, prev: bool) { provMask |= 1u << (2u * k + select(0u, 1u, prev)); }'],
+      ['fn rs_vbuf(px: vec2u) -> vec4u { return', `fn rs_vbuf(px: vec2u) -> vec4u { ${P(1, 'false')} return`],
+      ['fn rs_geo(px: vec2u) -> vec4f { return', `fn rs_geo(px: vec2u) -> vec4f { ${P(1, 'false')} return`],
+      ['fn rs_vbuf_prev(px: vec2u) -> vec4u { return', `fn rs_vbuf_prev(px: vec2u) -> vec4u { ${P(1, 'true')} return`],
+      ['fn rs_geo_prev(px: vec2u) -> vec4f { return', `fn rs_geo_prev(px: vec2u) -> vec4f { ${P(1, 'true')} return`],
+      ['fn rs_cam_pos() -> vec3f { return', `fn rs_cam_pos() -> vec3f { ${P(0, 'false')} return`],
+    ]),
+    'restir/tframe.wgsl': sub('restir/tframe.wgsl', [
+      ['fn lf_slot(fs: u32) -> LightSlot {', `fn lf_slot(fs: u32) -> LightSlot {\n  ${P(2, 'fs == RS_FS_PREV')}`],
+      ['fn lf_env(fs: u32) -> EnvParams {', `fn lf_env(fs: u32) -> EnvParams {\n  ${P(3, 'fs == RS_FS_PREV')}`],
+      ['fn lf_cam_pos(fs: u32) -> vec3f {', `fn lf_cam_pos(fs: u32) -> vec3f {\n  ${P(0, 'fs == RS_FS_PREV')}`],
+    ]),
+    'passes/restir/t-classify.wgsl': sub('passes/restir/t-classify.wgsl', [
+      ['    let o = temporal_shift(src, tdst_cur(p));', '    provMask = 0u;\n    let o = temporal_shift(src, tdst_cur(p));\n    ts_store(p.ai, TSW_XPENTRY, provMask);'],
+    ]),
+    'passes/restir/t-forward.wgsl': sub('passes/restir/t-forward.wgsl', [
+      ['  let o = temporal_shift(', '  provMask = 0u;\n  let o = temporal_shift('],
+      ['  ts_store_fwd(q, o);', '  ts_store_fwd(q, o);\n  ts_store(q, TSW_XPENTRY, provMask);'],
+    ]),
+    'passes/restir/t-inverse.wgsl': sub('passes/restir/t-inverse.wgsl', [
+      ['  let o = temporal_shift(src, tdst_prev(qP));', '  provMask = 0u;\n  let o = temporal_shift(src, tdst_prev(qP));\n  ts_store(q, TSW_XPENTRY, (ts_load(q, TSW_XPENTRY) & 0xFFFFu) | (provMask << 16u));'],
+    ]),
+  };
+}
+
+/** A V1-only box (Lambert + one glossy V1 wall) with point, spot and rect lights: the f64 cross-evaluator scene. */
+const XE_MATS: V1Params[] = [
+  { model: 0, diffuse: [0.6, 0.6, 0.6], glossy: [0, 0, 0], roughness: 0.5, mix: 0 },
+  { model: 0, diffuse: [0.5, 0.45, 0.4], glossy: [0.8, 0.8, 0.8], roughness: 0.3, mix: 0.5 },
+  { model: 0, diffuse: [0.2, 0.5, 0.3], glossy: [0, 0, 0], roughness: 0.5, mix: 0 },
+  { model: 0, diffuse: [0.7, 0.3, 0.2], glossy: [0, 0, 0], roughness: 0.5, mix: 0 },
+];
+function xeScene(t: number): SceneData {
+  const mats = XE_MATS.map((m) => material({ baseColorFactor: [...m.diffuse, 1], v1: { diffuse: m.diffuse, glossy: m.glossy, roughness: m.roughness, mix: m.mix } }));
+  const quads = [
+    { p: [[-1.5, 0, 1], [1.5, 0, 1], [1.5, 0, -2], [-1.5, 0, -2]], mat: 0 },
+    { p: [[-1.5, 0, -2], [1.5, 0, -2], [1.5, 2, -2], [-1.5, 2, -2]], mat: 1 },
+    { p: [[-1.5, 0, 1], [-1.5, 0, -2], [-1.5, 2, -2], [-1.5, 2, 1]], mat: 2 },
+    { p: [[1.5, 0, -2], [1.5, 0, 1], [1.5, 2, 1], [1.5, 2, -2]], mat: 3 },
+  ];
+  const down = (p: [number, number, number]) => lightMatrixToward([0, -1, 0], p);
+  return quadScene(quads, mats, [
+    light({ id: 1, type: 'point', power: 30, matrix: down([0.6 - 0.05 * t, 1.6, -0.3]) }),
+    light({ id: 2, type: 'spot', power: 50, spotSize: 1.0, spotBlend: 0.2, matrix: lightMatrixToward([0.2, -1, -0.3], [-0.5, 1.8, 0.2]) }),
+    light({ id: 3, type: 'rect', power: t % 2 ? 60 : 40, sizeX: 0.5, sizeY: 0.3, matrix: lightMatrixToward([0, -0.3, 1], [0.3, 1.3, -1.9]) }),
+  ]);
+}
+
+/** f64 F_{t−1} of a class-L path (d = 2, forced NEE on an analytic light) from explicit vertices: previous camera c,
+ *  y₁′ (ids of the previous V-buffer), the light point of the translated entry under the frame-(t−1) records and pmf.
+ *  Mode A analytic: ω1 = 1. Written from math.md#measure / #units-lights, independent of the WGSL. */
+function xeEvalF(o: { cam: number[]; pos: Float32Array; idx: Uint32Array; triMat: Uint32Array; rec: Uint32Array; slot: { lightOff: number; pmfOff: number }; prim: number; bu: number; bv: number; entry: number; eu: number; ev: number }): { F: [number, number, number]; kappa: number } | undefined {
+  const f = new Float32Array(o.rec.buffer, o.rec.byteOffset, o.rec.length);
+  const P = (i: number) => [o.pos[3 * i], o.pos[3 * i + 1], o.pos[3 * i + 2]];
+  const [a, b, c] = [0, 1, 2].map((j) => P(o.idx[3 * o.prim + j]));
+  const w = 1 - o.bu - o.bv;
+  const y = [0, 1, 2].map((j) => w * a[j] + o.bu * b[j] + o.bv * c[j]);
+  const e1 = [0, 1, 2].map((j) => b[j] - a[j]), e2 = [0, 1, 2].map((j) => c[j] - a[j]);
+  let ng = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+  const nrm = (v: number[]) => { const l = Math.hypot(v[0], v[1], v[2]); return v.map((x) => x / l); };
+  const dt = (u: number[], v: number[]) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+  ng = nrm(ng);
+  const V = nrm([0, 1, 2].map((j) => o.cam[j] - y[j]));
+  if (dt(ng, V) < 0) ng = ng.map((x) => -x);
+  const L0 = o.slot.lightOff + o.entry * 28;
+  const rv = (i: number) => [f[L0 + i], f[L0 + i + 1], f[L0 + i + 2]];
+  const kind = o.rec[L0 + 3], lpos = rv(0), axisU = rv(4), axisV = rv(8), normal = rv(12), emit = rv(16);
+  const halfU = f[L0 + 7], halfV = f[L0 + 11], cosHalf = f[L0 + 20], spotSmooth = f[L0 + 21], spreadNorm = f[L0 + 22], tanHalf = f[L0 + 23], invArea = f[L0 + 25];
+  const pmf = f[o.slot.pmfOff + o.entry];
+  let z = lpos;
+  if (kind === 3) z = [0, 1, 2].map((j) => lpos[j] + (2 * o.eu - 1) * halfU * axisU[j] + (2 * o.ev - 1) * halfV * axisV[j]);
+  else if (kind !== 1 && kind !== 2) return undefined;
+  const d = [0, 1, 2].map((j) => z[j] - y[j]);
+  const r2 = dt(d, d), r = Math.sqrt(r2);
+  const L = d.map((x) => x / r);
+  let lam: number[], q: number;
+  // f32 conditioning of the evaluation (as M4 U-11): relative sensitivity to ulp-level position / direction errors
+  let kappa = 1 / Math.max(Math.abs(dt(ng, L)), 1e-12) + 1 / Math.max(Math.abs(dt(ng, V)), 1e-12);
+  if (kind === 1) { lam = emit.map((x) => x / r2); q = pmf; }
+  else if (kind === 2) {
+    const ct = dt(L.map((x) => -x), normal);
+    let S: number;
+    if (spotSmooth < 0) S = ct > cosHalf ? 1 : 0;
+    else {
+      const s = (ct - cosHalf) * spotSmooth; S = s <= 0 ? 0 : s >= 1 ? 1 : s * s * (3 - 2 * s);
+      if (s > 0 && s < 1) kappa += (6 * s * (1 - s) * spotSmooth) / Math.max(S, 1e-12);   // |d ln S / d cosθ'|
+    }
+    lam = emit.map((x) => (x * S) / r2); q = pmf;
+  } else {
+    const cz = dt(L.map((x) => -x), normal);
+    if (!(cz > 0)) return { F: [0, 0, 0], kappa };
+    kappa += 1 / cz;
+    const spread = spreadNorm < 0 ? 1 : Math.max((tanHalf - Math.sqrt(Math.max(1 - cz * cz, 0)) / cz) * spreadNorm, 0);
+    lam = emit.map((x) => (x * spread * cz) / r2); q = pmf * invArea;
+  }
+  // local frame at y (N = ng)
+  const tA = Math.abs(ng[0]) > 0.9 ? [0, 1, 0] : [1, 0, 0];
+  const T1 = nrm([ng[1] * tA[2] - ng[2] * tA[1], ng[2] * tA[0] - ng[0] * tA[2], ng[0] * tA[1] - ng[1] * tA[0]]);
+  const B1 = [ng[1] * T1[2] - ng[2] * T1[1], ng[2] * T1[0] - ng[0] * T1[2], ng[0] * T1[1] - ng[1] * T1[0]];
+  const loc = (v: number[]): [number, number, number] => [dt(v, T1), dt(v, B1), dt(v, ng)];
+  const ev = evalLocal(XE_MATS[o.triMat[o.prim]], loc(V), loc(L));
+  return { F: [0, 1, 2].map((j) => ((ev.fD[j] + ev.fS[j]) * lam[j]) / q) as [number, number, number], kappa };
+}
+
+describe('T6(c): previous-state provenance and the f64 cross-evaluator', () => {
+  it('(i) provenance: forward shifts read only frame-t state, inverse shifts only frame t−1 state; gensPrev(t) = gens(t−1)', async () => {
+    const scene = allLightsScene();
+    const rig = await restirRig(scene, 64, 64, { preset: 'temporal', settings: { maxBounces: 3 }, seed: 6101, extraSources: provenanceSources() });
+    const frames: ChainFrame[] = Array.from({ length: 8 }, (_, t) => ({ t, camera: movedCamera(0.03 * t, 0, 0, 0.01 * t), lights: animatedLights(scene.lights, t, [{ id: 1, dp: [0.03, 0, 0] }, { id: 3, power: (u) => (u % 2 ? 1.5 : 1) }]) }));
+    const gens: number[][] = [];
+    const st = { fwd: 0, inv: 0, fwdBad: 0, invBad: 0, fwdLight: 0, invLight: 0 };
+    const bad: string[] = [];
+    const CUR = 0x55, PREV = 0xaa;
+    await runChain(rig, frames, async (f, r) => {
+      const a = rig.kernel.currentAdvance!;
+      gens.push([...a.temporal.gens]);
+      if (f.t > 0) expect(a.temporal.gensPrev, `t=${f.t}`).toEqual(gens[f.t - 1]);
+      if (!r.histValid) return;
+      const s = await temporalSnapshot(rig.kernel);
+      for (let ai = 0; ai < s.P; ai++) {
+        const ts = s.ts(ai);
+        if (ts.flags & T.TS_FWD_DONE) {
+          if (scOf(ts.fwdCode) === K.SC_EMPTY_SRC || scOf(ts.fwdCode) === K.SC_O0_LIGHT) continue;
+          const m = ts.xpEntry & 0xff;
+          st.fwd++;
+          if ((m & PREV) || !(m & 0x1) || !(m & 0x4)) { st.fwdBad++; if (bad.length < 8) bad.push(`t${f.t} ai${ai} fwd mask ${m.toString(2)}`); }
+          if (m & 0x10) st.fwdLight++;
+        }
+        if (ts.flags & T.TS_INV_DONE) {
+          const m = (ts.xpEntry >>> 16) & 0xff;
+          st.inv++;
+          if ((m & CUR) || !(m & 0x2) || !(m & 0x8)) { st.invBad++; if (bad.length < 8) bad.push(`t${f.t} ai${ai} inv mask ${m.toString(2)}`); }
+          if (m & 0x20) st.invLight++;
+        }
+      }
+    });
+    console.log(`[T6(c)-i] ${JSON.stringify(st)}${bad.length ? '\n  ' + bad.join('\n  ') : ''}`);
+    expect(st.fwd).toBeGreaterThan(1000);
+    expect(st.inv).toBeGreaterThan(1000);
+    expect(st.fwdLight).toBeGreaterThan(0);
+    expect(st.invLight).toBeGreaterThan(0);
+    expect(st.fwdBad).toBe(0);
+    expect(st.invBad).toBe(0);
+    rig.destroy();
+  });
+
+  it('(ii) cross-evaluator: T⁻¹(X_c) as explicit vertices, f64 under S_{t−1} ≡ π_p(X_c)/J_inv = F_{t−1} (1e-4), ≥ 10⁵ canonicals', async () => {
+    const W = 192;
+    const frames: ChainFrame[] = Array.from({ length: 100 }, (_, t) => ({ t, camera: movedCamera(0.02 * t, 0, 0, 0.005 * t), lights: xeScene(t).lights }));
+    const rig = await restirRig(xeScene(0), W, W, { preset: 'temporal', settings: { maxBounces: 1, temporalMis: 'talbot' }, seed: 6102 });
+    const g = rig.kernel.lights.state as unknown as { records: Uint32Array; prevSlot: { lightOff: number; pmfOff: number }; translate(e: number, f: 'prev' | 'cur', t: 'prev' | 'cur', same?: boolean): number };
+    const origin = rig.g.gpu.origin as unknown as number[];
+    const pos = recentrePositions(rig.g.gpu.scene.geometry.positions, rig.g.gpu.origin);
+    const idx = rig.g.gpu.scene.geometry.indices, triMat = rig.g.gpu.scene.geometry.triMaterial;
+    const st = { n: 0, bad: 0, fp: 0, worst: 0, skipped: 0 };
+    const bad: string[] = [];
+    await runChain(rig, frames, async (f, r) => {
+      if (!r.histValid) return;
+      const k = rig.kernel, res = k.resources;
+      const s = await temporalSnapshot(k);
+      const vbPrev = await readTexture4(rig.g.device, res.vbufPrev);
+      const words = await k.readTemporalState();
+      const cm = frames[f.t - 1].camera.camToWorld as ArrayLike<number>;
+      const cam = [cm[12] - origin[0], cm[13] - origin[1], cm[14] - origin[2]];
+      const same = !!(r.flags & K.TF_LIGHTS_SAME);
+      for (let ai = 0; ai < s.P; ai++) {
+        const ts = s.ts(ai);
+        if (!(ts.flags & T.TS_SEL_C) || !(ts.flags & T.TS_INV_DONE) || scOf(ts.invCode) !== K.SC_OK) continue;
+        const fl = s.rec(s.out, ai, RW.flags);
+        if ((fl & 0xf) !== 2 || ((fl >>> 4) & 0xf) !== 2 || ((fl >>> 8) & 3) !== K.RS_TECH_NEE) { st.skipped++; continue; }
+        const eCur = s.rec(s.out, ai, RW.end) & K.RC_ENTRY_MASK;
+        const sfx = decodeSfxLocal(words, s.P, s.NS, 1, ai);
+        const ePrev = r.flags & K.TF_REFRESH ? sfx.entryTo & K.RC_ENTRY_MASK : g.translate(eCur, 'cur', 'prev', same);
+        const qp = ts.qPrime;
+        const xe = xeEvalF({ cam, pos, idx, triMat, rec: g.records, slot: g.prevSlot, prim: vbPrev[4 * qp], bu: u2f(vbPrev[4 * qp + 1]), bv: u2f(vbPrev[4 * qp + 2]), entry: ePrev, eu: u2f(s.rec(s.out, ai, RW.end + 1)), ev: u2f(s.rec(s.out, ai, RW.end + 2)) });
+        if (!xe) { st.skipped++; continue; }
+        const F = xe.F;
+        st.n++;
+        const e = Math.max(...[0, 1, 2].map((c) => (F[c] === 0 && ts.invF[c] === 0 ? 0 : relErr(F[c], ts.invF[c]))));
+        const tol = Math.max(1e-4, 64 * 2 ** -23 * xe.kappa);   // 1e-4, or the f32 conditioning (M4 U-11 rule)
+        st.worst = Math.max(st.worst, e);
+        if (e > 1e-4) st.fp++;
+        if (e > tol) { st.bad++; if (bad.length < 8) bad.push(`t${f.t} ai${ai} f64 ${F.map((x) => x.toExponential(5))} gpu ${ts.invF.map((x) => x.toExponential(5))} κ ${xe.kappa.toExponential(2)}`); }
+        void (ts.piRecomp / u2f(ts.invJ));                 // π_p(X_c)/J_inv = lum(invF) by construction (ts_store_inv)
+      }
+    });
+    console.log(`[T6(c)-ii] ${JSON.stringify(st)}${bad.length ? '\n  ' + bad.join('\n  ') : ''}`);
+    expect(st.n).toBeGreaterThanOrEqual(1e5);
+    expect(st.bad).toBe(0);
+    rig.destroy();
+  });
 });

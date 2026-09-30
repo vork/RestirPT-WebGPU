@@ -1507,3 +1507,49 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   keeps one view per colour texture (WeakMap); `frameUnits()` and `RestirFramePass.encodeHold()` use it. A new target
   is a new texture (resize, format change) and `setTargets` still drops the old finalize groups. Test: restir-debug
   "finalize bind-group cache stays bounded" (24 advanced + held frames, constant group count).
+- **B-9 Coordinator decisions on the T-B open items (2026-09-30)** (affects T-A: one constant; T-E: gate lists and
+  budget; T-D: HUD may show the new counter).
+  1. U8 plant 4 (`RSF_PLANT_U8_T2`, J = t_x²/t_y²) is **deferred to M6** with U8 7, 8, 10 (it needs x_{d−1} in the shift
+     source for case (a)); the flag stays unimplemented and gate-m5 lists it as deferred (T-E `M5_DEFERRED_PLANTS`).
+  2. T3-2 covers the temporal-specific parts (frame selector, refresh, entry renumbering, J_P); the shared shift core
+     is covered by M4's > 10⁹ round trips. The harness checks on the GPU (`restir-temporal-fixtures.ts T32Harness`: a
+     scene-free check kernel over every pixel, bins as M4 `t3_case`, F / J reciprocity 1e-4, margin rule; a traced re-run
+     of every failing inverse applies the M4 replay-edge rule, B-7) and runs `allLightsScene` (common bins) plus
+     `t3_rare_256` (k > 2 and ∅ bins). The gate sets `VITE_T32_PAIRS` (and `VITE_T32_RES`) so every populated bin reaches
+     ≥ 10⁶ round trips with LOGIC = 0; T-E carries the budget line.
+  3. New counter **`RSC_T_LIGHT_CLASS = 28`** (header word 28 was free; `types.wgsl` / `layout.ts` `RSC.tLightClass`,
+     appended): temporal shifts undefined for a light reason, forward (T1) and inverse (T4): the refresh record carries
+     `SXS_UNDEF` without `SXS_E2` and is not stale (entry missing in the target frame or realized pmf ≤ 0). In Mode A an
+     endpoint class change by a light edit is exactly this (a type / topology change is remove + add, §24; emissive
+     triangles are static; an env add / remove with a table change resets history). `CLASS_UNDEF` stays as defined in
+     B-5 (dominated by camera-induced O1/O2 in practice); only light-change tests assert on `LIGHT_CLASS` (> 0 for
+     add / remove, 0 for camera, moves, resizes, rotations, intensity and env edits).
+- **B-10 N3 and the robust check (pending T-C)** (affects T-C `refresh.wgsl`). With C-5 the N3 stale values are served in
+  both directions, so robust mode compares stale with stale and cannot fail under N3 (§6.1 T6(b), gap-temporal §9.2 ask
+  for a *fresh* inverse evaluation). Proposed: under `TM_ROBUST`, `rs_refresh_inv` ignores `TP_N3_STALE` / `TP_N7_PER_LIGHT`
+  (the robust inverse is a checker; contribution-MIS rendering with N3 is unchanged). The N3 T6(b) failure check waits
+  for this; the N1-mixed check needs nothing (`lf_slot(PREV)` = cur under the plant).
+  **Resolved** by T-C C-8 (058c934) together with the loader change: `tsrc_load` takes the refresh `rad` for every deep
+  record and the t-select write-back no longer tests `TP_N3_STALE` (the stale values come from the refresh, C-5).
+- **B-11 T3-2 budget, the C-9 class, T6(b)/T6(c) harnesses** (affects T-E: gate lines; T-A / coordinator: C-9).
+  - T3-2 budget (measured, Chrome / M5 Pro, `t3_rare_256` at 256², 200 pairs pilot): per pair 3.8 ms incl. readbacks; the
+    rarest bin is `c-tri/k>2` with 12.7 (camera) / 20.3 (add / remove + intensity) / 22.0 (moving lights + env) round
+    trips per pair. ≥ 10⁶ in every bin: `VITE_T32_RARE_PAIRS=80000 VITE_T32_RARE_RES=256 VITE_T32_MIN_BIN=1000000`, each
+    `rare bins:` case in its own lock hold (≈ 5 min each at 80 000 pairs), ≈ 15 min GPU in total; the `allLightsScene` cases stay at the defaults (12 pairs, 128², < 1 s each).
+  - C-9 (open, T-C): BSDF_ENV escape ends re-evaluated in another pipeline differ by ≤ ~5e-3 (envUV ulp jitter ×
+    bilinear weight quantisation). T3-2 reports such F-only mismatches (J exact, technique BSDF_ENV, eF ≤ 1e-2) as class
+    `envFilter`, bounded at 2e-5 of the trials, not as LOGIC; measured 12–16 per 2·10⁶ round trips on light-change
+    frames, 0 without a refresh and 0 on smooth envs. Removing the class is part of the C-9 decision.
+  - T6(b) runs every `ixs_*` package (incl. the four env sequences from `validation/out/m5/scenes`) through T-E's
+    `ChainRunner` (`spec.afterFrame`, 0cf847c) with the `full` preset in robust mode (E = 2 chains): mismatches / robust
+    checks ≤ 1e-5 at the test frames and over all frames (measured 0 of ≈ 6.6·10⁷). N1-mixed on ixs_e_addremove: every
+    robust check mismatches on the light-change frames 8, 14, 20 and none on the other history frames.
+  - T6(c)(i) provenance is a test-only source substitution (`restir-temporal.gpu.test.ts provenanceSources`): the frame
+    accessors (`lf_slot`, `lf_env`, `lf_cam_pos`, `rs_vbuf/geo(_prev)`, `rs_cam_pos`) OR a (kind, frame) bit into a
+    private mask stored per shift; forward shifts must read only frame t, inverse shifts only t−1, and
+    `RsTemporal.gensPrev(t) = gens(t−1)`. T6(c)(ii) is an f64 evaluator of class-L paths (d = 2, point / spot / rect,
+    Mode A: ω1 = 1) from explicit vertices (previous camera, y₁′ of the previous V-buffer, the light point of the
+    translated entry, the t−1 light records and pmf of the CPU light-state mirror, `bsdf-ref.ts evalLocal`), compared
+    with T4's F_{t−1} = π_p(X_c)/J_inv per channel within max(1e-4, 64·2⁻²³·κ) (κ = the f32 conditioning: 1/|cos| at y
+    and the light, the spot profile's log slope; the M4 U-11 rule); it needs no `rc-dual.ts` change (the dual has no
+    light / BSDF value evaluator; `bsdf-ref.ts` is its f64 BSDF).

@@ -78,7 +78,7 @@ fn tsrc_load(ai: u32, fromBuf: u32, sfxDir: u32, fsTo: u32) -> TSrc {
     if (rf_k(f) == rf_d(f)) { t.base.rc.x = e; }
     t.jp = r.jp;
   }
-  if (tcls_deep(f) && !rs_tplant(TP_N3_STALE)) { t.base.rcRad = r.rad; }
+  if (tcls_deep(f)) { t.base.rcRad = r.rad; }              // N3 stale values come from the refresh (C-5, B-10)
   if (tcls_n1(f)) { t.base.endOcc = (r.status & SXS_VIS) == 0u; }
   return t;
 }
@@ -139,6 +139,15 @@ fn temporal_shift(s: TSrc, dst: ShiftDst) -> TShiftOut {
     o.J = J;
   }
   return o;
+}
+
+/// The refresh record of (dir, ai) refused the record for a light reason (Changelog B-9: entry missing in the target
+/// frame or its realized pmf ≤ 0), not E2 class zeroing and not a stale record. Endpoint class changes by light edits
+/// reduce to this in Mode A: a type or topology change is remove + add (§24), and emissive triangles are static.
+fn tsfx_light_refused(dir: u32, ai: u32) -> bool {
+  if (!rs_tf(TF_REFRESH)) { return false; }
+  let r = sfx_load(dir, ai);
+  return r.gen == rsTemporal.frameGen && (r.status & SXS_DONE) != 0u && (r.status & SXS_UNDEF) != 0u && (r.status & SXS_E2) == 0u;
 }
 
 /// An undefined shift code (outside the producibility set): not OK, ZERO, OCCLUDED or NONFINITE.

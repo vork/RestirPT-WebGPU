@@ -38,6 +38,7 @@ fn rs_t_classify(@builtin(global_invocation_id) gid: vec3u) {
     ts_store(p.ai, TSW_FWDCODE, rs_slot_code(SC_O0_LIGHT, RCT_NONE, 0u, 0.0));
     ts_storef(p.ai, TSW_JP, src.jp);
     tcount_fwd(rs_slot_code(SC_O0_LIGHT, RCT_NONE, 0u, 0.0));
+    if (tsfx_light_refused(SFX_FWD, qP)) { rs_count(RSC_T_LIGHT_CLASS, 1u); }
   } else if (res_needs_replay(src.base.flags)) {
     ts_store(p.ai, TSW_FWDJ, JW_PENDING);
     ts_store(p.ai, TSW_FWDCODE, rs_slot_code(SC_PENDING, RCT_NONE, 0u, 0.0));

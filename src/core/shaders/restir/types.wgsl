@@ -75,6 +75,8 @@ const RSC_T_LIGHT_UNDEF: u32 = 56u;  const RSC_T_CLASS_UNDEF: u32 = 57u;  const 
 const RSC_T_REFRESH_RAYS: u32 = 59u;  const RSC_T_E2_ZEROED: u32 = 60u;  const RSC_T_ROBUST_MISMATCH: u32 = 61u;
 const RSC_T_NONFINITE: u32 = 62u;  const RSC_T_PENDING_LEFT: u32 = 63u;
 const RS_Q_SPATIAL: u32 = 0u;  const RS_Q_FWD: u32 = 1u;  const RS_Q_INV: u32 = 2u;
+// restir-temporal-api.md Changelog B-9: light-driven undefined temporal shifts (free header word 28, both directions)
+const RSC_T_LIGHT_CLASS: u32 = 28u;
 
 /// Packed slot code word (§2.6): sc | term << 8 | pair << 12 | f16(margin) << 16.
 fn rs_slot_code(sc: u32, term: u32, pair: u32, margin: f32) -> u32 {

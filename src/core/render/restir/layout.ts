@@ -54,6 +54,8 @@ export const RS_WGSL_CONSTS = {
   RSC_T_INV_OK: 54, RSC_T_EMPTY_OUT: 55, RSC_T_LIGHT_UNDEF: 56, RSC_T_CLASS_UNDEF: 57, RSC_T_REFRESH_RECS: 58,
   RSC_T_REFRESH_RAYS: 59, RSC_T_E2_ZEROED: 60, RSC_T_ROBUST_MISMATCH: 61, RSC_T_NONFINITE: 62, RSC_T_PENDING_LEFT: 63,
   RS_Q_SPATIAL: 0, RS_Q_FWD: 1, RS_Q_INV: 2,
+  // restir-temporal-api.md Changelog B-9 (T-B)
+  RSC_T_LIGHT_CLASS: 28,
 } as const;
 const K = RS_WGSL_CONSTS;
 
@@ -78,6 +80,7 @@ export const RSC = {
   tInvQueued: K.RSC_T_INV_QUEUED, tInvOk: K.RSC_T_INV_OK, tEmptyOut: K.RSC_T_EMPTY_OUT, tLightUndef: K.RSC_T_LIGHT_UNDEF,
   tClassUndef: K.RSC_T_CLASS_UNDEF, tRefreshRecs: K.RSC_T_REFRESH_RECS, tRefreshRays: K.RSC_T_REFRESH_RAYS, tE2Zeroed: K.RSC_T_E2_ZEROED,
   tRobustMismatch: K.RSC_T_ROBUST_MISMATCH, tNonFinite: K.RSC_T_NONFINITE, tPendingLeft: K.RSC_T_PENDING_LEFT,
+  tLightClass: K.RSC_T_LIGHT_CLASS,
 } as const;
 export type RscName = keyof typeof RSC;
 

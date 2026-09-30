@@ -25,6 +25,7 @@ fn rs_t_inverse(@builtin(workgroup_id) wid: vec3u, @builtin(num_workgroups) nwg:
     flags |= TS_E2_ZERO;
     rs_count(RSC_T_E2_ZEROED, 1u);
   }
+  if (src.undefinedLight && tsfx_light_refused(SFX_INV, q)) { rs_count(RSC_T_LIGHT_CLASS, 1u); }
   let o = temporal_shift(src, tdst_prev(qP));
   ts_store_inv(q, o);
   if (rs_slot_code_sc(o.code) == SC_OK) { rs_count(RSC_T_INV_OK, 1u); }
