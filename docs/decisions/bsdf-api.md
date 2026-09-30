@@ -49,6 +49,7 @@ fn bsdf_eval_lobe(m: MatEval, V: vec3f, L: vec3f, lobe: u32) -> vec4f;          
 fn bsdf_pdf_marginal(m: MatEval, V: vec3f, L: vec3f) -> f32;                    // MIS for BSDF-hit emitters
 fn bsdf_sample_support(m: MatEval, V: vec3f, L: vec3f, lobe: u32) -> bool;      // math.md#support-indicator
 fn lobe_roughness(m: MatEval, lobe: u32) -> f32;                                 // perceptual r: D=1, S/G_R=r, G_T=r or 0
+fn bsdf_query(m: MatEval, V: vec3f, L: vec3f, lobe: u32) -> BsdfQuery;          // ReSTIR (M4): all of the above for one (V, L)
 // diagnostics / tests: bsdf_lobe_probs (q_D, q_S, q_G, η_side), bsdf_sample_weights (Cycles sw_ℓ), bsdf_glass_diag,
 // bsdf_flags (MatEval.flags for a V; preserves MATEVAL_BACKFACING)
 ```
@@ -73,6 +74,11 @@ Rules:
   hit after a delta lobe has MIS weight 1.
 - `bsdf_eval_lobe(G_R | G_T)` returns the glass eval restricted to its sub-event side (Ns·L ≥ 0 | < 0) with the
   valid-only joint pdf; f carries no support indicator (multiply by `bsdf_sample_support` for BSDF-sampled segments).
+- `bsdf_query` (M4, restir-api.md §3.1) returns `{f_lobe, p_joint, f_all, p_marg, supp}` from **one** `bsdf_prepare` +
+  **one** `bsdf_eval_ctx`: `f_lobe, p_joint` ≡ `bsdf_eval_lobe`, `f_all, p_marg` ≡ `bsdf_eval` (= `bsdf_pdf_marginal`),
+  `supp` ≡ `bsdf_sample_support` (true for LOBE_NEE / LOBE_NONE). U-PT-BITS part 2 checks the agreement (measured bitwise
+  on 4.2·10⁶ random queries). ReSTIR modules call only `bsdf_query`, `bsdf_sample`, `material_eval` and `lobe_roughness`
+  (inline budget per pipeline: ≤ 1 `bsdf_sample`, ≤ 2 `bsdf_query`, ≤ 2 `material_eval`).
 - The LUT tables live in the `records` storage buffer at offsets provided by `$LUT_*` defines (material/lut.wgsl).
   The Tier-2 glass tables (`cycles-glass-luts.ts`) are extracted for the CPU tests only (Tier 2 is M7).
 

@@ -73,17 +73,25 @@ struct EnvCellSample { i: u32, j: u32, uv: vec2f, s: f32 }
 
 fn env_prev_float(x: f32) -> f32 { return bitcast<f32>(bitcast<u32>(x) - 1u); }
 
-fn env_sample_cell(h0: u32, h1: u32, h2: u32) -> EnvCellSample {
+/// Alias draw of cell (i, j) (row i, column j) from the hashes h0 (row) and h1 (column).
+fn env_draw_cell(h0: u32, h1: u32) -> vec2u {
   let log2W = lightsParams.envLog2W;
   let log2H = log2W - 1u;
   let W = 1u << log2W;
-  let H = 1u << log2H;
   let i0 = h0 >> (32u - log2H);                       // log2H ≥ 1 (W_m ≥ 4): never a shift by 32
   let er = records[lightsParams.envRowOff + i0];
   let i = select(er >> 16u, i0, (h0 & 0xffffu) < (er & 0xffffu));
   let j0 = h1 >> (32u - log2W);
   let ec = records[lightsParams.envColOff + i * W + j0];
   let j = select(ec >> 16u, j0, (h1 & 0xffffu) < (ec & 0xffffu));
+  return vec2u(i, j);
+}
+
+/// The in-cell point of cell (i, j) for the lattice offsets h2 = (du16 << 16) | dv16, clamped inside the cell.
+fn env_cell_uv(i: u32, j: u32, h2: u32) -> EnvCellSample {
+  let log2W = lightsParams.envLog2W;
+  let W = 1u << log2W;
+  let H = 1u << (log2W - 1u);
   let du16 = h2 >> 16u;
   let dv16 = h2 & 0xffffu;
   var u = (f32(j) + (f32(du16) + 0.5) / 65536.0) / f32(W);
@@ -93,10 +101,17 @@ fn env_sample_cell(h0: u32, h1: u32, h2: u32) -> EnvCellSample {
   return EnvCellSample(i, j, vec2f(u, v), sin(PI * min(v, 1.0 - v)));
 }
 
-/// NEE sample of the env alias entry (math.md#measure: q = p1 = pmf[ENV]·pdf_σ(uv), Λ = L_env(uv), isInf).
-fn env_light_sample(slot: LightSlot, entry: u32, h: vec3u) -> LightSample {
+fn env_sample_cell(h0: u32, h1: u32, h2: u32) -> EnvCellSample {
+  let ij = env_draw_cell(h0, h1);
+  return env_cell_uv(ij.x, ij.y, h2);
+}
+
+/// NEE sample of the env alias entry for the drawn cell (i, j) and in-cell offsets h2 (math.md#measure: q = p1 =
+/// pmf[ENV]·pdf_σ(uv), Λ = L_env(uv), isInf). ReSTIR re-evaluates stored env endpoints (i, j, h2) with this function
+/// (restir/endpoint.wgsl nee_eval), so base and shifts are bit-identical to nee_sample.
+fn env_light_sample_cell(slot: LightSlot, entry: u32, i: u32, j: u32, h2: u32) -> LightSample {
   var ls = light_sample_none();
-  let c = env_sample_cell(h.x, h.y, h.z);
+  let c = env_cell_uv(i, j, h2);
   let q = light_pmf(slot, entry) * env_pdf_sa_cell(c.i, c.j, c.s);
   ls.entry = entry;
   ls.kind = LT_ENV;
@@ -113,6 +128,12 @@ fn env_light_sample(slot: LightSlot, entry: u32, h: vec3u) -> LightSample {
   ls.analytic = false;                                  // the env always uses MIS (never Mode-A NEE-only)
   ls.valid = q > 0.0;                                   // pole cap: rejected, F = 0 (BSDF covers it with ω2 = 1)
   return ls;
+}
+
+/// NEE sample of the env alias entry (hashes h = (h0, h1, h2)): cell draw + env_light_sample_cell.
+fn env_light_sample(slot: LightSlot, entry: u32, h: vec3u) -> LightSample {
+  let ij = env_draw_cell(h.x, h.y);
+  return env_light_sample_cell(slot, entry, ij.x, ij.y, h.z);
 }
 
 /// One NEE sample at x over the whole global alias table (analytic lights, emissive triangles, ENV).

@@ -11,3 +11,5 @@ docs/papers/*.pdf
 test-results/
 .vite/
 __pycache__/
+.vitest/
+.vite-cache*/

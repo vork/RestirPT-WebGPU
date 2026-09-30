@@ -275,6 +275,49 @@ fn bsdf_sample_support(m: MatEval, V: vec3f, L: vec3f, lobe: u32) -> bool {
   }
 }
 
+/// ReSTIR query (restir-api.md §3.1; docs/decisions/bsdf-api.md "bsdf_query"): everything a path-tree vertex, a
+/// replayed vertex or a reconnection needs for one (V, L) from ONE bsdf_prepare + ONE bsdf_eval_ctx (the Metal
+/// state-size cliff and the per-pipeline inline budget, restir-api.md §4.5):
+///   f_lobe  = bsdf_eval_lobe(m, V, L, lobe).rgb     (LOBE_NEE: all lobes; no support factor)
+///   p_joint = bsdf_eval_lobe(m, V, L, lobe).a       (LOBE_NEE / LOBE_NONE: 1; delta or unallocated lobe: 0)
+///   f_all   = bsdf_eval(m, V, L).f_cos,   p_marg = bsdf_eval(m, V, L).pdf_marginal (= bsdf_pdf_marginal)
+///   supp    = bsdf_sample_support(m, V, L, lobe)   (true for LOBE_NEE / LOBE_NONE)
+/// Every field equals the public function for the same inputs (U-PT-BITS part 2).
+struct BsdfQuery {
+  f_lobe: vec3f,
+  p_joint: f32,
+  f_all: vec3f,
+  p_marg: f32,
+  supp: bool,
+}
+
+fn bsdf_query(m: MatEval, V: vec3f, L: vec3f, lobe: u32) -> BsdfQuery {
+  var q: BsdfQuery;
+  let c = bsdf_prepare(m, V);
+  let e = bsdf_eval_ctx(c, V, L);
+  q.f_all = e.f_d + e.f_s + e.f_g;
+  q.p_marg = e.p_d + e.p_s + e.p_g;
+  q.supp = true;
+  let suppS = dot(c.ns, V) > 0.0 && dot(c.ng, L) >= 0.0 && dot(c.ns, L) >= 0.0;
+  let isT = (e.g_side & 1u) != 0u;
+  switch lobe {
+    case LOBE_D: { q.f_lobe = e.f_d; q.p_joint = e.p_d; q.supp = dot(c.ng, L) > 0.0; }
+    case LOBE_S: { q.f_lobe = e.f_s; q.p_joint = e.p_s; q.supp = suppS; }
+    case LOBE_GR: {
+      if (!isT) { q.f_lobe = e.f_g; q.p_joint = e.p_g; }
+      q.supp = suppS;
+    }
+    case LOBE_GT: {
+      if (isT) { q.f_lobe = e.f_g; q.p_joint = e.p_g; }
+      q.supp = bctx_has(c, BC_HAS_G) && !bctx_singular(c) && (e.g_side & 3u) == 3u;
+    }
+    case LOBE_NEE: { q.f_lobe = q.f_all; q.p_joint = 1.0; }
+    case LOBE_NONE: { q.p_joint = 1.0; }
+    default: { }
+  }
+  return q;
+}
+
 /// Per-lobe perceptual roughness for the reconnection predicate R_k (math.md#lobe-codes; gap-bsdf §7.4; glass §5.4).
 /// NEE uses the hasD/hasS/hasG bits of MatEval.flags (set by material_eval for the path's V). G_T is also delta
 /// (r = 0) when |η_side − 1| < 1e-4, with η_side for the V the MatEval was built with (MATEVAL_BACKFACING).

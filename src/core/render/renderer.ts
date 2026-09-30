@@ -12,10 +12,15 @@
 // M3a: renderMode 'pt' (the app's default; the Renderer default stays 'albedo' for the M1 tests) adds the reference path tracer pass (pt-kernel.ts PtFramePass) after `primary`: one
 // sample per pixel per frame, progressive mean into the colour target (replaces the M1 albedo placeholder beauty, which
 // remains available as renderMode 'albedo'). Lights: setLights() (cur/prev light buffers, deterministic alias rebuild).
+// M4 (WP-D): renderMode 'restir' drives RestirKernel.interactive() after `primary` (the M1 primary keeps running for
+// picking, depth and the G-buffer views; restir-api.md D12/R10). restirMode picks the settings preset (PLAN §3 modes:
+// ReSTIR-unbiased, ReSTIR-2022-criteria, Offline; 'initial' = rung 3.1 without spatial reuse). The ReSTIR debug views
+// (400–499), the probe inspector records and the arena HUD come from render/restir/debug.ts; they encode work only while
+// a ReSTIR view or the probe is active. Mode A only (D1): another light mode falls back to the PT with a HUD note.
 import { composeWgsl, createCheckedShaderModule } from '../gpu/wgsl-composer.ts';
 import { shaderSources } from '../shaders/index.ts';
 import type { EnvironmentData, SceneData } from '../scene/types.ts';
-import type { DebugViewDef } from './debug-views.ts';
+import type { DebugResources, DebugViewDef } from './debug-views.ts';
 import {
   createEnvResources, destroyEnvResources, envBindGroupEntries, envBindGroupLayoutEntries, envDefines, envImportanceKey, envMemoryReport,
   writeEnvParams, type EnvGpuResources, type EnvParamsCpu,
@@ -29,6 +34,21 @@ import type { LightsUpdate } from './lights-gpu.ts';
 import { PtFramePass } from './pt-kernel.ts';
 import type { LightMode } from './lights-gpu.ts';
 import type { TexturePathMode } from './textures-gpu.ts';
+import { RestirKernel, type RestirFramePass } from './restir/kernel.ts';
+import { RESTIR_PRESETS, type RestirSettings } from './restir/presets.ts';
+import { RestirDebugPass, RestirHud } from './restir/debug.ts';
+
+/** App ReSTIR modes (PLAN §3): ReSTIR-unbiased (interactive preset), ReSTIR-2022-criteria, Offline, rung 3.1 initial only. */
+export type RestirAppMode = 'unbiased' | 'criteria2022' | 'offline' | 'initial';
+export const RESTIR_APP_MODES: Record<RestirAppMode, string> = {
+  unbiased: 'ReSTIR-unbiased (S 1, 1 round × 3, R 30)', criteria2022: 'ReSTIR-2022-criteria', offline: 'Offline (S 32, 3 rounds × 6, R 10)',
+  initial: 'initial only (rung 3.1)',
+};
+/** Settings of an app ReSTIR mode (maxBounces from the renderer options). */
+export function restirAppSettings(mode: RestirAppMode, maxBounces: number): Partial<RestirSettings> {
+  const base = mode === 'offline' ? RESTIR_PRESETS.offline : mode === 'initial' ? { ...RESTIR_PRESETS.interactive, rounds: 0 } : RESTIR_PRESETS.interactive;
+  return { ...base, criteria: mode === 'criteria2022' ? '2022' : 'enhanced', maxBounces };
+}
 
 export const GBUF_TEXEL_BYTES = 80;
 export const PRIMARY_PARAMS_SIZE = 16;
@@ -58,7 +78,9 @@ export interface RendererOptions {
   accumulate: boolean;
   thrTau: number;
   /** 'pt': reference path tracer beauty (M3a); 'albedo': the M1 placeholder (albedo on hits, env on misses). */
-  renderMode: 'pt' | 'albedo';
+  renderMode: 'pt' | 'albedo' | 'restir';
+  /** renderMode 'restir': the settings preset (PLAN §3 modes). */
+  restirMode: RestirAppMode;
   /** PT: Cycles max_bounces N. */
   maxBounces: number;
   /** PT: Russian roulette (unbiased; off by default, plan §2 rule 11). */
@@ -88,7 +110,11 @@ export interface RendererContext {
   features?: Set<string>;
   wgslLanguageFeatures?: Set<string>;
   buildBvh?: BvhBuilder;
+  /** The app's debug resources (group 3): ReSTIR mode binds them in its own passes and runs the rs_debug passes. */
+  debug?: DebugResources;
 }
+
+interface RestirState { pass: RestirFramePass; dbg?: RestirDebugPass; hud: RestirHud }
 
 interface SceneState {
   gpu: SceneGpu;
@@ -102,6 +128,9 @@ interface SceneState {
   /** Env sampling debug views (M3c), compiled on first use. */
   envDebug?: EnvDebugPass;
   envDebugPending?: Promise<EnvDebugPass | undefined>;
+  /** ReSTIR (renderMode 'restir'), compiled on first use. */
+  rs?: RestirState;
+  rsPending?: Promise<RestirState | undefined>;
 }
 
 interface TargetState {
@@ -118,7 +147,7 @@ export class Renderer {
   /** Defaults are the validation path: exact textures and Woop watertight intersection (Möller–Trumbore leaks through
    *  the shared diagonal of a quad; plan §1.3). The interactive app opts into MT explicitly (src/app/integration.ts). */
   readonly options: RendererOptions = {
-    textureMode: 'validation', watertight: true, accumulate: true, thrTau: THR_TAU, renderMode: 'albedo', maxBounces: 3, rr: false,
+    textureMode: 'validation', watertight: true, accumulate: true, thrTau: THR_TAU, renderMode: 'albedo', restirMode: 'unbiased', maxBounces: 3, rr: false,
     lightMode: 'A', envNee: true, envImportanceCap: ENV_IMPORTANCE_CAP_INTERACTIVE,
   };
   env!: EnvGpuResources;
@@ -134,6 +163,9 @@ export class Renderer {
   private readonly paramScratch = new ArrayBuffer(PRIMARY_PARAMS_SIZE);
   private generation = 0;
   private busy = 0;
+  private lights: readonly LightData[] | undefined;
+  /** Last ReSTIR compile error (HUD). */
+  restirError: string | undefined;
 
   private constructor(private readonly ctx: RendererContext) {
     this.device = ctx.device;
@@ -185,6 +217,7 @@ export class Renderer {
       this.origin = origin;
       old?.pt?.destroy();
       old?.envDebug?.destroy();
+      destroyRestir(old?.rs);
       old?.gpu.destroy();
       this.lastError = undefined;
       return gpu;
@@ -200,6 +233,11 @@ export class Renderer {
     Object.assign(this.options, o);
     this.state?.pt?.setSettings({ maxBounces: this.options.maxBounces, rr: this.options.rr });
     if (this.state?.pt && this.state.pt.lights.lightMode !== this.options.lightMode) this.state.pt.lights.setLightMode(this.options.lightMode);
+    const rs = this.state?.rs;
+    if (rs) {
+      rs.pass.setSettings(restirAppSettings(this.options.restirMode, this.options.maxBounces));
+      await rs.pass.prepare();
+    }
     if (!this.sceneData) return;
     if (texChanged || wtChanged) await this.setScene(this.sceneData, this.origin);
   }
@@ -241,7 +279,49 @@ export class Renderer {
 
   /** Analytic lights for the PT (stable ids; the alias table is rebuilt only when powers or the set change). */
   setLights(lights: readonly LightData[]): LightsUpdate | undefined {
-    return this.state?.pt?.setLights(lights);
+    this.lights = lights;
+    const r = this.state?.rs?.pass.setLights(lights);
+    return this.state?.pt?.setLights(lights) ?? r;
+  }
+
+  /** Compile the ReSTIR pass for `state` (never throws; errors go to restirError and the PT beauty stays). */
+  private compileRestir(state: SceneState, colorFormat: GPUTextureFormat): Promise<RestirState | undefined> {
+    if (state.rsPending && state.rs?.pass.colorFormat === colorFormat) return state.rsPending;
+    if (state.rsPending && !state.rs) return state.rsPending;
+    const p = (async () => {
+      try {
+        const debug = this.ctx.debug;
+        const pass = await RestirKernel.interactive(this.device, state.gpu, this.env, colorFormat, {
+          settings: restirAppSettings(this.options.restirMode, this.options.maxBounces), lightMode: 'A', debug,
+          env: { nee: this.options.envNee, importanceCap: this.options.envImportanceCap },
+          features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures,
+        });
+        const dbg = debug ? await RestirDebugPass.create(pass.kernel, debug) : undefined;
+        if (this.lights) pass.setLights(this.lights);
+        const tg = this.targets;
+        if (tg) pass.setTargets({ width: tg.t.width, height: tg.t.height, color: tg.t.color, frameUniforms: tg.t.frameUniforms });
+        destroyRestir(state.rs);
+        state.rs = { pass, dbg, hud: new RestirHud(this.device) };
+        this.restirError = undefined;
+        return state.rs;
+      } catch (e) {
+        this.restirError = `ReSTIR: ${e instanceof Error ? e.message : String(e)}`;
+        console.error(e);
+        return undefined;
+      }
+    })();
+    state.rsPending = p;
+    return p;
+  }
+
+  /** The interactive ReSTIR pass (undefined until renderMode 'restir' compiled it). */
+  get restir(): RestirFramePass | undefined { return this.state?.rs?.pass; }
+  get restirHud(): RestirHud | undefined { return this.state?.rs?.hud; }
+  /** Compile ReSTIR now (e.g. before switching the mode in a test). */
+  async prepareRestir(): Promise<RestirFramePass | undefined> {
+    const s = this.state;
+    if (!s || !this.targets) return undefined;
+    return (await this.compileRestir(s, this.targets.t.colorFormat))?.pass;
   }
 
   private variantKey(colorFormat: string, stats: boolean): string { return `${colorFormat}|${stats ? 'stats' : 'plain'}`; }
@@ -314,6 +394,7 @@ export class Renderer {
     const old = this.env;
     this.env = next;
     this.state?.pt?.setEnvironment(next);
+    this.state?.rs?.pass.setEnvironment(next);
     if (this.targets) this.targets.frameGroup = this.frameGroup(this.targets.t);
     destroyEnvResources(old);
   }
@@ -322,6 +403,7 @@ export class Renderer {
   setEnvParams(p: Partial<EnvParamsCpu>): void {
     writeEnvParams(this.device, this.env, p);
     this.state?.pt?.setEnvOptions();
+    this.state?.rs?.pass.setEnvOptions();
   }
 
   /** Build the importance tables of `res` for the current cap in the Worker (no-op when cached). */
@@ -343,6 +425,7 @@ export class Renderer {
     }
     if (o.nee !== undefined) this.options.envNee = o.nee;
     this.state?.pt?.setEnvOptions({ nee: this.options.envNee, importanceCap: this.options.envImportanceCap });
+    this.state?.rs?.pass.setEnvOptions({ nee: this.options.envNee, importanceCap: this.options.envImportanceCap });
   }
 
   // ---- targets --------------------------------------------------------------------------------------------------
@@ -386,6 +469,8 @@ export class Renderer {
     const s = this.state;
     if (s?.pt && s.pt.colorFormat !== t.colorFormat) void this.compilePt(s, t.colorFormat);
     else s?.pt?.setTargets({ width: t.width, height: t.height, color: t.color, frameUniforms: t.frameUniforms });
+    if (s?.rs && s.rs.pass.colorFormat !== t.colorFormat) void this.compileRestir(s, t.colorFormat);
+    else s?.rs?.pass.setTargets({ width: t.width, height: t.height, color: t.color, frameUniforms: t.frameUniforms });
   }
 
   get gbuffer(): GPUBuffer | undefined { return this.targets?.gbuf; }
@@ -402,6 +487,7 @@ export class Renderer {
     frame: { advanced: boolean; debugMode: number; debugGroup: GPUBindGroup; /** skip the PT pass (primary timing) */ noPt?: boolean },
     timestamps?: () => GPUComputePassTimestampWrites | undefined,
     ptTimestamps?: () => GPUComputePassTimestampWrites | undefined,
+    rsTimestamps?: () => GPUComputePassTimestampWrites | undefined,
   ): boolean {
     const s = this.state;
     const tg = this.targets;
@@ -429,13 +515,32 @@ export class Renderer {
     pass.dispatchWorkgroups(Math.ceil(tg.t.width / 8), Math.ceil(tg.t.height / 8));
     pass.end();
     // PT beauty after the primary pass (same jitter/seed; overwrites the placeholder colour). Skipped for BVH-stat views.
-    if (this.options.renderMode === 'pt' && s.pt && !frame.noPt && !isBvhStatsView(frame.debugMode)) {
+    let restirDone = false;
+    if (this.options.renderMode === 'restir' && !frame.noPt && !isBvhStatsView(frame.debugMode) && this.options.lightMode === 'A') {
+      if (!s.rs) void this.compileRestir(s, tg.t.colorFormat);
+      else restirDone = this.encodeRestir(encoder, s.rs, frame.advanced, rsTimestamps);
+    }
+    if ((this.options.renderMode === 'pt' || (this.options.renderMode === 'restir' && !restirDone)) && s.pt && !frame.noPt && !isBvhStatsView(frame.debugMode)) {
       s.pt.encode(encoder, { advanced: frame.advanced, accumulate: this.options.accumulate }, ptTimestamps?.());
     }
     if (isEnvDebugView(frame.debugMode) && s.pt) {
       if (!s.envDebug) void this.compileEnvDebug(s);
       else s.envDebug.encode(encoder, { mode: frame.debugMode, env: this.env, lights: s.pt.lights, frameUniforms: tg.t.frameUniforms, width: tg.t.width, height: tg.t.height, debugGroup: frame.debugGroup, reset: false });
     }
+    return true;
+  }
+
+  /** ReSTIR frame: counters clear + code-view fill, the kernel's passes, shift views, arena header copy (one encoder). */
+  private encodeRestir(encoder: GPUCommandEncoder, rs: RestirState, advanced: boolean, ts?: () => GPUComputePassTimestampWrites | undefined): boolean {
+    const k = rs.pass.kernel;
+    let arena: GPUBuffer;
+    try { arena = k.resources.arena; } catch { return false; }
+    rs.hud.encodeBegin(encoder, arena);
+    rs.dbg?.encodeBegin(encoder);
+    const ok = rs.pass.encode(encoder, { advanced, accumulate: this.options.accumulate }, ts?.());
+    if (!ok) return false;
+    rs.dbg?.encodeViews(encoder, { rounds: k.lastRounds });
+    rs.hud.encodeEnd(encoder, k.resources.arena);
     return true;
   }
 
@@ -500,6 +605,16 @@ export class Renderer {
         ? `PT max_bounces ${pt.settings.maxBounces}${pt.settings.rr ? ' RR' : ''}  lights ${l!.analytic} analytic + ${l!.emissiveTriangles} emissive tris (Mode ${pt.lights.lightMode})`
         : 'PT: compiling (albedo placeholder shown)');
     }
+    if (this.options.renderMode === 'restir') {
+      const rs = this.state?.rs;
+      if (this.options.lightMode !== 'A') out.push(`ReSTIR: Mode A only in M4 (light mode ${this.options.lightMode}); showing the PT`);
+      else if (!rs) out.push(this.restirError ?? 'ReSTIR: compiling (PT shown)');
+      else {
+        const st = rs.pass.settings;
+        out.push(`ReSTIR ${this.options.restirMode}: S ${st.trees}  rounds ${st.rounds} × ${st.slots} slots  R ${st.diskRadius}  ${st.criteria}${st.rr ? ' RR' : ''}  max_bounces ${st.maxBounces}`);
+        out.push(...rs.hud.lines());
+      }
+    }
     if (this.loading) out.push('renderer: uploading / compiling ...');
     if (this.lastError) out.push(`renderer error: ${this.lastError.split('\n')[0]}`);
     return out;
@@ -508,9 +623,16 @@ export class Renderer {
   destroy(): void {
     this.state?.pt?.destroy();
     this.state?.envDebug?.destroy();
+    destroyRestir(this.state?.rs);
     this.state?.gpu.destroy();
     if (this.targets) { this.targets.gbuf.destroy(); this.targets.accum.destroy(); this.targets.vbuf.destroy(); }
     destroyEnvResources(this.env);
     this.params.destroy();
   }
+}
+
+function destroyRestir(rs: RestirState | undefined): void {
+  if (!rs) return;
+  rs.hud.destroy();
+  rs.pass.destroy();
 }
