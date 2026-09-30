@@ -1,7 +1,7 @@
 // Quantized vertex format on the GPU (docs/decisions/data-formats.md §B0, §D P1), both lanes (Chrome = Metal with
 // relaxed / fast math): the WGSL decoders (scene-data.wgsl vq_*) vs the TS mirror (gpu/vertex-format.ts).
 //   - positions and UVs (dyadic: integer × 2^k) must decode BIT-IDENTICALLY to the CPU values (recentred f32),
-//   - oct normals and COLOR_0 (exact products q·f32(1/(2^b − 1)), then normalize) within 4 ulp,
+//   - COLOR_0 (exact products q·f32(1/(2^b − 1))) within 4 ulp, oct normals within 4 ulp(1) = 4·2^-23 per component,
 //   - scene_surface at 10^5 random (primId, u, v) vs an f64 evaluation on the dequantized vertices; TRI_FLAT ⇒ ns ≡ ng.
 import { afterAll, describe, expect, it } from 'vitest';
 import { getTestGpu, lane, releaseTestGpu } from './device-factory.ts';
@@ -164,7 +164,8 @@ describe(`quantized vertex format: GPU decode = CPU mirror (${lane()})`, () => {
           if (outV[12 * v + 3] !== f32bits(g.uv0[2 * v])) { uvBad++; if (ex.length < 8) ex.push(`uv ${v}.u: gpu ${fV[12 * v + 3]} cpu ${g.uv0[2 * v]}`); }
           if (outV[12 * v + 7] !== f32bits(g.uv0[2 * v + 1])) { uvBad++; if (ex.length < 8) ex.push(`uv ${v}.v: gpu ${fV[12 * v + 7]} cpu ${g.uv0[2 * v + 1]}`); }
         }
-        for (let k = 0; k < 3; k++) nMax = Math.max(nMax, ulps(fV[12 * v + 4 + k], g.normals[3 * v + k]));
+        // unit vectors: error in units of ulp(1) = 2^-23 (≈ rad; math on a near-zero component is not a relative error)
+        for (let k = 0; k < 3; k++) nMax = Math.max(nMax, Math.abs(fV[12 * v + 4 + k] - g.normals[3 * v + k]) / 2 ** -23);
         for (let k = 0; k < 4; k++) cMax = Math.max(cMax, ulps(fV[12 * v + 8 + k], g.color0 ? g.color0[4 * v + k] : 1));
       }
       // scene_surface vs f64 on the dequantized (recentred) vertices

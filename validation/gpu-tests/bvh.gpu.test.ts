@@ -698,8 +698,10 @@ describe(`T12 BVH traversal (${lane()})`, () => {
       const N = N_RAYS;
       const rays = new Float32Array(N * 8);
       const target = new Float64Array(N);
+      const rayTris: number[][] = [];
       let n = 0, tried = 0, edgeRays = 0, vertRays = 0;
-      while (n < N && tried < 40 * N) {
+      const tGen = performance.now(), GEN_MS = 150_000; // CPU f64 selection budget (Sponza: many candidates are occluded)
+      while (n < N && tried < 40 * N && ((tried & 1023) !== 0 || performance.now() - tGen < GEN_MS)) {
         tried++;
         const useVert = seams.verts.length > 0 && (seams.edges.length === 0 || r() < 0.3);
         let T: number[], tris: number[], EA: number[] = [], EB: number[] = [];
@@ -763,26 +765,32 @@ describe(`T12 BVH traversal (${lane()})`, () => {
         if (!tris.every((t) => clear(o32, inside(T, t)))) continue;
         rays.set([o32[0], o32[1], o32[2], 1e30, d32[0], d32[1], d32[2], 0], n * 8);
         target[n] = L;
+        rayTris[n] = tris;
         if (useVert) vertRays++; else edgeRays++;
         n++;
       }
+      const genMs = Math.round(performance.now() - tGen);
       expect(n).toBeGreaterThan(Math.min(N, 10_000));
       for (const v of VARIANTS) {
         const bufs = uploadBvh(ctx.device, bvh, { watertight: v.watertight });
         const res = await run(ctx, v, 'closest_any', bufs, rays, n);
         const tf = new Float32Array(res.out.buffer, res.out.byteOffset, res.out.length);
-        let cracks = 0;
+        // crack = the ray passes through the seam: a miss, or a closest hit on a triangle that is NOT adjacent to the
+        // seam and lies beyond it. Hits on the seam's own triangles are never leaks (their t may exceed |T − o| slightly:
+        // the aimed f32 ray passes within ~1 ulp of T and meets a steep face farther along).
+        let cracks = 0, ownTri = 0, other = 0;
         const ex: string[] = [];
         for (let i = 0; i < n; i++) {
           const prim = res.out[4 * i + 1], t = tf[4 * i];
+          if (prim !== BVH_MISS && rayTris[i].includes(prim)) { ownTri++; continue; }
           const oMax = Math.max(Math.abs(rays[8 * i]), Math.abs(rays[8 * i + 1]), Math.abs(rays[8 * i + 2]));
           if (prim === BVH_MISS || t > target[i] * (1 + 1e-5) + 64 * 2 ** -23 * (oMax + target[i])) {
             cracks++;
-            if (ex.length < 5) ex.push(`ray ${i}: prim ${prim} t ${t} seam at ${target[i]}`);
-          }
+            if (ex.length < 5) ex.push(`ray ${i}: prim ${prim} t ${t} seam at ${target[i]} (seam tris ${rayTris[i].join(',')})`);
+          } else other++;
         }
         const key = `seams.${which}.${vname(v)}`;
-        report[key] = { seamEdges: seams.edges.length, seamVerts: seams.verts.length, mustHitRays: n, edgeRays, vertRays, tried, cracks, flags: res.ctr[3], examples: ex };
+        report[key] = { seamEdges: seams.edges.length, seamVerts: seams.verts.length, mustHitRays: n, edgeRays, vertRays, tried, genMs, hitsOnSeamTris: ownTri, hitsOtherBeforeSeam: other, cracks, flags: res.ctr[3], examples: ex };
         console.log('T12-Q', lane(), key, JSON.stringify(report[key]));
         expect(res.ctr[3]).toBe(0);
         if (v.watertight) expect(cracks, ex.join('\n')).toBe(0);

@@ -389,7 +389,7 @@ export class Renderer {
   // ---- environment --------------------------------------------------------------------------------------------
 
   async setEnvironment(env: EnvironmentData | undefined): Promise<void> {
-    const next = await createEnvResources(this.device, env, 'env');
+    const next = await createEnvResources(this.device, env, 'env', { mode: this.options.textureMode });
     await this.attachImportance(next);   // Worker-built tables (plan §1.4b) before the PT sees the env
     const old = this.env;
     this.env = next;
