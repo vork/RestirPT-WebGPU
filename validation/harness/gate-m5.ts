@@ -192,7 +192,10 @@ export const GPU_SUITES: [string, string][] = [
   ['restir-spatial', 'M4 regression + T3-3-boost'],
   ['pt', 'M3 regression'], ['bsdf', 'M3 regression'], ['lights', 'M3 regression'], ['env-sampling', 'M3 regression'], ['glass', 'M3 regression'], ['pt-glass', 'M3 regression'],
 ];
-export const GPU_SUITE_ENV: Record<string, Record<string, string>> = { 'restir-shift': { VITE_T3_MS: String(18 * 60_000) }, 'restir-temporal': { VITE_T3_MS: String(18 * 60_000) } };
+export const GPU_SUITE_ENV: Record<string, Record<string, string>> = { 'restir-shift': { VITE_T3_MS: String(18 * 60_000) } };
+/** T3-2 at ≥ 10⁶ round trips per bin (restir-temporal-api.md B-11): three separate lock holds of ≈ 5 min GPU each. */
+export const T32_RARE_ENV = { VITE_T32_RARE_PAIRS: '80000', VITE_T32_RARE_RES: '256', VITE_T32_MIN_BIN: '1000000' };
+export const T32_RARE_CASES = ['rare bins: translate', 'rare bins: add / remove + intensity', 'rare bins: moving lights + env'];
 
 /** Suite FWER units × {Y, R, G, B}: every (scene/sequence, rung, test frame) unit + plants + synthetic + A/A. */
 export function nUnits(): number {
@@ -807,6 +810,12 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
       withGpuLockSync(`gate-m5-${file}`, () => {
         runStep(`${file} (chrome): ${what}`, 'npx', ['vitest', 'run', ...vitestConfigArgs(), '--project', 'chrome', '--reporter=verbose', rel],
           (l) => /Tests |FAIL|✗|×|AssertionError|LOGIC|FP-BOUNDARY|violation/.test(l), GPU_SUITE_ENV[file]);
+      });
+    }
+    for (const c of T32_RARE_CASES) {
+      withGpuLockSync(`gate-m5-t32-${safe(c)}`, () => {
+        runStep(`restir-temporal T3-2 ${c} (>= 1e6 per bin; LOGIC 0, FP <= 1e-5, PLATFORM 0)`, 'npx', ['vitest', 'run', ...vitestConfigArgs(), '--project', 'chrome', '--reporter=verbose', '--testTimeout', '900000',
+          'validation/gpu-tests/restir-temporal.gpu.test.ts', '-t', c], (l) => /Tests |FAIL|✗|×|AssertionError|LOGIC|FP-BOUNDARY|PLATFORM|bin/.test(l), T32_RARE_ENV);
       });
     }
     uTr1(dir, add);
