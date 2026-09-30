@@ -283,3 +283,23 @@ PT sample count (shared by the three rungs) and each rung's frame count minimise
 batch so every batch mean averages enough samples (the smooth env scenes otherwise size down to 1 frame per batch). A side needing more than 60 min would switch that unit to 64² tiles (recorded
 as `aggregate_enlarged` in report.json); δ is never loosened. `gate-m4 --pilot-only --write-budget` writes the sizes
 to `budget.json` `m4_entries`.
+
+**Sizing (full gate, `budget.json` `m4_entries`).** No unit needed 64² tiles; the largest sides are (x) many lights
+(PT 57344 spp × 16 ≈ 27 min; rungs 3.1/3.1b 81920 frames × 16 ≈ 57/55 min), (iii) spot (PT 57344 spp × 16 ≈ 17 min)
+and the 3.2 rungs of (v) sharp / (v) V2 (≈ 15–16 min). The smooth env scenes sit at the per-batch floors.
+
+**Result.** `npm run validate -- --milestone M4` on a54ac2d (WP-B final 6e02a93; units after 00:55 CEST ran on 0ab5fa4,
+which changes only the interactive `RestirFramePass.encode`, not the batch path) passed 220/221 in 44 882 s
+(`validation/out/m4-gate-20260929-190611`):
+- Gate 0: every suite green (restir-initial 24/24, restir-shift 23/23 with LOGIC = 0 / FP-BOUNDARY = 0 in every T3 run
+  and the t3_rare none-tri bins at ≥ 10⁷, restir-spatial 14/14, restir-debug 8/8, M3 regressions); the M4 app smoke
+  failed 29/31 (interactive spatial reuse lost under timestamp writes, WP-C C8) and passes 31/31 when re-run on 0ab5fa4
+  (`validation/out/m4-gate-20260929-190611-app-smoke-rerun`).
+- Gate 3: 63/63 ladder units pass on the first seed set (no re-run): |Δ_Y| ≤ 0.0048%, worst tile ≤ 0.33%, tile MDB
+  max ≤ 0.58%; the ensemble unit (C0q(d) 3.2, E = 16) and the 2022-criteria unit ((i)) pass.
+- Plants detected 10/10 with the PT A/A control 10/10 and the full comparison failing: omitted J on (i) (Δ_Y +0.174%)
+  and (v) V1 (Δ_Y +0.007%, 63 Šidák-rejected tiles, worst tile +9.3%), marginal-pdf J on (v) V2 (13 Šidák tiles);
+  synthetic W × 1.003 10/10 with A/A re-splits 20/20; ReSTIR A/A (5002 vs 5003) passes.
+- Production counters summed over every Stage-B run: RSC_CAND/SHIFT/W_NONFINITE, PENDING_LEFT, SLOT_MISMATCH,
+  BASE_JDEN_INVALID, BVH overflow/itercap, queue overflow, finalize NaN/Inf and negatives are all 0
+  (1.9·10¹¹ accepted pairs, replay fraction 2.7%).
