@@ -425,7 +425,10 @@ export async function runT32(c: T32Case, pairs = T32_PAIRS, W = T32_RES): Promis
   const h = await T32Harness.create(rig.kernel);
   const frames: ChainFrame[] = [];
   for (let i = 0; i < 2 * pairs; i++) {
-    frames.push({ t: i, camera: c.cam(s.cam, i), lights: c.lights ? c.lights(s.scene.lights, i) : s.scene.lights, reset: i % 2 === 0,
+    // camera and light scripts are periodic (40 frames; a wrap falls between a test frame and the next reset frame), so
+    // long gate runs keep the view inside the scene
+    const ic = i % 40;
+    frames.push({ t: i, camera: c.cam(s.cam, ic), lights: c.lights ? c.lights(s.scene.lights, ic) : s.scene.lights, reset: i % 2 === 0,
       env: c.env ? { params: { ...c.env(i), visibleToCamera: true }, mapId: 'env' } : undefined });
   }
   let lightClass = 0, refreshFrames = 0;

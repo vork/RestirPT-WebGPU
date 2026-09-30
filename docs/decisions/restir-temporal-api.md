@@ -1532,10 +1532,14 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   **Resolved** by T-C C-8 (058c934) together with the loader change: `tsrc_load` takes the refresh `rad` for every deep
   record and the t-select write-back no longer tests `TP_N3_STALE` (the stale values come from the refresh, C-5).
 - **B-11 T3-2 budget, the C-9 class, T6(b)/T6(c) harnesses** (affects T-E: gate lines; T-A / coordinator: C-9).
-  - T3-2 budget (measured, Chrome / M5 Pro, `t3_rare_256` at 256², 200 pairs pilot): per pair 3.8 ms incl. readbacks; the
-    rarest bin is `c-tri/k>2` with 12.7 (camera) / 20.3 (add / remove + intensity) / 22.0 (moving lights + env) round
-    trips per pair. ≥ 10⁶ in every bin: `VITE_T32_RARE_PAIRS=80000 VITE_T32_RARE_RES=256 VITE_T32_MIN_BIN=1000000`, each
-    `rare bins:` case in its own lock hold (≈ 5 min each at 80 000 pairs), ≈ 15 min GPU in total; the `allLightsScene` cases stay at the defaults (12 pairs, 128², < 1 s each).
+  - T3-2 budget (measured, Chrome / M5 Pro, `t3_rare_256` at 256²; camera and light scripts periodic over 40 frames so
+    long runs keep the view in the scene): 7–8.5 ms per pair incl. readbacks and the check kernels; the rarest bin
+    (`c-tri/k>2`, add / remove: `a-delta/k>2`) gets 86–103 round trips per pair. Gate setting
+    `VITE_T32_RARE_PAIRS=16000 VITE_T32_RARE_RES=256 VITE_T32_MIN_BIN=1000000 --testTimeout 900000`, one lock hold per
+    `rare bins:` case (≈ 2–2.3 min each, ≈ 6.5 min GPU in total). Measured at that setting: translate (80 000 pairs)
+    2.79·10⁹ round trips, minimum bin 6.9·10⁶; add / remove + intensity (16 000) 5.4·10⁸, minimum 1.43·10⁶; moving
+    lights + env (16 000) 6.6·10⁸, minimum 1.66·10⁶; LOGIC 0, FP 0, PLATFORM 0 everywhere. The `allLightsScene` cases
+    stay at the defaults (12 pairs, 128², < 1 s each).
   - C-9 (open, T-C): BSDF_ENV escape ends re-evaluated in another pipeline differ by ≤ ~5e-3 (envUV ulp jitter ×
     bilinear weight quantisation). T3-2 reports such F-only mismatches (J exact, technique BSDF_ENV, eF ≤ 1e-2) as class
     `envFilter`, bounded at 2e-5 of the trials, not as LOGIC; measured 12–16 per 2·10⁶ round trips on light-change
