@@ -1500,3 +1500,20 @@ touching a shared interface. "WP-A" entries were made while landing P0 / A1.
   `timestampWrites` argument (signature kept); 10/10 app page loads and the app smoke pass. Batch / validation paths
   never used timestamps. A GPU test asserts that the interactive pass encodes no compute pass with `timestampWrites`
   and renders identically with and without the argument.
+- **DF-1 U-RIS-1 discrete flips of the B-5 rc-segment re-test** (data-formats branch, 2026-09-30; affects the test and a
+  test-only define in `path/pathtree.wgsl`, no production change). On the lattice-quantized fixtures U-RIS-1
+  pt-directions c0e dropped to 99.9786% (< 99.98%): one pixel, (55, 30) of frame 2, had Σw = 0.4196 vs the PT's 0.8004.
+  Classification (candidate-dump instrumentation of that pixel): the path tree and the PT sample identical light
+  points, BSDF directions and hits at x₁…x₄ (right wall, floor, …); every NEE at x₂…x₄ is valid, visible under the PT's
+  test and has F > 0 (the x₂ term alone is 0.34). They are dropped by B-5: the re-test `visible(x₁, x₂)` of the rc
+  segment fails because that segment passes **1.9e-8 m** from the bottom (silhouette) edge of the floating mirror quad,
+  below f32 resolution at these coordinates (ulp ≈ 1.2e-7): the closest-hit ray along the sampled direction passes
+  under the edge, the offset shadow segment between the stored vertices clips it, and `treeVis = false` removes every
+  d ≥ 3 candidate. The same ray flips in c0c and x_quads (1 pixel each). Not a formula or RNG difference: with the
+  re-test disabled (test-only define `RS_TEST_NO_RC_VIS`) the tree reproduces the PT at that pixel to 2.5e-8 rel. B-5 is
+  an intended one-sided visibility convention (base and shifts share it; its measure is the ~1e-6 grazing set), and
+  Stage B / U-RIS-4 (tree vs PT means) cover its expectation. U-RIS-1 now runs every case twice: the CONTINUOUS
+  criteria (≥ 99.98% within 1e-4 and sum ≤ 1e-5 for pt-directions; ≥ 99% within 1e-3 and 1e-4 for D3) apply to the
+  re-test-off run; a pixel that disagrees only with the re-test on is a B-5 flip, must be a pure drop
+  (Σw_prod < Σw_noVis) and their rate must be ≤ 1e-3 of the pixels. Measured: 1 flip in 32,768 pixel-frames
+  (3.1e-5) on c0c, c0e and x_quads, 0 on c0s; every flip a drop.

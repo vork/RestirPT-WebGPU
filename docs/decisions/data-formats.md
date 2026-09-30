@@ -51,6 +51,20 @@ What landed, and where it deviates from the plan below:
   interactive mode; validation mode keeps rgba32float unless `ENV_COMPACT_IN_VALIDATION` (set from the ENV-F result).
 - Not done (by scope): P3–P5, the tangent GPU section (M7), Q-EQ.
 
+Verification (2026-09-30, Chrome 154 / Metal unless noted):
+- GPU decode determinism (`vertex-format.gpu.test.ts`): positions and UVs bit-identical to the CPU mirror on
+  xi_contact, vii_textured, two synthetic scenes (rgba8 / rgba16 COLOR_0, wide UVs) and Sponza; normals ≤ 2·2⁻²³ per
+  component; colours exact; `scene_surface` ns ≡ ng on every TRI_FLAT probe.
+- T12 on lattice geometry (procedural, Sponza): 0 unexplained, Woop watertightness 0 misses. T12-Q: 0 cracks with Woop
+  over 10⁶ must-hit rays each on xi_contact (44 shared edges, 24 shared vertices) and Sponza's cross-mesh seams (24 / 24);
+  the Möller–Trumbore control leaks 157k / 215k.
+- U-RIS-1: one pixel per scene flips because of the B-5 rc-segment re-test (restir-api.md Changelog DF-1).
+- ENV-F fails on Metal (compact formats filter at ≈ 2⁻¹¹ rel; platform-lanes.md Q4): validation keeps rgba32float.
+- Smoke: M3a Stage A cornell_i_512 on the re-rendered Cycles reference, Δ_Y −0.0005% (pass); M4 Stage B cornell_i_512
+  rungs 3.1 / 3.1b / 3.2 / 3.2-crit2022 pass; Blender bridge suite (`run_m2_tests.py --quick`, package v2) ALL PASS.
+- M1 app smoke (Sponza, 960×540): geometry 75.55 → 28.44 MB (−62%), vertices 786,783 → 193,874; primary pass 1.835 →
+  1.835 ms (540p) and 6.095 → 6.291 ms (1080p); in-app GPU frame 74.7 → 78.6 ms (single runs each).
+
 Measured (implementation, 2026-09-30):
 - **Sponza** (Node loader, `tests/scene/sponza.test.ts`): k = −16 (15.3 µm), worst displacement 13.1 µm (7.6 µm/axis),
   0 triangles collapsed, 16,798 TRI_FLAT, oct16 normal worst 0.00247°, oct15 tangent worst 0.00483°, UV lattices worst
