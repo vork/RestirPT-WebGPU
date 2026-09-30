@@ -71,3 +71,27 @@ two repeated runs of the same build gave **bit-identical** arena counters (new b
 `legacy`, `*-oldharness`, `*-noguard`; frozen copies `validation/gpu-tests/t3fault-*`) and the production stress
 (`VITE_STRESS`); compare MSL dumps with `vitest.dump.config.ts`-style launch args. Each discriminator run of 6 reps
 × 5000 frames takes ~6.6 min of GPU time.
+
+### Q3 Timestamp writes around the interactive ReSTIR passes lose the frame's work (M4, 2026-09-30)
+
+**Symptom.** `RestirFramePass.encode` put the app's frame timestamps on two empty compute passes bracketing the ReSTIR
+passes. In some page loads of Chrome 154 on Metal, usually not the first page of a fresh browser, the frame's ReSTIR
+work was then silently lost:
+- no validation, internal or OOM error;
+- frame GPU time about halved;
+- the shift arena was never written and the image was about L1 only.
+
+**Isolation.**
+- **Where it happened:** only in pages that were in the failing state.
+- **Always failed:** frames that had those timestamp writes. This held even when the writes were moved onto the first and
+  last real ReSTIR passes, and with a fresh query set.
+- **Always worked:**
+  - frames without the writes;
+  - frames timing only the primary pass;
+  - the batch kernel, which never had them.
+
+**Rule.** No `timestampWrites` on or around the ReSTIR passes (restir-api.md changelog C8). A regression test in
+restir-spatial.gpu.test.ts asserts that no ReSTIR compute pass is encoded with `timestampWrites`. If per-pass ReSTIR GPU
+timing is needed, measure it in a separate timing submit.
+
+**Status.** Not reduced to a minimal repro outside the app; it needs a multi-page browser state.
