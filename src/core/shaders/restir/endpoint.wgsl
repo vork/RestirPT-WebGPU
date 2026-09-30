@@ -32,9 +32,14 @@ fn nee_draw(slot: LightSlot, hSel: u32, hSel2: u32, hL: vec3u) -> NeeEndpoint {
 
 /// Evaluate a stored NEE endpoint at shading point x (z, dir, dist, cosZ, Λ, q, p1, isDelta, isInf, analytic, prim).
 fn nee_eval(x: vec3f, ep: NeeEndpoint) -> LightSample {
-  let slot = lightsParams.cur;
+  return nee_eval_s(x, ep, lightsParams.cur, envParams);
+}
+
+/// nee_eval under light slot `slot` and env record `er` (frame-selected, restir-temporal-api.md §3.1): the entry is in
+/// the numbering of that slot (translate first with lt_translate).
+fn nee_eval_s(x: vec3f, ep: NeeEndpoint, slot: LightSlot, er: EnvParams) -> LightSample {
   if (slot.nEntries == 0u || ep.entry == LIGHT_NONE) { return light_sample_none(); }
-  if (ep.entry == slot.envEntry) { return env_light_sample_cell(slot, ep.entry, ep.a >> 16u, ep.a & 0xFFFFu, ep.b); }
+  if (ep.entry == slot.envEntry) { return env_light_sample_cell_s(slot, er, ep.entry, ep.a >> 16u, ep.a & 0xFFFFu, ep.b); }
   return light_sample_entry(x, slot, ep.entry, vec2f(bitcast<f32>(ep.a), bitcast<f32>(ep.b)));
 }
 
@@ -45,7 +50,11 @@ fn rs_is_nee_words(w: vec3u) -> bool { return (w.x & RC_TAG_MASK) == RC_TAG_NEE 
 
 /// endpointId (D5) of an NEE endpoint: analytic alias entry | emissive-triangle primId | RS_ENV_ID.
 fn nee_endpoint_id(ep: NeeEndpoint) -> u32 {
-  let slot = lightsParams.cur;
+  return nee_endpoint_id_s(ep, lightsParams.cur);
+}
+
+/// endpointId of an NEE endpoint whose entry is in the numbering of `slot`.
+fn nee_endpoint_id_s(ep: NeeEndpoint, slot: LightSlot) -> u32 {
   if (ep.entry == LIGHT_NONE) { return RC_NONE; }
   if (ep.entry == slot.envEntry) { return RS_ENV_ID; }
   if (ep.entry < slot.nAnalytic) { return ep.entry; }

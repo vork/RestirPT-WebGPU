@@ -187,13 +187,16 @@ describe('temporal passes: inline budget (§4.5) and bindings', () => {
       expect(def.defines.RS_TEMPORAL).toBe(1);
     });
   }
-  it('M4 passes do not declare the temporal uniform or the prev G-buffer (bitwise M4 modules)', () => {
+  it('M4 passes without a shift declare neither the temporal uniform nor the prev G-buffer', () => {
     for (const name of Object.keys(RS_PASSES) as RsPassName[]) {
+      // rs_args serves q1/q2 (TD16) and the shift / replay passes evaluate lights through lf_slot(fs) (TD10), so they may
+      // declare the temporal uniform; the passes without a shift must not (U-M4-BITS proves the rest bitwise).
       if (TEMPORAL_PASSES.includes(name) || !(RS_PASSES[name].file in shaderSources)) continue;
+      const shiftFree = ['rs_primary', 'rs_initial', 'rs_initial_dump', 'rs_finalize', 'rs_finalize_frame', 'rs_ensemble_stats', 'rs_pair_accept'].includes(name);
       const extra: Defines = name === 'rs_finalize_frame' ? { COLOR_FORMAT: 'rgba16float' } : {};
       const code = composeWgsl(RS_PASSES[name].file, { sources: shaderSources, defines: restirDefines(name, { sceneDefines: SCENE_DEFINES, debug: true, extra }) }).code;
       const c = stripComments(code);
-      expect(c, name).not.toContain('rsTemporal');
+      if (shiftFree) expect(c, name).not.toContain('rsTemporal');
       expect(c, name).not.toContain('rsVbufPrev');
     }
   });

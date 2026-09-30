@@ -30,11 +30,36 @@ import { LUT_LAYOUT, lutFloats } from './luts/lut-layout.ts';
 export const LUT_RECORDS_BASE = 0;
 
 export const LIGHT_REC_WORDS = 28; // 112 B
-/** Word offsets inside a light record (lights.wgsl light_load). */
+/** Word offsets inside a light record (lights.wgsl light_load). Word 26 = M5 change bits (LCB_*, cur slot, relative
+ *  to the slot's own predecessor; restir-temporal-api.md TD5); word 27 = 0. */
 export const LIGHT_REC = {
   pos: 0, type: 3, axisU: 4, halfU: 7, axisV: 8, halfV: 11, normal: 12, area: 15, emit: 16, flags: 19,
-  cosHalf: 20, spotSmooth: 21, spreadNorm: 22, tanHalfSpread: 23, stableId: 24, invArea: 25,
+  cosHalf: 20, spotSmooth: 21, spreadNorm: 22, tanHalfSpread: 23, stableId: 24, invArea: 25, changeBits: 26,
 } as const;
+/** Change bits of word 26 (restir-temporal-api.md §2.1, TD5). */
+export const LCB = { moved: 1, radio: 2, added: 4 } as const;
+/** Record words that enter the light point / direction Φ (MOVED), per type code (TD5, math §24 [M5]). */
+export function movedWords(typeCode: number): number[] {
+  const pos = [0, 1, 2];
+  switch (typeCode) {
+    case LT.point: case LT.spot: return pos;
+    case LT.sun: return [12, 13, 14];
+    default: return [...pos, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];     // rect / disk: pos, axisU, halfU, axisV, halfV, normal
+  }
+}
+/** LCB bits of a light record vs its predecessor record (both LIGHT_REC_WORDS words, predecessor undefined = added). */
+export function lightChangeBits(cur: ArrayLike<number>, prev: ArrayLike<number> | undefined): number {
+  if (!prev) return LCB.added;
+  const type = cur[LIGHT_REC.type];
+  if (prev[LIGHT_REC.type] !== type) return LCB.moved | LCB.radio;
+  const moved = new Set(movedWords(type));
+  let bits = 0;
+  for (let w = 0; w < LIGHT_REC.changeBits; w++) {
+    if (cur[w] === prev[w]) continue;
+    bits |= moved.has(w) ? LCB.moved : LCB.radio;
+  }
+  return bits;
+}
 /** math.md#path-tree endpoint types. */
 export const LT = { tri: 0, point: 1, spot: 2, rect: 3, disk: 4, sun: 5, env: 7 } as const;
 export const LF_VISIBLE_CAMERA = 1;
@@ -290,6 +315,19 @@ export class LightsState {
 
   /** Pack `lights` (and the env, when given) into the next slot and flip. Returns what changed. */
   update(lightsIn: readonly LightData[], env?: EnvLightInput): LightsUpdate {
+    return this.pack(lightsIn, env, true).update;
+  }
+
+  /**
+   * M5 (restir-temporal-api.md §2.4, TD4): the ONE light commit of a frame. Packs the state into the non-current slot;
+   * flips only if something changed (records other than word 26, the id set, the weights or the layout). Otherwise the
+   * non-current slot now holds a bitwise copy of cur and `same` is set (TF_LIGHTS_SAME: prev accessors read cur).
+   */
+  commit(lightsIn: readonly LightData[], env?: EnvLightInput): LightsCommit {
+    return this.pack(lightsIn, env, false).commit;
+  }
+
+  private pack(lightsIn: readonly LightData[], env: EnvLightInput | undefined, alwaysFlip: boolean): { update: LightsUpdate; commit: LightsCommit } {
     const lights = [...lightsIn].sort((a, b) => a.id - b.id);
     const nA = lights.length, nT = this.tris.primIds.length;
     const phiEnv = env?.nee ? envPowerProxy(env.table, env.strength, env.tint, this.sceneRadius) : 0;
@@ -347,18 +385,42 @@ export class LightsState {
       lightOff, lightCount: nA, aliasOff, aliasLog2: log2, pmfOff, nAnalytic: nA, nEntries: table ? nE : 0,
       envEntry: table && hasEnvEntry ? nA + nT : NO_ENV_ENTRY, curToPrevOff, prevToCurOff,
     };
-    this.slots[next] = { cpu, ids, weights, table };
-    this.cur = next;
-    // Compare the new records against the previous frame's slot (moved / radiometric edits).
+    // Change bits (word 26) against the predecessor record of the same stable id (M5 TD5); word 27 = 0. Words 26/27 are
+    // excluded from lightsChanged (they are derived).
+    const W = LIGHT_REC_WORDS;
     let lightsChanged = first || !sameSet;
+    let anyMoved = false, anyRadio = false;
+    const added: number[] = [];
+    for (let i = 0; i < nA; i++) {
+      const o = lightOff + i * W;
+      const j = this.records[curToPrevOff + i];
+      const prevRec = prev && j !== NO_ENTRY ? this.records.subarray(prev.cpu.lightOff + j * W, prev.cpu.lightOff + (j + 1) * W) : undefined;
+      const bits = first ? 0 : lightChangeBits(this.records.subarray(o, o + W), prevRec);
+      this.records[o + LIGHT_REC.changeBits] = bits;
+      this.records[o + 27] = 0;
+      if (bits & LCB.added) added.push(ids[i]);
+      if (bits & LCB.moved) anyMoved = true;
+      if (bits & LCB.radio) anyRadio = true;
+      if (bits) lightsChanged = true;
+    }
+    const removed = first ? [] : prevIds.filter((id) => !curIndex.has(id));
     if (!lightsChanged && prev) {
-      for (let w = 0; w < nA * LIGHT_REC_WORDS && !lightsChanged; w++) {
-        if (this.records[prev.cpu.lightOff + w] !== this.records[lightOff + w]) lightsChanged = true;
+      for (let i = 0; i < nA && !lightsChanged; i++) {
+        for (let w = 0; w < LIGHT_REC.changeBits; w++) {
+          if (this.records[prev.cpu.lightOff + i * W + w] !== this.records[lightOff + i * W + w]) { lightsChanged = true; break; }
+        }
       }
     }
+    const pmfChanged = first || !sameWeights;
+    const same = !alwaysFlip && !first && !lightsChanged && !pmfChanged && !reallocated;
+    this.slots[next] = { cpu, ids, weights, table };
+    if (!same) this.cur = next;                          // M5 commit: an unchanged state does not flip (TD4)
     this.dirty = this.dirtyAll ? [[0, this.totalWords]] : [[base, base + this.slotWords]];
     this.dirtyAll = false;
-    return { lightsChanged, pmfChanged: first || !sameWeights, reallocated };
+    return {
+      update: { lightsChanged, pmfChanged, reallocated },
+      commit: { same, pmfChanged, anyMoved, anyRadio, added, removed, reallocated },
+    };
   }
 
   /** LightsParams uniform (lights.wgsl): cur slot, prev slot, tri/primMap offsets, flags, env table offsets. */
@@ -376,6 +438,29 @@ export class LightsState {
     u.set([this.envRowOff, this.envColOff, this.envPdfOff, this.envLog2W], 2 * LIGHT_SLOT_WORDS + 4);
     return buf;
   }
+
+  /** The slot the GPU sees as `prev` (LightsParams.prev: the non-current slot, or cur before the first flip). */
+  get prevSlot(): LightSlotCpu { return (this.slots[this.cur ^ 1] ?? this.slots[this.cur]!).cpu; }
+
+  /**
+   * CPU mirror of tframe.wgsl lt_translate (restir-temporal-api.md §3.2, TD7): alias entry `entry` of frame `from` in the
+   * numbering of frame `to` ('prev' / 'cur'), NO_ENTRY when absent. `same` = TF_LIGHTS_SAME (identity).
+   */
+  translate(entry: number, from: 'prev' | 'cur', to: 'prev' | 'cur', same = false): number {
+    if (entry === NO_ENTRY) return NO_ENTRY;
+    if (from === to || same) return entry;
+    const sf = from === 'prev' ? this.prevSlot : this.curSlot;
+    const st = to === 'prev' ? this.prevSlot : this.curSlot;
+    const cur = this.curSlot;
+    if (entry === sf.envEntry) return st.envEntry;
+    if (entry < sf.nAnalytic) return this.records[(from === 'prev' ? cur.prevToCurOff : cur.curToPrevOff) + entry];
+    const tri = entry - sf.nAnalytic;
+    if (tri >= this.tris.primIds.length) return NO_ENTRY;
+    return st.nAnalytic + tri;
+  }
+
+  /** Realized pmf of alias entry e of a slot (f32 as stored). */
+  pmfOf(slot: LightSlotCpu, e: number): number { return new Float32Array(this.records.buffer)[slot.pmfOff + e]; }
 
   /** Realized pmf of alias entry e in the current slot (f32 as stored). */
   pmf(e: number): number { return new Float32Array(this.records.buffer)[this.curSlot.pmfOff + e]; }
@@ -424,9 +509,40 @@ export class LightsGpu {
   get lightMode(): LightMode { return this.state.lightMode; }
   setLightMode(m: LightMode): void { this.state.lightMode = m; this.device.queue.writeBuffer(this.params, 0, this.state.paramsBytes()); }
 
+  /**
+   * M5 (restir-temporal-api.md §2.4, TD4): with `deferred`, update() / setEnvironment() only STAGE the edit (they return
+   * a provisional LightsUpdate; bind groups follow `version`) and commit() applies all staged edits of the frame once.
+   * The PT kernel's LightsGpu keeps the M3 behaviour (deferred = false: every call commits and flips).
+   */
+  deferred = false;
+  private pending = false;
+
+  /** Staged edits waiting for commit(). */
+  get hasPending(): boolean { return this.pending; }
+
+  /** Apply the staged state once (no flip when nothing changed). */
+  commit(): LightsCommit {
+    this.pending = false;
+    const res = this.state.commit(this.lastLights, this.envInput);
+    this.afterPack(res.reallocated);
+    return res;
+  }
+
+  private afterPack(reallocated: boolean): void {
+    if (reallocated) {
+      this.records.destroy();
+      this.records = this.createRecords();
+      this.version++;
+      this.upload(true);
+    } else {
+      this.upload(false);
+    }
+  }
+
   /** New light list for this frame (sorted by stable id internally). */
   update(lights: readonly LightData[]): LightsUpdate {
     this.lastLights = lights;
+    if (this.deferred) { this.pending = true; return { lightsChanged: true, pmfChanged: true, reallocated: false }; }
     const res = this.state.update(lights, this.envInput);
     if (res.reallocated) {
       this.records.destroy();

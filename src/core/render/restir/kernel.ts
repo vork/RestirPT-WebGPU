@@ -19,7 +19,7 @@ import type { DebugResources } from '../debug-views.ts';
 import { envBindGroupEntries, envBindGroupLayoutEntries, type EnvGpuResources } from '../env-gpu.ts';
 import { FrameUniformBuffer, JITTER_IID, JITTER_NONE, boundsDiagonal, type CameraState, type JitterMode } from '../frame-uniforms.ts';
 import { LightsGpu, type LightMode, type LightsUpdate } from '../lights-gpu.ts';
-import { packEnvParams } from '../env-gpu.ts';
+import { envImportanceKey, packEnvParams } from '../env-gpu.ts';
 import { applyEnvLighting, type PtEnvOptions } from '../pt-kernel.ts';
 import { recentrePositions, type SceneGpu } from '../scene-gpu.ts';
 import {
@@ -31,7 +31,7 @@ import { G0_BINDING, RS_PASSES, RestirResources, createUniforms, g2LayoutEntries
 import { SpatialStage } from './stage-spatial.ts';
 import { EnsembleStage } from './ensemble.ts';
 import { TemporalStage } from './stage-temporal.ts';
-import { FrameStateTracker, type RestirAdvance, type RestirFrameState, type RestirInteractiveAdvance } from './frame-state.ts';
+import { FrameStateTracker, type ConfigHashInput, type RestirAdvance, type RestirFrameState, type RestirInteractiveAdvance } from './frame-state.ts';
 
 export type { RestirSettings } from './presets.ts';
 export type { RestirAdvance, RestirFrameState } from './frame-state.ts';
@@ -80,6 +80,10 @@ export interface RestirKernelOptions {
 
 const ENV_BINDING_BASE = 1;
 const SCENE_GROUP = 1;
+/** Scene generation ids for the config hash (§2.10): one per SceneGpu object. */
+const sceneGens = new WeakMap<object, number>();
+let nextSceneGen = 1;
+const sceneGen = (s: object): number => { let g = sceneGens.get(s); if (g === undefined) { g = nextSceneGen++; sceneGens.set(s, g); } return g; };
 
 export class RestirKernel {
   readonly frame: FrameUniformBuffer;
@@ -109,10 +113,14 @@ export class RestirKernel {
   private roleW = 0;
   /** advance() prepared the next frameUnits() call (temporal units allowed). */
   private advanced: RestirAdvance | undefined;
+  /** The RestirAdvance of the frame whose units frameUnits() builds / built last (undefined: a non-advanced frame). */
+  private builtAdv: RestirAdvance | undefined;
   /** Final reservoir index of the last frameUnits() (the next frame's history when it stays valid). */
   private lastFinal = 0;
   /** The last frame whose units were built had temporal units (its final buffer is a valid history candidate). */
   private lastWasAdvanced = false;
+  /** Env map generation (bumps on setEnvironment; a config-hash input). */
+  private envMapGen = 0;
   private ringCursor = 0;
   private g0: GPUBindGroup | undefined;
   private g0Key = '';
@@ -130,7 +138,7 @@ export class RestirKernel {
     this.envOptions = { ...o.env };
     this.frame = new FrameUniformBuffer(device);
     ({ params: this.params, ring: this.ring } = createUniforms(device));
-    this.rsTemporal = device.createBuffer({ label: 'rs-temporal', size: RS_TEMPORAL_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.rsTemporal = device.createBuffer({ label: 'rs-temporal', size: RS_TEMPORAL_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
     this.lights = new LightsGpu(device, scene.scene, scene.origin, recentrePositions(scene.scene.geometry.positions, scene.origin), { lightMode: 'A', label: 'rs-lights' });
     applyEnvLighting(this.lights, env, this.envOptions);
     const c = GPUShaderStage.COMPUTE;
@@ -159,6 +167,8 @@ export class RestirKernel {
     this.ensemble = new EnsembleStage();
     this.temporal = new TemporalStage();
     this.frameState = new FrameStateTracker();
+    // M5 TD4: with temporal on, light / env edits are staged and committed once per frame (advance()).
+    this.lights.deferred = !!this.settings.temporal;
   }
 
   static async create(device: GPUDevice, scene: SceneGpu, env: EnvGpuResources, o: RestirKernelOptions): Promise<RestirKernel> {
@@ -249,7 +259,11 @@ export class RestirKernel {
   get currentView(): RestirView | undefined { return this.view; }
   /** Current light / env state changes (mirror PtFramePass). */
   setLights(lights: readonly LightData[]): LightsUpdate { return this.lights.update(lights); }
-  setEnvironment(env: EnvGpuResources): void { this.env = env; this.g0Key = ''; applyEnvLighting(this.lights, env, this.envOptions); }
+  setEnvironment(env: EnvGpuResources): void {
+    this.env = env; this.g0Key = ''; this.envMapGen++;
+    this.frameState.invalidate('env-map');               // a map swap is a config change (§2.5)
+    applyEnvLighting(this.lights, env, this.envOptions);
+  }
   envParamsChanged(): LightsUpdate { return applyEnvLighting(this.lights, this.env, this.envOptions); }
   setEnvOptions(o: Partial<PtEnvOptions> = {}): LightsUpdate {
     Object.assign(this.envOptions, o);
@@ -263,6 +277,8 @@ export class RestirKernel {
     validateSettings(next);
     const realloc = numSlotsOf(next) !== numSlotsOf(this.settings) || next.temporal !== this.settings.temporal;
     this.settings = next;
+    this.lights.deferred = !!next.temporal;
+    if (!next.temporal && this.lights.hasPending) this.lights.commit();
     if (realloc && this.res) this.allocate();
     this.writeParams();
   }
@@ -270,6 +286,7 @@ export class RestirKernel {
   /** Sequential / ensemble validation view: the kernel owns the frame uniforms (member tile = width × height). */
   setView(v: RestirView): void {
     this.view = v;
+    this.frameState.invalidate('view');
     this.external = undefined;
     const jm = v.jitterMode ?? JITTER_IID;
     this.frame.write({
@@ -463,11 +480,28 @@ export class RestirKernel {
     // History = the previous frame's final buffer, only if that frame was itself an advanced frame of this allocation.
     const hist = r.histValid && this.lastWasAdvanced;
     if (r.histValid && !hist) throw new Error('RestirKernel.advance: history valid but the previous frame was not advanced (frame-state bug)');
+    this.builtAdv = undefined;
     this.roleH = hist ? this.lastFinal : -1;
     this.roleW = this.roleH < 0 ? 0 : 1 - this.roleH;
     if (res.alloc.temporal) res.parity ^= 1;           // rs_primary of this frame writes the other G-buffer (§2.6)
     this.device.queue.writeBuffer(this.rsTemporal, 0, packRsTemporal(r.temporal));
     this.advanced = r;
+  }
+
+  /** The last frame built by frameUnits() was an advanced temporal frame (its final buffer can be history). */
+  get previousFrameAdvanced(): boolean { return this.lastWasAdvanced; }
+
+  /** Inputs of the config hash (§2.10) for the current kernel state. */
+  configHashInput(jitterMode: number, envMapId: string): ConfigHashInput {
+    const a = this.resources.alloc, s = this.settings;
+    return {
+      sceneGen: sceneGen(this.scene), atlas: [a.atlasW, a.atlasH], member: [a.memberW, a.memberH], members: a.members,
+      memberBase: this.view?.memberBase ?? 0, lightMode: this.lights.lightMode, lightsLayout: this.lights.version,
+      envMapGen: this.envMapGen, envMapId,
+      importanceKey: envImportanceKey({ cap: this.envOptions.importanceCap, floors: this.envOptions.floors, plantPdfFromTargets: this.envOptions.plant === 'pdfFromTargets' }),
+      envNee: this.envOptions.nee !== false && this.env.present, settings: { restir: s, env: this.envOptions }, flags: restirFlags(s), tMode: tModeOf(s), tPlants: tPlantsOf(s),
+      jitterMode, misM: 1,
+    };
   }
 
   /** Index of the buffer rs_initial writes (w; 0 with temporal off or after a reset). */
@@ -476,8 +510,12 @@ export class RestirKernel {
   historyIndex(): number { return this.roleH; }
   /** The buffer holding the frame's final reservoirs: res[(w + executed spatial rounds) % 2]. */
   finalResIndex(): number { return (this.roleW + this.lastRounds) % 2; }
-  /** The RestirAdvance of the frame being built (undefined: not advanced ⇒ no temporal units). */
-  get currentAdvance(): RestirAdvance | undefined { return this.advanced; }
+  /** The RestirAdvance of the frame being prepared / built: set by advance(), readable by the stages while frameUnits()
+   *  builds the frame's units and until the next advance() (undefined: a non-advanced frame ⇒ no temporal units;
+   *  Changelog A-10). */
+  get currentAdvance(): RestirAdvance | undefined { return this.advanced ?? this.builtAdv; }
+  /** Alias of currentAdvance for the stages (T-B / T-C). */
+  get frameAdvance(): RestirAdvance | undefined { return this.currentAdvance; }
   /** Packed EnvParams words of the env currently bound (the next frame's envPrev, §2.5). */
   envParamsWords(): ArrayBuffer { return packEnvParams(this.env.params, this.env.present); }
   get envResources(): EnvGpuResources { return this.env; }
@@ -489,7 +527,11 @@ export class RestirKernel {
     const units: WorkUnit[] = [];
     const adv = this.advanced;
     this.advanced = undefined;
-    if (!adv) { this.roleH = -1; this.roleW = 0; }        // not advanced: a reset frame (bitwise M4 schedule)
+    this.builtAdv = adv;
+    if (!adv) {                                           // not advanced: a reset frame (bitwise M4 schedule)
+      this.roleH = -1; this.roleW = 0;
+      if (this.lights.hasPending) this.lights.commit();   // staged edits of a non-advanced frame apply now
+    }
     const w = this.roleW;
     const bands = this.rowBands();
     const primary = this.pipelineSync('rs_primary');

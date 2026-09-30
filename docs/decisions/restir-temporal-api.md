@@ -1247,6 +1247,43 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   buffer), `envParamsWords()`; `readTemporalState()` returns the words from tState to the end of sfxOut (decode with
   `layout.ts decodeTStateLocal / decodeSfxLocal`). `readReservoirs('final')` reads `res[finalResIndex()]`.
 
+### A1 amendments (T-A)
+
+- **A-7 q′ pixel convention** (affects T-B, T-D views 481/tag 78, T-E masks). §3.3's `sp` is the continuous member-local
+  position with pixel **centres at integers**: `sp = frame_project(x₁, prevCam) − 0.5`, then `c₀ = ⌊sp + ξ⌋`. With
+  frame_project's own convention (centres at +0.5) a static, jitter-off camera would round to q + 1 half of the time,
+  contradicting U-TP-1 (q′ = q). `TPick.sp` and view 481 (`s′ − q`) use this convention: for a static camera s′ − q is 0 up to the f32 round-off of
+  the back-projection (measured ≤ 1e-5 px; never exactly 0 in general, so tests use a 1e-4 px tolerance).
+  A position behind the previous camera, or more than 2 px outside the member tile, has no tap.
+- **A-8 Package frame format (TD27; confirms T-E's proposal with two amendments)** (affects T-E `make-m5.ts`, the chain
+  runner, `batch-run.ts loadSource`). `scene.json`:
+  `frames[k] = { frame, label?, camera?: {matrix, yfov}, lights?: { "<id>": { matrix?, power?, enabled?, color?,
+  exposure?, sizeX?, sizeY?, spotSize?, spotBlend?, spread? } }, env?: { rotationZ?, strength?, tint?: [r,g,b],
+  visibleToCamera?, map? } }` — dense (one entry per frame 0…T−1) for `ixs_*`; values are absolute; a missing field /
+  light / frame keeps the base scene state; `enabled: false` ⇒ the light is absent in that frame (every light that
+  ever exists is in the base `lights[]`). Top level `sequence: {fps, frameCount, testFrames, notes}` and
+  `envMaps: [{ id, file, sha256, width, height, name? }]` (**array keyed by id**, file `env_<id>.exr`, written by
+  `exportScenePackage({ envMaps: [{ id, env }] })` with encodeEnvExr); `frames[k].env.map` is an **id** (`'env'` =
+  the base env.exr, constant `BASE_ENV_MAP`), not a file name. `readScenePackage` / `fetchScenePackage` load and
+  hash-check every map (`LoadedScenePackage.envMaps: Map<id, EnvironmentData>`, `.sequence`). The one shared resolver
+  is `scene-package.ts resolvePackageFrame(pkg, k) → { frame, camera: {camToWorld: Float64Array, yfov}, lights (enabled
+  only, overrides applied), env?: { params: {rotationZ, strength, tint, visibleToCamera}, mapId, map } }`; the chain
+  runner feeds it to `RestirKernel.advance({ t, camera, lights, env: { params, mapId } })` after
+  `kernel.setEnvironment(...)` when `mapId` changes, and `loadSource` uses it for `--frame` (M3 packages resolve to
+  exactly their previous state). The Blender bridge (`build_scene.py`) does **not** need the new fields: every M5 unit
+  compares against our PT (§6.4, Stage B / dyn), so no `ixs_*` package is rendered by Cycles.
+- **A-9 Staged light commits** (affects T-D `renderer.ts` / `integration.ts`). With `settings.temporal` the kernel's
+  `LightsGpu.deferred` is on: `setLights`, `setEnvironment`, `envParamsChanged`, `setEnvOptions` only stage (their
+  returned `LightsUpdate` is provisional; bind groups follow `lights.version`) and the ONE commit happens in
+  `advance()` / `advanceInteractive()` (`LightsState.commit`: no flip when nothing changed ⇒ `TF_LIGHTS_SAME`, change
+  bits in word 26). A frame built without advance commits the staged edits itself (a reset frame). The PT's
+  `LightsGpu` is unchanged (every update flips). `setEnvironment` and `setView` invalidate history (reasons `env-map`,
+  `view`); the config hash (§2.10) additionally covers every RestirSettings field and the env options.
+- **A-10 `currentAdvance` during unit building** (requested by T-B; affects T-B, T-C). `RestirKernel.currentAdvance`
+  (alias `frameAdvance`) returns the frame's `RestirAdvance` from `advance()` until the next `advance()`, including while
+  `frameUnits()` builds the stage units (TF_REFRESH, TF_HIST_VALID for the temporal stage and the refresh builders);
+  undefined on a non-advanced (reset) frame.
+
 ### T-D amendments (debug views, interactive integration, boost)
 
 - **D-1 Temporal debug data paths and probe formats** (affects T-B only through the §2.11 hook call sites, which
@@ -1330,3 +1367,4 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   w̃ or W_Y (the record becomes empty with its c). The queued forward code is `SC_PENDING` until T2 writes it.
 - **B-6 Row bands in the temporal per-pixel passes**: T1 and both T3 phases take `rs_pix(gid.x, gid.y + rowBase)` like
   every M4 per-pixel pass (the P0 stubs used `gid.xy`).
+

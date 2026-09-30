@@ -13,6 +13,10 @@
 //   per-material UV lattices, normal / colour encodings). The geometry arrays are the DEQUANTIZED f32 values, so
 //   Blender renders exactly the GPU geometry; the reader re-verifies that every value is on its stored lattice (hard
 //   error). flatShaded ⇔ every triangle is TRI_FLAT. v1 packages are read and re-quantized with a warning.
+// - M5 sequences (restir-temporal-api.md TD27; additive): `frames[]` may be dense (every frame 0…T−1) and carry per-light
+//   overrides incl. `enabled` (true add/remove), radiometric / size fields, env `map` (id of an `envMaps[]` entry, extra
+//   env_<id>.exr files; 'env' = the base map) and env tint / visibility; top-level `sequence {fps, frameCount,
+//   testFrames, notes}`. resolvePackageFrame() turns a frame into the scene state of that frame.
 import { encodeExr, flipRows } from '../io/exr.ts';
 import { decodePng, encodePng } from '../io/png.ts';
 import { sha256Hex } from '../io/zlib.ts';
@@ -32,13 +36,26 @@ type V3 = [number, number, number];
 
 export interface PackageRender { width: number; height: number; maxBounces: number }
 export interface PackageCamera { matrix: ArrayLike<number>; yfov: number; znear?: number }
+/** Per-light override of a package frame (absolute values; M5 adds enabled and the radiometric / size fields). */
+export interface PackageLightOverride {
+  matrix?: ArrayLike<number>; power?: number;
+  /** M5 (TD27): false = the light does not exist in this frame (true add / remove; default true). */
+  enabled?: boolean;
+  color?: V3; exposure?: number; sizeX?: number; sizeY?: number; spotSize?: number; spotBlend?: number; spread?: number;
+}
+/** Env override of a package frame. `map` = id of a package env map ('env' = the base env.exr, else an envMaps[] id). */
+export interface PackageEnvOverride { rotationZ?: number; strength?: number; tint?: V3; visibleToCamera?: boolean; map?: string }
 export interface PackageFrame {
   frame: number;
   label?: string;
   camera?: { matrix: ArrayLike<number>; yfov: number };
-  lights?: Record<string, { matrix?: ArrayLike<number>; power?: number }>;
-  env?: { rotationZ?: number; strength?: number };
+  lights?: Record<string, PackageLightOverride>;
+  env?: PackageEnvOverride;
 }
+/** M5 sequence block (TD27). */
+export interface PackageSequence { fps: number; frameCount: number; testFrames: number[]; notes?: string }
+/** The base env map id of a package. */
+export const BASE_ENV_MAP = 'env';
 
 export interface ExportScenePackageOptions {
   camera: PackageCamera;
@@ -52,6 +69,9 @@ export interface ExportScenePackageOptions {
   source?: { uri: string; sha256?: string };
   /** World importance sampling in Cycles (default AUTOMATIC; NONE = env NEE off). */
   envSampling?: 'AUTOMATIC' | 'NONE';
+  /** M5: sequence block and extra env maps (map swaps) referenced by frames[].env.map. */
+  sequence?: PackageSequence;
+  envMaps?: { id: string; env: EnvironmentData }[];
 }
 
 interface BufferView { offset: number; length: number; dtype: 'f32' | 'u32'; components: number }
@@ -112,7 +132,10 @@ export interface SceneJson {
   camera: { matrix: number[]; yfov: number; znear: number };
   env: EnvJson | null;
   render: PackageRender;
-  frames?: { frame: number; label?: string; camera?: { matrix: number[]; yfov: number }; lights?: Record<string, { matrix?: number[]; power?: number }>; env?: { rotationZ?: number; strength?: number } }[];
+  frames?: { frame: number; label?: string; camera?: { matrix: number[]; yfov: number }; lights?: Record<string, Omit<PackageLightOverride, 'matrix'> & { matrix?: number[] }>; env?: PackageEnvOverride }[];
+  /** M5 (TD27). */
+  sequence?: PackageSequence;
+  envMaps?: { id: string; file: string; sha256: string; width: number; height: number; name?: string }[];
   warnings?: string[];
   /** v2: quantization parameters (data-formats.md §B0); the geometry is on these lattices. */
   quant?: SceneQuant;
@@ -135,7 +158,10 @@ export async function exportScenePackage(scene: SceneData, opts: ExportScenePack
   if (!Number.isInteger(opts.render.maxBounces) || opts.render.maxBounces < 0) fail(`bad maxBounces ${opts.render.maxBounces}`);
   if (opts.camera.matrix.length !== 16 || !(opts.camera.yfov > 0 && opts.camera.yfov < Math.PI)) fail('bad camera');
   if (!isRigid(opts.camera.matrix)) fail('camera matrix has scale/shear/mirror');
+  const mapIds = new Set([BASE_ENV_MAP, ...(opts.envMaps ?? []).map((m) => m.id)]);
   for (const f of opts.frames ?? []) {
+    if (f.env?.map !== undefined && !mapIds.has(f.env.map)) fail(`frame ${f.frame}: env map '${f.env.map}' not in envMaps`);
+    for (const id of Object.keys(f.lights ?? {})) if (!scene.lights.some((l) => String(l.id) === id)) fail(`frame ${f.frame}: light ${id} not in the scene`);
     if (f.camera && !isRigid(f.camera.matrix)) fail(`frame ${f.frame}: camera matrix has scale/shear/mirror`);
     for (const [id, l] of Object.entries(f.lights ?? {})) if (l.matrix && !isRigid(l.matrix)) fail(`frame ${f.frame}: light ${id} matrix has scale/shear/mirror`);
   }
@@ -266,6 +292,14 @@ export async function exportScenePackage(scene: SceneData, opts: ExportScenePack
       sampling: opts.envSampling ?? 'AUTOMATIC', sha256, width: e.width, height: e.height, name: e.name,
     };
   }
+  const envMaps: NonNullable<SceneJson['envMaps']> = [];
+  for (const m of opts.envMaps ?? []) {
+    if (!/^[A-Za-z0-9_-]+$/.test(m.id) || m.id === BASE_ENV_MAP) fail(`bad env map id '${m.id}'`);
+    const { exr, sha256 } = await encodeEnvExr(m.env);
+    const file = `env_${m.id}.exr`;
+    files.set(file, exr);
+    envMaps.push(stripUndefined({ id: m.id, file, sha256, width: m.env.width, height: m.env.height, name: m.env.name }));
+  }
 
   const json: SceneJson = {
     format: SCENE_PACKAGE_FORMAT, version: SCENE_PACKAGE_VERSION,
@@ -286,10 +320,15 @@ export async function exportScenePackage(scene: SceneData, opts: ExportScenePack
         frame: f.frame,
         label: f.label,
         camera: f.camera ? { matrix: arr(f.camera.matrix), yfov: f.camera.yfov } : undefined,
-        lights: f.lights ? Object.fromEntries(Object.entries(f.lights).map(([k, v]) => [k, stripUndefined({ matrix: v.matrix ? arr(v.matrix) : undefined, power: v.power })])) : undefined,
-        env: f.env,
+        lights: f.lights ? Object.fromEntries(Object.entries(f.lights).map(([k, v]) => [k, stripUndefined({
+          matrix: v.matrix ? arr(v.matrix) : undefined, power: v.power, enabled: v.enabled, color: v.color ? [...v.color] as V3 : undefined,
+          exposure: v.exposure, sizeX: v.sizeX, sizeY: v.sizeY, spotSize: v.spotSize, spotBlend: v.spotBlend, spread: v.spread,
+        })])) : undefined,
+        env: f.env ? stripUndefined({ ...f.env, tint: f.env.tint ? [...f.env.tint] as V3 : undefined }) : undefined,
       })),
     } : {}),
+    ...(opts.sequence ? { sequence: { ...opts.sequence, testFrames: [...opts.sequence.testFrames] } } : {}),
+    ...(envMaps.length ? { envMaps } : {}),
     ...(scene.warnings.length || exportWarnings.length ? { warnings: [...scene.warnings, ...exportWarnings] } : {}),
   };
   files.set('scene.json', new TextEncoder().encode(JSON.stringify(json, null, 1)));
@@ -357,6 +396,9 @@ export interface LoadedScenePackage {
   lightMode: LightMode;
   flatShaded: boolean;
   frames?: SceneJson['frames'];
+  /** M5: sequence block and the extra env maps by id (TD27). */
+  sequence?: PackageSequence;
+  envMaps?: Map<string, EnvironmentData>;
   json: SceneJson;
 }
 
@@ -417,15 +459,20 @@ export async function readScenePackage(input: PackageFiles): Promise<LoadedScene
   }));
   const camera = { name: 'package', matrix: new Float64Array(json.camera.matrix), yfov: json.camera.yfov, znear: json.camera.znear ?? 1e-4 };
   let env: EnvironmentData | undefined;
-  if (json.env) {
-    const e = json.env;
-    const dec = decodeExr(get(e.file), 'validation'); // rows bottom-up (GPU order)
+  const decodeEnv = async (file: string, sha: string | undefined, name: string | undefined, e: Partial<EnvJson>): Promise<EnvironmentData> => {
+    const dec = decodeExr(get(file), 'validation'); // rows bottom-up (GPU order)
     const hash = await envPixelHash(flipRows(dec.texels, dec.width, dec.height, 4));
-    if (e.sha256 && hash !== e.sha256) throw new ScenePackageError(`env pixel hash mismatch: file ${hash}, scene.json ${e.sha256}`);
-    env = {
-      name: e.name ?? e.file, width: dec.width, height: dec.height, texels: dec.texels, strength: e.strength,
+    if (sha && hash !== sha) throw new ScenePackageError(`env pixel hash mismatch (${file}): file ${hash}, scene.json ${sha}`);
+    return {
+      name: name ?? file, width: dec.width, height: dec.height, texels: dec.texels, strength: e.strength ?? 1,
       tint: [...(e.tint ?? [1, 1, 1])] as V3, rotationZ: e.rotationZ ?? 0, visibleToCamera: e.visibleToCamera ?? true,
     };
+  };
+  if (json.env) env = await decodeEnv(json.env.file, json.env.sha256, json.env.name, json.env);
+  let envMaps: Map<string, EnvironmentData> | undefined;
+  if (json.envMaps?.length) {
+    envMaps = new Map();
+    for (const m of json.envMaps) envMaps.set(m.id, await decodeEnv(m.file, m.sha256, m.name, json.env ?? {}));
   }
   let scene: SceneData = {
     name: json.name, geometry, materials, textures, lights, cameras: [{ ...camera, matrix: new Float32Array(camera.matrix) }], env,
@@ -449,7 +496,10 @@ export async function readScenePackage(input: PackageFiles): Promise<LoadedScene
     scene.quant = { ...q, uv: q.uv.map((l) => ({ ...l })) };
   }
   const lightMode: LightMode = (json.lightMode as string) === "A'" ? 'A′' : json.lightMode;   // ASCII spelling accepted
-  return { scene, camera, render: json.render, lightMode, flatShaded: json.flatShaded, frames: json.frames, json };
+  return {
+    scene, camera, render: json.render, lightMode, flatShaded: json.flatShaded, frames: json.frames, json,
+    ...(json.sequence ? { sequence: json.sequence } : {}), ...(envMaps ? { envMaps } : {}),
+  };
 }
 
 /** Fetch a package directory (URL ending in '/', or the scene.json URL) and read it. */
@@ -459,7 +509,7 @@ export async function fetchScenePackage(url: string, fetcher: (u: string) => Pro
   const sj = await fetcher(`${base}scene.json`);
   files.set('scene.json', sj);
   const json = JSON.parse(new TextDecoder().decode(sj)) as SceneJson;
-  const names = ['geometry.bin', ...(json.textures ?? []).map((t) => t.file), ...(json.env ? [json.env.file] : [])];
+  const names = ['geometry.bin', ...(json.textures ?? []).map((t) => t.file), ...(json.env ? [json.env.file] : []), ...(json.envMaps ?? []).map((m) => m.file)];
   await Promise.all(names.map(async (n) => { files.set(n, await fetcher(`${base}${n}`)); }));
   return { ...(await readScenePackage(files)), files };
 }
@@ -535,4 +585,50 @@ function boundsOf(p: Float32Array, idx: Uint32Array): SceneData['bounds'] {
 function stripUndefined<T extends object>(o: T): T {
   for (const k of Object.keys(o) as (keyof T)[]) if (o[k] === undefined) delete o[k];
   return o;
+}
+
+// ------------------------------------------------------------------------------------------------ M5 frame resolution
+
+/** The scene state of one package frame (restir-temporal-api.md TD27): camera, the ENABLED lights with overrides, the env
+ *  parameters and map id. Frames missing from frames[] use the base scene state. */
+export interface ResolvedPackageFrame {
+  frame: number;
+  camera: { camToWorld: Float64Array; yfov: number };
+  lights: LightData[];
+  env?: { params: { rotationZ: number; strength: number; tint: V3; visibleToCamera: boolean }; mapId: string; map: EnvironmentData };
+}
+
+export function resolvePackageFrame(p: Pick<LoadedScenePackage, 'scene' | 'camera' | 'frames' | 'envMaps'>, frame: number): ResolvedPackageFrame {
+  const f = p.frames?.find((x) => x.frame === frame);
+  const camera = f?.camera ? { camToWorld: Float64Array.from(f.camera.matrix), yfov: f.camera.yfov } : { camToWorld: Float64Array.from(p.camera.matrix), yfov: p.camera.yfov };
+  const lights: LightData[] = [];
+  for (const l of p.scene.lights) {
+    const ov = f?.lights?.[String(l.id)];
+    if (ov?.enabled === false) continue;
+    lights.push(stripUndefined({
+      ...l,
+      ...(ov?.matrix ? { matrix: new Float32Array(ov.matrix) } : {}),
+      ...(ov?.power !== undefined ? { power: ov.power } : {}),
+      ...(ov?.color ? { color: [...ov.color] as V3 } : {}),
+      ...(ov?.exposure !== undefined ? { exposure: ov.exposure } : {}),
+      ...(ov?.sizeX !== undefined ? { sizeX: ov.sizeX } : {}),
+      ...(ov?.sizeY !== undefined ? { sizeY: ov.sizeY } : {}),
+      ...(ov?.spotSize !== undefined ? { spotSize: ov.spotSize } : {}),
+      ...(ov?.spotBlend !== undefined ? { spotBlend: ov.spotBlend } : {}),
+      ...(ov?.spread !== undefined ? { spread: ov.spread } : {}),
+    }));
+  }
+  let env: ResolvedPackageFrame['env'];
+  const base = p.scene.env;
+  if (base) {
+    const e = f?.env ?? {};
+    const mapId = e.map ?? BASE_ENV_MAP;
+    const map = mapId === BASE_ENV_MAP ? base : p.envMaps?.get(mapId);
+    if (!map) throw new ScenePackageError(`frame ${frame}: env map '${mapId}' missing`);
+    env = {
+      params: { rotationZ: e.rotationZ ?? base.rotationZ, strength: e.strength ?? base.strength, tint: [...(e.tint ?? base.tint)] as V3, visibleToCamera: e.visibleToCamera ?? base.visibleToCamera },
+      mapId, map,
+    };
+  }
+  return { frame, camera, lights, env };
 }

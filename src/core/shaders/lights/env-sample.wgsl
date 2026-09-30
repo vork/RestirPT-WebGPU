@@ -62,9 +62,13 @@ fn envPdfSA(d: vec3f, cg: f32, sg: f32) -> f32 {
 /// p1Env(ω) = pmf[ENV]·pdf_σ(ω): the ONE env light pdf (NEE q, BSDF-escape MIS, later RIS-NEE, shifts, refresh).
 /// 0 when env NEE is off (no alias entry).
 fn p1Env(d: vec3f) -> f32 {
-  let slot = lightsParams.cur;
+  return p1Env_s(d, lightsParams.cur, envParams);
+}
+
+/// p1Env under light slot `slot` and env record `er` (frame-selected, restir-temporal-api.md §3.1).
+fn p1Env_s(d: vec3f, slot: LightSlot, er: EnvParams) -> f32 {
   if (slot.envEntry == LIGHT_NONE) { return 0.0; }
-  return light_pmf(slot, slot.envEntry) * envPdfSA(d, envParams.cg, envParams.sg);
+  return light_pmf(slot, slot.envEntry) * envPdfSA(d, er.cg, er.sg);
 }
 
 /// One draw of the two-level alias + in-cell lattice offsets. uv is clamped inside cell (i, j) (prevFloat of the upper
@@ -110,17 +114,23 @@ fn env_sample_cell(h0: u32, h1: u32, h2: u32) -> EnvCellSample {
 /// pmf[ENV]·pdf_σ(uv), Λ = L_env(uv), isInf). ReSTIR re-evaluates stored env endpoints (i, j, h2) with this function
 /// (restir/endpoint.wgsl nee_eval), so base and shifts are bit-identical to nee_sample.
 fn env_light_sample_cell(slot: LightSlot, entry: u32, i: u32, j: u32, h2: u32) -> LightSample {
+  return env_light_sample_cell_s(slot, envParams, entry, i, j, h2);
+}
+
+/// env_light_sample_cell under env record `er` (rotation for the direction, strength·tint for Λ; frame-selected,
+/// restir-temporal-api.md §3.1). The pmf comes from `slot`.
+fn env_light_sample_cell_s(slot: LightSlot, er: EnvParams, entry: u32, i: u32, j: u32, h2: u32) -> LightSample {
   var ls = light_sample_none();
   let c = env_cell_uv(i, j, h2);
   let q = light_pmf(slot, entry) * env_pdf_sa_cell(c.i, c.j, c.s);
   ls.entry = entry;
   ls.kind = LT_ENV;
-  ls.dir = envDir(c.uv, envParams.cg, envParams.sg);
+  ls.dir = envDir(c.uv, er.cg, er.sg);
   ls.pos = vec3f(0.0);
   ls.nz = vec3f(0.0);
   ls.dist = FLT_MAX;
   ls.cosZ = 1.0;
-  ls.Lambda = envRadiance(c.uv);                        // evaluated at the sampled uv (no direction round trip)
+  ls.Lambda = envRadiance_s(c.uv, er);                  // evaluated at the sampled uv (no direction round trip)
   ls.q = q;
   ls.p1 = q;                                            // already a solid-angle density (no r²/cos)
   ls.isDelta = false;
@@ -168,16 +178,20 @@ fn nee_mis_w1(ls: LightSample, p2: f32, B: u32) -> f32 {
 /// ω2 of a BSDF ray that escapes along `dir` from a vertex with BSDF marginal p2 (math.md#mis rule 5):
 /// p2/(M(B)·p1Env + p2); 1 after a delta lobe (MIS skip) and when env NEE is off (BSDF is the only technique).
 fn env_bsdf_mis_weight(dir: vec3f, p2: f32, B: u32, afterDelta: bool) -> f32 {
+  return env_bsdf_mis_weight_s(dir, p2, B, afterDelta, lightsParams.cur, envParams);
+}
+
+/// env_bsdf_mis_weight under light slot `slot` and env record `er` (frame-selected, restir-temporal-api.md §3.1).
+fn env_bsdf_mis_weight_s(dir: vec3f, p2: f32, B: u32, afterDelta: bool, slot: LightSlot, er: EnvParams) -> f32 {
   if (afterDelta) { return 1.0; }
-  let slot = lightsParams.cur;
   if (slot.envEntry == LIGHT_NONE) { return 1.0; }
 #if ENV_PLANT == 3
   return 1.0;                                           // PLANTED: double count
 #else
 #if ENV_PLANT == 2
-  let p1 = envPdfSA(dir, envParams.cg, envParams.sg);   // PLANTED: ω2 without pmf[ENV]
+  let p1 = envPdfSA(dir, er.cg, er.sg);                 // PLANTED: ω2 without pmf[ENV]
 #else
-  let p1 = p1Env(dir);
+  let p1 = p1Env_s(dir, slot, er);
 #endif
 #if ENV_MIS_POWER
   return select(1.0, env_power_w(max(p2, 0.0), mis_M(B) * p1), p1 > 0.0);

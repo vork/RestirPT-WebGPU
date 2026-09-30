@@ -67,9 +67,14 @@ fn envRadianceScaled(uv: vec2f, scale: vec3f) -> vec3f {
   return scale * textureSampleLevel(texEnv, sEnv, uv, 0.0).rgb;
 }
 
+// L_env under env record er (frame-selected, restir-temporal-api.md §3.1): er.strength·er.tint ⊙ texel(uv).
+fn envRadiance_s(uv: vec2f, er: EnvParams) -> vec3f {
+  return envRadianceScaled(uv, er.strength * er.tint);
+}
+
 // L_env with the current record: strength·tint ⊙ texel(uv). The ONLY env radiance evaluation (plan rule 15).
 fn envRadiance(uv: vec2f) -> vec3f {
-  return envRadianceScaled(uv, envParams.strength * envParams.tint);
+  return envRadiance_s(uv, envParams);
 }
 
 // Camera-miss term (length-1 path, weight 1, outside the reservoir): visibleToCamera · L_env(d). math.md#path-tree
