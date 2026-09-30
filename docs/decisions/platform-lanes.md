@@ -95,3 +95,14 @@ restir-spatial.gpu.test.ts asserts that no ReSTIR compute pass is encoded with `
 timing is needed, measure it in a separate timing submit.
 
 **Status.** Not reduced to a minimal repro outside the app; it needs a multi-page browser state.
+
+### Q4 Hardware filtering of rgb9e5ufloat / rgba16float is lower precision than the texels (P2, 2026-09-30)
+
+**Measured** (`validation/gpu-tests/env-format.gpu.test.ts`, ENV-F, Chrome 154 / Metal, M5 Pro): bilinear
+`textureSampleLevel` of env texels stored exactly in rgb9e5ufloat or rgba16float vs the SAME values stored as
+rgba32float, 10⁶ random uv (incl. the u seam and the pole rows): worst relative difference 2⁻¹¹ … 2⁻¹⁰·² (the three
+validation HDRIs, a random RGBE map; ≈ 13–87% of lookups differ), and 15 of 10⁶ lookups above 2⁻²⁰ for the C0s f16
+sun map. Texel-centre lookups (no interpolation) are exact. The filter evidently interpolates at half precision.
+
+**Rule.** Validation mode keeps the env texture rgba32float (`env-gpu.ts` `ENV_COMPACT_IN_VALIDATION = false`); only
+interactive mode uses the smallest exact format (data-formats.md §B9, E-3). Re-run ENV-F before changing that.

@@ -1,6 +1,9 @@
 # GPU data formats: audit and quantization plan
 
-Status: **proposal** (design only; nothing in the repo has been changed). Date 2026-09-30.
+Status: **P0, P1 and P2 implemented** (branch `dataformats`, 2026-09-30; see "Implementation status" below). P3–P5
+remain proposals. Coordinator decisions on §E: UV τ = 1/8 texel of the largest bound texture after KHR_texture_transform
+with a per-material f32 fallback (E-12); the loader-fidelity and E2E stock-import gates (M7) run lossless (E-13); the
+M8 96 B layout question is deferred to M8 (E-9).
 Scope: `main` (M0–M3c, `/Users/mark.boss/Dev/WebGPURestirPT`) and `m4-restir` (M4, `…/WebGPURestirPT-m4`).
 Binding constraints: PLAN §1.2, §1.3, §1.6, §1.9, §2 rule 14 (quantize lossy fields before computing F),
 `docs/decisions/scene-bridge.md` (anything the bridge cannot represent exactly is a hard error).
@@ -10,6 +13,59 @@ flatten, package reader and SAH builder: Sponza (`validation/assets/downloaded/s
 `validation/scenes` (both branches), and the 29 M3c packages in `validation/out/m3c/scenes`. The scripts are in
 the scratchpad next to this file (`dataformats/*.mts`, `enc.mjs`). Angles are worst cases over 2·10⁶ random unit
 vectors followed by local hill climbing, measured in f64.
+
+---
+
+## Implementation status (P0–P2)
+
+Code: `src/core/scene/quantize.ts` (quantizeScene, lattice choice, oct encoders, UV lattices, re-weld, assertQuantized),
+`src/core/gpu/vertex-format.ts` (vertex arena packer + TS decode mirror), `shaders/scene/scene-data.wgsl` (vq_* decoders,
+`scene_vertex_pos/normal/uv/color`, TRI_FLAT in `scene_surface`), `render/scene-gpu.ts` (arena upload, `VERTEX_FORMAT`
+define, no tangent buffer), `render/frame-uniforms.ts` (`computeRenderOrigin(bounds, quant)` snaps O),
+`scene/scene-package.ts` (package v2), `render/env-gpu.ts` (P2). Tests: `tests/scene/quantize.test.ts` (U-Q1…U-Q7,
+packer, package v2), `tests/scene/sponza.test.ts`, `tests/env/env-format.test.ts`, GPU:
+`validation/gpu-tests/vertex-format.gpu.test.ts`, `bvh.gpu.test.ts` (T12 on lattice scenes, (6) T12-Q, throughput),
+`env-format.gpu.test.ts` (ENV-F).
+
+What landed, and where it deviates from the plan below:
+- **P0.** quantizeScene runs after every loader: glTF (`gltf-loader.ts`, after flatten; MikkTSpace moved out of
+  flatten and runs on the snapped data), USD (`usdToScene`, after metersPerUnit), the scene kit (`sceneOf`, plus
+  make-cornell-i / make-spot-c0d / make-m4, which build SceneData directly), v1 packages (re-quantized with a warning),
+  and `calib_scenes.py` (a numpy mirror for its flat, untextured, axis-normal meshes). Tangents are not uploaded.
+  Lossless mode (`quantize: 'lossless'`) is the identity and selects the f32 vertex format; the scene kit loads its
+  assets lossless so that the final scene is snapped once.
+- **P1.** Vertex arena as ONE storage buffer (`array<vec4u>`), so the scene group stays at 5 storage buffers (Metal ≤ 9
+  per pass): a 32 B header (posBase, posScale, section offsets, colour format), 16 B records (P21 position, oct16
+  normal, UV word), a wide-UV f32 section and an optional rgba8/rgba16 COLOR_0 section. The UV lattice of a material
+  lives in `MaterialGpu` (former pad words = uvBaseU/V, flags bits 16–31 = ku + 128, kv + 128, `MAT_UV_WIDE` = 32);
+  2^k is built by bit construction (`bitcast<f32>(u32(k + 127) << 23)`), the decode constants are f32 bit patterns.
+  TRI_FLAT (bit 3) is DETECTED by quantizeScene (every corner normal within 1e-4 rad of the face normal of the input
+  data): glTF files with authored flat normals (cornell.glb), NORMAL-less primitives, the scene kit. The stored normal
+  of a vertex used only by TRI_FLAT faces is the oct-snapped face normal of the snapped triangle (never read by the GPU).
+  A vertex used by two materials with different UV lattices is duplicated by quantizeScene (not by the packer), so
+  every SceneGeometry vertex has exactly one lattice. The packer decodes every record with the TS mirror and throws
+  (`QuantizationError`) on any bit difference, and when the render origin is not a lattice point.
+- **Package v2** (`scene-bridge.md`): scene.json `quant`; the reader verifies every value against it; `flatShaded` ⇔ all
+  TRI_FLAT; `build_scene.py` accepts v1/v2 and re-checks the position lattice.
+- **P2.** `createEnvResources` uploads the smallest exact format (rgb9e5ufloat → rgba16float → rgba32float) in
+  interactive mode; validation mode keeps rgba32float unless `ENV_COMPACT_IN_VALIDATION` (set from the ENV-F result).
+- Not done (by scope): P3–P5, the tangent GPU section (M7), Q-EQ.
+
+Measured (implementation, 2026-09-30):
+- **Sponza** (Node loader, `tests/scene/sponza.test.ts`): k = −16 (15.3 µm), worst displacement 13.1 µm (7.6 µm/axis),
+  0 triangles collapsed, 16,798 TRI_FLAT, oct16 normal worst 0.00247°, oct15 tangent worst 0.00483°, UV lattices worst
+  ≤ 0.125 texel, wide materials 5/6/7, re-weld 786,783 → **193,874** vertices with MikkTSpace tangents (184,551
+  without; the plan's 192,493 counts identical source tuples; the difference is the re-snapped face normals of
+  flat-only vertices and per-corner tangents),
+  recentred coordinates and MT edges inexact in f32: **0**. quantizeScene incl. MikkTSpace: 0.87 s.
+- **U-Q4/U-Q5** over 3·10⁵ random + adversarial directions: oct16 0.00244°, oct15 0.00493°.
+- **UV [0, 1]** needs 65,537 codes when both ends are on the lattice, so a [0, 1] range gets 2⁻¹⁵ steps (1/16 texel at
+  4096²), not 2⁻¹⁶ as stated in §B5.
+- **Packages** (62 + 29 M3c): 45/62 and 19/29 move (≤ 29.2 µm, c0a_far), 17 + 10 are geometry-identical (the same set
+  as §D P1 lists). Every scene.json changed (version 2 + `quant`), geometry.bin changed wherever TRI_FLAT / re-snapped
+  flat normals / the re-weld apply, and `validation/blender/{build_scene,calib_scenes}.py` changed, so **every** Cycles
+  cache key changes (render_reference.py hashes the package files and validation/blender/*.py): all references
+  re-render once, the 27 geometry-identical ones included (their renders are equal in distribution).
 
 ---
 
