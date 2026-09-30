@@ -1368,3 +1368,59 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
 - **B-6 Row bands in the temporal per-pixel passes**: T1 and both T3 phases take `rs_pix(gid.x, gid.y + rowBase)` like
   every M4 per-pixel pass (the P0 stubs used `gid.xy`).
 
+### T-E amendments (validation harness, gate-m5)
+
+- **E-1 Chain runner API and readback** (§3.8, §6.4; affects nobody's call sites: T-B / T-D may reuse it). `ChainRunner`
+  runs one BATCH of E chains: `new ChainRunner(kernel, { runSeed, budget? })`, `runBatch(spec, b, chainBase,
+  onFrame(rows, chainIds))` sets `memberBase = chainBase + b·E` (setView, same allocation) and returns per-frame records
+  (`histValid`, `flags`, `reasons`, temporal units). `ChainSpec` gains `beforeFrame(t)` (env map swaps through
+  `setEnvironment`, T-A A-8) and `average {from, to}` (rung 3.5); `masks(t)` returns `{ names, bits: Uint16Array }`
+  (bit i ⇔ region i, ≤ 16 overlapping regions: the dominance regions overlap the partition). Test frames are reduced on
+  the host: a harness unit `chain_copy[t]` copies the atlas `rsFrame` (the linear L of every member) into a MAP_READ slot
+  and the host reduces each member image in f64 into the rows of `ensemble.npz` (tiles 16/32/64, global, masks, per-pixel
+  Σx/Σx² over chains); rung 3.5 adds `rsFrame` into an atlas accumulator (`chain_accum[t]`, a standalone 8×8 pass) over
+  [from, to]. Reason: the §2.10 mask texture is one region id per pixel (no overlap), `ensPixel` accumulates over all
+  frames of a batch (not per test frame) and `ensStats` has no mask reduction yet (M = 0 in M4); the host reduction needs
+  no shader change. The ensemble stage still runs (unused by chains). TD26: the unit packer is drained at every frame end.
+  Output per test frame `f<t>/{ensemble.npz, meta.json}` (rows = chains, seeds `runSeed:c<chain>`); the upload middleware
+  takes single path components, so the page uploads `f<t>__<file>` and run-batches.ts moves them into `f<t>/`.
+- **E-2 Drift test level** (§6.4 "drift regression … slope within its 99% CI of 0; gating"). The slope of the relative
+  global Δ_f on f is estimated by OLS with a SANDWICH variance: the test frames of one unit share the same chains, so their
+  Δ_f are correlated (covariance across chains; PT references of different frames independent). The gate uses
+  |z| ≤ z_{1−α_u/2} (α_u = suite FWER unit level: PLAN §7.3 applies α_u to every rejection-type check, and PLAN outranks
+  this contract's choice); the 99 % CI is reported. The failing-tile count per frame is tested against Binomial(m, 0.01)
+  at α_u, as specified.
+- **E-3 Mask regions below 256 px are dropped** (dyn_masks.py, §6.4): a region smaller than one 16² tile needs orders of
+  magnitude more chains for its 3 % TOST than the 64² tiles that already cover it (and compare.py refuses empty masks).
+  Dropped regions are listed in masks.json. Masks come from frozen PT means of fixed-size mask references (512 spp × 4,
+  seed 7301) at t and t−1, independent of the comparison references (no selection on the reference noise).
+- **E-4 Rung 3.5 chain floor 64** (§6.4 floor R ≥ 256 is for per-frame ensembles; gap-temporal §9.1): a 3.5 replicate is
+  the mean of 256 frames of one chain, near-normal; the §6.6 estimate (64–128 chains) assumes this. Per-frame units keep 256.
+- **E-5 Plant detection with chain rows** (§6.5 "as M4"). M4's rendered-plant rule compares half-size sets
+  (`h = min(ref.n/2, planted.n)`), i.e. 8 of the R planted chains against 8 of 16 PT batches: meaningless when a replicate
+  is one chain. plant_sign.py compares a random HALF of the planted chains with a half of the 4× PT reference (must fail
+  in ≥ 9/10 repeats) and the two PT halves (control, must pass in ≥ 9/10). The synthetic W × 1.003 and the calibrate A/A
+  re-splits on the A/A chain run use `dynamic.py calibrate` (compare.py --calibrate needs replicate images; the chain side
+  is ensemble rows): 20 re-splits (stats.aa_split) and halves A × 1.003 vs B.
+- **E-6 Plant regions that do not exist at the predicted frame.** (a) N3 at frame 80: the light stops at 40, so M_new /
+  M_gone (t = 80 vs 79) are empty; (b) N5 on ixs_d0_jitter (static camera): M_edge (a t−1 → t change) is empty. A
+  prediction whose region is empty is recorded "not evaluable" (never passed silently: every plant needs ≥ 1 evaluated
+  prediction, and N3's frame-40 predictions remain). For N5-d0 the region is `M_sil` (dyn_masks.py --sil: pixels whose
+  luminance differs by ≥ 25 % from a 4-neighbour in the PT mean at t, dilated 1 px — the silhouettes and shading edges
+  where a pixel-centre primary differs from the jittered one). N5 on ixs_d_camera keeps M_edge.
+- **E-7 Dominance renders** (§6.4 "our PT with a single emitter enabled"): gate-m5 derives single-emitter copies of the
+  sequence package (every other light `enabled: false` in every frame; env strength 0 unless the emitter is the env, then
+  every analytic light disabled) and renders them with the unchanged PT (no emitter filter in run-batches). Light names
+  come from scene.json `lightNames` written by make-m5.ts (ixs_e: A/B/C; ixs_n4: A/B/C; ixs_i: R).
+- **E-8 Static references** (§6.4): a static unit's scene state is the same at every frame, so one base-state PT reference
+  (no frame override) per m5s/u8 package serves both test frames of 3.3 and 3.4 and rung 3.5 (joint sizing over the three
+  rungs, as M4's per-scene reference).
+- **E-9 Sequence scripts** (§6.2, make-m5.ts). The Cornell box has no blocks, so ixs_a…f add one white occluder box
+  (x ∈ [−0.02, 0.10], z ∈ [−0.16, −0.04], h 0.2) for shadows and disocclusions; ixs_b resizes the rect with the frame
+  fields `sizeX`/`sizeY` (T-A A-8) and spins it 5°/frame about its normal (it stays facing down); ixs_k swaps to the
+  overcast map box-filtered 2× (map id `b`, a different texture and importance table; the asset set has no second
+  sun-free HDRI); ixs_h is a floor + wall + a Lambert and a GGX r 0.3 sphere under the overcast map. If a plant's region
+  proves empty in the pilot (E-6), the script is revisited, not the prediction.
+- **E-10 U8 rungs 3.1/3.1b/3.2** run through the M4 sequential harness (run-batches --kernel restir) and are sized by
+  gate-m4's `sizeScene` (M4 pilots 128 / 8 frames × 16) around the u8 package's frozen base-state PT reference, which
+  they share with the package's 3.3 / 3.4 chain units.

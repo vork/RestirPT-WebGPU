@@ -19,13 +19,20 @@
 //      --w-scale s (W × s plant), --max-bounces N; --env-nee on|off as for the PT; Mode A only)
 //   --batch-offset N (pt / restir sequential): render batches N … N+batches−1 of a longer run (the same samples; the
 //      gate splits long references into GPU-lock chunks and merges the batch files)
+//   npx tsx validation/harness/run-batches.ts --package validation/scenes/ixs_d_camera_256 --kernel restir --preset full --chains 256
+//     (M5 temporal chains, restir-temporal-api.md §6.3–§6.7: --chains R (multiple of --members E, default 16), --batch-offset b
+//      (first chain batch; GPU-lock chunks), --chain-base c, --chain-frames T / --test-frames a,b (default: the package's
+//      sequence), --average from:to (rung 3.5), --masks DIR (f<t>/masks.json + masks.bin), --temporal-mis contribution|talbot,
+//      --temporal-check none|recompute|robust, --refresh exact|e2, --boost NB, --tplant n1Mixed,noJP,… (TP_* plants),
+//      --u8-plant u8W1Delta,… (RSF U8 plants), --w-scale s, --mode disocc (M_disocc flags of test frame t; E = 1, jitter
+//      off). Output validation/out/<run>/f<t>/{ensemble.npz, meta.json} (+ avg/) + meta.json)
 // If the package directory is missing and --make-c0b is given, an equivalent C0b package (calib_scenes.py make_c0b:
 // 100 m emissive quad at z = −2, L_e = (0.5, 0.25, 0.125)·2, vfov 40°, 512²) is written with exportScenePackage to
 // validation/out/tmp-c0b/ and rendered instead.
 import { quantizeScene } from '../../src/core/scene/quantize.ts';
 import { execFile } from 'node:child_process';
 import { existsSync, lstatSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,6 +44,7 @@ import { exportScenePackage } from '../../src/core/scene/scene-package.ts';
 import type { SceneData } from '../../src/core/scene/types.ts';
 import type { RenderBatchesReport, ValidationKernel } from './batch-run.ts';
 import type { RestirPlantName } from './restir-batch-run.ts';
+import type { RenderRestirChainsOptions, TPlantName, U8PlantName } from './restir-chain-run.ts';
 import type { RestirPresetName } from '../../src/core/render/restir/presets.ts';
 import { acquireGpuLock, GPU_LOCK } from './gpu-lock.ts';
 import type { GlassPlant, PtEnvOptions, PtEnvPlant, PtPlant, PtTechnique } from '../../src/core/render/pt-kernel.ts';
@@ -81,6 +89,19 @@ const { values: args } = parseArgs({
     members: { type: 'string' },
     plant: { type: 'string' },
     'w-scale': { type: 'string' },
+    chains: { type: 'string' },
+    'chain-base': { type: 'string' },
+    'chain-frames': { type: 'string' },
+    'test-frames': { type: 'string' },
+    average: { type: 'string' },
+    masks: { type: 'string' },
+    'temporal-mis': { type: 'string' },
+    'temporal-check': { type: 'string' },
+    refresh: { type: 'string' },
+    boost: { type: 'string' },
+    tplant: { type: 'string' },
+    'u8-plant': { type: 'string' },
+    mode: { type: 'string' },
   },
 });
 
@@ -185,7 +206,11 @@ async function main(): Promise<number> {
     if (args['env-strength-scale']) env.strengthScale = Number(args['env-strength-scale']);
   }
   const restir = args.kernel === 'restir';
-  if (restir) {
+  const chains = restir && (args.chains !== undefined || args.mode === 'disocc');
+  if (chains) {
+    if (!['temporal', 'full', 'initial', 'initial-rr', 'offline', 'criteria2022', 'interactive'].includes(args.preset!)) { console.error('--preset temporal|full|…'); return 2; }
+    if (args.frames || args.scene || args.check || args.plant) { console.error('--chains: --frames/--scene/--check/--plant are not supported (use --chain-frames, --tplant, --u8-plant)'); return 2; }
+  } else if (restir) {
     if (!['initial', 'initial-rr', 'offline', 'criteria2022'].includes(args.preset!)) { console.error('--preset initial|initial-rr|offline|criteria2022'); return 2; }
     if (args.plant && !['no-j', 'marginal-j'].includes(args.plant)) { console.error('--plant no-j|marginal-j'); return 2; }
     if (args.frames || args.scene || args.check) { console.error('--kernel restir: --frames/--scene/--check are not supported'); return 2; }
@@ -217,7 +242,25 @@ async function main(): Promise<number> {
       const waited = releaseGpuLock.waitedMs;
       let rep: RenderBatchesReport;
       try {
-        if (restir) {
+        if (chains) {
+          if (!pkgUrl) throw new Error('--chains needs --package');
+          const list = (x?: string) => (x ? x.split(',').filter(Boolean) : undefined);
+          const avg = args.average ? args.average.split(':').map(Number) : undefined;
+          const co: RenderRestirChainsOptions = {
+            run: runId, package: pkgUrl, preset: args.preset as RestirPresetName, chains: Number(args.chains ?? 1), seed, chromeVersion,
+            batchOffset: args['batch-offset'] ? Number(args['batch-offset']) : undefined, chainBase: args['chain-base'] ? Number(args['chain-base']) : undefined,
+            members: args.members ? Number(args.members) : undefined, frames: args['chain-frames'] ? Number(args['chain-frames']) : undefined,
+            testFrames: list(args['test-frames'])?.map(Number), average: avg ? { from: avg[0], to: avg[1] } : undefined,
+            masks: args.masks ? `/${path.relative(ROOT, path.resolve(ROOT, args.masks)).split(path.sep).join('/')}/` : undefined,
+            temporalMis: args['temporal-mis'] as RenderRestirChainsOptions['temporalMis'], temporalCheck: args['temporal-check'] as RenderRestirChainsOptions['temporalCheck'],
+            refresh: args.refresh as RenderRestirChainsOptions['refresh'], boostSlots: args.boost !== undefined ? Number(args.boost) : undefined,
+            tPlants: list(args.tplant) as TPlantName[] | undefined, u8Plants: list(args['u8-plant']) as U8PlantName[] | undefined,
+            wScale: args['w-scale'] !== undefined ? Number(args['w-scale']) : undefined,
+            maxBounces: args['max-bounces'] !== undefined ? Number(args['max-bounces']) : undefined, env: env && env.nee !== undefined ? { nee: env.nee } : undefined,
+            mode: args.mode as RenderRestirChainsOptions['mode'],
+          };
+          rep = await page.evaluate((x) => window.__harness!.renderRestirChains(x), co) as unknown as RenderBatchesReport;
+        } else if (restir) {
           if (!pkgUrl) throw new Error('--kernel restir needs --package');
           rep = await page.evaluate((o) => window.__harness!.renderRestirBatches(o), {
             run: runId, package: pkgUrl, preset: args.preset as RestirPresetName, framesPerBatch: Number(args['frames-per-batch'] ?? args.spp),
@@ -240,6 +283,15 @@ async function main(): Promise<number> {
         `${m.submits.total} submits (max ${m.submits.maxMs.toFixed(1)} ms), counters ${JSON.stringify(m.counters)}, configHash ${m.configHash.slice(0, 12)}`);
       if (!rep.ok) { failures++; console.log(`     errors: ${rep.errors.join('; ')}`); }
       const dir = path.join(OUT, runId);
+      if (chains) {   // chain runs upload "<sub>__<file>" (single path components): move them to <sub>/<file>
+        for (const f of await readdir(dir)) {
+          const m = /^([\w.-]+)__(.+)$/.exec(f);
+          if (!m) continue;
+          await mkdir(path.join(dir, m[1]), { recursive: true });
+          await rename(path.join(dir, f), path.join(dir, m[1], m[2]));
+        }
+        rep.files = rep.files.map((f) => f.replace('__', '/'));
+      }
       for (const f of rep.files) if (!existsSync(path.join(dir, f))) { failures++; console.log(`     missing ${f}`); }
       // quick numeric summary of the mean image (ensemble runs write ensemble.npz instead)
       if (!existsSync(path.join(dir, 'mean.pfm'))) continue;

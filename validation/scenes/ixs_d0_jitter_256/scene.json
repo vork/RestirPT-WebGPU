@@ -1,0 +1,510 @@
+{
+ "format": "restir-scene-package",
+ "version": 2,
+ "name": "ixs_d0_jitter_256",
+ "source": {
+  "uri": "validation/scenes/make-m5.ts (ixs-d0: static camera and lights (jitter only))"
+ },
+ "buffers": {
+  "positions": {
+   "offset": 0,
+   "length": 1056,
+   "dtype": "f32",
+   "components": 3
+  },
+  "normals": {
+   "offset": 1056,
+   "length": 1056,
+   "dtype": "f32",
+   "components": 3
+  },
+  "uv0": {
+   "offset": 2112,
+   "length": 704,
+   "dtype": "f32",
+   "components": 2
+  },
+  "indices": {
+   "offset": 2816,
+   "length": 528,
+   "dtype": "u32",
+   "components": 3
+  },
+  "triMaterial": {
+   "offset": 3344,
+   "length": 176,
+   "dtype": "u32",
+   "components": 1
+  },
+  "triFlags": {
+   "offset": 3520,
+   "length": 176,
+   "dtype": "u32",
+   "components": 1
+  }
+ },
+ "flatShaded": true,
+ "quant": {
+  "mode": "quantized",
+  "posLog2": -21,
+  "uv": [
+   {
+    "ku": -15,
+    "kv": -15,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   },
+   {
+    "ku": -24,
+    "kv": -24,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   },
+   {
+    "ku": -24,
+    "kv": -24,
+    "baseU": 0,
+    "baseV": 0,
+    "wide": false
+   }
+  ],
+  "uvTolerance": 0.125,
+  "normal": "oct16",
+  "tangent": "oct15",
+  "color": "none"
+ },
+ "materials": [
+  {
+   "name": "white",
+   "model": "v1",
+   "baseColorFactor": [
+    0.725,
+    0.71,
+    0.68,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.725,
+     0.71,
+     0.68
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  },
+  {
+   "name": "red",
+   "model": "v1",
+   "baseColorFactor": [
+    0.63,
+    0.065,
+    0.05,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.63,
+     0.065,
+     0.05
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  },
+  {
+   "name": "green",
+   "model": "v1",
+   "baseColorFactor": [
+    0.14,
+    0.45,
+    0.091,
+    1
+   ],
+   "metallicFactor": 0,
+   "roughnessFactor": 0.5,
+   "emissiveFactor": [
+    0,
+    0,
+    0
+   ],
+   "emissiveStrength": 1,
+   "ior": 1.5,
+   "specularFactor": 1,
+   "specularColorFactor": [
+    1,
+    1,
+    1
+   ],
+   "transmissionFactor": 0,
+   "alphaMode": "OPAQUE",
+   "alphaCutoff": 0.5,
+   "doubleSided": true,
+   "emission": {
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "strength": 1
+   },
+   "emissionSampling": "FRONT_BACK",
+   "v1": {
+    "diffuse": [
+     0.14,
+     0.45,
+     0.091
+    ],
+    "glossy": [
+     0,
+     0,
+     0
+    ],
+    "roughness": 0.5,
+    "mix": 0
+   }
+  }
+ ],
+ "textures": [],
+ "lights": [
+  {
+   "id": 0,
+   "name": "rect0",
+   "type": "rect",
+   "color": [
+    1,
+    1,
+    1
+   ],
+   "power": 4,
+   "exposure": 0,
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0.5540000200271606,
+    0,
+    1
+   ],
+   "sizeX": 0.13,
+   "sizeY": 0.105,
+   "spread": 3.141592653589793,
+   "visibleToCamera": false
+  }
+ ],
+ "lightMode": "A",
+ "camera": {
+  "matrix": [
+   1,
+   0,
+   0,
+   0,
+   0,
+   1,
+   0,
+   0,
+   0,
+   0,
+   1,
+   0,
+   0,
+   0.273,
+   1.0775000000000001,
+   1
+  ],
+  "yfov": 0.6859143960337715,
+  "znear": 0.0001
+ },
+ "env": null,
+ "render": {
+  "width": 256,
+  "height": 256,
+  "maxBounces": 3
+ },
+ "frames": [
+  {
+   "frame": 0
+  },
+  {
+   "frame": 1
+  },
+  {
+   "frame": 2
+  },
+  {
+   "frame": 3
+  },
+  {
+   "frame": 4
+  },
+  {
+   "frame": 5
+  },
+  {
+   "frame": 6
+  },
+  {
+   "frame": 7
+  },
+  {
+   "frame": 8
+  },
+  {
+   "frame": 9
+  },
+  {
+   "frame": 10
+  },
+  {
+   "frame": 11
+  },
+  {
+   "frame": 12
+  },
+  {
+   "frame": 13
+  },
+  {
+   "frame": 14
+  },
+  {
+   "frame": 15
+  },
+  {
+   "frame": 16
+  },
+  {
+   "frame": 17
+  },
+  {
+   "frame": 18
+  },
+  {
+   "frame": 19
+  },
+  {
+   "frame": 20
+  },
+  {
+   "frame": 21
+  },
+  {
+   "frame": 22
+  },
+  {
+   "frame": 23
+  },
+  {
+   "frame": 24
+  },
+  {
+   "frame": 25
+  },
+  {
+   "frame": 26
+  },
+  {
+   "frame": 27
+  },
+  {
+   "frame": 28
+  },
+  {
+   "frame": 29
+  },
+  {
+   "frame": 30
+  },
+  {
+   "frame": 31
+  },
+  {
+   "frame": 32
+  },
+  {
+   "frame": 33
+  },
+  {
+   "frame": 34
+  },
+  {
+   "frame": 35
+  },
+  {
+   "frame": 36
+  },
+  {
+   "frame": 37
+  },
+  {
+   "frame": 38
+  },
+  {
+   "frame": 39
+  },
+  {
+   "frame": 40
+  },
+  {
+   "frame": 41
+  },
+  {
+   "frame": 42
+  },
+  {
+   "frame": 43
+  },
+  {
+   "frame": 44
+  },
+  {
+   "frame": 45
+  },
+  {
+   "frame": 46
+  },
+  {
+   "frame": 47
+  },
+  {
+   "frame": 48
+  },
+  {
+   "frame": 49
+  },
+  {
+   "frame": 50
+  },
+  {
+   "frame": 51
+  },
+  {
+   "frame": 52
+  },
+  {
+   "frame": 53
+  },
+  {
+   "frame": 54
+  },
+  {
+   "frame": 55
+  },
+  {
+   "frame": 56
+  },
+  {
+   "frame": 57
+  },
+  {
+   "frame": 58
+  },
+  {
+   "frame": 59
+  },
+  {
+   "frame": 60
+  },
+  {
+   "frame": 61
+  },
+  {
+   "frame": 62
+  },
+  {
+   "frame": 63
+  },
+  {
+   "frame": 64
+  }
+ ],
+ "sequence": {
+  "fps": 24,
+  "frameCount": 65,
+  "testFrames": [
+   8,
+   32,
+   64
+  ],
+  "notes": "ixs-d0: static camera and lights (jitter only)"
+ },
+ "tier": "tight"
+}

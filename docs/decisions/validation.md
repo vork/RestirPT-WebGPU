@@ -314,3 +314,55 @@ which changes only the interactive `RestirFramePass.encode`, not the batch path)
   - `initial`: bit-identical on (i), (iv) and (x).
   - `offline`, where spatial shifts run: identical sample selection. Pixel values differ only by f32 rounding: at most 3.9e-7 relative, image means within 1.2e-10 relative. That is 4 orders of magnitude below the Stage-B δ (0.2% global).
 - **Conclusion:** the M4 Stage-B results stand for the merged code without a re-run.
+
+# M5: temporal reuse and dynamics, Gate 3 rungs 3.3–3.6 (restir-temporal-api.md §6, PLAN §5 M5, §7.1, §7.3, §7.4 M5)
+
+`npm run validate -- --milestone M5 [--part core|static]` runs `validation/harness/gate-m5.ts` (owner T-E):
+- **Gate 0.** Typecheck; cpu lane (`tests/restir/*` incl. `gate-m5-config.test.ts`, tmis, tqueue, refresh-ref,
+  light-maps, config-hash, frame-state); python tests (`validation/tools/tests`, incl. `test_dynamic.py` for
+  dynamic.py / dyn_masks.py / plant_sign.py); `make-m5.ts` determinism (twice, byte-identical, and the committed
+  packages equal the generator's output); the Chrome GPU suites `restir-tframe`, `restir-temporal`, `restir-refresh`,
+  `restir-debug` and the M4/M3 regressions (one GPU-lock hold per suite); `budget.json` M5 rows; the M5 app smoke.
+- **Scenes** (`validation/scenes/make-m5.ts`; env packages in `validation/out/m5/scenes`): the static subset `m5s_*`
+  (the M4 packages of (i), (iii), (v) V1, (vi) A, (x), (xii), C0q(d), (xiv) overcast + rect with render 256², every other
+  byte identical; TD28); 16 sequences `ixs_*_256` with dense frames and a `sequence` block (TD27, §6.2); the U8 scenes
+  `u8_c0{c,d,e}_*_b{0,1}` (TD30). (xiii) and the kloof scenes are reported, not gating (Q2).
+- **Chains** (TD25, restir-temporal-api.md Changelog E-1). E = 16 chains per 256² atlas; a chain is reset at t = 0 and
+  follows the package's frames; chain id = memberBase + member; one chain run serves every test frame of its unit. At a
+  test frame the atlas `rsFrame` is copied and reduced on the host (f64) into `f<t>/ensemble.npz` (rows = chains, tiles
+  16/32/64, global, mask regions, per-pixel moments). Submits never span a frame boundary (TD26). GPU-lock chunks are
+  whole batches (`--batch-offset`), merged by `dynamic.py merge-npz`.
+- **Rungs.** 3.3 (`temporal`) and 3.4 (`full`) on the 8 static scenes at t ∈ {1, 24} of 25-frame chains, stage B
+  (0.2 % global, 1 % per 32² tile); 3.5 = the per-chain mean of frames 32…287 on (i), (v) V1, (xiv) overcast + rect
+  (Q9, stage B); per scene the ladder stops at the first failing rung. 3.6: 18 units (13 sequences + Talbot and E2 on
+  ixs_b / ixs_e (Q11) + boost 3 on ixs_d (Q7)), stage `dyn` per test frame (0.2 % global, 2 % per 64² tile, 3 % per mask
+  region) plus `dynamic.py sequence`: the drift of Δ_f over the test frames (OLS slope, sandwich variance across the
+  shared chains, gate |z| ≤ z_{1−α_u/2}, Changelog E-2) and the failing-tile count per frame vs Binomial(m, 0.01) at α_u.
+- **PT references** (our PT, RR off, seed 7001 / re-run 107001) at every test frame (`--frames t`, the resolved frame
+  state of `resolvePackageFrame`) and one base-state reference per static package (E-8); cached in
+  `validation/out/m5/ptrefs` keyed by package bytes, frame, size, seed and the PT code closure; sizes frozen per PT code
+  (`validation/out/m5/ptsize`).
+- **Masks** (`dyn_masks.py`, §6.4; E-3): partition M_disocc (the chain runner's `--mode disocc`: pixel-centre V-buffers
+  at t−1 and t through the production `temporal_pixel`), M_new, M_gone, M_edge, M_steady from 4×4-block means of fixed
+  mask references (512 spp × 4, seed 7301) at t and t−1; plants add M_sil and the dominance regions M_light:<name>
+  (single-emitter PT renders of derived packages, E-7). Regions < 256 px are dropped.
+- **Sizing** (PLAN §7.3; §6.4). Pilots: PT 128 spp × 16 per (package, frame), 64 chains per unit (seed 7011 / 7012).
+  Per test frame and aggregate (global, gate tiles, mask regions; Y/R/G/B) u = per-sample variance / (D·T)², T =
+  δ/(t_{0.99,15} + z_{1−0.005/m}); the PT samples of a frame are shared by every chain variant of the package (static:
+  3.3/3.4/3.5; dyn: base/Talbot/E2/boost); the joint allocation minimises GPU time, × 1.25, R ≥ 256 (3.5: 64, E-4) in
+  multiples of 16, PT spp per batch niceCeil ≥ 256, B = 16. Unit cap 30 min per side: the tile aggregate is enlarged
+  one step (32² → 64², 64² → 128²; masks unchanged); a unit whose global aggregate alone exceeds the cap gets 90 min once
+  (Q4), beyond that it is `infeasible` and goes to the coordinator. Plan > 14 h ⇒ `--part core` + `--part static` (Q3).
+- **Plants** (§6.5, TD29; plant_sign.py): 21 rendered plants at 1× chains against 4× PT references (seed 7201), chains
+  cut after the last predicted frame; a plant passes iff detected (half of the planted chains vs a PT half fails in
+  ≥ 9/10 repeats, PT A/A ≥ 9/10, E-5; full comparison not `pass`) AND every evaluable prediction holds (one-sided z ≥ 3
+  on its region; "only" predictions: no opposite-sign region/tile with z ≥ 4; empty regions are "not evaluable", E-6).
+  Synthetic W × 1.003 + calibrate A/A re-splits (`dynamic.py calibrate`) on the A/A run; **A/A**: m5s_cornell_i 3.4 at
+  t = 24, seeds 7502 vs 7503, 4× size, must pass.
+- **U8 ladder**: the six u8 scenes through 3.1 / 3.1b / 3.2 (M4 sequential harness) and 3.3 / 3.4 (chains); all pass.
+- **T15/T16 per chain run** (restir-chain-run.ts + `t16ChainProblems`): NaN/Inf/negatives 0, every RSC error counter
+  incl. `RSC_T_NONFINITE` / `RSC_T_PENDING_LEFT` 0, q0–q2 overflow 0, no submit over 200 ms, identical reset patterns in
+  every batch; **history valid on every frame except t = 0 and the package's `resetFrames`** (ixs_k: the map swap at
+  20) — "any config change resets history" and nothing else does; temporal units on every frame; preset of the rung,
+  RR off, cCap 20, jitter iid, Mode A, spatial rounds executed = rounds; maxBounces / scene bytes / resolution / env NEE /
+  frame = the PT reference's.

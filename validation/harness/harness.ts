@@ -4,6 +4,7 @@ import { encodePFM, orientationPattern } from '../../src/core/io/pfm.ts';
 import { allocProbe, type AllocProbeOptions, type AllocProbeReport } from './alloc-probe.ts';
 import { renderBatches, type RenderBatchesOptions, type RenderBatchesReport } from './batch-run.ts';
 import { renderRestirBatches, type RenderRestirBatchesOptions, type RenderRestirBatchesReport } from './restir-batch-run.ts';
+import { renderRestirChains, type RenderRestirChainsOptions, type RenderRestirChainsReport } from './restir-chain-run.ts';
 import { exportAndUpload } from './export-package.ts';
 import { fetchScenePackage, type ExportScenePackageOptions } from '../../src/core/scene/scene-package.ts';
 
@@ -28,6 +29,8 @@ export interface Harness {
   renderBatches(opts: RenderBatchesOptions): Promise<RenderBatchesReport>;
   /** M4 (restir-api.md §6.4): Stage-B ReSTIR batches (rung preset, frames per batch, ensemble members, plants). */
   renderRestirBatches(opts: RenderRestirBatchesOptions): Promise<RenderRestirBatchesReport>;
+  /** M5 (restir-temporal-api.md §6.3–§6.5): temporal chains (ensemble atlas, per-test-frame ensemble.npz). */
+  renderRestirChains(opts: RenderRestirChainsOptions): Promise<RenderRestirChainsReport>;
   /** M2: re-export a scene package (read from `packageUrl`) to validation/out/<run>/ (bridge round trip). */
   reexportPackage(packageUrl: string, run: string, overrides?: Partial<ExportScenePackageOptions>): Promise<{ files: string[]; sha256: string }>;
 }
@@ -101,6 +104,11 @@ const harness: Harness = {
   async renderRestirBatches(opts) {
     const ctx = await getContext();
     return renderRestirBatches(ctx, opts);
+  },
+
+  async renderRestirChains(opts) {
+    const ctx = await getContext();
+    return renderRestirChains(ctx, opts);
   },
 
   async reexportPackage(packageUrl, run, overrides = {}) {
