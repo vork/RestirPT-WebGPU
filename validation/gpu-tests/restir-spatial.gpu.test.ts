@@ -734,7 +734,8 @@ describe('interactive RestirFramePass with frame timestamps (app path, 540p, env
   it('the spatial stage runs every frame: accepted > 0, q0 capacity set, SC histogram non-empty, same result as without timestamps', async () => {
     const { FrameUniformBuffer, JITTER_IID, FRAME_RESET_HISTORY } = await import('../../src/core/render/frame-uniforms.ts');
     const { RestirKernel } = await import('../../src/core/render/restir/kernel.ts');
-    const { restirSettings } = await import('../../src/core/render/restir/presets.ts');
+    const { restirSettings, numSlotsOf } = await import('../../src/core/render/restir/presets.ts');
+    const NS = numSlotsOf(restirSettings('interactive'));   // M5: slots 3 + boost 3 (temporal on; TD21, Q7)
     const { gpuScene, boxScene, boxCamera, light } = await import('./restir-fixtures.ts');
     const { lightMatrixToward } = await import('./pt-fixtures.ts');
     const { synthEnvData } = await import('./env-fixtures.ts');
@@ -782,8 +783,8 @@ describe('interactive RestirFramePass with frame timestamps (app path, 540p, env
     for (const r of results) {
       for (let f = 0; f < 4; f++) {
         expect(r.acc[f], `ts ${r.ts} frame ${f} accepted`).toBeGreaterThan(W * H * 0.5);
-        expect(r.cap[f], `ts ${r.ts} frame ${f} q0 capacity`).toBe(W * H * 3);
-        expect(r.codes[f], `ts ${r.ts} frame ${f} SC histogram`).toBe(W * H * 3);
+        expect(r.cap[f], `ts ${r.ts} frame ${f} q0 capacity`).toBe(W * H * NS);
+        expect(r.codes[f], `ts ${r.ts} frame ${f} SC histogram`).toBe(W * H * NS);
       }
     }
     if (results.length === 2) expect(results[1].mean).toBe(results[0].mean);
