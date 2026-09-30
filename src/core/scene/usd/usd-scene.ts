@@ -8,6 +8,7 @@
 // - Degenerate / non-finite triangles are dropped (dense primIds), like the glTF flatten (plan §1.3).
 import { rigidMatrix } from '../gltf-loader.ts';
 import { MAX_TRIANGLES } from '../flatten.ts';
+import { quantizeScene } from '../quantize.ts';
 import {
   TRI_ALPHA_MASK, TRI_EMISSIVE, TRI_FLIPPED, type Bounds, type CameraData, type LightData, type MaterialData, type SceneData,
 } from '../types.ts';
@@ -18,6 +19,9 @@ import type { Rec, UsdRaw } from './usd-native.ts';
 export interface UsdConvertOptions {
   /** DistantLight ×4 (Blender-author quirk): 'auto' = when the root-layer doc starts with "Blender v". */
   distantQuirk?: 'auto' | 'always' | 'never';
+  /** quantizeScene mode (default 'quantized'; 'lossless' for the loader-fidelity / E2E-USD gates). Runs after the
+   *  metersPerUnit conversion, so the lattice is chosen in metres (data-formats.md E-15). */
+  quantize?: 'quantized' | 'lossless';
 }
 
 export interface UsdSceneStats {
@@ -237,16 +241,17 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}): { scene: 
     cameras.push({ name: c.name ?? c.primPath ?? `camera${cameras.length}`, matrix: rigidMatrix(mul4(W, Array.from(t))), yfov, znear: num(c.nearClip, 1e-4) * mpu });
   }
 
-  const scene: SceneData = {
+  const qz = quantizeScene({
     name: raw.name,
     geometry: { positions, normals, tangents: new Float32Array(totalVerts * 4), uv0, indices, triMaterial, triFlags },
     materials, textures: [], lights, cameras, bounds, warnings,
-  };
+  }, { mode: opts.quantize ?? 'quantized' });
+  const scene = qz.scene;
   return {
     scene,
     stats: {
-      draws: draws.length, instanceProxyDraws: proxies, pointInstanceDraws: piDraws, triangles: tOut,
-      droppedDegenerate: degenerate, droppedNonFinite: nonFinite, flippedTriangles: flippedTris,
+      draws: draws.length, instanceProxyDraws: proxies, pointInstanceDraws: piDraws, triangles: scene.geometry.indices.length / 3,
+      droppedDegenerate: degenerate + qz.stats.droppedDegenerate, droppedNonFinite: nonFinite, flippedTriangles: flippedTris,
       upAxis, metersPerUnit: mpu, doc, blenderAuthored,
     },
   };

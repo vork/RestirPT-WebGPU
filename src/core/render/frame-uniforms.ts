@@ -1,7 +1,7 @@
 // FrameUniforms: CPU packer for the per-frame uniform block. WGSL mirror: src/core/shaders/common/frame.wgsl.
 // Camera matrices arrive in UN-recentred world space (f64); the recentring offset is subtracted here in f64 so the
 // f32 uniform keeps full precision near the camera (plan §1.2, math.md#raster).
-import type { Bounds } from '../scene/types.ts';
+import type { Bounds, SceneQuant } from '../scene/types.ts';
 
 export const FRAME_PAUSED = 1;
 export const FRAME_FREEZE_SEED = 2;
@@ -61,11 +61,15 @@ export interface FrameUniformInput {
   sceneDiag: number;
 }
 
-/** Render-internal recentring offset O: the bounds centre (plan §1.2). Everything subtracts the same O. */
-export function computeRenderOrigin(bounds: Bounds | undefined): [number, number, number] {
+/** Render-internal recentring offset O: the bounds centre (plan §1.2). Everything subtracts the same O.
+ *  Quantized scenes: O is snapped to the position lattice, O = round(c/2^k)·2^k, so p − O is exact in f32 and the
+ *  vertex arena decodes it exactly (data-formats.md §B0 "Render origin"). Pass `quant` for every quantized scene. */
+export function computeRenderOrigin(bounds: Bounds | undefined, quant?: SceneQuant): [number, number, number] {
   if (!bounds) return [0, 0, 0];
-  const c = [0, 1, 2].map((i) => 0.5 * (bounds.min[i] + bounds.max[i]));
-  return c.every(Number.isFinite) ? [c[0], c[1], c[2]] : [0, 0, 0];
+  let c = [0, 1, 2].map((i) => 0.5 * (bounds.min[i] + bounds.max[i]));
+  if (!c.every(Number.isFinite)) return [0, 0, 0];
+  if (quant?.mode === 'quantized') { const s = 2 ** quant.posLog2; c = c.map((x) => Math.round(x / s) * s); }
+  return [c[0], c[1], c[2]];
 }
 
 export function boundsDiagonal(bounds: Bounds | undefined): number {

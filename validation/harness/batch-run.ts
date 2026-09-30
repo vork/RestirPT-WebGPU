@@ -118,7 +118,7 @@ export async function renderBatches(ctx: GpuContext, o: RenderBatchesOptions): P
   const src = await loadSource(o);
   const W = o.width ?? src.size?.[0] ?? 512, H = o.height ?? src.size?.[1] ?? 512;
   const tLoad = performance.now();
-  const origin = computeRenderOrigin(src.scene.bounds);
+  const origin = computeRenderOrigin(src.scene.bounds, src.scene.quant);
   const watertight = o.watertight ?? true;
   const gpu = await SceneGpu.create(device, src.scene, origin, { textureMode: 'validation', watertight, features, wgslLanguageFeatures });
   const env = await createEnvResources(device, src.scene.env);

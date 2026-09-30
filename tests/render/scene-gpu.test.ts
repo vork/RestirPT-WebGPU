@@ -4,8 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { composeWgsl } from '../../src/core/gpu/wgsl-composer.ts';
 import { GBUF_TEXEL_BYTES, PRIMARY_PARAMS_SIZE } from '../../src/core/render/renderer.ts';
 import {
-  MATERIAL_LAYOUT, MAT_ALPHA_MASK, MAT_V1, TRI_FLAGS_SHIFT, VERTEX_BYTES, packMaterials, packTris, packVertices, recentrePositions,
+  MATERIAL_LAYOUT, MAT_ALPHA_MASK, MAT_V1, TRI_FLAGS_SHIFT, packMaterials, packTris, recentrePositions,
 } from '../../src/core/render/scene-gpu.ts';
+import { VERTEX_FORMAT_F32, bitsF32, packVertexArena } from '../../src/core/gpu/vertex-format.ts';
 import { shaderSources } from '../../src/core/shaders/index.ts';
 import type { MaterialData, SceneGeometry } from '../../src/core/scene/types.ts';
 
@@ -47,7 +48,7 @@ function structLayouts(src: string): Map<string, Layout> {
 const baseDefines = {
   COLOR_FORMAT: 'rgba32float', SCENE_GROUP: 1, BVH_DECLARE_BINDINGS: true, BVH_GROUP: 1, BVH_BINDING_NODES: 0, BVH_BINDING_TRIS: 1,
   CUSTOM_ALPHA: true, TEX_GROUP: 1, TEX_BINDING_BASE: 8, TEX_ARRAYS: 2, TEX_SAMPLERS: 3, ENV_GROUP: 0, ENV_BINDING: 1,
-  WATERTIGHT: false, BVH_STATS: false,
+  WATERTIGHT: false, BVH_STATS: false, VERTEX_FORMAT: 1,
 };
 const primary = (d: Record<string, string | number | boolean> = {}) =>
   composeWgsl('passes/primary.wgsl', { sources: shaderSources, defines: { ...baseDefines, ...d } }).code;
@@ -61,8 +62,8 @@ describe('M1 scene / G-buffer layouts', () => {
     for (const [k, v] of Object.entries(MATERIAL_LAYOUT)) if (k !== 'size') expect(m.offsets[k], k).toBe(v);
   });
 
-  it('SceneVertex, GBufTexel, PrimaryParams sizes', () => {
-    expect(L.get('SceneVertex')!.size).toBe(VERTEX_BYTES);
+  it('GBufTexel, PrimaryParams sizes; both vertex formats compose', () => {
+    for (const VERTEX_FORMAT of [0, 1]) expect(primary({ VERTEX_FORMAT })).toContain('fn scene_surface(');
     expect(L.get('GBufTexel')!.size).toBe(GBUF_TEXEL_BYTES);
     expect(L.get('GBufTexel')!.offsets).toMatchObject({ ng: 0, thr: 12, ns: 16, viewZ: 28, pos: 32, matId: 44, albedo: 48, flags: 60, motion: 64 });
     expect(L.get('PrimaryParams')!.size).toBe(PRIMARY_PARAMS_SIZE);
@@ -101,10 +102,11 @@ describe('scene packers', () => {
     expect(r[3]).toBe(Math.fround(g.positions[3] - (1e4 + 0.125)));
   });
 
-  it('vertices: p, uv, n, colour (white when COLOR_0 is absent)', () => {
-    const v = packVertices(g, recentrePositions(g.positions, [0, 0, 0]));
-    expect(v.length).toBe(3 * VERTEX_BYTES / 4);
-    expect(Array.from(v.subarray(12, 24))).toEqual([Math.fround(1e4 + 1.25), 2, 3, 1, 0, 0, 1, 0, 1, 1, 1, 1]);
+  it('f32 vertex format (unquantized / lossless): p, uv.x, n, uv.y, colour (white when COLOR_0 is absent)', () => {
+    const a = packVertexArena(g, recentrePositions(g.positions, [0, 0, 0]), undefined, [0, 0, 0]);
+    expect(a.format).toBe(VERTEX_FORMAT_F32);
+    const rec1 = Array.from(a.words.subarray((2 + 3) * 4, (2 + 6) * 4), bitsF32);
+    expect(rec1).toEqual([Math.fround(1e4 + 1.25), 2, 3, 1, 0, 0, 1, 0, 1, 1, 1, 1]);
   });
 
   it('tris: indices + material | flags << 24', () => {

@@ -6,9 +6,9 @@ import { browserImageDecoder, canDecodeInThisRuntime } from './image-decode.ts';
 const scope = self as unknown as DedicatedWorkerGlobalScope;
 
 scope.onmessage = async (ev: MessageEvent<GltfWorkerRequest>) => {
-  const { id, source, tangents } = ev.data;
+  const { id, source, tangents, quantize } = ev.data;
   try {
-    const result = await loadGltf(source, { decodeImage: canDecodeInThisRuntime() ? browserImageDecoder : undefined, tangents });
+    const result = await loadGltf(source, { decodeImage: canDecodeInThisRuntime() ? browserImageDecoder : undefined, tangents, quantize });
     const msg: GltfWorkerResponse = { id, ok: true, result };
     scope.postMessage(msg, sceneTransferList(result.scene));
   } catch (e) {

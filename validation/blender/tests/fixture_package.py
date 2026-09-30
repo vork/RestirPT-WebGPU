@@ -172,6 +172,7 @@ def make_bridge_fixture(out_dir: Path, *, W: int = 512, H: int = 512) -> dict[st
     env = np.random.default_rng(7).uniform(0.0, 2.0, (32, 64, 4)).astype(np.float32)
     env[..., 3] = 1.0
     scene = cal.base_scene("bridge_fixture", W, H, 0, cam, yfov)
+    scene["version"] = 1  # bridge fixture: unquantized smooth geometry (package v1 layout, still accepted by build_scene.py)
     scene.update({
         "flatShaded": False, "materials": materials, "textures": textures, "lights": lights, "lightMode": "B",
         "env": {"file": "env.exr", "strength": 0.5, "tint": [1.0, 0.9, 0.8], "rotationZ": 0.25, "visibleToCamera": False,

@@ -93,13 +93,13 @@ async function main(): Promise<number> {
       const a = window.__app!, r = window.__integration!.renderer()!;
       const g = r.scene!;
       return {
-        scene: a.scene!.name, tris: g.stats.triangles, bvh: g.bvh.stats, textureBytes: g.stats.textureBytes, env: [r.env.width, r.env.height],
+        scene: a.scene!.name, tris: g.stats.triangles, vertices: g.stats.vertices, geometryBytes: g.stats.geometryBytes, bvh: g.bvh.stats, textureBytes: g.stats.textureBytes, env: [r.env.width, r.env.height],
         internal: [a.targets.width, a.targets.height], hud: r.hudLines(), ts: a.timestamps.supported, lastError: r.lastError,
         alphaTris: Array.from(a.scene!.geometry.triFlags).filter((f) => f & 1).length,
       };
     });
     report.load = { ms: loadMs, ...info };
-    console.log(`loaded ${info.scene} in ${loadMs} ms: ${info.tris} tris, ${info.alphaTris} alpha-MASK tris, env ${info.env}, internal ${info.internal}`);
+    console.log(`loaded ${info.scene} in ${loadMs} ms: ${info.tris} tris, ${info.vertices} verts, geometry ${(info.geometryBytes / 1e6).toFixed(2)} MB, ${info.alphaTris} alpha-MASK tris, env ${info.env}, internal ${info.internal}`);
     check('internal resolution 960x540', info.internal[0] === 960 && info.internal[1] === 540, `${info.internal}`);
     check('renderer error-free', !info.lastError, info.lastError);
     if (sponza) check('Sponza MASK foliage present', info.alphaTris > 0, `${info.alphaTris} alpha-MASK tris`);

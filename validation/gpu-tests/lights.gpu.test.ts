@@ -63,7 +63,7 @@ interface Probe { gpu: SceneGpu; lights: LightsGpu; rec(i: number): Rec; run(mod
 
 async function probeRig(scene: SceneData, lightMode: 'A' | 'B' = 'A'): Promise<Probe> {
   const { device, features, wgslLanguageFeatures } = await getTestGpu();
-  const origin = computeRenderOrigin(scene.bounds);
+  const origin = computeRenderOrigin(scene.bounds, scene.quant);
   const gpu = await SceneGpu.create(device, scene, origin, {
     textureMode: 'validation', watertight: true, buildBvh: async (p, i) => buildBvh(p, i, { mt: true, woop: true }), features, wgslLanguageFeatures,
   });

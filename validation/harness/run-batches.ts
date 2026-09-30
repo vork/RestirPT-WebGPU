@@ -22,6 +22,7 @@
 // If the package directory is missing and --make-c0b is given, an equivalent C0b package (calib_scenes.py make_c0b:
 // 100 m emissive quad at z = −2, L_e = (0.5, 0.25, 0.125)·2, vfov 40°, 512²) is written with exportScenePackage to
 // validation/out/tmp-c0b/ and rendered instead.
+import { quantizeScene } from '../../src/core/scene/quantize.ts';
 import { execFile } from 'node:child_process';
 import { existsSync, lstatSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -125,7 +126,7 @@ async function makeC0b(dir: string): Promise<void> {
     }],
     textures: [], lights: [], cameras: [], bounds: { min: [-S, -S, -D], max: [S, S, -D] }, warnings: [],
   };
-  const pkg = await exportScenePackage(scene, {
+  const pkg = await exportScenePackage(quantizeScene(scene).scene, { // package v2 (data-formats.md §B0)
     camera: { matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], yfov: 40 * Math.PI / 180 },
     render: { width: 512, height: 512, maxBounces: 0 }, lightMode: 'A', flatShaded: true, name: 'c0b_512',
     source: { uri: 'validation/harness/run-batches.ts makeC0b' },

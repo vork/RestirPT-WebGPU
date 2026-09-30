@@ -24,7 +24,7 @@ fn rsdbg_src_plane(i: u32, p: u32) -> vec4u { return dbgResSrc[i * RS_RES_PLANES
 /// Position of the surface point (primId, bary u, v) (render frame).
 fn rsdbg_prim_pos(prim: u32, u: f32, v: f32) -> vec3f {
   let t = sceneTris[prim];
-  return (1.0 - u - v) * sceneVerts[t.x].p + u * sceneVerts[t.y].p + v * sceneVerts[t.z].p;
+  return (1.0 - u - v) * scene_vertex_pos(t.x) + u * scene_vertex_pos(t.y) + v * scene_vertex_pos(t.z);
 }
 fn rsdbg_anchor(px: vec2u, path: u32, b: u32, ids: vec3u) {
   if (ids.x >= RC_TAG_NEE) { return; }             // light / env / none: no surface position

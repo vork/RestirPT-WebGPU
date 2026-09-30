@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { TextureInfo } from '@gltf-transform/core';
 import { KHRTextureTransform } from '@gltf-transform/extensions';
 import { loadGltf, textureTransformMatrix } from '../../src/core/scene/gltf-loader.ts';
-import { TRI_ALPHA_MASK, TRI_EMISSIVE, TRI_FLIPPED, type SceneData } from '../../src/core/scene/types.ts';
+import { TRI_ALPHA_MASK, TRI_EMISSIVE, TRI_FLAT, TRI_FLIPPED, type SceneData } from '../../src/core/scene/types.ts';
 import { encodePng, newDoc, toGlb } from './helpers.ts';
 
 const root = new URL('../../', import.meta.url);
@@ -53,7 +53,7 @@ describe('glTF loader: Cornell GLB (Node, no image decode)', () => {
       const vi = g.indices[3 * t];
       const dot = n[0] * g.normals[vi * 3] + n[1] * g.normals[vi * 3 + 1] + n[2] * g.normals[vi * 3 + 2];
       expect(dot).toBeGreaterThan(0.999);
-      expect(g.triFlags[t]).toBe(0);
+      expect(g.triFlags[t]).toBe(TRI_FLAT); // quantizeScene: every corner normal is the face normal → flat face
     }
     expect(g.tangents.every((x) => x === 0)).toBe(true); // no normal maps
   });
@@ -96,7 +96,7 @@ describe('glTF loader: synthetic documents', () => {
     const g = s.geometry;
     expect(g.indices.length / 3).toBe(4);
     expect(stats.flatten.flippedTriangles).toBe(2);
-    expect([...g.triFlags]).toEqual([0, TRI_FLIPPED, 0, TRI_FLIPPED]);
+    expect([...g.triFlags]).toEqual([TRI_FLAT, TRI_FLIPPED | TRI_FLAT, 0, TRI_FLIPPED]); // NORMAL-less mesh: flat faces
     // Geometric normal of the flipped triangle still points to +Z (front face preserved under mirroring).
     expect(triNormal(s, 0)).toEqual([0, 0, 1].map((x) => expect.closeTo(x, 6)));
     expect(triNormal(s, 1)).toEqual([0, 0, 1].map((x) => expect.closeTo(x, 6)));
@@ -108,10 +108,10 @@ describe('glTF loader: synthetic documents', () => {
     // scale (2,1,1): n' ∝ M^-T n = (0.5, 0, 1)·n → normalize(0.5, 0, 1)
     const e = [0.5, 0, 1].map((x) => x / Math.hypot(0.5, 1));
     const vi = g.indices[6];
-    expect([g.normals[vi * 3], g.normals[vi * 3 + 1], g.normals[vi * 3 + 2]]).toEqual(e.map((x) => expect.closeTo(x, 6)));
+    expect([g.normals[vi * 3], g.normals[vi * 3 + 1], g.normals[vi * 3 + 2]]).toEqual(e.map((x) => expect.closeTo(x, 4))); // oct16 ≤ 6.5e-5 rad
     // scale (2,1,−1): n' ∝ (0.5, 0, −1); winding flipped so the geometric normal is −Z and agrees with n'
     const vj = g.indices[9];
-    expect([g.normals[vj * 3], g.normals[vj * 3 + 1], g.normals[vj * 3 + 2]]).toEqual([e[0], 0, -e[2]].map((x) => expect.closeTo(x, 6)));
+    expect([g.normals[vj * 3], g.normals[vj * 3 + 1], g.normals[vj * 3 + 2]]).toEqual([e[0], 0, -e[2]].map((x) => expect.closeTo(x, 4)));
     expect(triNormal(s, 3)[2]).toBeCloseTo(-1, 6);
     expect(s.bounds.min).toEqual([0, 0, 0].map((x) => expect.closeTo(x, 6)));
     expect(s.bounds.max).toEqual([5, 1, 0].map((x) => expect.closeTo(x, 6)));
@@ -212,7 +212,7 @@ describe('glTF loader: synthetic documents', () => {
     expect(D.roughnessFactor).toBe(0.5);
     expect(E.baseColorFactor).toEqual([1, 1, 1, 1]);
 
-    const f = s.geometry.triFlags;
+    const f = s.geometry.triFlags.map((x) => x & ~TRI_FLAT);
     expect(f[0]).toBe(TRI_EMISSIVE);          // MASK with opaque texture and factor 1 → no any-hit
     expect(f[1]).toBe(TRI_ALPHA_MASK);        // BLEND→MASK with a transparent texel
     expect(f[2]).toBe(0);                     // MASK, KTX2 texture dropped → α = factor.a = 1 (constant)

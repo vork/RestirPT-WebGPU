@@ -1,6 +1,7 @@
 // Primary pass (plan §5 M1): V-buffer vs an f64 brute-force reference with the math.md#raster camera (both
 // intersectors), oriented Ng/Ns, depth, thr, the alpha-MASK cutout (factor and COLOR_0 alpha), the camera-miss env
 // term (strength·tint, visibleToCamera), motion vectors, accumulation, and zero NaN/Inf/BVH-overflow counters.
+import { quantizeScene } from '../../src/core/scene/quantize.ts';
 import { afterAll, describe, expect, it } from 'vitest';
 import { getTestGpu, releaseTestGpu } from './device-factory.ts';
 import { buildBvh } from '../../src/core/bvh/sah-builder.ts';
@@ -65,13 +66,13 @@ function quads(qs: { z: number; half: number; mat: number; flags?: number; alpha
   const P = Float32Array.from(pos);
   const mn = [Infinity, Infinity, Infinity]; const mx = [-Infinity, -Infinity, -Infinity];
   for (let i = 0; i < P.length; i += 3) for (let c = 0; c < 3; c++) { mn[c] = Math.min(mn[c], P[i + c]); mx[c] = Math.max(mx[c], P[i + c]); }
-  return {
+  return quantizeScene({
     name: 'quads',
     geometry: { positions: P, normals: Float32Array.from(nrm), tangents: new Float32Array(P.length / 3 * 4), uv0: Float32Array.from(uv), color0: Float32Array.from(col),
       indices: Uint32Array.from(idx), triMaterial: Uint32Array.from(tm), triFlags: Uint32Array.from(tf) },
     materials, textures, lights: [], cameras: [],
     bounds: { min: mn as [number, number, number], max: mx as [number, number, number] }, warnings: [],
-  };
+  }).scene; // data-formats.md §B0: GPU tests run the quantized vertex format
 }
 
 interface Rig {
@@ -94,7 +95,7 @@ async function rig(scene: SceneData, W: number, H: number, watertight = true): P
     buildBvh: async (p, i) => buildBvh(p, i, { mt: true, woop: true }),
   }, { watertight });
   renderer.resize({ width: W, height: H, color, colorFormat: 'rgba32float', depth, frameUniforms: fu.buffer });
-  const origin = computeRenderOrigin(scene.bounds);
+  const origin = computeRenderOrigin(scene.bounds, scene.quant);
   await renderer.setScene(scene, origin);
   return { renderer, debug, fu, color, depth, W, H, origin };
 }

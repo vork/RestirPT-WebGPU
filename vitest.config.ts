@@ -1,9 +1,15 @@
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import { playwright } from '@vitest/browser-playwright';
+
+const root = fileURLToPath(new URL('.', import.meta.url));
 
 // Three lanes (plan §1.1): CPU tests, dawn.node fast pre-check, and Chrome 154 (authoritative for gates).
 export default defineConfig({
   cacheDir: '.vite',  // see vite.config.ts (worktrees share node_modules through a symlink)
+  // Worktrees: node_modules is a symlink into the main checkout; allow its real path (Worker `?url` wasm imports).
+  server: { fs: { allow: [root, realpathSync(`${root}node_modules`)] } },
   test: {
     projects: [
       {

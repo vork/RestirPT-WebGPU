@@ -8,6 +8,7 @@ import {
 } from '@gltf-transform/extensions';
 import { dequantize, uninstance } from '@gltf-transform/functions';
 import { flattenScene, type FlattenMaterialInfo, type FlattenStats, type TangentGenerator } from './flatten.ts';
+import { generateRangeTangents, quantizeScene, type QuantizeStats, type QuantMode } from './quantize.ts';
 import { isAlphaOpaque, type ImageDecoder } from './image-decode.ts';
 import type { CameraData, LightData, MaterialData, SceneData, TextureData, TextureRef, WrapMode } from './types.ts';
 
@@ -28,11 +29,16 @@ export interface GltfLoadOptions {
   tangents?: boolean;
   /** Override the MikkTSpace generator (tests); default loads the `mikktspace` wasm. */
   generateTangents?: TangentGenerator;
+  /** quantizeScene mode (default 'quantized'; 'lossless' for the loader-fidelity / E2E stock-import gates). */
+  quantize?: QuantMode;
+  /** UV τ in texels (default 1/8). */
+  uvTolerance?: number;
 }
 
 export interface LoadStats {
-  ms: { parse: number; images: number; flatten: number; total: number };
+  ms: { parse: number; images: number; flatten: number; quantize: number; total: number };
   flatten: FlattenStats;
+  quantize: QuantizeStats;
   extensionsUsed: string[];
 }
 
@@ -52,11 +58,11 @@ export async function loadGltf(source: GltfSource, opts: GltfLoadOptions = {}): 
   const t2 = now();
   const mats = buildMaterials(doc, tex, warnings);
   const gen = opts.tangents === false ? undefined : (opts.generateTangents ?? (await loadMikkTSpace()));
-  const flat = flattenScene(doc, { materialInfo: mats.info, generateTangents: gen, warnings });
+  const flat = flattenScene(doc, { materialInfo: mats.info, tangents: !!gen, warnings });
   const { lights, cameras } = collectLightsAndCameras(doc, warnings);
   const t3 = now();
 
-  const scene: SceneData = {
+  const raw: SceneData = {
     name: source.name ?? (source.kind === 'url' ? source.url.split('/').pop() ?? 'scene' : 'scene'),
     geometry: flat.geometry,
     materials: mats.materials,
@@ -66,9 +72,14 @@ export async function loadGltf(source: GltfSource, opts: GltfLoadOptions = {}): 
     bounds: flat.bounds,
     warnings,
   };
+  // The one lossy step (data-formats.md §B0): lattice snap, TRI_FLAT, MikkTSpace on the snapped data, re-weld.
+  const mode = opts.quantize ?? 'quantized';
+  if (mode === 'lossless' && gen && flat.tangentRanges.length) generateRangeTangents(raw.geometry, flat.tangentRanges, gen, warnings);
+  const q = quantizeScene(raw, { mode, uvTolerance: opts.uvTolerance, generateTangents: gen, tangentRanges: flat.tangentRanges });
+  const t4 = now();
   return {
-    scene,
-    stats: { ms: { parse: t1 - t0, images: t2 - t1, flatten: t3 - t2, total: t3 - t0 }, flatten: flat.stats, extensionsUsed },
+    scene: q.scene,
+    stats: { ms: { parse: t1 - t0, images: t2 - t1, flatten: t3 - t2, quantize: t4 - t3, total: t4 - t0 }, flatten: flat.stats, quantize: q.stats, extensionsUsed },
   };
 }
 
@@ -86,7 +97,7 @@ export function sceneTransferList(scene: SceneData): ArrayBuffer[] {
 }
 
 // Worker protocol (gltf-loader.worker.ts ⇄ load-scene.ts).
-export interface GltfWorkerRequest { id: number; source: GltfSource; tangents?: boolean }
+export interface GltfWorkerRequest { id: number; source: GltfSource; tangents?: boolean; quantize?: QuantMode }
 export type GltfWorkerResponse =
   | { id: number; ok: true; result: GltfLoadResult }
   | { id: number; ok: false; error: string };

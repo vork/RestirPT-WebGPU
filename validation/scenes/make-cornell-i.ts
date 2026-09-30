@@ -9,6 +9,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadGltf } from '../../src/core/scene/gltf-loader.ts';
+import { quantizeScene } from '../../src/core/scene/quantize.ts';
 import { exportScenePackage } from '../../src/core/scene/scene-package.ts';
 import type { LightData, SceneData } from '../../src/core/scene/types.ts';
 
@@ -27,7 +28,7 @@ interface CornellMeta {
 async function main(): Promise<void> {
   const meta = JSON.parse(readFileSync(path.join(ASSET, 'cornell.meta.json'), 'utf8')) as CornellMeta;
   const glb = new Uint8Array(readFileSync(path.join(ASSET, 'cornell.glb')));
-  const base = (await loadGltf({ kind: 'glb', bytes: glb, name: 'cornell.glb' }, { tangents: false })).scene;
+  const base = (await loadGltf({ kind: 'glb', bytes: glb, name: 'cornell.glb' }, { tangents: false, quantize: 'lossless' })).scene;
 
   const materials = base.materials.map((m) => {
     const rho = meta.reflectance[m.name];
@@ -54,7 +55,7 @@ async function main(): Promise<void> {
     { name: `cornell_i_power${PLANT_FACTOR}_512`, power: L.power_W * PLANT_FACTOR, plant: { of: 'cornell_i_512', what: `light power x${PLANT_FACTOR}` } },
   ];
   for (const v of variants) {
-    const scene: SceneData = { ...base, name: v.name, materials, lights: [light(v.power)], cameras: [] };
+    const scene: SceneData = quantizeScene({ ...base, name: v.name, materials, lights: [light(v.power)], cameras: [], quant: undefined }).scene; // package v2 lattices
     const pkg = await exportScenePackage(scene, {
       camera, render: { width: 512, height: 512, maxBounces: 3 }, lightMode: 'A', flatShaded: true, name: v.name,
       source: { uri: 'validation/assets/cornell/cornell.glb + cornell.meta.json (validation/scenes/make-cornell-i.ts)', sha256: glbSha },

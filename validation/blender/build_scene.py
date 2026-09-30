@@ -13,6 +13,9 @@ Conventions (math.md §3, §5):
 - Faces are created in primId order (face index == primId), never merged or validated away.
 - Smooth shading: the package's per-vertex normals are stored as a float 'custom_normal' POINT attribute
   (Blender 4.5+ free normals: bit-exact, unlike normals_split_custom_set's int16 encoding).
+- Package v2 (docs/decisions/data-formats.md §B0): the geometry arrays are the DEQUANTIZED values the GPU decodes;
+  scene.json "quant" holds the lattices. Quantized positions are asserted to be on the global 2^posLog2 lattice
+  (bridge-contract check); the UV flip 1 - v is exact on the dyadic UV lattices.
 - Anything that cannot be represented exactly raises BridgeError (contract: hard error, not a warning).
 """
 from __future__ import annotations
@@ -52,8 +55,8 @@ class BridgeError(RuntimeError):
 def load_package(package_dir: str | Path) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
     pkg = Path(package_dir)
     scene = json.loads((pkg / "scene.json").read_text())
-    if scene.get("format") != "restir-scene-package" or scene.get("version") != 1:
-        raise BridgeError(f"{pkg}: not a restir-scene-package v1 ({scene.get('format')!r}, {scene.get('version')!r})")
+    if scene.get("format") != "restir-scene-package" or scene.get("version") not in (1, 2):
+        raise BridgeError(f"{pkg}: not a restir-scene-package v1/v2 ({scene.get('format')!r}, {scene.get('version')!r})")
     blob = (pkg / "geometry.bin").read_bytes()
     arrays: dict[str, np.ndarray] = {}
     for name, b in scene.get("buffers", {}).items():
@@ -64,6 +67,13 @@ def load_package(package_dir: str | Path) -> tuple[dict[str, Any], dict[str, np.
         if off % 4 or length % (4 * comps) or off + length > len(blob):
             raise BridgeError(f"buffer {name}: bad range offset={off} length={length} comps={comps} (bin {len(blob)} B)")
         arrays[name] = np.frombuffer(blob, dtype=dt, count=length // 4, offset=off).reshape(-1, comps)
+    q = scene.get("quant")
+    if scene.get("version") == 2 and q is None:
+        raise BridgeError(f"{pkg}: package v2 without a quant block")
+    if q is not None and q.get("mode") == "quantized" and "positions" in arrays:
+        n = arrays["positions"].astype(np.float64) / 2.0 ** int(q["posLog2"])
+        if not np.array_equal(n, np.round(n)):
+            raise BridgeError(f"{pkg}: positions are not on the 2^{q['posLog2']} lattice (quant block)")
     return scene, arrays
 
 

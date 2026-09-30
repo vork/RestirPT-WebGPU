@@ -111,9 +111,96 @@ def write_package(out_dir: Path, scene: dict[str, Any], arrays: dict[str, tuple[
     return out_dir
 
 
+# --------------------------------------------------------------------------------------------------
+# package v2 quantization (docs/decisions/data-formats.md §B0/§B1/§B5; mirror of src/core/scene/quantize.ts for the
+# flat, untextured, axis-normal calibration meshes written here)
+
+POS_MAX_OFFSET = 2 ** 21 - 1
+UV_Q_MAX = 65535
+MIN_LOG2 = -24
+
+
+def ceil_log2(x: float) -> int:
+    """Smallest integer k with 2^k >= x (x > 0)."""
+    m, e = math.frexp(x)  # x = m * 2^e, m in [0.5, 1)
+    return e - 1 if m == 0.5 else e
+
+
+def pos_log2(extent: float, max_abs: float) -> int:
+    k = MIN_LOG2 * 4
+    if extent > 0:
+        k = max(k, ceil_log2(extent / (POS_MAX_OFFSET - 1)))
+    if max_abs > 0:
+        k = max(k, ceil_log2(max_abs / (2 ** 24 - 1)))
+    if k > -10:
+        raise ValueError(f"calibration scene too large for the position lattice (2^{k} m)")
+    return k
+
+
+def uv_axis_lattice(lo: float, hi: float) -> tuple[int, int]:
+    k = MIN_LOG2
+    if hi > lo:
+        k = max(k, ceil_log2((hi - lo) / (UV_Q_MAX - 1)))
+    ma = max(abs(lo), abs(hi))
+    if ma > 0:
+        k = max(k, ceil_log2(ma / (2 ** 24 - 1 - UV_Q_MAX)))
+    return k, math.floor(lo / 2.0 ** k)
+
+
+def js_round(x: np.ndarray) -> np.ndarray:
+    """JavaScript Math.round (ties toward +inf), as quantize.ts snaps."""
+    return np.floor(x + 0.5)
+
+
+def quantize_package(scene: dict[str, Any], arrays: dict[str, tuple[np.ndarray, str, int]]) -> None:
+    """Snap positions to the global 2^k lattice and UVs to per-material dyadic lattices, record `quant` (package v2).
+    Normals must already be exact oct16 values (these meshes only have axis-aligned normals)."""
+    if "positions" not in arrays:
+        return
+    P = np.asarray(arrays["positions"][0], dtype=np.float32).astype(np.float64).reshape(-1, 3)
+    idx = np.asarray(arrays["indices"][0]).astype(np.int64).reshape(-1, 3)
+    tm = np.asarray(arrays["triMaterial"][0]).astype(np.int64).reshape(-1)
+    used = np.unique(idx.reshape(-1)) if idx.size else np.zeros(0, np.int64)
+    ext = float(np.max(P[used].max(axis=0) - P[used].min(axis=0))) if used.size else 0.0
+    max_abs = float(np.abs(P[used]).max()) if used.size else 0.0
+    k = pos_log2(ext, max_abs)
+    s = 2.0 ** k
+    Pq = js_round(P / s) * s
+    if not np.array_equal(Pq.astype(np.float32).astype(np.float64), Pq):
+        raise ValueError("snapped positions not exact in float32")
+    for a, b, c in idx:
+        if np.linalg.norm(np.cross(Pq[b] - Pq[a], Pq[c] - Pq[a])) == 0:
+            raise ValueError("triangle degenerate after snapping")
+    N = np.asarray(arrays["normals"][0], dtype=np.float32).reshape(-1, 3)
+    for n in N[used]:
+        if not (np.count_nonzero(n) == 1 and abs(float(n[np.nonzero(n)[0][0]])) == 1.0):
+            raise NotImplementedError(f"normal {n} is not an axis vector: the oct16 snap is only mirrored for axis normals")
+    UV = np.asarray(arrays["uv0"][0], dtype=np.float32).astype(np.float64).reshape(-1, 2)
+    n_mat = len(scene["materials"])
+    lattices = []
+    for m in range(n_mat):
+        verts = np.unique(idx[tm == m].reshape(-1))
+        lat = []
+        for a in range(2):
+            vals = UV[verts, a] if verts.size else np.zeros(0)
+            lat.append(uv_axis_lattice(float(vals.min()), float(vals.max())) if vals.size else (MIN_LOG2, 0))
+        (ku, bu), (kv, bv) = lat
+        lattices.append({"ku": ku, "kv": kv, "baseU": bu, "baseV": bv, "wide": False})  # untextured: never wide
+        for a, (kk, base) in enumerate(lat):
+            if verts.size:
+                q = js_round(UV[verts, a] / 2.0 ** kk) - base
+                if q.min() < 0 or q.max() > UV_Q_MAX:
+                    raise ValueError("uv outside its lattice")
+                UV[verts, a] = (q + base) * 2.0 ** kk
+    arrays["positions"] = (Pq, "f32", 3)
+    arrays["uv0"] = (UV, "f32", 2)
+    scene["quant"] = {"mode": "quantized", "posLog2": k, "uv": lattices, "uvTolerance": 0.125,
+                      "normal": "oct16", "tangent": "oct15", "color": "none"}
+
+
 def base_scene(name: str, W: int, H: int, max_bounces: int, cam_matrix: list[float], yfov: float) -> dict[str, Any]:
     return {
-        "format": "restir-scene-package", "version": 1, "name": name,
+        "format": "restir-scene-package", "version": 2, "name": name,
         "source": {"uri": "validation/blender/calib_scenes.py", "sha256": None},
         "flatShaded": True,
         "materials": [], "textures": [], "lights": [], "lightMode": "A",
@@ -548,6 +635,7 @@ def build_all(out: Path, only: list[str] | None = None) -> dict[str, str]:
         res = fn(name)
         scene, arrays = res[0], res[1]
         env = res[2] if len(res) > 2 else None
+        quantize_package(scene, arrays)  # package v2: geometry on its lattices (expected answers: pre-snap, <= step/2)
         write_package(out / name, scene, arrays, env)
         fr = scene["expected"]["frames"]
         nm = sum(1 for f in fr.values() for m in f.get("markers", []) if "centroid_px" in m)

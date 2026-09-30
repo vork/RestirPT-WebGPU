@@ -6,9 +6,12 @@
 export const TRI_ALPHA_MASK = 1 << 0;   // material alphaMode MASK with a textured/vertex alpha (needs any-hit test)
 export const TRI_EMISSIVE = 1 << 1;     // material emission > 0 (emissive-triangle light)
 export const TRI_FLIPPED = 1 << 2;      // world transform had negative determinant (winding flipped at flatten)
+/** Flat face (every corner normal equals the face normal; set by quantizeScene): shading uses ns = ng exactly, like
+ *  Cycles on flat faces, and the stored vertex normal is never read (docs/decisions/data-formats.md §B3). */
+export const TRI_FLAT = 1 << 3;
 
 export interface SceneGeometry {
-  /** World-space vertex positions (xyz per vertex), float32. */
+  /** World-space vertex positions (xyz per vertex), float32. Quantized scenes: on the global 2^posLog2 lattice. */
   positions: Float32Array;
   /** World-space shading normals (xyz per vertex, normalized). Flat-shaded faces are unwelded. */
   normals: Float32Array;
@@ -132,6 +135,24 @@ export interface EnvironmentData {
 
 export interface Bounds { min: [number, number, number]; max: [number, number, number] }
 
+/** Per-material UV lattice (data-formats.md §B5): uv = (q + base)·2^k per axis, q ∈ [0, 65535]; `wide` = f32 UVs. */
+export interface UvLattice { ku: number; kv: number; baseU: number; baseV: number; wide: boolean }
+
+/** Quantization parameters of a scene (quantizeScene, scene package v2 `quant`; data-formats.md §B0). */
+export interface SceneQuant {
+  /** 'quantized': every SceneGeometry value is on the lattices below; 'lossless': f32 everything (identity). */
+  mode: 'quantized' | 'lossless';
+  /** Global position lattice exponent k (step 2^k m, P21: 3 × 21 bit offsets). */
+  posLog2: number;
+  /** One lattice per material (index = material index). */
+  uv: UvLattice[];
+  /** τ (texels) the lattices were chosen with. */
+  uvTolerance: number;
+  normal: 'oct16' | 'f32';
+  tangent: 'oct15' | 'f32';
+  color: 'rgba8' | 'rgba16' | 'f32' | 'none';
+}
+
 export interface SceneData {
   name: string;
   geometry: SceneGeometry;
@@ -143,4 +164,6 @@ export interface SceneData {
   bounds: Bounds;
   /** Loader warnings (unsupported extensions, simplified lights, dropped degenerate triangles...). */
   warnings: string[];
+  /** Set by quantizeScene (every loader runs it). Absent = never quantized (ad-hoc test scenes): f32 GPU format. */
+  quant?: SceneQuant;
 }

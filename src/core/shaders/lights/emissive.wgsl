@@ -3,7 +3,7 @@
 // sRGB⁻¹(emissive texture at uv) — the same expression as the emission kernel. Area-uniform sampling:
 // bary = (1 − √u₁, √u₁(1 − u₂), √u₁u₂) over (v0, v1, v2), p_A = 1/A, q = P(tri)/A, Λ = L_e|cosθ_z|/r².
 // The area A comes from the record (identical for NEE q and for the BSDF-hit p1, so the MIS partition is exact).
-// Requires scene/scene-data.wgsl (sceneTris, sceneVerts, sceneMaterials, tex_sample).
+// Requires scene/scene-data.wgsl (sceneTris, scene_vertex_pos, sceneMaterials, tex_sample).
 #include "lights/lights.wgsl"
 #include "scene/scene-data.wgsl"
 
@@ -18,8 +18,8 @@ fn tri_emission(primId: u32, u: f32, v: f32) -> vec3f {
 /// Unit geometric (winding) normal of primId, unflipped.
 fn tri_normal(primId: u32) -> vec3f {
   let t = sceneTris[primId];
-  let a = sceneVerts[t.x].p;
-  return normalize(cross(sceneVerts[t.y].p - a, sceneVerts[t.z].p - a));
+  let a = scene_vertex_pos(t.x);
+  return normalize(cross(scene_vertex_pos(t.y) - a, scene_vertex_pos(t.z) - a));
 }
 
 /// Area-uniform sample of emissive-triangle entry i as seen from x. u = (u₁, u₂).
@@ -28,9 +28,9 @@ fn emissive_sample(i: u32, x: vec3f, u: vec2f) -> LightSample {
   let e = emissive_tri(i);
   let primId = e.x;
   let t = sceneTris[primId];
-  let p0 = sceneVerts[t.x].p;
-  let p1 = sceneVerts[t.y].p;
-  let p2 = sceneVerts[t.z].p;
+  let p0 = scene_vertex_pos(t.x);
+  let p1 = scene_vertex_pos(t.y);
+  let p2 = scene_vertex_pos(t.z);
   let su = sqrt(u.x);
   let b1 = su * (1.0 - u.y);
   let b2 = su * u.y;

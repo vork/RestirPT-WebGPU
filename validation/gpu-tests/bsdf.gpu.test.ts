@@ -838,7 +838,7 @@ describe(`material_eval (${lane()})`, () => {
     const set = await createGpuTextures(device, { textures, materials }, { mode: 'validation' });
     const shader = composeWgsl('tests/me_harness.wgsl', {
       sources: { ...shaderSources, 'tests/me_harness.wgsl': ME_HARNESS },
-      defines: { ...lutDefines({ declare: { group: 0, binding: 0 } }), SCENE_GROUP: 1, CUSTOM_ALPHA: false, ...set.defines(1, SCENE_BINDING.textureBase) },
+      defines: { ...lutDefines({ declare: { group: 0, binding: 0 } }), SCENE_GROUP: 1, CUSTOM_ALPHA: false, VERTEX_FORMAT: 1, ...set.defines(1, SCENE_BINDING.textureBase) },
       features, wgslLanguageFeatures,
     });
     const module = await createCheckedShaderModule(device, shader, 'material-eval');
@@ -912,7 +912,7 @@ describe(`material_eval (${lane()})`, () => {
     for (const [records, recordsKind] of [['array<f32>', 'f32'], ['array<vec4u>', 'vec4u']] as const) {
       const bare = composeWgsl('tests/me_bare.wgsl', {
         sources: { ...shaderSources, 'tests/me_bare.wgsl': `@group(0) @binding(0) var<storage, read> records: ${records};\n` + ME_HARNESS },
-        defines: { ...lutDefines({ base: 64, recordsKind }), SCENE_GROUP: 1, CUSTOM_ALPHA: false, TEX_GROUP: 1, TEX_BINDING_BASE: 8, TEX_ARRAYS: 0, TEX_SAMPLERS: 0 },
+        defines: { ...lutDefines({ base: 64, recordsKind }), SCENE_GROUP: 1, CUSTOM_ALPHA: false, VERTEX_FORMAT: 1, TEX_GROUP: 1, TEX_BINDING_BASE: 8, TEX_ARRAYS: 0, TEX_SAMPLERS: 0 },
         features, wgslLanguageFeatures,
       });
       await createCheckedShaderModule(device, bare, `material-eval-bare-${recordsKind}`);

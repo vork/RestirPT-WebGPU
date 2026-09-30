@@ -584,6 +584,9 @@ fn kstar_bsdf_end(treeRc: u32, B: u32, curV: RcVertex, eB: RcEvent, endV: RcVert
   (case d/e); else 0 (∅).
 - `vertex_from_ids`: `scene_surface(prim, u, v, vec3f(0))` then flip ng, ns (and set `backfacing`) iff
   `dot(ng, fromPos − pos) < 0`; bit-identical to `scene_surface(prim, u, v, pos − fromPos)`.
+  `scene_surface` decodes the vertex arena (data-formats.md §B1–§B6: P21 lattice positions, oct16 normals, lattice
+  UVs; `VERTEX_FORMAT` define) and returns ns = ng on `TRI_FLAT` faces; the identity holds because both paths call
+  the same decoder.
 
 ### 3.5 Path tree (path/pathtree.wgsl, WP-A) — math §16, §19, §25
 

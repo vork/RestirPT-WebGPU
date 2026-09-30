@@ -1,5 +1,6 @@
 // Shared fixtures for the PT / light GPU tests (pt.gpu.test.ts, lights.gpu.test.ts): quad scenes, a PT rig on top of
 // BatchAccumulator, f64 reference helpers (camera rays, polygon irradiance).
+import { quantizeScene } from '../../src/core/scene/quantize.ts';
 import { buildBvh } from '../../src/core/bvh/sah-builder.ts';
 import { BatchAccumulator } from '../../src/core/render/batch-accumulator.ts';
 import { createEnvResources, destroyEnvResources } from '../../src/core/render/env-gpu.ts';
@@ -42,7 +43,7 @@ export function quadScene(quads: { p: number[][]; mat: number }[], materials: Ma
   const P = Float32Array.from(pos);
   const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
   for (let i = 0; i < P.length; i += 3) for (let c = 0; c < 3; c++) { mn[c] = Math.min(mn[c], P[i + c]); mx[c] = Math.max(mx[c], P[i + c]); }
-  return {
+  return quantizeScene({
     name: 'quads',
     geometry: {
       positions: P, normals: Float32Array.from(nrm), tangents: new Float32Array(P.length / 3 * 4), uv0: new Float32Array(P.length / 3 * 2),
@@ -50,7 +51,7 @@ export function quadScene(quads: { p: number[][]; mat: number }[], materials: Ma
     },
     materials, textures: [], lights, cameras: [],
     bounds: { min: mn as V3, max: mx as V3 }, warnings: [],
-  };
+  }).scene; // data-formats.md §B0: GPU tests run the quantized vertex format
 }
 
 /** Ground plane y = 0, half size S, normal +Y. */
@@ -112,7 +113,7 @@ export interface PtRig { kernel: PtKernel; acc: BatchAccumulator; W: number; H: 
 export async function ptRig(scene: SceneData, W: number, H: number, cam: { camToWorld: number[]; yfov: number },
   opts: PtKernelOptions & { seed?: number; jitterMode?: JitterMode; budget?: ConstructorParameters<typeof BatchAccumulator>[3] } = {}): Promise<PtRig> {
   const { device, features, wgslLanguageFeatures } = await getTestGpu();
-  const origin = computeRenderOrigin(scene.bounds);
+  const origin = computeRenderOrigin(scene.bounds, scene.quant);
   const gpu = await SceneGpu.create(device, scene, origin, {
     textureMode: 'validation', watertight: true, buildBvh: async (p, i) => buildBvh(p, i, { mt: true, woop: true }), features, wgslLanguageFeatures,
   });

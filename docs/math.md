@@ -36,7 +36,8 @@ this document follows the higher-ranked one and records the conflict in
 - `saturate(x) = clamp(x, 0, 1)`.
 - `smoothstep01(f) = 0` if f ≤ 0, `1` if f ≥ 1, otherwise `3f² − 2f³`.
 - Vectors are unit length unless stated. `n^g` is the geometric (face) normal. `N` / `Ns` is the
-  shading normal used by a closure.
+  shading normal used by a closure. On flat faces (`TRI_FLAT`, set by quantizeScene when every corner normal is the face
+  normal) `Ns ≡ n^g` bit for bit, as Cycles uses Ng on flat faces (data-formats.md §B3).
 - **BSDF direction convention (Cycles).**
   - `V` points from the shading point toward the previous (camera-side) vertex.
   - `L` points toward the next vertex or the light.
@@ -156,6 +157,11 @@ o     = camera position (render-internal recentred frame)
 **Render-internal recentring.**
 - `p_int = p_world − O`, with one offset O applied identically to triangles, camera, lights and
   tracks. Directions and env mapping are unaffected.
+- **Geometry precision (data-formats.md §B1).** Positions lie on one global lattice `p = n·2^k` (|n| < 2^24,
+  k = max(⌈log2(E/(2²¹−2))⌉, ⌈log2(A/(2²⁴−1))⌉), E = scene extent, A = max |coordinate|; Sponza k = −16 = 15.3 µm, the
+  validation scenes ≤ 61 µm steps, worst displacement 29 µm). O is snapped to the same lattice, so `p_int` is exact in
+  f32, as are all triangle edge vectors; the GPU decodes `(n − n_O)·2^k` bit-identically to the CPU value. Shading
+  normals are oct 2 × 16 snorm (≤ 0.0025°), UVs per-material dyadic 2 × 16 (≤ 1/8 texel, else f32).
 - `scene.json` stays un-recentred, in the glTF canonical frame: right-handed, +Y up, metres
   (plan §1.2).
 - **Axis conversion to Blender.** `C = R_x(+90°)`, i.e. `(x, y, z)_glTF → (x, −z, y)_Blender`.

@@ -5,8 +5,9 @@
 // - Missing NORMAL → flat normals (the primitive is unwelded: 3 unique vertices per triangle).
 // - MikkTSpace tangents (glTF convention: w negated, like gltf-transform `tangents()`) when the material has a
 //   normal map and the primitive has TEXCOORD_0. MikkTSpace needs unwelded input, so those primitives are
-//   unwelded too. Tangents are generated from WORLD-space positions/normals, so mirrored instances get the
-//   correct handedness without a det fix-up. Everything else gets zero tangents.
+//   unwelded too, and their vertex ranges are returned (`tangentRanges`): quantizeScene runs MikkTSpace on the SNAPPED
+//   world-space data (data-formats.md §B0 order), so mirrored instances get the correct handedness without a det
+//   fix-up and Blender's own MikkTSpace sees the same inputs. Everything else gets zero tangents.
 // - Zero-area and non-finite triangles are dropped (logged). primIds are DENSE after the drop: primId is the
 //   triangle's index in the final `indices` array, i.e. dropped triangles never get an id and later ones shift
 //   down. primIds are stable for a given file + loader version (plan §1.3 "stable primId").
@@ -35,13 +36,13 @@ export interface FlattenMaterialInfo {
   wantsTangents: boolean;
 }
 
-export type TangentGenerator = (position: Float32Array, normal: Float32Array, texcoord: Float32Array) => Float32Array;
+export type { TangentGenerator } from './quantize.ts';
 
 export interface FlattenOptions {
   /** Maps a glTF material (null = primitive without material) to its SceneData material. */
   materialInfo: (material: Material | null, hasColor0: boolean) => FlattenMaterialInfo;
-  /** MikkTSpace generator (mikktspace package). Omit to emit zero tangents everywhere. */
-  generateTangents?: TangentGenerator;
+  /** Unweld normal-mapped primitives for MikkTSpace and report their vertex ranges (default false: zero tangents). */
+  tangents?: boolean;
   warnings: string[];
   maxTriangles?: number;
 }
@@ -57,7 +58,11 @@ export interface FlattenStats {
   repairedNormals: number;
 }
 
-export interface FlattenResult { geometry: SceneGeometry; bounds: Bounds; stats: FlattenStats }
+export interface FlattenResult {
+  geometry: SceneGeometry; bounds: Bounds; stats: FlattenStats;
+  /** Unwelded vertex ranges of normal-mapped primitives (MikkTSpace input, quantize.ts generateRangeTangents). */
+  tangentRanges: { vBase: number; vCount: number }[];
+}
 
 interface PrimInstance {
   prim: Primitive;
@@ -92,7 +97,7 @@ export function flattenScene(doc: Document, opts: FlattenOptions): FlattenResult
       const hasColor0 = prim.getAttribute('COLOR_0') !== null;
       const info = opts.materialInfo(prim.getMaterial(), hasColor0);
       const flat = prim.getAttribute('NORMAL') === null;
-      const tangents = !!opts.generateTangents && info.wantsTangents && prim.getAttribute('TEXCOORD_0') !== null;
+      const tangents = !!opts.tangents && info.wantsTangents && prim.getAttribute('TEXCOORD_0') !== null;
       instances.push({ prim, world, tris, vertexCount: pos.getCount(), unweld: flat || tangents, flat, tangents, hasColor0, info });
     }
   });
@@ -123,6 +128,7 @@ export function flattenScene(doc: Document, opts: FlattenOptions): FlattenResult
   };
   const bmin = [Infinity, Infinity, Infinity], bmax = [-Infinity, -Infinity, -Infinity];
   let vBase = 0, tOut = 0;
+  const tangentRanges: { vBase: number; vCount: number }[] = [];
 
   // ---- pass 2: transform and emit ----
   for (const inst of instances) {
@@ -191,18 +197,7 @@ export function flattenScene(doc: Document, opts: FlattenOptions): FlattenResult
       stats.repairedNormals += repairNormals(positions, normals, vBase, vCount, nt, corner);
     }
 
-    if (inst.tangents && opts.generateTangents) {
-      const range = (arr: Float32Array, n: number) => arr.subarray(vBase * n, (vBase + vCount) * n);
-      try {
-        const tan = opts.generateTangents(range(positions, 3), range(normals, 3), range(uv0, 2));
-        if (tan.length !== vCount * 4) throw new Error(`MikkTSpace returned ${tan.length} floats, expected ${vCount * 4}`);
-        for (let i = 3; i < tan.length; i += 4) tan[i] = -tan[i]; // glTF uv convention (matches gltf-transform)
-        tangents.set(tan, vBase * 4);
-        stats.tangentPrimitives++;
-      } catch (e) {
-        warn(`MikkTSpace failed on a primitive (${e instanceof Error ? e.message : String(e)}); tangents left zero`);
-      }
-    }
+    if (inst.tangents) { tangentRanges.push({ vBase, vCount }); stats.tangentPrimitives++; }
 
     // Colour alpha < 1 anywhere forces the any-hit test on a MASK material.
     let colorAlphaOne = true;
@@ -246,7 +241,7 @@ export function flattenScene(doc: Document, opts: FlattenOptions): FlattenResult
   const bounds: Bounds = tOut > 0
     ? { min: [bmin[0], bmin[1], bmin[2]], max: [bmax[0], bmax[1], bmax[2]] }
     : { min: [0, 0, 0], max: [0, 0, 0] };
-  return { geometry: { positions, normals, tangents, uv0, color0, indices, triMaterial, triFlags }, bounds, stats };
+  return { geometry: { positions, normals, tangents, uv0, color0, indices, triMaterial, triFlags }, bounds, stats, tangentRanges };
 }
 
 // ---------------------------------------------------------------------------------------------------------------

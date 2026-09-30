@@ -86,7 +86,7 @@ describe('U-RES-1: WGSL data contract ≡ layout.ts', () => {
 // ------------------------------------------------------------------------------------------------ inline budget
 
 const SCENE_DEFINES: Defines = {
-  SCENE_GROUP: 1, BVH_DECLARE_BINDINGS: true, BVH_GROUP: 1, BVH_BINDING_NODES: 0, BVH_BINDING_TRIS: 1, WATERTIGHT: true, CUSTOM_ALPHA: true,
+  SCENE_GROUP: 1, BVH_DECLARE_BINDINGS: true, BVH_GROUP: 1, BVH_BINDING_NODES: 0, BVH_BINDING_TRIS: 1, WATERTIGHT: true, CUSTOM_ALPHA: true, VERTEX_FORMAT: 1,
   TEX_GROUP: 1, TEX_BINDING_BASE: 8, TEX_ARRAYS: 1, TEX_SAMPLERS: 1,
 };
 

@@ -347,7 +347,7 @@ export class App {
   /** Adopt a scene: recentring origin, camera speed scale, initial/file camera, history reset. */
   setScene(scene: SceneData): void {
     this.scene = scene;
-    this.origin = computeRenderOrigin(scene.bounds);
+    this.origin = computeRenderOrigin(scene.bounds, scene.quant);
     this.sceneDiag = boundsDiagonal(scene.bounds);
     this.overlay.setOrigin(this.origin);
     this.camera.sceneDiag = this.sceneDiag;

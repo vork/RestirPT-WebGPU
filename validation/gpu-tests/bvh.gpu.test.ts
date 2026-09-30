@@ -1,5 +1,8 @@
 // T12 (plan §5 M1, §7.4): BVH2 traversal vs an f64 CPU reference, watertightness, self-intersection, zero
 // overflow / iteration-cap counters, and throughput at 1080p-equivalent ray counts. Runs in both GPU lanes.
+// data-formats.md P1: (1) also runs on the lattice-snapped scenes (the BVH is built from the dequantized positions),
+// (6) T12-Q: rays aimed at shared edges / vertices of xi_contact and at Sponza's cross-mesh seams on the quantized
+// geometry: 0 cracks with Woop; the throughput test measures Sponza f32 vs lattice positions.
 import { afterAll, describe, expect, it } from 'vitest';
 import { getTestGpu, lane, releaseTestGpu } from './device-factory.ts';
 import { composeWgsl, createCheckedShaderModule } from '../../src/core/gpu/wgsl-composer.ts';
@@ -10,6 +13,9 @@ import { buildBvh } from '../../src/core/bvh/sah-builder.ts';
 import { BVH_MISS, uploadBvh, type BvhData, type BvhGpuBuffers } from '../../src/core/bvh/layout.ts';
 import { bruteAny, bruteClosest, bvhTrace64, intersectTri64 } from '../../src/core/bvh/cpu-trace.ts';
 import { icosphere, loadGltfMesh, meshBounds, proceduralScene, randomDir, rng, type Mesh } from '../../tests/bvh/fixtures.ts';
+import { computeRenderOrigin } from '../../src/core/render/frame-uniforms.ts';
+import { recentrePositions } from '../../src/core/render/scene-gpu.ts';
+import { findSeams, latticeMesh, loadPackage, loadSponzaQuantized } from './quant-fixtures.ts';
 
 const N_RAYS = 1_000_000;
 const W1080 = 1920, H1080 = 1080;
@@ -421,6 +427,9 @@ describe(`T12 BVH traversal (${lane()})`, () => {
   const scenes: { name: string; mesh: () => Promise<Mesh | undefined> }[] = [
     { name: 'procedural', mesh: async () => proceduralScene(7) },
     { name: 'sponza', mesh: () => loadGltfMesh() },
+    // data-formats.md P1: the same brute-force check on the global power-of-two lattice (P21)
+    { name: 'procedural-lattice', mesh: async () => latticeMesh(proceduralScene(7)) },
+    { name: 'sponza-lattice', mesh: async () => { const m = await loadGltfMesh(); return m ? latticeMesh(m) : undefined; } },
   ];
 
   for (const sc of scenes) {
@@ -653,10 +662,140 @@ describe(`T12 BVH traversal (${lane()})`, () => {
     }
   }, 600_000);
 
-  it('throughput at 1080p-equivalent ray counts (Mrays/s)', async () => {
+  // (6) T12-Q (data-formats.md P1): watertightness ACROSS mesh seams on the quantized geometry. Rays are aimed exactly
+  // at shared edges / shared vertices (identical position bits). A ray is a must-hit when the seam is not a silhouette
+  // as seen along it (edges: the two triangles' third vertices project to opposite sides of the edge line; vertices:
+  // the projected fan covers the full circle) and the surface on both sides is unoccluded (f64 BVH reference, rays to
+  // points just inside every adjacent triangle hit at the expected t). A crack = a must-hit ray whose closest hit is a
+  // miss or lies beyond the seam point. Woop must have 0; Möller–Trumbore is reported (negative control).
+  for (const which of ['xi_contact', 'sponza'] as const) {
+    it(`(6) T12-Q ${which}: rays aimed at shared edges / vertices never leak through the seams (Woop: 0 cracks)`, async () => {
+      const scene = which === 'xi_contact' ? await loadPackage('xi_contact_512') : await loadSponzaQuantized();
+      if (!scene) { console.warn(`${which} not present; skipping`); report[`seams.${which}.skipped`] = true; return; }
+      const ctx = await getTestGpu();
+      const O = computeRenderOrigin(scene.bounds, scene.quant);
+      const m: Mesh = { positions: recentrePositions(scene.geometry.positions, O), indices: scene.geometry.indices };
+      const bvh = buildBvh(m.positions, m.indices);
+      const seams = findSeams(m.positions, m.indices, scene.geometry.triMaterial, which === 'sponza');
+      expect(seams.edges.length + seams.verts.length).toBeGreaterThan(0);
+      const P = (v: number) => [m.positions[3 * v], m.positions[3 * v + 1], m.positions[3 * v + 2]];
+      const triV = (t: number) => [0, 1, 2].map((c) => P(m.indices[3 * t + c]));
+      const sub = (a: number[], b: number[]) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+      const crs = (a: number[], b: number[]) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+      const dot3 = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+      const nrm = (a: number[]) => { const l = Math.hypot(a[0], a[1], a[2]); return [a[0] / l, a[1] / l, a[2] / l]; };
+      const faceN = (t: number) => { const V = triV(t); return nrm(crs(sub(V[1], V[0]), sub(V[2], V[0]))); };
+      const b = meshBounds(m);
+      const diag = Math.hypot(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]);
+      // unoccluded: the ray o → q (q on triangle t) first hits at |q − o| (t itself or a coplanar tie)
+      const clear = (o: number[], q: number[]) => {
+        const dd = sub(q, o), L = Math.hypot(dd[0], dd[1], dd[2]);
+        const h = bvhTrace64(bvh, m.positions, m.indices, o, dd.map((x) => x / L));
+        return h.primId !== BVH_MISS && h.t >= L * (1 - 1e-7);
+      };
+      const inside = (T: number[], t: number) => { const V = triV(t), c = [0, 1, 2].map((k) => (V[0][k] + V[1][k] + V[2][k]) / 3); return T.map((x, k) => x + 1e-3 * (c[k] - x)); };
+      const r = rng(which === 'sponza' ? 606 : 505);
+      const N = N_RAYS;
+      const rays = new Float32Array(N * 8);
+      const target = new Float64Array(N);
+      let n = 0, tried = 0, edgeRays = 0, vertRays = 0;
+      while (n < N && tried < 40 * N) {
+        tried++;
+        const useVert = seams.verts.length > 0 && (seams.edges.length === 0 || r() < 0.3);
+        let T: number[], tris: number[], EA: number[] = [], EB: number[] = [];
+        if (useVert) { const s = seams.verts[Math.floor(r() * seams.verts.length)]; T = P(s.v); tris = s.tris; }
+        else { const s = seams.edges[Math.floor(r() * seams.edges.length)]; EA = P(s.a); EB = P(s.b); const u = 0.05 + 0.9 * r(); T = EA.map((x, k) => x + u * (EB[k] - x)); tris = s.tris; }
+        // origin on the front side of the seam's mean normal (two-sided: pick the side at random)
+        const nm = tris.reduce((acc, t) => { const f = faceN(t); return [acc[0] + f[0], acc[1] + f[1], acc[2] + f[2]]; }, [0, 0, 0]);
+        const nl = Math.hypot(nm[0], nm[1], nm[2]);
+        const side = r() < 0.5 ? 1 : -1;
+        let dir = randomDir(r);
+        if (nl > 1e-6 && dot3(dir, nm) * side < 0) dir = dir.map((x) => -x) as typeof dir;
+        const o = T.map((x, k) => x + dir[k] * diag * (0.01 + 0.3 * r()));
+        const o32 = o.map(Math.fround);
+        const dv = sub(T, o32), L = Math.hypot(dv[0], dv[1], dv[2]);
+        const d32 = dv.map((x) => Math.fround(x / L));
+        // silhouette test in the plane ⟂ d
+        const d = d32;
+        if (useVert) {
+          const e1 = nrm(Math.abs(d[0]) < 0.9 ? crs(d, [1, 0, 0]) : crs(d, [0, 1, 0])), e2 = crs(d, e1);
+          const arcs: [number, number][] = [];
+          let bad = false;
+          for (const t of tris) {
+            const V = triV(t);
+            const others = V.filter((p) => !(p[0] === T[0] && p[1] === T[1] && p[2] === T[2]));
+            if (others.length !== 2) { bad = true; break; }
+            const ang = others.map((p) => { const q = sub(p, T); return Math.atan2(dot3(q, e2), dot3(q, e1)); });
+            let [a0, a1] = ang;
+            let w = a1 - a0;
+            while (w <= -Math.PI) w += 2 * Math.PI;
+            while (w > Math.PI) w -= 2 * Math.PI;
+            if (Math.abs(w) < 1e-9 || Math.abs(Math.abs(w) - Math.PI) < 1e-9) { bad = true; break; } // edge-on triangle
+            if (w < 0) { [a0, a1] = [a1, a0]; w = -w; }
+            arcs.push([a0, a0 + w]);
+          }
+          if (bad) continue;
+          // full coverage of the circle: sweep from the first arc's start
+          const norm2pi = (x: number) => { let y = x % (2 * Math.PI); if (y < 0) y += 2 * Math.PI; return y; };
+          const start = arcs[0][0];
+          const iv = arcs.map(([a, c]) => { const s0 = norm2pi(a - start); return [s0, s0 + (c - a)] as [number, number]; }).sort((x, y) => x[0] - y[0]);
+          let reach = 0, covered = true;
+          for (const [a, c] of iv) { if (a > reach + 1e-9) { covered = false; break; } reach = Math.max(reach, c); }
+          if (!covered || reach < 2 * Math.PI - 1e-9) continue;
+        } else {
+          // edge (A, B) through T: each triangle's apex vs the edge line, projected along d
+          let pos = 0, neg = 0;
+          for (const t of tris) {
+            const V = triV(t);
+            // the edge vertices of t are the two whose positions are collinear with T along the seam; the third is the apex
+            // apex = the vertex of t that is not an endpoint of the seam edge (identical position bits)
+            const isEnd = (p: number[]) => (p[0] === EA[0] && p[1] === EA[1] && p[2] === EA[2]) || (p[0] === EB[0] && p[1] === EB[1] && p[2] === EB[2]);
+            const rest = V.filter((p) => !isEnd(p));
+            if (rest.length !== 1) continue;
+            const apex = rest[0];
+            // side of the apex relative to the CANONICAL edge direction EA → EB, projected along d
+            const side3 = dot3(crs(sub(EB, EA), sub(apex, EA)), d);
+            const scale = Math.hypot(...sub(EB, EA)) * Math.hypot(...sub(apex, EA));
+            if (side3 > 1e-6 * scale) pos++; else if (side3 < -1e-6 * scale) neg++;
+          }
+          if (!(pos > 0 && neg > 0)) continue;
+        }
+        if (!tris.every((t) => clear(o32, inside(T, t)))) continue;
+        rays.set([o32[0], o32[1], o32[2], 1e30, d32[0], d32[1], d32[2], 0], n * 8);
+        target[n] = L;
+        if (useVert) vertRays++; else edgeRays++;
+        n++;
+      }
+      expect(n).toBeGreaterThan(Math.min(N, 10_000));
+      for (const v of VARIANTS) {
+        const bufs = uploadBvh(ctx.device, bvh, { watertight: v.watertight });
+        const res = await run(ctx, v, 'closest_any', bufs, rays, n);
+        const tf = new Float32Array(res.out.buffer, res.out.byteOffset, res.out.length);
+        let cracks = 0;
+        const ex: string[] = [];
+        for (let i = 0; i < n; i++) {
+          const prim = res.out[4 * i + 1], t = tf[4 * i];
+          const oMax = Math.max(Math.abs(rays[8 * i]), Math.abs(rays[8 * i + 1]), Math.abs(rays[8 * i + 2]));
+          if (prim === BVH_MISS || t > target[i] * (1 + 1e-5) + 64 * 2 ** -23 * (oMax + target[i])) {
+            cracks++;
+            if (ex.length < 5) ex.push(`ray ${i}: prim ${prim} t ${t} seam at ${target[i]}`);
+          }
+        }
+        const key = `seams.${which}.${vname(v)}`;
+        report[key] = { seamEdges: seams.edges.length, seamVerts: seams.verts.length, mustHitRays: n, edgeRays, vertRays, tried, cracks, flags: res.ctr[3], examples: ex };
+        console.log('T12-Q', lane(), key, JSON.stringify(report[key]));
+        expect(res.ctr[3]).toBe(0);
+        if (v.watertight) expect(cracks, ex.join('\n')).toBe(0);
+        bufs.nodes.destroy(); bufs.tris.destroy();
+      }
+    }, 900_000);
+  }
+
+  for (const lattice of [false, true]) it(`throughput at 1080p-equivalent ray counts (Mrays/s)${lattice ? ', lattice positions' : ''}`, async () => {
     const ctx = await getTestGpu();
-    const m = (await loadGltfMesh()) ?? proceduralScene(7);
-    const name = m.indices.length > 100_000 ? 'sponza' : 'procedural';
+    const m0 = (await loadGltfMesh()) ?? proceduralScene(7);
+    const m = lattice ? latticeMesh(m0) : m0;
+    const name = `${m.indices.length > 100_000 ? 'sponza' : 'procedural'}${lattice ? '-lattice' : ''}`;
     const bvh = buildBvh(m.positions, m.indices);
     const b = meshBounds(m);
     const c = [0, 1, 2].map((k) => 0.5 * (b.min[k] + b.max[k]));

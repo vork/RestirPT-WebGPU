@@ -1,4 +1,4 @@
-// Scene package v1 (docs/decisions/scene-bridge.md): export ↔ read round trip on the Cornell GLB plus synthetic
+// Scene package v2 (docs/decisions/scene-bridge.md, data-formats.md §B0): export ↔ read round trip on the Cornell GLB plus synthetic
 // lights / textures / env, env pixel hash (ENV-U9 definition), contract checks (hard errors).
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -38,7 +38,9 @@ describe('scene package', () => {
     const pkg = await exportScenePackage(scene, { camera: cam, render, lightMode: 'A' });
     expect([...pkg.files.keys()].sort()).toEqual(['env.exr', 'geometry.bin', 'scene.json']);
     const json = JSON.parse(new TextDecoder().decode(pkg.files.get('scene.json'))) as SceneJson;
-    expect(json).toMatchObject({ format: 'restir-scene-package', version: 1, lightMode: 'A', flatShaded: true, render });
+    expect(json).toMatchObject({ format: 'restir-scene-package', version: 2, lightMode: 'A', flatShaded: true, render });
+    expect(json.quant).toMatchObject({ mode: 'quantized', posLog2: scene.quant!.posLog2, normal: 'oct16' });
+    expect(json.quant!.uv).toHaveLength(scene.materials.length);
     expect(json.materials[0]).toMatchObject({ model: 'v1', v1: { diffuse: [0.725, 0.71, 0.68], mix: 0 }, emissionSampling: 'FRONT_BACK' });
     expect(json.lights[0]).toMatchObject({ id: 7, type: 'rect', spread: Math.PI, visibleToCamera: false });
     expect(json.env).toMatchObject({ file: 'env.exr', strength: 1.7, rotationZ: 0.52, sampling: 'AUTOMATIC', width: 16, height: 8 });

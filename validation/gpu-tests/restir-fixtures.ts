@@ -102,7 +102,7 @@ export interface GpuScene { device: GPUDevice; features: Set<string>; wgslLangua
 
 export async function gpuScene(scene: SceneData): Promise<GpuScene> {
   const { device, features, wgslLanguageFeatures } = await getTestGpu();
-  const origin = computeRenderOrigin(scene.bounds);
+  const origin = computeRenderOrigin(scene.bounds, scene.quant);
   const gpu = await SceneGpu.create(device, scene, origin, {
     textureMode: 'validation', watertight: true, buildBvh: async (p, i) => buildBvh(p, i, { mt: true, woop: true }), features, wgslLanguageFeatures,
   });

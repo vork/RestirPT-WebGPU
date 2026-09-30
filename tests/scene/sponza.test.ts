@@ -2,6 +2,8 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { loadGltf } from '../../src/core/scene/gltf-loader.ts';
 import { TRI_ALPHA_MASK } from '../../src/core/scene/types.ts';
+import { computeRenderOrigin } from '../../src/core/render/frame-uniforms.ts';
+import { recentrePositions } from '../../src/core/render/scene-gpu.ts';
 
 // Khronos Sponza (gitignored; re-fetch with validation/blender/fetch_sponza.py). Geometry only in Node.
 const dir = new URL('../../validation/assets/downloaded/sponza/', import.meta.url);
@@ -16,6 +18,8 @@ describe.skipIf(!have)('glTF loader: Sponza (Node, geometry only)', () => {
     const { scene: s, stats } = await loadGltf({ kind: 'gltf', json, resources, name: 'Sponza.gltf' });
     const ms = performance.now() - t0;
     console.log('SPONZA_LOAD', JSON.stringify({ ms: Math.round(ms), ...stats.ms, flatten: stats.flatten, textures: s.textures.length, warnings: s.warnings }));
+    const { uv, ...q } = stats.quantize;
+    console.log('SPONZA_QUANT', JSON.stringify(q), JSON.stringify(uv.map((u) => [u.material, u.ku, u.kv, u.wide, +u.worstTexel.toFixed(4)])));
     const g = s.geometry;
     const nt = g.indices.length / 3;
     expect(nt + stats.flatten.droppedDegenerate + stats.flatten.droppedNonFinite).toBe(262267);
@@ -50,5 +54,23 @@ describe.skipIf(!have)('glTF loader: Sponza (Node, geometry only)', () => {
     const ext = s.bounds.max.map((x, k) => x - s.bounds.min[k]);
     expect(Math.max(...ext)).toBeGreaterThan(20); // ~30 m long atrium
     expect(ms).toBeLessThan(30_000);
+    // data-formats.md §B1/§B3/§B5 on Sponza: k = −16 (15.3 µm), worst 13.2 µm, oct errors, wide materials 5/6/7,
+    // the re-weld (786,783 → ≈ 198k), and U-Q2: recentred coordinates and MT edges exact in f32 (872,829 → 0).
+    expect(stats.quantize.posLog2).toBe(-16);
+    expect(stats.quantize.maxPosErr).toBeLessThanOrEqual(13.3e-6);
+    expect(stats.quantize.maxNormalErrDeg).toBeLessThanOrEqual(0.0025);
+    expect(stats.quantize.maxTangentErrDeg).toBeLessThanOrEqual(0.005);
+    expect(stats.quantize.wideMaterials).toEqual([5, 6, 7]);
+    expect(stats.quantize.droppedDegenerate).toBe(0);
+    expect(nv).toBeLessThan(200_000);
+    const O = computeRenderOrigin(s.bounds, s.quant);
+    const r = recentrePositions(g.positions, O);
+    let inexact = 0;
+    for (let i = 0; i < r.length; i++) if (r[i] !== g.positions[i] - O[i % 3]) inexact++;
+    for (let t = 0; t < g.indices.length; t += 3) for (const c of [1, 2]) for (let k = 0; k < 3; k++) {
+      const d = r[3 * g.indices[t + c] + k] - r[3 * g.indices[t] + k];
+      if (Math.fround(d) !== d) inexact++;
+    }
+    expect(inexact).toBe(0);
   }, 60_000);
 });
