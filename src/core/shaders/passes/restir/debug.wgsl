@@ -8,12 +8,20 @@
 //                   inspector overlay (tag 67, path 16+s: the partner's primary hit y₁ of p→partner; path 24+s: the
 //                   probe's y₁, the partner's rc vertex x_k and surface endpoint of partner→p; the rest of each path
 //                   is the base path's own vertices, joined in TS, render/restir/debug.ts shiftedPolylines).
-// G2: 0 resSrc ro (the reservoir buffer the last round read) · 1 shiftArena ro · 2 rsVbuf · 3 rsGeo · 4 pairTex.
-// G1 scene (positions of the anchor vertices). G3 debug. Storage buffers: records + scene 5 + 2 + debug = 9.
+// M5 (T-D; restir-temporal-api.md §2.11, Changelog D-1): view 497 `s.boost` (accepted boost slots of the last round,
+// bit s − firstBoost) and, at the probe pixel, the temporal anchor ids (tag 79, recorded by rsdbg_temporal in T3, which
+// has no scene group) turned into vertices (tag 67): path 23 = the forward shift T(X_p) into this pixel (y₁ of this
+// pixel, X_p's x_k and surface endpoint), path 31 = the inverse shift into q′ at t−1 (b = 0: the previous camera, y₁′ of
+// q′ from the previous V-buffer, then the source's x_k and surface endpoint). The temporal views 480–496 themselves
+// come from the hooks (debug/restir-views.wgsl); rs_debug_fill starts the temporal code views as NONE (480: 0 = bg).
+// G2: 0 resSrc ro (the reservoir buffer the last round read) · 1 shiftArena ro · 2 rsVbuf · 3 rsGeo · 4 pairTex ·
+// 5 rsVbufPrev (M5; = rsVbuf without temporal). G1 scene (positions of the anchor vertices). G3 debug.
+// Storage buffers: records + scene 5 + 2 + debug = 9.
 #include "restir/frame.wgsl"
 #include "restir/reservoir.wgsl"
 #include "restir/queue.wgsl"
 #include "restir/pairing.wgsl"
+#include "restir/tframe.wgsl"
 #include "scene/scene-data.wgsl"
 #include "debug/restir-views.wgsl"
 
@@ -46,13 +54,46 @@ fn rsdbg_partner_ai(p: RsPix, t: u32, round: u32, s: u32) -> u32 {
 
 fn rsdbg_is_code_view(mode: u32) -> bool {
   return (mode >= 404u && mode <= 409u) || (mode >= RSV_SHIFT_CODE && mode < RSV_SHIFT_LOGJ)
-    || (mode >= RSV_SHIFT_TERM && mode <= RSV_ACCEPT_MASK) || mode == RSV_MIS_K || mode == RSV_MIS_SEL;
+    || (mode >= RSV_SHIFT_TERM && mode <= RSV_ACCEPT_MASK) || mode == RSV_MIS_K || mode == RSV_MIS_SEL
+    || mode == RSV_T_QVALID || (mode >= RSV_T_RF_FWD && mode <= RSV_T_INVCODE) || mode == RSV_T_SEL || mode == RSV_T_LCHG
+    || mode == RSV_S_BOOST;
 }
 
 @compute @workgroup_size(8, 8, 1)
 fn rs_debug_fill(@builtin(global_invocation_id) gid: vec3u) {
   if (any(gid.xy >= dbg.size) || !rsdbg_is_code_view(dbg.mode)) { return; }
-  dbgBuf.aov[gid.y * dbg.size.x + gid.x] = vec4f(rsdbg_bits(DBG_CODE_NONE), 0.0, 0.0, 0.0);
+  // View 480: background pixels (never written by T3) show code 0 = bg while the temporal stage runs.
+  let bgCode = select(DBG_CODE_NONE, 0u, dbg.mode == RSV_T_QVALID && (rsParams.flags & RSF_TEMPORAL) != 0u);
+  dbgBuf.aov[gid.y * dbg.size.x + gid.x] = vec4f(rsdbg_bits(bgCode), 0.0, 0.0, 0.0);
+}
+
+/// Probe pixel: turn the temporal anchor ids of this frame (tag 79, rsdbg_temporal) into tag-67 vertices of paths 23
+/// (forward T(X_p) into this pixel) and 31 (inverse into q′ at t−1); y₁ / y₁′ and the previous camera from the
+/// G-buffers and the frame uniforms.
+fn rsdbg_temporal_anchors(p: RsPix) {
+  let n = min(atomicLoad(&dbgBuf.counters[DBGC_PROBE_COUNT]), PROBE_CAPACITY);
+  var header = false;
+  var tflags = 0u;
+  var qP = 0xFFFFFFFFu;
+  for (var i = 0u; i < n; i++) {
+    let r = dbgBuf.probe[i];
+    if (any(r.pixel != p.px)) { continue; }
+    if (r.tag == RSP_T_HEADER) { header = true; qP = bitcast<u32>(r.value.y); tflags = bitcast<u32>(r.value.w); }
+    if (r.tag != RSP_T_ANCHOR) { continue; }
+    let w = bitcast<vec4u>(r.value);
+    let role = w.x & 0xFFu;
+    rsdbg_anchor(p.px, select(31u, 23u, role < 2u), w.x >> 8u, w.yzw);
+  }
+  if (!header) { return; }
+  let vp = rs_vbuf(p.px);
+  if ((tflags & TS_QVALID) != 0u && vp.x != 0xFFFFFFFFu) { rsdbg_anchor(p.px, 23u, 1u, vp.xyz); }
+  if ((tflags & TS_INV_QUEUED) != 0u && qP < rs_atlas_pixels()) {
+    rsdbg_vertex(p.px, 31u, 0u, frame.prevCam.camToWorld[3].xyz, 0xFu);
+#if RS_VBUF_PREV_BINDING
+    let vq = rs_vbuf_prev(vec2u(qP % rsParams.atlasSize.x, qP / rsParams.atlasSize.x));
+    if (vq.x != 0xFFFFFFFFu) { rsdbg_anchor(p.px, 31u, 1u, vq.xyz); }
+#endif
+  }
 }
 
 @compute @workgroup_size(8, 8, 1)
@@ -60,9 +101,11 @@ fn rs_debug_views(@builtin(global_invocation_id) gid: vec3u) {
   let p = rs_pix(vec2u(gid.x, gid.y + rsDispatch.rowBase));
   if (!p.valid) { return; }
   let probe = debug_is_probe(p.px);
+  let boostView = dbg.mode == RSV_S_BOOST;
   let view = dbg.mode >= RSV_SHIFT_CODE && dbg.mode <= RSV_THR;
-  if (!view && !probe) { return; }
+  if (!view && !probe && !boostView) { return; }
   if (dbg.mode == RSV_THR) { debug_write1(p.px, RSV_THR, rs_geo(p.px).w); }
+  if (probe) { rsdbg_temporal_anchors(p); }
   let rounds = rsDispatch.round;
   if (rounds == 0u) { return; }             // no spatial stage ran this frame: the arena is stale (fill keeps NONE)
   let NS = min(rsParams.numSlots, RS_MAX_SLOTS);
@@ -106,6 +149,10 @@ fn rs_debug_views(@builtin(global_invocation_id) gid: vec3u) {
         probe_record(p.px, RSP_SLOT_IN, vec4f(rsdbg_bits(arena_word(arena_code_word(q, s))), rsdbg_bits(arena_word(qw + 3u)), rsdbg_bits(s), rsdbg_lum(FJ)));
       }
     }
+  }
+  if (boostView) {
+    let fb = min(pair_first_boost_slot(), NS);
+    debug_write_code(p.px, RSV_S_BOOST, (acceptMask >> fb) & ((1u << (NS - fb)) - 1u));
   }
   if (view) {
     for (var s = NS; s < RS_MAX_SLOTS; s++) {

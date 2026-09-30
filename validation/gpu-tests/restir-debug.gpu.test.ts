@@ -9,20 +9,30 @@
 //   Debug off: validation pipelines (no debug group) compile every hook to an empty body; with debug resources the
 //   finalize output is bitwise identical with views / probe on and off (the debug-enabled pipelines may differ from
 //   the validation pipelines by f32 contraction only, ≤ 1e-5 rel).
+// M5 (T-D; restir-temporal-api.md §2.11, §6.1, Changelog D-1):
+//   U-TD-1   views 480–497 write the expected codes / values at known pixels: (a) a synthetic T1/T3 hook caller over
+//            synthetic tState / sfxOut / res[h] / res[w] records and RsTemporal flags (known answer, the M5 canary), incl.
+//            the tap "after temporal" of the reservoir views and phase A skipping the Q_i pixels; (b) view 497 (boost
+//            mask) from a synthetic arena; (c) real temporal frames: views ≡ tState / sfxOut / res read back.
+//   U-TD-2   view 493 (forward vs stored p̂) = 0 on static identity frames (jitter off, static camera and lights).
+//   U-TD-3   probe tags 73–78 decode to the tState / sfxOut words read back (synthetic and real).
 // Chrome lane authoritative; dawn.node is a pre-check.
 import { afterAll, describe, expect, it } from 'vitest';
 import { readBuffer } from '../../src/core/gpu/readback.ts';
 import {
   BUILTIN_VIEWS, DEBUG_BUFFER_LAYOUT, DebugResources, DebugViewRegistry, defaultDebugSettings, type DebugSettings,
 } from '../../src/core/render/debug-views.ts';
-import { JITTER_IID } from '../../src/core/render/frame-uniforms.ts';
+import { JITTER_IID, JITTER_NONE } from '../../src/core/render/frame-uniforms.ts';
 import { parseDebugHeader, type ProbeFrame } from '../../src/core/render/probe.ts';
-import { RESTIR_VIEWS, RS_VIEW_THR, RestirDebugPass, decodeJWord, decodeRestirProbe, f16ToF32, shiftedPolylines } from '../../src/core/render/restir/debug.ts';
+import {
+  RESTIR_VIEWS, RS_VIEW_T, RS_VIEW_THR, RestirDebugPass, decodeJWord, decodeRestirProbe, f16ToF32, shiftedPolylines,
+} from '../../src/core/render/restir/debug.ts';
 import { RestirKernel } from '../../src/core/render/restir/kernel.ts';
 import {
-  RES_WORDS, RS_VIEW, RS_WGSL_CONSTS as K, RW, arenaWords, decodeReservoir, pathClass, rfPack, rfUnpack,
+  RES_WORDS, RS_VIEW, RS_WGSL_CONSTS as K, RW, TS_CONSTS as TS, TSW, arenaWords, decodeReservoir, decodeSfxLocal, decodeTStateLocal,
+  packRsTemporal, pathClass, rfPack, rfUnpack, sfxWord, tsWord,
 } from '../../src/core/render/restir/layout.ts';
-import { restirSettings, type RestirPresetName, type RestirSettings } from '../../src/core/render/restir/presets.ts';
+import { numSlotsOf, restirSettings, type RestirPresetName, type RestirSettings } from '../../src/core/render/restir/presets.ts';
 import { RS_PASSES, restirCommonDefines } from '../../src/core/render/restir/resources.ts';
 import { composeWgsl } from '../../src/core/gpu/wgsl-composer.ts';
 import { shaderSources } from '../../src/core/shaders/index.ts';
@@ -343,7 +353,7 @@ describe('U-DBG-1 (c) / U-DBG-3: real frames', () => {
     expect(all.filter((ai) => thr.aovF[4 * ai] !== geo[4 * ai + 3]).length, 'thr view').toBe(0);
     let accepted = 0;
     if (rounds > 0) {
-      const NS = rig.kernel.settings.slots;
+      const NS = numSlotsOf(rig.kernel.settings);            // M5: + boost slots (interactive preset)
       const arena = new Uint32Array(await readBuffer(rig.g.device, rig.kernel.resources.arena, 256 + 24 * P * NS));
       const aw = arenaWords(P, NS);
       for (let s = 0; s < NS; s++) {
@@ -362,7 +372,7 @@ describe('U-DBG-1 (c) / U-DBG-3: real frames', () => {
     expect(Array.from(init!.words)).toEqual(Array.from(res0.subarray(ai * RES_WORDS, (ai + 1) * RES_WORDS)));
     if (d.candidates.length && init!.rec.d > 0) expect(d.candidates.some((c) => c.selected && c.counter === init!.rec.selId), 'selected candidate recorded').toBe(true);
     if (rounds > 0) {
-      expect(d.slots.length, 'slot records of the probe pixel').toBe(rig.kernel.settings.slots);
+      expect(d.slots.length, 'slot records of the probe pixel').toBe(numSlotsOf(rig.kernel.settings));
       // every slot with a partner has its incoming record; accepted slots (both pixels hit, A0) have the shifted-path
       // anchors (the partner's / own primary hit)
       for (const s of d.slots.filter((x) => x.partnerAi !== undefined)) expect(s.incoming, `slot ${s.s} incoming`).toBeDefined();
@@ -476,6 +486,362 @@ describe('debug off: validation unaffected', () => {
     for (let i = 0; i < m.length; i++) if (bits(m[i]) !== bits(a.mean[i])) { words++; mx = Math.max(mx, relErr(m[i], a.mean[i])); }
     console.log(`[debug-off] debug-kernel vs validation kernel: ${words}/${m.length} words differ, max rel ${mx}`);
     expect(mx, 'debug pipelines vs validation pipelines').toBeLessThanOrEqual(1e-5);
+    rig.destroy();
+  });
+});
+
+// ================================================================================================ M5 (T-D)
+
+const SCS = [K.SC_OK, K.SC_EMPTY_SRC, K.SC_O0_MISS, K.SC_O0_LIGHT, K.SC_O1, K.SC_O2, K.SC_OCCLUDED, K.SC_ZERO, K.SC_PENDING];
+const TF_SYNTH = K.TF_HIST_VALID | K.TF_REFRESH | K.TF_LIGHTS_SAME | K.TF_ENV_MOVED;
+const GEN = 5;
+const jwValid = (w: number) => w >>> 0 !== K.JW_FAILED && w >>> 0 < 0x7f800000;
+const rel = (a: number, b: number) => { const m = Math.max(Math.abs(a), Math.abs(b)); return m > 0 ? (a - b) / m : 0; };
+const log2pos = (x: number) => (x > 0 && x < 3e38 ? Math.log2(x) : 0);
+
+/** Mirrors of restir-views.wgsl (view codes of §2.11). */
+function qvalidCode(f: number): number {
+  if (f & TS.TS_BG) return 0;
+  if (f & TS.TS_QVALID) return f & TS.TS_PICK_RING ? 2 : 1;
+  return f & TS.TS_NO_HIST ? 4 : 3;
+}
+function refreshClass(tf: number, st: number, gen: number): number {
+  if (!(tf & K.TF_REFRESH) || gen !== GEN || !(st & TS.SXS_DONE)) return 0;
+  if (st & TS.SXS_E2) return 4;
+  if (st & TS.SXS_UNDEF) return 3;
+  if (st & TS.SXS_ZERO) return 5;
+  return st & TS.SXS_RAY ? 2 : 1;
+}
+function selCode(f: number): number {
+  if (!(f & TS.TS_QVALID)) return 0;
+  if (f & TS.TS_EMPTY_OUT) return 3;
+  return f & TS.TS_SEL_P ? 2 : 1;
+}
+
+interface TSynth { words: Uint32Array; resIn: Uint32Array; resOut: Uint32Array; base: number }
+
+/** Synthetic tState + sfxOut (arena words[] from tState on) and history / current reservoirs for P pixels. */
+function synthTemporal(P: number, NS: number, seed: number): TSynth {
+  const r = rng(seed);
+  const aw = arenaWords(P, NS);
+  const words = new Uint32Array(aw.end - aw.tState);
+  const f = new Float32Array(words.buffer);
+  const tw = (ai: number, w: number) => tsWord(P, NS, ai, w) - aw.tState;
+  const sw = (d: number, ai: number, w: number) => sfxWord(P, NS, d, ai, w) - aw.tState;
+  const statuses = [0, TS.SXS_DONE, TS.SXS_DONE | TS.SXS_RAY | TS.SXS_DEEP, TS.SXS_DONE | TS.SXS_UNDEF, TS.SXS_DONE | TS.SXS_UNDEF | TS.SXS_E2,
+    TS.SXS_DONE | TS.SXS_ZERO | TS.SXS_DEEP, TS.SXS_DONE | TS.SXS_N1 | TS.SXS_VIS | TS.SXS_RAY, TS.SXS_DONE | TS.SXS_B1];
+  const qvalidVariants = [
+    TS.TS_SEL_P | TS.TS_FINAL, TS.TS_EMPTY_OUT | TS.TS_FINAL, TS.TS_SEL_C | TS.TS_INV_QUEUED, TS.TS_SEL_P | TS.TS_INV_QUEUED | TS.TS_ROBUST,
+    TS.TS_INV_QUEUED, TS.TS_SEL_P | TS.TS_FINAL | TS.TS_FWD_QUEUED,
+  ];
+  for (let ai = 0; ai < P; ai++) {
+    const cat = Math.floor(r() * 6);
+    let flags = 0, qP = 0xFFFFFFFF;
+    if (cat === 0) flags = TS.TS_BG;
+    else if (cat === 1) flags = TS.TS_DISOCC | TS.TS_NO_HIST;
+    else if (cat === 2) flags = TS.TS_DISOCC;
+    else {
+      flags = TS.TS_QVALID | (r() < 0.3 ? TS.TS_PICK_RING : 0) | qvalidVariants[Math.floor(r() * qvalidVariants.length)];
+      qP = Math.floor(r() * P);
+    }
+    words[tw(ai, TSW.flags)] = flags;
+    words[tw(ai, TSW.qPrime)] = qP;
+    for (let c = 0; c < 3; c++) { f[tw(ai, TSW.fwdF + c)] = r() * 2; f[tw(ai, TSW.invF + c)] = r() * 2; }
+    const jc = r();
+    words[tw(ai, TSW.fwdJ)] = jc < 0.6 ? bits(2 ** (6 * r() - 3)) : jc < 0.8 ? K.JW_FAILED : K.JW_PENDING;
+    words[tw(ai, TSW.invJ)] = r() < 0.7 ? bits(2 ** (6 * r() - 3)) : K.JW_FAILED;
+    const cPrev = 1 + Math.floor(r() * 60);
+    f[tw(ai, TSW.cPrev)] = cPrev; f[tw(ai, TSW.cP)] = Math.min(20, cPrev);
+    words[tw(ai, TSW.fwdCode)] = (SCS[Math.floor(r() * SCS.length)] | (Math.floor(r() * 5) << 8)) >>> 0;
+    words[tw(ai, TSW.invCode)] = (SCS[Math.floor(r() * SCS.length)] | (Math.floor(r() * 5) << 12)) >>> 0;
+    f[tw(ai, TSW.jP)] = r() < 0.1 ? 0 : 2 ** (2 * r() - 1);
+    const zeroW = r() < 0.1;
+    f[tw(ai, TSW.wc)] = zeroW ? 0 : r() * 3; f[tw(ai, TSW.wp)] = zeroW ? 0 : r() * 3;
+    f[tw(ai, TSW.piStored)] = r() * 4; f[tw(ai, TSW.piRecomp)] = r() < 0.3 ? f[tw(ai, TSW.piStored)] * (1 + 1e-4 * (r() - 0.5)) : r() * 4;
+    words[tw(ai, TSW.xpEntry)] = Math.floor(r() * 4);
+    for (const d of [0, 1]) {
+      for (let c = 0; c < 3; c++) f[sw(d, ai, c)] = r();
+      f[sw(d, ai, 3)] = r();
+      words[sw(d, ai, 4)] = statuses[Math.floor(r() * statuses.length)];
+      const e = r();
+      words[sw(d, ai, 5)] = e < 0.3 ? 0xFFFFFFFF : e < 0.6 ? K.RC_NONE : 0;
+      f[sw(d, ai, 6)] = 2 ** (r() - 0.5);
+      words[sw(d, ai, 7)] = r() < 0.8 ? GEN : GEN - 1;
+    }
+  }
+  return { words, resIn: synthReservoirs(P, seed + 1), resOut: synthReservoirs(P, seed + 2), base: aw.tState };
+}
+
+/** Expected value of temporal view `id` at pixel ai (mirror of rsdbg_temporal / rsdbg_tpick). */
+function expectedTemporalView(id: number, x: TSynth, P: number, NS: number, ai: number, tf: number): { code?: number; v?: number[] } {
+  const t = decodeTStateLocal(x.words, P, NS, ai);
+  const qvalid = (t.flags & TS.TS_QVALID) !== 0, invq = (t.flags & TS.TS_INV_QUEUED) !== 0;
+  const fwdOk = qvalid && jwValid(t.fwdJ);
+  const out = decodeReservoir(x.resOut, ai);
+  const qp = Math.min(t.qPrime, P - 1);
+  const hist = decodeReservoir(x.resIn, qp);
+  switch (id) {
+    case RS_VIEW_T.qvalid: return { code: qvalidCode(t.flags) };
+    case RS_VIEW_T.refreshFwd: { const s = decodeSfxLocal(x.words, P, NS, 0, qp); return { code: qvalid ? refreshClass(tf, s.status, s.gen) : 0 }; }
+    case RS_VIEW_T.refreshInv: { const s = decodeSfxLocal(x.words, P, NS, 1, ai); return { code: invq ? refreshClass(tf, s.status, s.gen) : 0 }; }
+    case RS_VIEW_T.fwdCode: return { code: qvalid ? t.fwdCode & 0xFF : NONE };
+    case RS_VIEW_T.invCode: return { code: invq ? t.invCode & 0xFF : NONE };
+    case RS_VIEW_T.logJ: return { v: [fwdOk ? log2pos(f32(t.fwdJ)) : 0] };
+    case RS_VIEW_T.logJP: return { v: [fwdOk ? log2pos(t.jP) : 0] };
+    case RS_VIEW_T.pic: return { v: [lum(out.F)] };
+    case RS_VIEW_T.pip: return { v: [t.flags & TS.TS_SEL_P ? t.piStored : invq ? t.piRecomp : 0] };
+    case RS_VIEW_T.cprev: return { v: [qvalid ? t.cPrev : 0] };
+    case RS_VIEW_T.cout: return { v: [out.c] };
+    case RS_VIEW_T.sel: return { code: selCode(t.flags) };
+    case RS_VIEW_T.phatRel: return { v: [fwdOk ? rel(lum(t.fwdF), lum(hist.F)) : 0] };
+    case RS_VIEW_T.robust: return { v: [t.flags & TS.TS_ROBUST ? rel(t.piRecomp, t.piStored) : 0] };
+    case RS_VIEW_T.wp: return { v: [t.wc + t.wp > 0 ? t.wp / (t.wc + t.wp) : 0] };
+    case RS_VIEW_T.lightsChanged: {
+      if (!qvalid || !(tf & K.TF_REFRESH) || hist.d === 0) return { code: 0 };
+      if (hist.tech === K.RS_TECH_BSDF_ENV) return { code: (tf & K.TF_ENV_MOVED ? 1 : 0) | (tf & K.TF_ENV_RADIO ? 2 : 0) };
+      if (hist.tech !== K.RS_TECH_NEE) return { code: 0 };
+      const s = decodeSfxLocal(x.words, P, NS, 0, qp);
+      if (s.gen !== GEN || s.status & TS.SXS_UNDEF || s.entryTo === 0xFFFFFFFF) return { code: 4 };
+      return { code: 0 };     // TF_LIGHTS_SAME: analytic change bits 0
+    }
+  }
+  throw new Error(`not a temporal view ${id}`);
+}
+
+// Synthetic T1 / T3 caller: rsdbg_temporal phase A for every pixel (skips the Q_i pixels), phase B for the Q_i pixels;
+// rsdbg_tpick with s′ = local + (0.25·(ai mod 5), −0.5), no projection (−1, −1) for ai mod 7 = 0.
+const THOOK_CALLER = `
+#include "restir/frame.wgsl"
+#include "restir/reservoir.wgsl"
+#include "restir/tframe.wgsl"
+#include "debug/restir-views.wgsl"
+@compute @workgroup_size(8, 8, 1)
+fn t_thooks(@builtin(global_invocation_id) gid: vec3u) {
+  let p = rs_pix(vec2u(gid.x, gid.y + rsDispatch.rowBase));
+  if (!p.valid) { return; }
+  let sp = select(vec2f(p.local) + vec2f(0.25 * f32(p.ai % 5u), -0.5), vec2f(-1.0), p.ai % 7u == 0u);
+  rsdbg_tpick(p.px, sp, p.ai % 10u, (p.ai & 1u) == 1u);
+  rsdbg_temporal(p.px, p.ai, 0u);
+  if ((ts_load(p.ai, TSW_FLAGS) & TS_INV_QUEUED) != 0u) { rsdbg_temporal(p.px, p.ai, 1u); }
+}`;
+
+describe('U-TD-1 (a) / U-TD-3: temporal views 480–496 and probe tags 73–78 (synthetic, known answer)', () => {
+  it('every temporal view writes the expected value; tap "after temporal"; phase A skips Q_i pixels; probe decodes', async () => {
+    const W = 24, H = 16, P = W * H;
+    const rig = await debugRig(W, H, 'temporal');
+    const { device } = rig.g;
+    const NS = rig.kernel.resources.alloc.slots;
+    const x = synthTemporal(P, NS, 21);
+    device.queue.writeBuffer(rig.kernel.resources.arena, 256 + 4 * x.base, x.words);
+    device.queue.writeBuffer(rig.kernel.rsTemporal, 0, packRsTemporal({
+      flags: TF_SYNTH, histFrames: 3, frameGen: GEN, prevGen: GEN - 1, envPrev: new Uint32Array(8), gens: [1, 2, 3, 4], gensPrev: [0, 1, 2, 3], configHash: 7,
+    }));
+    const inBuf = storageBuffer(device, x.resIn, 'synth-res-h'), outBuf = storageBuffer(device, x.resOut, 'synth-res-w');
+    const c = GPUShaderStage.COMPUTE;
+    const g2l = device.createBindGroupLayout({ entries: [0, 1, 2].map((binding) => ({ binding, visibility: c, buffer: { type: binding === 0 ? 'read-only-storage' as const : 'storage' as const } })) });
+    const layout = device.createPipelineLayout({ bindGroupLayouts: [rig.kernel.layouts.g0, rig.kernel.layouts.empty, g2l, rig.kernel.layouts.g3] });
+    const pl = await rig.kernel.compile('tests/rsdbg-thooks.wgsl', 't_thooks', {
+      ...restirCommonDefines(undefined, true), RS_TEMPORAL: 1, RS_RES_IN_BINDING: '0u', RS_RES_OUT_BINDING: '1u', RS_ARENA_BINDING: '2u', RS_ARENA_RW: true,
+    }, layout, 't_thooks', { 'tests/rsdbg-thooks.wgsl': THOOK_CALLER });
+    const g2 = device.createBindGroup({ layout: g2l, entries: [{ binding: 0, resource: { buffer: inBuf } }, { binding: 1, resource: { buffer: outBuf } }, { binding: 2, resource: { buffer: rig.kernel.resources.arena } }] });
+    const run = (s: Partial<DebugSettings>) => rig.frame(0, s, {
+      custom: (enc) => rig.kernel.encodePass(enc, 'rs_args', pl, g2, { rowBase: 0, rowEnd: H }, rig.kernel.perPixelWorkgroups(0, H)),
+    });
+    const all = Array.from({ length: P }, (_, i) => i);
+    const bad: string[] = [];
+    for (let id: number = RS_VIEW_T.qvalid; id <= RS_VIEW_T.lightsChanged; id++) {
+      if (id === RS_VIEW_T.motion) continue;
+      const fr = await run({ mode: id });
+      let nb = 0;
+      for (const ai of all) {
+        const e = expectedTemporalView(id, x, P, NS, ai, TF_SYNTH);
+        if (e.code !== undefined) { if (fr.aov[4 * ai] >>> 0 !== e.code >>> 0) { nb++; if (nb < 3) bad.push(`view ${id} px ${ai}: ${fr.aov[4 * ai]} ≠ ${e.code}`); } continue; }
+        const got = fr.aovF[4 * ai], w = e.v![0];
+        const absTol = id === RS_VIEW_T.phatRel || id === RS_VIEW_T.robust ? 1e-6 : id === RS_VIEW_T.logJ || id === RS_VIEW_T.logJP ? 1e-5 : 0;
+        if (!(relErr(got, w) <= 1e-6 || Math.abs(got - w) <= Math.max(absTol, 1e-30))) { nb++; if (nb < 3) bad.push(`view ${id} px ${ai}: ${got} ≠ ${w}`); }
+      }
+    }
+    // 481 motion (s′ − q)
+    const fm = await run({ mode: RS_VIEW_T.motion });
+    for (const ai of all) {
+      const want = ai % 7 === 0 ? [0, 0, 0] : [0.25 * (ai % 5), -0.5, 0];
+      if ([0, 1, 2].some((k) => fm.aovF[4 * ai + k] !== Math.fround(want[k]))) { bad.push(`motion px ${ai}: ${Array.from(fm.aovF.subarray(4 * ai, 4 * ai + 3))} ≠ ${want}`); break; }
+    }
+    expect(bad, bad.join('\n')).toEqual([]);
+    // reservoir views at the tap "after temporal" (2) = res[w]; the initial / spatial taps stay unwritten by T3
+    for (const id of RES_IDS) checkReservoirView(id, await run({ mode: id, tap: 2 }), x.resOut, all, 'tap temporal');
+    const fi = await run({ mode: RS_VIEW.d, tap: TAP.initial });
+    expect(all.filter((i) => fi.aov[4 * i] !== 0).length, 'tap initial: T3 writes nothing').toBe(0);
+    // probe at a Q_i pixel with a q′ (every tag): one header (phase A skipped), fwd, inv, 2 refresh, select, pick
+    const probeAi = all.find((ai) => { const t = decodeTStateLocal(x.words, P, NS, ai); return (t.flags & TS.TS_INV_QUEUED) && (t.flags & TS.TS_QVALID); })!;
+    const px: [number, number] = [probeAi % W, Math.floor(probeAi / W)];
+    const fp = await run({ mode: 0, probeEnabled: true, probePixel: px });
+    const d = decodeRestirProbe(fp.probe.records);
+    const t = decodeTStateLocal(x.words, P, NS, probeAi);
+    const tp = d.temporal!;
+    expect(fp.probe.records.filter((r) => r.tag === 73).length, 'one header (phase A skipped the Q_i pixel)').toBe(1);
+    expect(d.reservoirs.map((r) => r.tap)).toEqual([2]);
+    expect(Array.from(d.reservoirs[0].words)).toEqual(Array.from(x.resOut.subarray(probeAi * RES_WORDS, (probeAi + 1) * RES_WORDS)));
+    expect([tp.ai, tp.qPrime, tp.cPrev, tp.flags]).toEqual([probeAi, t.qPrime, t.cPrev, t.flags]);
+    expect(tp.forward).toMatchObject({ code: { sc: t.fwdCode & 0xFF }, Jp: jwValid(t.fwdJ) ? f32(t.fwdJ) : 0, JP: t.jP });
+    expect(relErr(tp.forward!.lumF, lum(t.fwdF))).toBeLessThanOrEqual(1e-6);
+    expect(tp.inverse).toMatchObject({ code: { sc: t.invCode & 0xFF }, Jinv: jwValid(t.invJ) ? f32(t.invJ) : 0, piP: t.piRecomp });
+    expect(tp.select).toMatchObject({ wc: t.wc, wp: t.wp, sel: selCode(t.flags), phase: 1 });
+    expect(tp.refresh.map((r) => [r.dir, r.fromPass])).toEqual([['fwd', false], ['inv', false]]);
+    const sf = decodeSfxLocal(x.words, P, NS, 0, t.qPrime), si = decodeSfxLocal(x.words, P, NS, 1, probeAi);
+    expect(tp.refresh.map((r) => [r.status, r.entryTo, r.aux])).toEqual([[sf.status, sf.entryTo, sf.aux], [si.status, si.entryTo, si.aux]]);
+    expect(tp.pick).toEqual({ sp: (probeAi % 7 === 0 ? [-1, -1] : [px[0] + 0.25 * (probeAi % 5), px[1] - 0.5]), tap: probeAi % 10, valid: (probeAi & 1) === 1 });
+    expect(fp.probe.counters[1], 'probe overflow').toBe(0);
+    console.log(`[U-TD-1a/3] temporal views 480–496 ok on ${P} px; probe pixel ${probeAi}: ${fp.probe.records.length} records, flags ${tp.flagNames.join('|')}`);
+    inBuf.destroy(); outBuf.destroy();
+    rig.destroy();
+  });
+});
+
+describe('U-TD-1 (b): view 497 s.boost from a synthetic arena (rs_debug_views)', () => {
+  it('bit s − slots of every accepted boost slot; 0 without the boost', async () => {
+    const W = 24, H = 16, P = W * H;
+    const rig = await debugRig(W, H, 'full', { boostSlots: 2 });
+    const { device } = rig.g;
+    const NS = rig.kernel.resources.alloc.slots;
+    expect(NS, 'numSlots = slots + boostSlots').toBe(5);
+    await rig.frame(0, {});
+    const r = rng(3);
+    const aw = arenaWords(P, NS);
+    const words = new Uint32Array(6 * P * NS);
+    for (let ai = 0; ai < P; ai++) for (let s = 0; s < NS; s++) {
+      const u = r();
+      words[aw.slots + 4 * (ai * NS + s) + 3] = u < 0.4 ? K.JW_NOT_ACCEPTED : u < 0.7 ? K.JW_FAILED : bits(1.5);
+      words[aw.codes + ai * NS + s] = u < 0.4 ? K.SC_NOT_ACCEPTED : K.SC_OK;
+    }
+    device.queue.writeBuffer(rig.kernel.resources.arena, 256, words);
+    const fr = await rig.frame(0, { mode: RS_VIEW_T.boost }, { onlyViews: 1 });
+    let bad = 0, set = 0;
+    for (let ai = 0; ai < P; ai++) {
+      let m = 0;
+      for (let s = 3; s < NS; s++) if (words[aw.slots + 4 * (ai * NS + s) + 3] >>> 0 !== K.JW_NOT_ACCEPTED) m |= 1 << (s - 3);
+      if (fr.aov[4 * ai] !== m) bad++;
+      if (m) set++;
+    }
+    expect(bad, 'boost mask').toBe(0);
+    expect(set).toBeGreaterThan(0);
+    rig.destroy();
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ U-TD real frames
+
+/** One advanced temporal frame (validation API: advance + frameUnits) with the debug passes, then the AOV, probe,
+ *  tState / sfxOut and the post-temporal buffer res[w] of that same frame. */
+async function temporalFrame(rig: DebugRig, t: number, cam: { camToWorld: number[]; yfov: number }, s: Partial<DebugSettings>) {
+  const k = rig.kernel;
+  const adv = k.advance({ t, camera: cam, lights: rig.g.gpu.scene.lights });
+  const fr = await rig.frame(t, s, {
+    custom: (enc) => {
+      rig.pass.encodeBegin(enc);
+      for (const u of k.frameUnits(t, { accum: rig.accum, counters: rig.counters })) u.encode(enc);
+      rig.pass.encodeViews(enc, { rounds: k.lastRounds, t });
+    },
+  });
+  const tw = await k.readTemporalState();
+  const w = k.resBase();
+  const resW = await k.readReservoirs(w as 0 | 1);
+  return { fr, adv, tw, resW, rounds: k.lastRounds };
+}
+const camAt = (dx: number): { camToWorld: number[]; yfov: number } => { const c = boxCamera(); c.camToWorld[12] += dx; return c; };
+
+describe('U-TD-1 (c) / U-TD-3: temporal views on real frames ≡ tState / res[w] read back', () => {
+  it('moving camera (full preset): 480, 484, 486, 490, 491, 492, 495 and the tap "after temporal"; probe tags ≡ tState', async () => {
+    const W = 48, H = 32, P = W * H;
+    const rig = await debugRig(W, H, 'full', { maxBounces: 3 });
+    const NS = rig.kernel.resources.alloc.slots;
+    const all = Array.from({ length: P }, (_, i) => i);
+    let t = 1;
+    for (; t <= 3; t++) await temporalFrame(rig, t, camAt(0.004 * t), {});
+    const bad: string[] = [];
+    let qvalid = 0, fwdOk = 0, selP = 0;
+    const ids = [RS_VIEW_T.qvalid, RS_VIEW_T.fwdCode, RS_VIEW_T.logJ, RS_VIEW_T.cprev, RS_VIEW_T.cout, RS_VIEW_T.sel, RS_VIEW_T.wp, RS_VIEW_T.pic];
+    for (const id of ids) {
+      const { fr, adv, tw, resW } = await temporalFrame(rig, t, camAt(0.004 * t), { mode: id });
+      t++;
+      expect(adv.histValid, `frame ${t - 1}: ${adv.reasons}`).toBe(true);
+      let nb = 0;
+      for (const ai of all) {
+        const ts = decodeTStateLocal(tw, P, NS, ai);
+        const out = decodeReservoir(resW, ai);
+        const q = (ts.flags & TS.TS_QVALID) !== 0;
+        if (id === RS_VIEW_T.qvalid) { qvalid += q ? 1 : 0; fwdOk += q && jwValid(ts.fwdJ) ? 1 : 0; selP += ts.flags & TS.TS_SEL_P ? 1 : 0; }
+        let want: number, isCode = true;
+        switch (id) {
+          case RS_VIEW_T.qvalid: want = qvalidCode(ts.flags); break;
+          case RS_VIEW_T.fwdCode: want = ts.flags & TS.TS_BG ? NONE : q ? ts.fwdCode & 0xFF : NONE; break;
+          case RS_VIEW_T.sel: want = ts.flags & TS.TS_BG ? NONE : selCode(ts.flags); break;
+          case RS_VIEW_T.logJ: isCode = false; want = q && jwValid(ts.fwdJ) ? log2pos(f32(ts.fwdJ)) : 0; break;
+          case RS_VIEW_T.cprev: isCode = false; want = q ? ts.cPrev : 0; break;
+          case RS_VIEW_T.cout: isCode = false; want = ts.flags & TS.TS_BG ? 0 : out.c; break;
+          case RS_VIEW_T.wp: isCode = false; want = ts.wc + ts.wp > 0 ? ts.wp / (ts.wc + ts.wp) : 0; break;
+          default: isCode = false; want = ts.flags & TS.TS_BG ? 0 : lum(out.F); break;
+        }
+        const got = isCode ? fr.aov[4 * ai] >>> 0 : fr.aovF[4 * ai];
+        const ok = isCode ? got === want >>> 0 : relErr(got, want) <= 1e-6 || Math.abs(got - want) <= (id === RS_VIEW_T.logJ ? 1e-5 : 1e-30);
+        if (!ok && nb++ < 2) bad.push(`view ${id} px ${ai}: ${got} ≠ ${want} (flags ${ts.flags})`);
+      }
+    }
+    // reservoir views at the tap "after temporal" ≡ res[w] (hit pixels; T3 skips background pixels)
+    for (const id of [RS_VIEW.c, RS_VIEW.W, RS_VIEW.d]) {
+      const { fr, tw, resW } = await temporalFrame(rig, t, camAt(0.004 * t), { mode: id, tap: 2 });
+      t++;
+      const hit = all.filter((ai) => !(decodeTStateLocal(tw, P, NS, ai).flags & TS.TS_BG));
+      checkReservoirView(id, fr, resW, hit, 'real tap temporal');
+    }
+    expect(bad, bad.join('\n')).toEqual([]);
+    // U-TD-3 (real): probe at a hit pixel with a q′
+    const px: [number, number] = [W >> 1, H >> 1];
+    const pr = await temporalFrame(rig, t, camAt(0.004 * t), { mode: 0, probeEnabled: true, probePixel: px });
+    const ai = px[1] * W + px[0];
+    const ts = decodeTStateLocal(pr.tw, P, NS, ai);
+    const d = decodeRestirProbe(pr.fr.probe.records);
+    const tp = d.temporal;
+    expect(tp, 'temporal probe records').toBeDefined();
+    expect([tp!.ai, tp!.flags, tp!.cPrev]).toEqual([ai, ts.flags, ts.cPrev]);
+    expect(tp!.qPrime).toBe(ts.qPrime === NONE ? undefined : ts.qPrime);
+    if (ts.flags & TS.TS_QVALID) {
+      expect(tp!.forward!.code.sc).toBe(ts.fwdCode & 0xFF);
+      expect(tp!.select).toMatchObject({ wc: ts.wc, wp: ts.wp, sel: selCode(ts.flags) });
+      expect(tp!.pick?.valid).toBe(true);
+      expect(d.reservoirs.some((r) => r.tap === 2)).toBe(true);
+      expect(d.paths.get(23)?.[0]?.b, 'forward path starts at y₁').toBe(1);
+    }
+    console.log(`[U-TD-1c/3 real] q′ valid ${qvalid}/${P}, forward OK ${fwdOk}, s = p ${selP}; probe ${pr.fr.probe.records.length} records, flags ${tp?.flagNames.join('|')}`);
+    expect(qvalid, 'q′ valid pixels (vacuous without T-A A1 temporal_pixel)').toBeGreaterThan(P / 4);
+    expect(fwdOk, 'forward OK (vacuous without T-B B1)').toBeGreaterThan(0);
+    rig.destroy();
+  });
+});
+
+describe('U-TD-2: view 493 (forward vs stored p̂) = 0 on static identity frames', () => {
+  it('jitter off, static camera and lights (temporal preset): |493| ≤ 1e-5 wherever the forward shift is valid', async () => {
+    const W = 48, H = 32, P = W * H;
+    const rig = await debugRig(W, H, 'temporal', { maxBounces: 3 });
+    rig.kernel.setView({ camera: boxCamera(), width: W, height: H, runSeed: 11, jitterMode: JITTER_NONE, jitter: [0.5, 0.5] });
+    const NS = rig.kernel.resources.alloc.slots;
+    for (let t = 1; t <= 3; t++) await temporalFrame(rig, t, boxCamera(), {});
+    const { fr, tw, adv } = await temporalFrame(rig, 4, boxCamera(), { mode: RS_VIEW_T.phatRel });
+    expect(adv.histValid).toBe(true);
+    let n = 0, worst = 0;
+    for (let ai = 0; ai < P; ai++) {
+      const ts = decodeTStateLocal(tw, P, NS, ai);
+      if (!(ts.flags & TS.TS_QVALID) || !jwValid(ts.fwdJ)) continue;
+      n++;
+      worst = Math.max(worst, Math.abs(fr.aovF[4 * ai]));
+    }
+    const m = await temporalFrame(rig, 5, boxCamera(), { mode: RS_VIEW_T.motion });
+    let motion = 0;
+    for (let ai = 0; ai < P; ai++) motion = Math.max(motion, Math.abs(m.fr.aovF[4 * ai]), Math.abs(m.fr.aovF[4 * ai + 1]));
+    console.log(`[U-TD-2] ${n}/${P} pixels with a valid forward shift, max |493| ${worst}; max |481 motion| ${motion}`);
+    expect(n, 'valid forward shifts (vacuous before T-B B1)').toBeGreaterThan(P / 4);
+    expect(worst).toBeLessThanOrEqual(1e-5);
+    expect(motion, 'static camera, jitter off: s′ − q = 0 (A-7; f32 re-projection)').toBeLessThan(1e-4);
     rig.destroy();
   });
 });

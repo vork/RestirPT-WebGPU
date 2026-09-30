@@ -54,10 +54,10 @@ export const RESTIR_PRESETS: Record<RestirPresetName, Partial<RestirSettings>> =
   initial: { trees: 1, rounds: 0, rr: false },
   'initial-rr': { trees: 1, rounds: 0, rr: true, rrMinBounces: 1 },
   offline: OFFLINE,
-  // TD24: interactive gains temporal on. boostSlots stays 0 until T-D lands the boost acceptance (restir-temporal-api.md
-  // Changelog A-3: T-D sets 3 here with it); the interactive temporal units run only once the renderer calls
-  // advanceInteractive() per frame (T-D), so P0 leaves the M4 interactive image unchanged.
-  interactive: { trees: 1, rounds: 1, slots: 3, diskRadius: 30, rr: true, rrMinBounces: 3, temporal: true, boostSlots: 0 },
+  // TD24: interactive gains temporal on and the reciprocal disocclusion boost (3 slots, TD21; Q7: on interactively,
+  // off in validation except the gating ixs_d unit). The interactive temporal units run on frames the renderer
+  // prepares with advanceInteractive() (renderer.ts, TD20).
+  interactive: { trees: 1, rounds: 1, slots: 3, diskRadius: 30, rr: true, rrMinBounces: 3, temporal: true, boostSlots: 3 },
   criteria2022: { ...OFFLINE, criteria: '2022' },
   // M5 rungs (TD24; math §25: RR off in 3.2–3.6)
   temporal: { trees: 1, rounds: 0, rr: false, temporal: true, boostSlots: 0 },

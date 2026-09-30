@@ -8,10 +8,13 @@
 // both pixels of a pair and the shift/resample passes read partners in other bands.
 // The pairing texture (uniform-disk involution maps of radius settings.diskRadius, pairing.ts) is uploaded whenever the
 // kernel's resources or the radius change.
+// M5 boost (OWNER T-D; restir-temporal-api.md TD21, §3.7): with temporal on, numSlots = slots + boostSlots (presets.ts
+// numSlotsOf); the boost slots are ordinary slots for replay / shift / resample, so the replay chunk size and the cost
+// hints count every slot (a chunk sized by `slots` alone would leave boost items PENDING).
 import type { RestirKernel, RestirStage, WorkUnit } from './kernel.ts';
 import { RS_WGSL_CONSTS as K } from './layout.ts';
 import { uploadPairTex } from './pairing.ts';
-import { PAIR_TEX_SIZES } from './presets.ts';
+import { PAIR_TEX_SIZES, numSlotsOf } from './presets.ts';
 import type { RsPassName } from './resources.ts';
 
 export const SPATIAL_PASSES: readonly RsPassName[] = ['rs_pair_accept', 'rs_args', 'rs_spatial_replay', 'rs_spatial_shift', 'rs_spatial_resample'];
@@ -48,7 +51,8 @@ export class SpatialStage implements RestirStage {
     const pl = (n: RsPassName) => k.pipelineSync(n);
     const accept = pl('rs_pair_accept'), args = pl('rs_args'), replay = pl('rs_spatial_replay'), shift = pl('rs_spatial_shift'), resample = pl('rs_spatial_resample');
     const units: WorkUnit[] = [];
-    const slotWork = (r0: number, r1: number) => a.atlasW * (r1 - r0) * s.slots;
+    const NS = numSlotsOf(s);
+    const slotWork = (r0: number, r1: number) => a.atlasW * (r1 - r0) * NS;
     for (let r = 0; r < s.rounds; r++) {
       const inIdx = (k.resBase() + r) % 2;
       const final = r === s.rounds - 1;
@@ -62,7 +66,7 @@ export class SpatialStage implements RestirStage {
       }));
       // Replay: one chunk per row band (Changelog C7) so the runner can split it across submits like the per-pixel
       // passes; with a single band the whole queue is one dispatch. Chunk c covers items [c·chunk, (c+1)·chunk).
-      const chunk = bands.length > 1 ? Math.max(1, Math.ceil((a.atlasW * a.atlasH * s.slots) / bands.length)) : 0;
+      const chunk = bands.length > 1 ? Math.max(1, Math.ceil((a.atlasW * a.atlasH * NS) / bands.length)) : 0;
       bands.forEach(([r0, r1], ci) => units.push({
         label: `rs_spatial_replay[${r}][${ci}]`, costHint: slotWork(r0, r1) * (s.maxBounces + 1),
         encode: (enc) => {

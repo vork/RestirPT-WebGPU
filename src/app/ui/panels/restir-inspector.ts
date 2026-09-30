@@ -6,7 +6,13 @@
 //     records of the resample (m_c, Σm−1, lumRel, per-partner m_j / w_j), i.e. per-candidate m / w / J,
 //   - a 3D overlay of the base tree and every shifted path (render-frame positions + the app origin; camera prepended).
 // Enable it from the ReSTIR panel; the probe pixel is picked with Alt+click (or 'click = probe').
-import { decodeRestirProbe, pathColour, shiftedPolylines, LOBE_NAMES, RCT_NAMES, type RestirProbeDecoded, type RsProbeReservoir } from '../../../core/render/restir/debug.ts';
+// M5 (T-D; restir-temporal-api.md §2.11): the temporal records (q′ pick, forward T(X_p) and inverse shifts with J_p,
+// J_P, π_p, the selection with w̃_c / w̃_p / π_c, the refresh records), the reservoir after temporal, and the overlay
+// paths of the forward shift (magenta, from the camera) and the inverse shift into q′ (lime, from the previous camera).
+// While paused with temporal reuse the frame is held (TD20: no ReSTIR pass runs), so the last dump stays on screen.
+import {
+  PATH_T_FWD, PATH_T_INV, decodeRestirProbe, pathColour, shiftedPolylines, LOBE_NAMES, RCT_NAMES, type RestirProbeDecoded, type RsProbeReservoir,
+} from '../../../core/render/restir/debug.ts';
 import { PATH_CLASS_NAMES, RS_TECH_NAMES, lobeHistAt, pathClass } from '../../../core/render/restir/layout.ts';
 import type { ProbeFrame } from '../../../core/render/probe.ts';
 import type { App } from '../../app.ts';
@@ -57,6 +63,8 @@ export class RestirInspector {
     if (now - this.lastUpdate < 200) return;
     this.lastUpdate = now;
     const d = decodeRestirProbe(f.records);
+    // Held paused frame (no ReSTIR pass ran, TD20): keep the last dump and overlay.
+    if (this.app.render.paused && this.latest && !d.reservoirs.length && !d.temporal) return;
     this.latest = d;
     this.body.textContent = this.format(d, f);
     this.drawPaths(d);
@@ -79,7 +87,7 @@ export class RestirInspector {
 
   private reservoirText(r: RsProbeReservoir): string[] {
     const x = r.rec;
-    const tap = r.tap === 1 ? 'after initial' : r.tap === 3 ? `after spatial (round ${r.round})` : `tap ${r.tap}`;
+    const tap = r.tap === 1 ? 'after initial' : r.tap === 2 ? 'after temporal' : r.tap === 3 ? `after spatial (round ${r.round})` : `tap ${r.tap}`;
     const cls = pathClass(x);
     const hist: string[] = [];
     for (let b = 1; b <= 8; b++) {
@@ -98,12 +106,33 @@ export class RestirInspector {
     ];
   }
 
+  /** M5 temporal records of the probe pixel (tags 73–78). */
+  private temporalText(d: RestirProbeDecoded, W: number): string[] {
+    const t = d.temporal;
+    if (!t) return [];
+    const px = (ai: number | undefined) => (ai === undefined ? 'none' : `(${ai % W}, ${Math.floor(ai / W)})`);
+    const out = [`temporal  q′ ${px(t.qPrime)}  c_prev ${g(t.cPrev ?? 0)} (c_p ${g(Math.min(t.cPrev ?? 0, 20))})  flags ${t.flagNames.join('|') || '-'}`];
+    if (t.pick) out.push(`  pick  s′ (${g(t.pick.sp[0])}, ${g(t.pick.sp[1])})  tap ${t.pick.tap === 9 ? 'none' : t.pick.tap === 0 ? 'centre' : `ring ${t.pick.tap}`}  ${t.pick.valid ? 'valid' : 'invalid'}`);
+    if (t.forward) out.push(`  forward T(X_p)  ${t.forward.code.name}${t.forward.code.term ? ` ${RCT_NAMES[t.forward.code.term]}` : ''}  J_p ${g(t.forward.Jp)}  J_P ${g(t.forward.JP)}  lum F_t ${g(t.forward.lumF)}`);
+    if (t.inverse) out.push(`  inverse T⁻¹(y)  ${t.inverse.code.name}${t.inverse.code.term ? ` ${RCT_NAMES[t.inverse.code.term]}` : ''}  J_inv ${g(t.inverse.Jinv)}  lum F_t−1 ${g(t.inverse.lumFPrev)}  π_p ${g(t.inverse.piP)}`);
+    if (t.select) {
+      const s = t.select, sum = s.wc + s.wp;
+      out.push(`  select  ${s.selName} (phase ${s.phase ? 'B' : 'A'})  w̃_c ${g(s.wc)}  w̃_p ${g(s.wp)}  P(s=p) ${sum > 0 ? g(s.wp / sum, 3) : '-'}  π_c ${g(s.piC)}`);
+    }
+    for (const r of t.refresh) {
+      const what = r.fromPass ? `own ${r.dir === 'fwd' ? 'history' : 'current'} record` : r.dir === 'fwd' ? 'X_p at q′' : 'this pixel\'s record';
+      out.push(`  refresh ${r.dir} (${what})  ${r.statusNames.join('|') || 'none'}  lum rad ${g(r.lumRad)}  aux ${g(r.aux)}  entry ${r.entryTo === 0xFFFFFFFF ? 'none' : r.entryTo}`);
+    }
+    return out;
+  }
+
   private format(d: RestirProbeDecoded, f: ProbeFrame): string {
     const px = this.app.debugSettings.probePixel;
     const W = this.app.targets.width;
     const lines = [`pixel (${px[0]}, ${px[1]})  frame ${f.frame}  ${f.records.length} records${f.counters[1] ? `  (+${f.counters[1]} dropped: probe capacity)` : ''}`];
-    if (!d.reservoirs.length && !d.candidates.length && !d.slots.length) lines.push('(no ReSTIR records: ReSTIR off, or nothing wrote this pixel)');
+    if (!d.reservoirs.length && !d.candidates.length && !d.slots.length && !d.temporal) lines.push('(no ReSTIR records: ReSTIR off, or nothing wrote this pixel)');
     for (const r of d.reservoirs) lines.push(...this.reservoirText(r));
+    lines.push(...this.temporalText(d, W));
     if (d.candidates.length) {
       const wSum = d.candidates.reduce((a, c) => a + (Number.isFinite(c.w) && c.w > 0 ? c.w : 0), 0);
       lines.push(`candidates ${d.candidates.length}  Σw ${g(wSum)}`);
@@ -127,9 +156,10 @@ export class RestirInspector {
     const c = d.mis.canonical;
     if (c) lines.push(`MIS  k ${c.k}  selected ${c.sel === 0 ? 'canonical' : `slot ${c.sel - 1}`}  m_c ${g(c.mc)}  w_c ${g(c.wc)}  Σm−1 ${g(c.sumM)}  lumRel ${g(c.lumRel)}`);
     if (d.paths.size) {
-      const nm = (p: number) => (p === 0 ? 'base' : p < 8 ? `→slot${p - 1}` : p < 16 ? `slot${p - 8}→` : p < 24 ? `→slot${p - 16}(anchors)` : `slot${p - 24}→(anchors)`);
+      const nm = (p: number) => (p === 0 ? 'base' : p === PATH_T_FWD ? 'temporal T(X_p)' : p === PATH_T_INV ? 'temporal T⁻¹→q′'
+        : p < 8 ? `→slot${p - 1}` : p < 16 ? `slot${p - 8}→` : p < 24 ? `→slot${p - 16}(anchors)` : `slot${p - 24}→(anchors)`);
       const names = [...d.paths.keys()].sort((a, b) => a - b).map((p) => `${nm(p)}:${d.paths.get(p)!.length}`);
-      lines.push(`paths (overlay: base white, this→partner warm, partner→this cool, failed dimmed; replayed prefixes not drawn): ${names.join('  ')}`);
+      lines.push(`paths (overlay: base white, this→partner warm, partner→this cool, temporal forward magenta / inverse lime, failed dimmed; replayed prefixes not drawn): ${names.join('  ')}`);
     }
     return lines.join('\n');
   }

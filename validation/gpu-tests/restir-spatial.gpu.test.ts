@@ -1,10 +1,10 @@
 // ReSTIR PT paired spatial reuse, queues, MIS and ensemble mode (WP-C, restir-api.md §6.1): T3-3/M4, T6(a), T6(b),
-// T7, T17, U-MIS-1, U-ENS-1, U-ENS-2, U-OFF-1 and the replay-predicate agreement (Changelog C3). Chrome lane
-// authoritative; dawn.node is a pre-check.
+// T7, T17, U-MIS-1, U-ENS-1, U-ENS-2, U-OFF-1 and the replay-predicate agreement (Changelog C3); M5 (T-D): T3-3-boost
+// (restir-temporal-api.md TD21, §6.1). Chrome lane authoritative; dawn.node is a pre-check.
 import { afterAll, describe, expect, it } from 'vitest';
 import { readBuffer } from '../../src/core/gpu/readback.ts';
 import { EnsembleCollector, decodeEnsStats, ensStatsLayout } from '../../src/core/render/restir/ensemble.ts';
-import { RS_WGSL_CONSTS as K, RES_WORDS, RW, rfPack } from '../../src/core/render/restir/layout.ts';
+import { RS_WGSL_CONSTS as K, RES_WORDS, RW, TS_CONSTS, TS_WORDS, TSW, arenaWords, rfPack } from '../../src/core/render/restir/layout.ts';
 import { readNpz, writeNpz } from '../../src/core/render/restir/npz.ts';
 import { pairLayer, pairPartner, pairTransform } from '../../src/core/render/restir/pairing.ts';
 import { PAIR_TEX_SIZES } from '../../src/core/render/restir/presets.ts';
@@ -790,3 +790,75 @@ describe('interactive RestirFramePass with frame timestamps (app path, 540p, env
     qs?.destroy(); g.destroy();
   });
 });
+
+// ------------------------------------------------------------------------------------------------ T3-3-boost (M5, T-D)
+
+describe('T3-3-boost: reciprocal disocclusion boost (restir-temporal-api.md TD21, §3.7; T-D)', () => {
+  it('symmetric, only pairs with a disoccluded member, no slot mismatch; no dis ⇒ no boost pair; ordinary slots unchanged', async () => {
+    const W = 64, H = 48, P = W * H, t = 7, BOOST0 = 3;
+    const rig = await restirRig(bitFixtureScene('x_quads'), W, H, { preset: 'full', settings: { maxBounces: 3, boostSlots: 3 } });
+    const k = rig.kernel;
+    const NS = k.resources.alloc.slots;
+    expect(NS, 'numSlots = slots 3 + boost 3').toBe(6);
+    const aw = arenaWords(P, NS);
+    const R = k.settings.diskRadius;
+    // The frame is built without advance(): a reset frame without temporal units, so the synthetic tState flags
+    // (TS_DISOCC or TS_QVALID) written here are what rs_pair_accept reads.
+    const run = async (dis: (ai: number) => boolean) => {
+      const words = new Uint32Array(TS_WORDS * P);
+      for (let ai = 0; ai < P; ai++) words[TS_WORDS * ai + TSW.flags] = dis(ai) ? TS_CONSTS.TS_DISOCC : TS_CONSTS.TS_QVALID;
+      rig.g.device.queue.writeBuffer(k.resources.arena, 256 + 4 * aw.tState, words);
+      const r = await rig.frames(1, t);
+      const body = await arenaBody(rig);
+      const acc = (ai: number, s: number) => body[aw.slots + 4 * (ai * NS + s) + 3] >>> 0 !== K.JW_NOT_ACCEPTED;
+      return { r, acc };
+    };
+    const partner = (ai: number, s: number): number | undefined => {
+      const layer = pairLayer(PAIR_TEX_SIZES[s], R, s);
+      const q = pairPartner(layer, pairTransform(11, 0, t, 0, s, PAIR_TEX_SIZES[s]), [ai % W, Math.floor(ai / W)], W, H);
+      return q ? q[1] * W + q[0] : undefined;
+    };
+    const r0 = rng32(17);
+    const disR = new Uint8Array(P).map(() => (r0() < 0.2 ? 1 : 0));
+    const all = await run(() => true), none = await run(() => false), rnd = await run((ai) => disR[ai] === 1);
+    let boostAll = 0, boostRnd = 0, bad = 0;
+    const msgs: string[] = [];
+    for (let ai = 0; ai < P; ai++) {
+      for (let s = 0; s < NS; s++) {
+        const q = partner(ai, s);
+        for (const [name, x] of [['all', all], ['none', none], ['rnd', rnd]] as const) {
+          if (q === undefined) { if (x.acc(ai, s)) { bad++; msgs.push(`${name} ${ai}/${s}: accepted without partner`); } continue; }
+          if (x.acc(ai, s) !== x.acc(q, s)) { bad++; if (msgs.length < 6) msgs.push(`${name} ${ai}/${s}: asymmetric`); }
+        }
+        if (s < BOOST0) {
+          if (all.acc(ai, s) !== none.acc(ai, s) || all.acc(ai, s) !== rnd.acc(ai, s)) { bad++; if (msgs.length < 6) msgs.push(`ordinary slot ${ai}/${s} changed`); }
+          continue;
+        }
+        if (none.acc(ai, s)) { bad++; if (msgs.length < 6) msgs.push(`none: boost ${ai}/${s} accepted`); }
+        const wantRnd = all.acc(ai, s) && q !== undefined && (disR[ai] === 1 || disR[q] === 1);
+        if (rnd.acc(ai, s) !== wantRnd) { bad++; if (msgs.length < 6) msgs.push(`rnd ${ai}/${s}: ${rnd.acc(ai, s)} ≠ ${wantRnd}`); }
+        if (all.acc(ai, s)) boostAll++;
+        if (rnd.acc(ai, s)) boostRnd++;
+      }
+    }
+    for (const x of [all, none, rnd]) {
+      expect(x.r.arena.rsc.slotMismatch, 'RSC_SLOT_MISMATCH').toBe(0);
+      expect(x.r.arena.rsc.pendingLeft, 'RSC_PENDING_LEFT').toBe(0);
+      expect(x.r.arena.queues[0].overflow).toBe(0);
+      expect(x.r.counters).toEqual([0, 0, 0, 0]);
+    }
+    console.log(`[T3-3-boost] accepted boost slots: all-disoccluded ${boostAll}, 20% disoccluded ${boostRnd}, none 0; accepted total ${all.r.arena.rsc.accepted}/${none.r.arena.rsc.accepted}`);
+    expect(msgs, msgs.join('\n')).toEqual([]);
+    expect(bad).toBe(0);
+    expect(boostAll).toBeGreaterThan(100);
+    expect(boostRnd).toBeGreaterThan(0);
+    expect(boostRnd).toBeLessThan(boostAll);
+    expect(all.r.arena.rsc.accepted).toBeGreaterThan(none.r.arena.rsc.accepted);
+    rig.destroy();
+  });
+});
+
+function rng32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let x = a; x = Math.imul(x ^ (x >>> 15), x | 1); x ^= x + Math.imul(x ^ (x >>> 7), x | 61); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+}

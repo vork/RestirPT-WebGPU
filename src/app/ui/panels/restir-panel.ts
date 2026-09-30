@@ -2,6 +2,9 @@
 // (ReSTIR-unbiased / ReSTIR-2022-criteria / Offline / initial only), the stage tap, a ReSTIR view picker with a colour
 // legend for code views, the arena statistics (f_r, queue occupancy, SC histogram) and the pixel-inspector toggle.
 // The full view list stays in the Debug folder; this panel only offers the ReSTIR subset.
+// M5 (T-D; restir-temporal-api.md §2.11, TD19–TD21, Changelog D-2): ReSTIR-interactive / ReSTIR-unbiased modes, the
+// temporal on/off switch, "reset temporal history" and "freeze history" (temporal reuse suspended: every frame resets),
+// the "after temporal" tap and the temporal views 480–497 with their legends; the arena box adds the temporal lines.
 import { RESTIR_VIEWS, cmapCode, codeName, legendCodes } from '../../../core/render/restir/debug.ts';
 import { RESTIR_APP_MODES, type Renderer, type RestirAppMode } from '../../../core/render/renderer.ts';
 import type { App } from '../../app.ts';
@@ -11,7 +14,7 @@ import type { RestirInspector } from './restir-inspector.ts';
 export interface RestirPanelHandle { folder: TpFolder; refresh(): void }
 
 /** Stage taps offered for the ReSTIR views (debug-views.ts DEBUG_TAPS ids). */
-const TAPS: Record<string, number> = { final: 0, 'after initial': 1, 'after spatial': 3 };
+const TAPS: Record<string, number> = { final: 0, 'after initial': 1, 'after temporal': 2, 'after spatial': 3 };
 
 export function addRestirPanel(app: App, r: Renderer, inspector: RestirInspector | undefined, index?: number): RestirPanelHandle | undefined {
   const pane = app.panel?.pane;
@@ -23,6 +26,7 @@ export function addRestirPanel(app: App, r: Renderer, inspector: RestirInspector
     get enabled() { return r.options.renderMode === 'restir'; },
     set enabled(v: boolean) { r.options.renderMode = v ? 'restir' : 'pt'; },
     mode: r.options.restirMode as string,
+    temporal: r.options.temporal,
     view: 0,
     stats: '',
     inspector: false,
@@ -37,6 +41,12 @@ export function addRestirPanel(app: App, r: Renderer, inspector: RestirInspector
   f.addBinding(ui, 'mode', { label: 'mode', options: modes }).on('change', q((e) => {
     void r.setOptions({ restirMode: e.value as RestirAppMode }).then(() => app.resetHistory());
   }));
+  // Temporal reuse (M5): a settings change, i.e. a config-hash reset (and a reallocation of the temporal buffers).
+  f.addBinding(ui, 'temporal', { label: 'temporal reuse' }).on('change', q((e) => {
+    void r.setOptions({ temporal: e.value }).then(() => app.resetHistory());
+  }));
+  f.addBinding(app.render, 'freezeHistory', { label: 'freeze history' });
+  f.addButton({ title: 'Reset temporal history (Shift+R)' }).on('click', () => app.resetTemporalHistory());
   f.addBinding(app.debugSettings, 'tap', { label: 'stage tap', options: TAPS });
   const views: Record<string, number> = { 'beauty (off)': 0 };
   for (const v of RESTIR_VIEWS) views[`${v.group.replace('ReSTIR ', '')}: ${v.label}`] = v.id;
@@ -45,7 +55,7 @@ export function addRestirPanel(app: App, r: Renderer, inspector: RestirInspector
   legend.className = 'restir-legend';
   legend.style.cssText = 'font: 11px ui-monospace, monospace; padding: 2px 8px 6px; line-height: 1.5;';
   f.element.append(legend);
-  f.addBinding(ui, 'stats', { readonly: true, multiline: true, rows: 4, label: 'arena' });
+  f.addBinding(ui, 'stats', { readonly: true, multiline: true, rows: 7, label: 'arena' });
   f.addBinding(ui, 'inspector', { label: 'pixel inspector' }).on('change', q((e) => {
     inspector?.setVisible(e.value);
     if (e.value) app.debugSettings.probeEnabled = true;
@@ -81,6 +91,7 @@ export function addRestirPanel(app: App, r: Renderer, inspector: RestirInspector
     quiet = true;
     try {
       ui.mode = r.options.restirMode;
+      ui.temporal = r.options.temporal;
       ui.view = RESTIR_VIEWS.some((v) => v.id === app.debugSettings.mode) ? app.debugSettings.mode : 0;
       ui.stats = r.options.renderMode === 'restir' ? (r.restirHud?.lines().join('\n') ?? r.restirError ?? 'compiling ...') : 'ReSTIR off';
       updateLegend();

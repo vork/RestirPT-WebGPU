@@ -5,7 +5,7 @@
 //   registerDebugView(def)      add debug views without recompiling (debugMode/debugTap are uniforms)
 import { createGpuContext, type GpuContext } from '../core/gpu/device.ts';
 import {
-  DebugResources, DebugViewRegistry, DBGC, applyViewDefaults, defaultDebugSettings,
+  DEBUG_BUFFER_LAYOUT, DebugResources, DebugViewRegistry, DBGC, applyViewDefaults, defaultDebugSettings,
   type DebugSettings, type DebugViewDef,
 } from '../core/render/debug-views.ts';
 import {
@@ -53,6 +53,9 @@ export interface FrameContext {
   /** True when frameIndex advanced this frame (false while paused without a step). */
   advanced: boolean;
   resetHistory: boolean;
+  /** M5: reset the ReSTIR temporal history this frame (resetTemporalHistory(), Shift+R, freeze seed / frame / history;
+   *  restir-temporal-api.md TD19, TD20). resetHistory alone only restarts the progressive accumulation. */
+  resetTemporal: boolean;
   scene: SceneData | undefined;
   debug: DebugSettings;
   /** timestampWrites for a pass (undefined when unsupported or out of slots). */
@@ -83,6 +86,9 @@ export interface AppHooks {
   onPick?(e: PickEvent & { pixel: [number, number] }, app: App): void;
   /** Extra HUD lines (e.g. replay fraction) appended every HUD refresh. */
   hudLines?(app: App): string[];
+  /** M5: a paused frame re-displays the last rendered frame without re-running its passes (ReSTIR with temporal on,
+   *  TD20): keep the debug AOV of that frame instead of clearing it (only while the view is unchanged). */
+  holdsFrameWhenPaused?(app: App): boolean;
 }
 
 export interface BeforeFrameInfo {
@@ -101,6 +107,8 @@ export interface RenderSettings {
   paused: boolean;
   freezeSeed: boolean;
   freezeFrame: boolean;
+  /** M5: suspend temporal reuse (every frame resets the ReSTIR temporal history; restir-temporal-api.md Changelog D-2). */
+  freezeHistory: boolean;
   overlay: boolean;
 }
 
@@ -143,7 +151,7 @@ export class App {
   runSeed: number;
 
   readonly render: RenderSettings = {
-    resolution: '540p', colorFormat: 'rgba32float', jitter: 'r2', paused: false, freezeSeed: false, freezeFrame: false, overlay: true,
+    resolution: '540p', colorFormat: 'rgba32float', jitter: 'r2', paused: false, freezeSeed: false, freezeFrame: false, freezeHistory: false, overlay: true,
   };
   readonly present: PresentSettings = { exposureEV: 0, tonemap: 'standard', filter: 'bilinear', highlightNonFinite: true };
   readonly debugSettings: DebugSettings = defaultDebugSettings();
@@ -156,8 +164,13 @@ export class App {
   time = 0;
   private stepPending = false;
   private resetPending = true;
+  private temporalResetPending = true;
   private lastT: number | undefined;
+  /** Camera of the last ADVANCED frame: prevCamera of the next frame (M5: E_{t−1} of temporal reuse), also across
+   *  accumulation-only resets (light / env edits) and paused frames. */
   private lastCamera: CameraState | undefined;
+  /** Debug view of the last advanced frame (a held paused frame keeps its AOV only for the same view). */
+  private lastAdvancedMode = -1;
   private readonly cpuFrame = new RollingAverage();
   private lastHud = 0;
   private testPattern: TestPattern;
@@ -240,8 +253,12 @@ export class App {
 
   setHooks(h: AppHooks): void { this.hooks = { ...this.hooks, ...h }; }
 
-  /** Request a history reset (fires hooks.onResetHistory and FRAME_RESET_HISTORY on the next frame). */
+  /** Request a history reset (fires hooks.onResetHistory and FRAME_RESET_HISTORY on the next frame): restarts the
+   *  progressive accumulation. M5: the ReSTIR temporal history is kept (light / env edits, animation); see
+   *  resetTemporalHistory. */
   resetHistory(): void { this.resetPending = true; }
+  /** M5: reset the ReSTIR temporal history too (the "reset history" control, Shift+R). */
+  resetTemporalHistory(): void { this.resetPending = true; this.temporalResetPending = true; }
   step(): void { this.stepPending = true; }
   setPaused(p: boolean): void { this.render.paused = p; this.camera.frozen = p; this.panel?.refresh(); }
 
@@ -447,7 +464,7 @@ export class App {
       case 'KeyP': this.setPaused(!this.render.paused); return true;
       case 'Period': this.step(); return true;
       case 'KeyH': this.hudVisible = !this.hudVisible; this.hud.setVisible(this.hudVisible); this.panel?.refresh(); return true;
-      case 'KeyR': if (e.shiftKey) { this.resetHistory(); return true; } return false;
+      case 'KeyR': if (e.shiftKey) { this.resetTemporalHistory(); return true; } return false;
       default: return false;
     }
   }
@@ -494,14 +511,19 @@ export class App {
     for (const cb of this.beforeFrame) cb({ now, rawDt, dt, advance });
     const reset = this.resetPending;
     this.resetPending = false;
+    // M5 TD20: freeze seed / frame reuse identical canonical seeds, so the temporal history resets every frame then.
+    const resetTemporal = advance && (this.temporalResetPending || r.freezeSeed || r.freezeFrame || r.freezeHistory);
+    if (advance) this.temporalResetPending = false;
     if (reset) { this.frameIndex = 0; this.totals.nan = this.totals.inf = 0; this.hooks.onResetHistory?.(this); }
     if (advance) {
       this.camera.update(dt);
       this.time += dt;
     }
     const cur: CameraState = { camToWorld: this.camera.camToWorld(), yfov: this.camera.yfov, znear: 1e-3 };
-    const prev = reset || !this.lastCamera ? cur : this.lastCamera;
-    this.lastCamera = cur;
+    // prevCamera = the previous advanced frame's camera (= cur on the first frame and after a temporal reset): an
+    // accumulation-only reset (light / env edit) keeps the true previous camera for temporal reuse (M5, E_{t−1}).
+    const prev = resetTemporal || !this.lastCamera ? cur : this.lastCamera;
+    if (advance) this.lastCamera = cur;
 
     let flags = 0;
     if (r.paused) flags |= FRAME_PAUSED;
@@ -525,9 +547,14 @@ export class App {
 
     const enc = this.device.createCommandEncoder({ label: 'frame' });
     this.timestamps.beginFrame();
-    this.debug.beginFrame(enc);
+    // A held paused frame (M5 TD20) keeps the AOV of the last advanced frame (same view only); the probe header and
+    // counters are cleared as usual.
+    const holdAov = !advance && this.debugSettings.mode === this.lastAdvancedMode && !!this.hooks.holdsFrameWhenPaused?.(this);
+    if (holdAov) enc.clearBuffer(this.debug.buffer, 0, DEBUG_BUFFER_LAYOUT.headerBytes);
+    else this.debug.beginFrame(enc);
+    if (advance) this.lastAdvancedMode = this.debugSettings.mode;
     const ctx: FrameContext = {
-      device: this.device, targets: this.targets, uniforms, advanced: advance, resetHistory: reset, scene: this.scene,
+      device: this.device, targets: this.targets, uniforms, advanced: advance, resetHistory: reset, resetTemporal, scene: this.scene,
       debug: this.debugSettings, timestamps: (n) => this.timestamps.pass(n),
     };
     if (this.hooks.renderFrame) this.hooks.renderFrame(enc, ctx);

@@ -6,7 +6,12 @@
 //     q = (M·p + o) mod W_s (positive),  partner = p + Mᵀ·d(q),  valid iff d ≠ 0 and the partner lies in the member tile.
 //   Reciprocity survives the transform, off-tile partners are lost symmetrically: no cross-member pairs.
 // Without RS_PAIRTEX_BINDING, pair_partner compiles to "no partner" (modules that include this file for types only).
+// M5 (OWNER T-D; restir-temporal-api.md TD21, §3.7): the reciprocal disocclusion boost. Boost slots
+// s ∈ [numSlots − boostSlots, numSlots) use pairing layers s ≤ 5 like ordinary slots and accept a pair iff
+// A0 ∧ (dis(p) ∨ dis(q)), dis = the pixel has no valid q′ this frame (tState flag TS_DISOCC, written by T1 for every
+// pixel before the spatial stage), evaluated once per pair by the thread of the smaller atlas index (rs_pair_accept).
 #include "restir/frame.wgsl"
+#include "restir/queue.wgsl"
 
 struct PairResult { valid: bool, partner: vec2u }            // member-local pixel
 
@@ -75,3 +80,23 @@ fn pair_A0(a: vec4u, ga: vec4f, b: vec4u, gb: vec4f) -> bool {
   let zb = bitcast<f32>(b.w);
   return dot(ga.xyz, gb.xyz) >= 0.5 && abs(za - zb) <= 0.1 * min(za, zb);
 }
+
+// ---- M5 reciprocal disocclusion boost (restir-temporal-api.md TD21, §3.7; OWNER T-D) ---------------------------------
+// The tState flag word is read without restir/tframe.wgsl: that module declares the RsTemporal uniform, which M4 modules
+// (rs_pair_accept) must not (tests/restir/tframe.test.ts). PAIR_TS_* mirror tframe.wgsl ts_word(ai, TSW_FLAGS) and
+// TS_DISOCC; tests/restir/boost.test.ts checks them against layout.ts (tsWord, TSW.flags, TS_CONSTS.TS_DISOCC).
+const PAIR_TS_WORDS: u32 = 20u;
+const PAIR_TSW_FLAGS: u32 = 11u;
+const PAIR_TS_DISOCC: u32 = 2u;
+
+/// First boost slot (= numSlots when the boost is off: RestirParams.boostSlots is 0 without temporal).
+fn pair_first_boost_slot() -> u32 { return rsParams.numSlots - min(rsParams.boostSlots, rsParams.numSlots); }
+/// A_boost = A0(p, q) ∧ (dis(p) ∨ dis(q)) (TD21): symmetric in (p, q), G-buffer / q′ only (sample-independent).
+fn pair_boost_accept(a0: bool, disP: bool, disQ: bool) -> bool { return a0 && (disP || disQ); }
+#if RS_ARENA_BINDING
+/// dis(ai): no valid q′ this frame (T1's tState flags; TS_DISOCC also covers the no-history frames, TS_NO_HIST).
+fn pair_disoccluded(ai: u32) -> bool {
+  let w = 6u * rs_atlas_pixels() * rs_ns_alloc() + PAIR_TS_WORDS * ai + PAIR_TSW_FLAGS;
+  return (arena_word(w) & PAIR_TS_DISOCC) != 0u;
+}
+#endif

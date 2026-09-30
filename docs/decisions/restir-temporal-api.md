@@ -1246,3 +1246,87 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   `finalResIndex()`, `currentAdvance`, `frameState` (frame-state.ts `FrameStateTracker`), `rsTemporal` (the uniform
   buffer), `envParamsWords()`; `readTemporalState()` returns the words from tState to the end of sfxOut (decode with
   `layout.ts decodeTStateLocal / decodeSfxLocal`). `readReservoirs('final')` reads `res[finalResIndex()]`.
+
+### T-D amendments (debug views, interactive integration, boost)
+
+- **D-1 Temporal debug data paths and probe formats** (affects T-B only through the §2.11 hook call sites, which
+  `t-select.wgsl` / `t-classify.wgsl` already follow; nobody's interface changes). Views 480, 482–496 and the reservoir
+  views 400–410 at tap `DBG_TAP_TEMPORAL` are written by `rsdbg_temporal` in T3 (phase A for pixels without
+  `TS_INV_QUEUED`, phase B for the Q_i pixels; a phase-A call on a Q_i pixel is ignored): only T3 still has `res[h]`
+  (stored p̂ of view 493, X_p's end technique for 496); spatial round 0 overwrites it (TD2), so `rs_debug_views` cannot
+  provide them. View 481 comes from `rsdbg_tpick` (T1, `sp − local` with the A-7 convention, 0 without history or
+  projection), view 497 from `rs_debug_views` (bit `s − firstBoost` of the accepted boost slots of the last round).
+  Pinned definitions: 488 π_c = lum F of the temporal output record (= lum F_t(Y_p) for s = p, lum F_c for s = c and
+  no q′, 0 for empty); 489 π_p = `piStored` for `TS_SEL_P`, `piRecomp` for other Q_i pixels, else 0; 491 c_out = c of
+  the output record; 492 = 0 without q′, 3 `TS_EMPTY_OUT`, 2 `TS_SEL_P`, else 1; 482/483 = 0 unless `TF_REFRESH` and the
+  record's `gen == frameGen`; 496: NEE ends — `SXS_UNDEF`, a stale record or a missing entry ⇒ bit 2, else the MOVED /
+  RADIO bits of `lt_change_bits(entryTo)`; BSDF env ends — `TF_ENV_MOVED` / `TF_ENV_RADIO`; other ends 0. Background
+  pixels of view 480 get code 0 from `rs_debug_fill` (T3 skips them). Probe tag 77's status word carries `dir << 16`
+  (0 fwd = X_p at q′, 1 inv = the record at q) and bit 17 = "recorded by the refresh pass for the record stored at the
+  probe pixel itself" (`rsdbg_refresh`); T3 records the fwd record of q′ and the inv record of q (bit 17 clear). New
+  internal tag **79** (anchor ids `(bits(role | b << 8), prim/tag word, u, v)`, roles 0/1 X_p's x_k / surface endpoint,
+  2/3 the inverse source's) is recorded by T3 (no scene group) and turned into tag-67 vertices by `rs_debug_views`:
+  path 23 = T(X_p) into the probe pixel (y₁, x_k, endpoint), path 31 = the inverse into q′ (b = 0 the previous camera,
+  y₁′ from the previous V-buffer, x_k, endpoint). `rs_debug_views` G2 gains binding 5 `rsVbufPrev` (a sampled texture:
+  storage-buffer count unchanged) and includes `restir/tframe.wgsl`.
+- **D-2 Interactive integration** (affects T-A: `kernel.ts` `RestirFramePass` gains `encodeHold()` (T-D edit, one
+  method); T-E: none). `renderer.ts`: `restirMode` gains `'interactive'` (the interactive preset: temporal, RR, boost 3;
+  the new default) and `'unbiased'` becomes the `full` preset (temporal, RR off, no boost), `options.temporal` switches
+  temporal reuse in every mode; with temporal on each **advanced** frame calls `advanceInteractive(frameUniforms,
+  { reset })` exactly once before the units are built, and a paused frame encodes no ReSTIR pass (TD20) but
+  `encodeHold()` (rs_finalize_frame only: re-displays the last estimate without adding a sample). `app.ts`:
+  `resetHistory()` now restarts only the progressive accumulation (light / env edits, animation, the render folder
+  button); `resetTemporalHistory()` (Shift+R, the ReSTIR panel button) also resets the temporal history
+  (`FrameContext.resetTemporal`), as do freeze seed / frame (TD20) and the new `render.freezeHistory`. "Freeze history" is
+  defined as *temporal reuse suspended* (every frame a reset): a frozen history reused on later frames would be consumed
+  twice (TD20, I1), which is biased. `prevCamera` is the camera of the previous **advanced** frame and equals `cam` only
+  on the first frame and on temporal resets — before, every accumulation reset set `prevCam = cam`, which with a light
+  animated together with a moving camera would have made q′ back-project with the wrong camera. A held paused frame
+  keeps its debug AOV (hook `holdsFrameWhenPaused`, same view only) and the inspector keeps its last dump. The HUD's
+  error totals restart only on temporal resets (light animation restarts the accumulation every frame).
+- **D-3 Boost implementation** (affects T-E: `--boost` units; nobody's interface). `rs_pair_accept` reads the tState
+  flag word through a mirror in `restir/pairing.wgsl` (`PAIR_TS_WORDS`, `PAIR_TSW_FLAGS`, `PAIR_TS_DISOCC`, checked
+  against `layout.ts` by `tests/restir/debug-m5.test.ts`): it must not include `tframe.wgsl` (the RsTemporal uniform
+  would make it a non-M4 module, `tests/restir/tframe.test.ts`). `stage-spatial.ts` sizes the replay chunks and cost
+  hints by `numSlots` (slots + boost; a chunk sized by `slots` would leave boost items PENDING). On a frame of a temporal
+  kernel without a temporal stage (not advanced) the flags are those of the last temporal frame (still G-buffer only,
+  symmetric: unbiased); before the first temporal frame the zero-initialised arena gives no boost pair, so the
+  interactive preset as shipped keeps the M4 goldens of U-M4-BITS. U8 plant 9 (`RSF_PLANT_U8_FAILED_K`, `mis.wgsl`):
+  a partner whose G_j is not VALID is dropped from S_c (k, the 1/(k + 1) normaliser and c_out).
+
+### T-B amendments (temporal passes, shift frame selector, queues)
+
+- **B-1 `ShiftSrc.endVis` is stored inverted as `endOcc`** (affects nobody's call sites; T-C provides the N1 end
+  visibility through `SfxRec.status` as before). WGSL zero-initialises `var s: ShiftSrc`, and the M4 test harnesses
+  (restir-shift fixtures, the frozen t3fault copies) build sources field by field: a field `endVis` would default to
+  false and turn every case (b) into `SC_OCCLUDED`. `endOcc` (false spatially, `tsrc_load`: `endOcc = SXS_N1 ∧ ¬SXS_VIS`)
+  keeps every zero-initialised source bitwise M4. `ShiftDst.fs` defaults to `RS_FS_CUR = 0` for the same reason.
+  `shift.wgsl` and `path/replay.wgsl` include `restir/tframe.wgsl` (the frame selectors); `replay_prefix` gains the
+  trailing argument `fs` (call sites updated: shift, `restir-initial.gpu.test.ts` all-module smoke, the frozen legacy
+  shift `t3fault-shift-a54ac2d.wgsl.txt`, each with `RS_FS_CUR`). U-M4-BITS, U-RIS-*, U-SFX-1 and T3 (M4) unchanged.
+- **B-2 Queues** (affects T-C `rs_refresh_inv`, T-D boost units: none). `queue_append(q, item)` uses the per-queue item
+  region and capacity (`tframe.wgsl queue_item_base / queue_capacity_q`) in modules compiled with `RS_TEMPORAL`, and the
+  M4 body (q0 only) elsewhere, so no M4 pass changes. `rs_args` includes `tframe.wgsl` and takes
+  `q = (RsDispatch.flags >> RSD_QUEUE_SHIFT) & 3`, capacity `queue_capacity_q(q)`, args at byte `16·q` (0 for every M4
+  dispatch). Consumers read items at `arena_item_word(queue_item_base(q) + i)`. T2 / T4 (and T-C's refresh-inv
+  builder) emit one item chunk per row band as M4 C7 (`treeBase / treeCount` = chunk base / size, 0 = whole queue).
+- **B-3 T-B local tState flag `TS_ROBUST_IDMIS = 32768`** (affects T-D's flag decoding only; no word changes). T4 sets
+  it in robust mode when the translated-back endpoint entry of Y_p (the SFX_INV `entryTo`, or the stored entry without a
+  refresh) differs from `xpEntry` (or the inverse refresh marks the record undefined); T3 phase B counts it as
+  `RSC_T_ROBUST_MISMATCH` together with the π comparison, so the ID check needs no extra tState word.
+- **B-4 Write-back details** (affects T-C: status class bits). `res_select_temporal` lives in `passes/restir/t-select.wgsl`
+  (scene-free, A-2). jDen ← `(J_p / J_P)·jDen_src` as §3.6. The endpointId renumbering is the analytic branch of
+  `nee_endpoint_id_s` (entryTo < cur `nAnalytic` ⇒ endpointId = entryTo); emissive-triangle primIds and `RS_ENV_ID` are
+  frame-independent and stay as copied (`endpoint.wgsl` cannot be included without the scene group). The refreshed deep
+  `rcRad` is written only when the fwd refresh record carries `SXS_DEEP`, the (b)/(c) cache (`rcRad`, `aux`) only with
+  `SXS_N1` / `SXS_B1` (else the copied values stay: a refresh that does not serve a class leaves it unchanged); the same
+  status bits gate `tsrc_load` (deep `rcRad`, N1 `endOcc`). `TP_U8_STALE_AUX` keeps the copied `aux`.
+- **B-5 Stale refresh records and counters** (affects T-C, T-D HUD). On a `TF_REFRESH` frame a record whose sfxOut
+  `gen ≠ frameGen` or without `SXS_DONE` is treated as undefined (w̃_p = 0 / π_p = 0, unbiased) and counted in
+  `RSC_T_PENDING_LEFT` (must stay 0), as is a T2 item still PENDING in phase A and a Q_i pixel phase B finds without
+  `TS_INV_DONE`. Counter definitions: `LIGHT_UNDEF` = forward shifts refused by the refresh (`SXS_UNDEF`, incl. E2);
+  `CLASS_UNDEF` = other undefined forward codes (O0–O3, J invalid) on `TF_REFRESH` frames (§9.3-6′ rate); `E2_ZEROED` =
+  inverse evaluations whose SFX_INV record carries `SXS_E2` (tState `TS_E2_ZERO`); `NONFINITE` = non-finite or negative
+  w̃ or W_Y (the record becomes empty with its c). The queued forward code is `SC_PENDING` until T2 writes it.
+- **B-6 Row bands in the temporal per-pixel passes**: T1 and both T3 phases take `rs_pix(gid.x, gid.y + rowBase)` like
+  every M4 per-pixel pass (the P0 stubs used `gid.xy`).

@@ -650,6 +650,22 @@ export class RestirFramePass {
     return true;
   }
 
+  /** M5 paused frame with temporal on (restir-temporal-api.md TD20, Changelog D-2; T-D): no ReSTIR pass runs (the
+   *  history must never be consumed twice); only rs_finalize_frame re-displays the last frame's estimate (rsShade /
+   *  res[finalResIndex()], rsL1 of the current parity: untouched since) without adding a sample. */
+  encodeHold(encoder: GPUCommandEncoder, frame: { accumulate: boolean }): boolean {
+    const t = this.targets, k = this.kernel;
+    if (!t || !this.accum) return false;
+    k.beginSubmit();
+    const a = k.resources.alloc;
+    this.holdView = this.holdView?.tex === t.color ? this.holdView : { tex: t.color, view: t.color.createView() };
+    const g2 = k.resources.g2('rs_finalize_frame', k.finalResIndex(), { accum: this.accum, counters: this.counters, colour: this.holdView.view });
+    k.encodePass(encoder, 'rs_finalize_frame', k.pipelineSync('rs_finalize_frame', this.colorFormat), g2,
+      { t: 0, passId: 0, round: k.lastRounds, flags: frame.accumulate ? K.RSD_ACCUMULATE : 0, rowBase: 0, rowEnd: a.atlasH }, k.perPixelWorkgroups(0, a.atlasH));
+    return true;
+  }
+  private holdView: { tex: GPUTexture; view: GPUTextureView } | undefined;
+
   destroy(): void {
     this.counters.destroy();
     this.accum?.destroy();
