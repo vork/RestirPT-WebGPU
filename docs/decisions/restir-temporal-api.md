@@ -1521,6 +1521,12 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   sign-resolved edge cells M_up / M_down (|ΔL| ≥ 25 %, brighter / darker; M_new / M_gone are their extreme cases), and the
   predictions on M_new (−) / M_gone (+) of N1-consistent, N3 and E_{t−1}-with-γ_t are repeated on M_up (−) / M_down (+):
   the same physics on the cells that exist. Predictions on empty regions stay "not evaluable" (E-6).
+- **E-14 Plan after E-13** (supersedes E-12's numbers). With the revised ixs_a / ixs_h / ixs_e (C spot 6 W at the
+  ceiling for M_light:C) / ixs_i (rect facing the back wall for M_light:R): 7.0 h of chains + PT references + Gate 0
+  1.5 h + plants 1.9 h + A/A 3.2 h + U8 M4 rungs 0.5 h = 14.1 h ⇒ two parts (core ≈ 9.6 h, static ≈ 3.3 h). Q4 raises:
+  ixs_c_spot_b03 (43 min) and ixs_f_combined (31 min); ixs_a no longer needs one (R 256). Every plant region exists at
+  ≥ 1 predicted frame (pilot mask references). The A/A pair (4×) is the largest single item; 2× would save 1.6 h at the
+  power of one unit (coordinator's choice; kept at 4× as M4).
 - **B-7 T3-2 harness hook instead of `RS_TEMPORAL_TRACE`** (affects nobody). The composer has no `#define` and the kernel
   passes extra defines only to `rs_initial`, so the T3-2 / T4-t harness does not use a define: `t-select.wgsl` has
   `const TSEL_TRACE_FORCE_P: bool = false`, which the test flips to `true` through `instrumentation.extraSources` (every
