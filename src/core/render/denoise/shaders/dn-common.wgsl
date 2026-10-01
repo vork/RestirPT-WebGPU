@@ -87,6 +87,17 @@ fn dn_guide_normal(g: vec2u) -> vec3f { return dn_oct_decode(unpack2x16snorm(g.y
 
 fn dn_in_image(c: vec2i) -> bool { return c.x >= 0 && c.y >= 0 && c.x < i32(dn.size.x) && c.y < i32(dn.size.y); }
 fn dn_flag(f: u32) -> bool { return (dn.flags & f) != 0u; }
-/// A finite non-negative f32 clamped to the fp16 range (rgba16float storage), else 0.
-fn dn_fp16(x: f32) -> f32 { return select(0.0, clamp(x, 0.0, DN_FP16_MAX), is_finite(x)); }
+/// x ≥ 0 rounded to the nearest binary16 value (ties to even), returned as f32 (Changelog DN-7): Metal converts f32 to
+/// f16 on rgba16float stores toward zero, which biased every history stored in fp16 low (≈ −ulp/2 per store; a 1/n
+/// accumulation drifts by ≈ −(n/2)·ulp/2). A value that is already binary16 converts exactly under any rounding mode.
+/// Exact: round-half-to-even on the f32 bit pattern (no log2 / exp2, which fast math does not keep exact).
+fn dn_rn16(x: f32) -> f32 {
+  if (!(x > 0.0)) { return 0.0; }
+  if (x < 6.1035156e-5) { return round(x * 16777216.0) * 5.9604645e-8; }   // binary16 subnormals: k·2^-24 (exact scaling)
+  let b = bitcast<u32>(x);                               // normal: keep 10 of the 23 mantissa bits, ties to even
+  return bitcast<f32>((b + 0xFFFu + ((b >> 13u) & 1u)) & 0xFFFFE000u);
+}
+
+/// A finite non-negative f32 clamped to the fp16 range and rounded to nearest (rgba16float storage), else 0.
+fn dn_fp16(x: f32) -> f32 { return dn_rn16(select(0.0, clamp(x, 0.0, DN_FP16_MAX), is_finite(x))); }
 fn dn_fp16v(v: vec3f) -> vec3f { return vec3f(dn_fp16(v.x), dn_fp16(v.y), dn_fp16(v.z)); }

@@ -186,7 +186,9 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
           if (a[4 * k] !== b[4 * k]) { vbufMismatch++; continue; }
           if (a[4 * k] !== 0xFFFFFFFF) vbufMaxBary = Math.max(vbufMaxBary, Math.abs(fa[4 * k + 1] - fb[4 * k + 1]), Math.abs(fa[4 * k + 2] - fb[4 * k + 2]));
         }
-        if (vbufMismatch || vbufMaxBary > 1e-4) errors.push(`M1 V-buffer vs rsVbuf: ${vbufMismatch} primId mismatches, max |Δbary| ${vbufMaxBary} (denoiser albedo from another sample)`);
+        // two separately compiled intersection pipelines: FMA contraction moves barycentrics by ulps of the edge functions
+        // (≤ 1e-3 on large triangles) and can flip an exact edge tie to the neighbouring triangle (a handful of pixels)
+        if (vbufMismatch > 1e-4 * W * H || vbufMaxBary > 1e-2) errors.push(`M1 V-buffer vs rsVbuf: ${vbufMismatch} primId mismatches, max |Δbary| ${vbufMaxBary} (denoiser albedo from another sample)`);
       }
       if (o.mode === 'flip' && o.evalFrames?.includes(i)) {
         const dn = await readTexture(device, color);

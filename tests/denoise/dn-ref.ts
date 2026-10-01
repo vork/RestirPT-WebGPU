@@ -183,7 +183,7 @@ export function refTemporal(inp: RefTemporalIn, prev: RefState): RefTemporalOut 
     const lambda = refLambdaAt(inp, x, y);
     const lp = Math.min(Math.max((lambda - s.lambda0) / Math.max(s.lambda1 - s.lambda0, 1e-6), 0), 1);
     const nIn = hw > 0 ? hn : 0;
-    const nNew = Math.min(1 + (1 - lp) * nIn, s.nMax);
+    const nNew = Math.min(1 + (1 - lp) * (lp > 0 ? Math.min(nIn, 1 / s.alphaMin) : nIn), s.nMax);   // DN-8
     const al = Math.max(s.alphaMin, 1 / nNew, lp);
     const nA = Math.min(1 + (hw > 0 ? ha[3] : 0), s.nMax);
     const alA = moved ? Math.max(1 / nA, 0.1) : 1 / nA;
@@ -198,8 +198,8 @@ export function refTemporal(inp: RefTemporalIn, prev: RefState): RefTemporalOut 
       mu = hmu + al * d;
       vr = (1 - al) * (v0 + al * d * d);
     }
-    for (let k = 0; k < 3; k++) { st.hist[3 * i + k] = st16(col[k]); atrous0[4 * i + k] = st16(col[k]); st.alb[4 * i + k] = st16(alb[k]); st.l1[3 * i + k] = st16(l1o[k]); }
-    st.alb[4 * i + 3] = Math.f16round(nA);
+    for (let k = 0; k < 3; k++) { st.hist[3 * i + k] = st16(col[k]); atrous0[4 * i + k] = st16(col[k]); st.alb[4 * i + k] = Math.fround(alb[k]); st.l1[3 * i + k] = Math.fround(Math.max(l1o[k], 0)); }   // f32 (DN-7)
+    st.alb[4 * i + 3] = nA;
     atrous0[4 * i + 3] = st16(vr * (s.varCorr > 0 ? Math.min(1, s.varCorr * al / (2 - al)) : 1));   // DN-4
     st.mom.set([st16(mu), st16(Math.sqrt(Math.max(vr, 0))), Math.f16round(nNew), fw], 4 * i);
     st.dist[i] = Math.fround(Math.hypot(p.pos[0] - cc[0], p.pos[1] - cc[1], p.pos[2] - cc[2]));
@@ -381,8 +381,8 @@ export function refResolveStatic(s: DenoiserSettings, out: ArrayLike<number>, pr
     const h = !reset ? prev.subarray(4 * i, 4 * i + 4) : new Float64Array(4);
     const nMax = dynamic ? Math.min(s.nMaxT, 8) : s.nMaxT;
     const nT = s.resolve ? Math.min(1 + h[3], Math.max(nMax, 1)) : 1;
-    for (let k = 0; k < 3; k++) res[4 * i + k] = st16(h[3] > 0 && nT > 1 ? h[k] + (out[3 * i + k] - h[k]) / nT : out[3 * i + k]);
-    res[4 * i + 3] = Math.f16round(nT);
+    for (let k = 0; k < 3; k++) res[4 * i + k] = Math.fround(Math.max(h[3] > 0 && nT > 1 ? h[k] + (out[3 * i + k] - h[k]) / nT : out[3 * i + k], 0));   // f32 (DN-7)
+    res[4 * i + 3] = nT;
   }
   return res;
 }

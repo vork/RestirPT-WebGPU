@@ -115,7 +115,7 @@ fn dn_atrous(@builtin(global_invocation_id) gid: vec3u) {
   let zc = dn_guide_dist(gc);
   let isFinal = (it.flags & DNI_FINAL) != 0u;
   if (!(zc > 0.0)) {                                    // background: pass the input through
-    if (isFinal) { textureStore(colourOut, p, vec4f(textureLoad(inputTex, p, 0).rgb, 1.0)); }
+    if (isFinal) { textureStore(colourOut, p, vec4f(dn_fp16v(textureLoad(inputTex, p, 0).rgb), 1.0)); }
     else { textureStore(atrousOut, p, c); }
     if ((it.flags & DNI_FEEDBACK) != 0u) { textureStore(histOut, p, vec4f(0.0)); }
     return;
@@ -159,7 +159,7 @@ fn dn_atrous(@builtin(global_invocation_id) gid: vec3u) {
   debug_write3(gid.xy, DNV_LEVEL0 + it.iter, res.rgb);
   if (isFinal) {
     let L1 = textureLoad(l1Tex, p, 0).rgb;
-    textureStore(colourOut, p, vec4f(res.rgb * textureLoad(albTex, p, 0).rgb + L1, 1.0));
+    textureStore(colourOut, p, vec4f(dn_fp16v(res.rgb * textureLoad(albTex, p, 0).rgb + L1), 1.0));
   } else {
     textureStore(atrousOut, p, res);
   }

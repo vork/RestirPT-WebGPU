@@ -117,6 +117,16 @@ function maxErr(gpu: ArrayLike<number>, ref: ArrayLike<number>, abs = 1e-4): { e
   return { err, at };
 }
 
+/** Moments (μ, σ, n, FW): μ / n / FW at fp16 precision; σ (√(m₂ − μ²) of fp16-stored moments: cancellation) as σ² relative to μ². */
+function expectMoments(gpu: ArrayLike<number>, ref: ArrayLike<number>, skipFw = false): void {
+  const strict = (a: ArrayLike<number>) => Array.from(a).filter((_, j) => (j & 3) !== 1 && (!skipFw || (j & 3) !== 3));
+  expect(maxErr(strict(gpu), strict(ref), 1e-3).err).toBeLessThan(3e-3);
+  for (let i = 0; i < ref.length / 4; i++) {
+    const mu = ref[4 * i], sg = ref[4 * i + 1], sg2 = gpu[4 * i + 1];
+    expect(Math.abs(sg2 * sg2 - sg * sg), `σ of pixel ${i}`).toBeLessThanOrEqual(4e-3 * (sg * sg + mu * mu) + 1e-7);
+  }
+}
+
 interface FrameIn {
   cam: CameraState; prev: CameraState; px: RefPixel[]; radiance: Float64Array; l1: Float64Array; reset: boolean;
   settings: DenoiserSettings; kind: 'restir' | 'pt'; restir?: DenoiseFrame['restir']; advanced?: boolean;
@@ -165,8 +175,8 @@ async function gpuState(): Promise<{ st: RefState; mom: number[]; atrous: [numbe
   const cur = rig.dn.parity;
   const mom = await f16(t.mom[cur]);
   const hist4 = await f16(t.hist[cur]);
-  const alb4 = await f16(t.alb[cur]);
-  const l14 = await f16(t.l1[cur]);
+  const alb4 = await f32(t.alb[cur]);
+  const l14 = await f32(t.l1[cur]);
   const geo = new Uint32Array(await readTex(t.geo[cur]));
   const st = emptyState(W, H);
   for (let i = 0; i < P; i++) {
@@ -192,7 +202,7 @@ describe('denoiser passes vs the f64 reference', () => {
     const ref = refTemporal({ W, H, px: pxA, cam, prevCam: cam, radiance, l1, flags: DNF.RESET | DNF.HAS_L1, settings: S0 }, emptyState(W, H));
     const g = await gpuState();
     expect(maxErr(g.atrous[0], ref.atrous0, 1e-3).err).toBeLessThan(2e-3);
-    expect(maxErr(g.mom, ref.state.mom, 1e-3).err).toBeLessThan(2e-3);
+    expectMoments(g.mom, ref.state.mom);
     expect(maxErr(g.st.dist, ref.state.dist, 1e-6).err).toBeLessThan(1e-6);
     const fl = refFilter(S0, ref.state, ref.atrous0, pxA, radiance, l1);
     expect(maxErr(g.atrous[1], fl.variance, 1e-3).err).toBeLessThan(3e-3);
@@ -212,8 +222,15 @@ describe('denoiser passes vs the f64 reference', () => {
     encodeFrame({ cam, prev, px, radiance, l1, reset: false, settings: S0, kind: 'restir' });
     const ref = refTemporal({ W, H, px, cam, prevCam: prev, radiance, l1, flags: DNF.HAS_L1, settings: S0 }, prevSt);
     const g = await gpuState();
-    expect(maxErr(g.atrous[0], ref.atrous0, 1e-3).err).toBeLessThan(3e-3);
-    expect(maxErr(g.mom, ref.state.mom, 1e-3).err).toBeLessThan(3e-3);
+    // colour at fp16 precision; the variance (m₂ − μ² of fp16-stored moments: cancellation) relative to μ²
+    const col = (a: ArrayLike<number>) => Array.from(a).filter((_, j) => (j & 3) !== 3);
+    const e0 = maxErr(col(g.atrous[0]), col(ref.atrous0), 1e-3);
+    expect(e0.err, `colour[${e0.at}]`).toBeLessThan(3e-3);
+    for (let i = 0; i < P; i++) {
+      const mu = ref.state.mom[4 * i];
+      expect(Math.abs(g.atrous[0][4 * i + 3] - ref.atrous0[4 * i + 3]), `variance of pixel ${i}`).toBeLessThanOrEqual(4e-3 * (ref.atrous0[4 * i + 3] + mu * mu) + 1e-7);
+    }
+    expectMoments(g.mom, ref.state.mom);
     const codes = new Set(ref.code);
     expect(codes.has(DN_REPROJ.FULL) && codes.has(DN_REPROJ.PARTIAL) && codes.has(DN_REPROJ.BG)).toBe(true);
     // n = 2 everywhere a history was found
@@ -306,7 +323,7 @@ describe('denoiser passes vs the f64 reference', () => {
     // λ drives the temporal pass (α, n) exactly as in the reference
     const ref = refTemporal({ W, H, px, cam, prevCam: cam, radiance: radB, l1, flags: DNF.HAS_L1 | DNF.FW | DNF.GRADIENT | DNF.LAMBDA | DNF.INVERSE, settings: S, fw: Float64Array.from({ length: P }, (_, q) => fwGpu(q)), lambdaTiles: Float64Array.from(lam) }, prevSt);
     const g = await gpuState();
-    expect(maxErr(g.mom.filter((_, j) => j % 4 !== 3), Array.from(ref.state.mom).filter((_, j) => j % 4 !== 3), 1e-3).err).toBeLessThan(3e-3);
+    expectMoments(g.mom, ref.state.mom, true);
     let reset = 0;
     for (let i = 0; i < P; i++) if (px[i].hit && ref.lambda[i] >= S.lambda1) { expect(g.mom[4 * i + 2]).toBe(1); reset++; }
     expect(reset).toBeGreaterThan(50);
@@ -326,7 +343,7 @@ describe('denoiser passes vs the f64 reference', () => {
       const radiance = noisy(px, 40 + k);
       encodeFrame({ cam, prev: k === 0 ? camAt(0.02) : cam, px, radiance, l1, reset: k === 0, settings: S, kind: 'restir' });
       const t = rig.dn.textures!;
-      const taa = await f16(t.taa[rig.dn.parity]);
+      const taa = await f32(t.taa[rig.dn.parity]);
       if (k >= 8) {                                      // past the dynamic window after the reset (n_t ≤ 8 + clipping)
         const out = await f16(t.out);
         const out3 = Array.from({ length: P * 3 }, (_, j) => out[4 * Math.floor(j / 3) + (j % 3)]);

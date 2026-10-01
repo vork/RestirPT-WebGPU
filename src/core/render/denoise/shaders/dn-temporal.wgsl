@@ -27,9 +27,9 @@
 @group(1) @binding(10) var momOut: texture_storage_2d<rgba16float, write>;
 @group(1) @binding(11) var geoOut: texture_storage_2d<rg32uint, write>;
 @group(1) @binding(12) var albPrev: texture_2d<f32>;
-@group(1) @binding(13) var albOut: texture_storage_2d<rgba16float, write>;
+@group(1) @binding(13) var albOut: texture_storage_2d<rgba32float, write>;   // f32: 1/n_a accumulation (DN-7)
 @group(1) @binding(14) var l1Prev: texture_2d<f32>;
-@group(1) @binding(15) var l1Out: texture_storage_2d<rgba16float, write>;
+@group(1) @binding(15) var l1Out: texture_storage_2d<rgba32float, write>;     // f32: 1/n_a accumulation (DN-7)
 
 const DN_REPROJ_BG: u32 = 0u;
 const DN_REPROJ_FULL: u32 = 1u;
@@ -152,8 +152,11 @@ fn dn_temporal(@builtin(global_invocation_id) gid: vec3u) {
   let h = dn_reproject(p, g.pos, n);
   let lambda = dn_lambda(p);
   let lp = clamp((lambda - dn.lambda0) / max(dn.lambda1 - dn.lambda0, 1e-6), 0.0, 1.0);
+  // Changelog DN-8: λ′ cuts the EFFECTIVE history length: beyond 1/α_min a longer n does not change α, so a partial cut
+  // of n = 64 left α at α_min and the stale share decayed only at the α_min rate.
   let nIn = select(0.0, h.n, h.w > 0.0);
-  let nNew = min(1.0 + (1.0 - lp) * nIn, dn.nMax);
+  let nCut = select(nIn, min(nIn, 1.0 / dn.alphaMin), lp > 0.0);
+  let nNew = min(1.0 + (1.0 - lp) * nCut, dn.nMax);
   let alpha = max(max(dn.alphaMin, 1.0 / nNew), lp);
   let camMoved = (frame.flags & FRAME_CAMERA_MOVED) != 0u;
   let nA = min(1.0 + select(0.0, h.alb.a, h.w > 0.0), dn.nMax);
@@ -184,8 +187,8 @@ fn dn_temporal(@builtin(global_invocation_id) gid: vec3u) {
   // successive frames, so K (varCorr, ≈ frames per independent sample) scales it back up: min(1, K·α/(2 − α)).
   let vScale = select(1.0, min(1.0, dn.varCorr * alpha / (2.0 - alpha)), dn.varCorr > 0.0);
   textureStore(atrousOut, p, vec4f(colour, dn_fp16(vr * vScale)));
-  textureStore(albOut, p, vec4f(dn_fp16v(alb), nA));
-  textureStore(l1Out, p, vec4f(dn_fp16v(l1), 0.0));
+  textureStore(albOut, p, vec4f(alb, nA));
+  textureStore(l1Out, p, vec4f(max(l1, vec3f(0.0)), 0.0));
   debug_write3(p, DNV_DEMOD, c);
   debug_write3(p, DNV_INTEGRATED, colour);
   debug_write1(p, DNV_HISTORY, nNew);

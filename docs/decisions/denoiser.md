@@ -52,7 +52,9 @@ every mode:
                                                                bilateral spatial variance; else copy)
   dn_atrous i        8×8 wg, i = 0 … N−1, step 2^i             dnAtrous[src], dnGeo[cur] → dnAtrous[dst]
                        i = 0 also writes dnHist[cur] (SVGF feedback of the first iteration)
-                       i = N−1 remodulates: colour = filtered·a′ + L1 → the colour target (pass-through for background)
+                       i = N−1 remodulates: ā·filtered + L̄1 → dnOut (pass-through for background; Changelog DN-1/2/6)
+  dn_resolve         8×8 wg                                    dnOut, dnTaa[prev], gbuf (motion) → dnTaa[cur], the colour target
+                                                               (temporal resolve of the output, Changelog DN-6)
 ```
 
 N = 0 is allowed (temporal accumulation only: `dn_variance` then writes the colour target). Default N = 5 (SVGF);
@@ -73,11 +75,14 @@ with the same parity: identical inputs ⇒ identical outputs (DN9). The PT colou
 | `dnGeo[2]` | rg32uint | 2 × 8 | 8.3 MB | x: f32 distance to the camera; y: oct 2×16 snorm shading normal | Distance in **f32**: the à-trous depth weight compares neighbour differences against the local depth gradient, which on grazing planes is ~10⁻³ of the distance (fp16 would quantise it). Normal **oct 2×16** (< 0.004° worst case with WGSL's round-to-nearest `pack2x16snorm`; data-formats.md §B3 quotes 0.0025° for an optimised encoder): never fp16 for unit vectors. One guide for the reprojection predicate (prev) and the à-trous edge stops (cur). |
 | `dnAtrous[2]` | rgba16float | 2 × 8 | 8.3 MB | à-trous ping-pong: demodulated colour + variance | Colour as `dnHist`. The variance only steers the luminance edge weight; it saturates at 6.5·10⁴ (σ = 256: such pixels are then filtered by geometry only, which is the desired behaviour for extreme noise). |
 | `dnInput` (PT only) | colour format | 16 | 8.3 MB | copy of the PT 1-spp sample | The PT writes its sample into the colour target, which the denoiser overwrites. |
-| `dnGradTile` | rg32float | 8 per tile | 65 KB | (ΣΔ, ΣM) over an 8×8 tile | Sums of up to 64 radiance-like values: f32 (tiny texture). |
+| `dnL1[2]` | rgba16float | 2 × 8 | 8.3 MB | accumulated L1 (Changelog DN-2) | emitter / env radiance seen directly; fp16 range clamps only extreme suns (display path). |
+| `dnOut` | rgba16float | 8 | 4.1 MB | remodulated output of the last à-trous (DN-6) | display radiance, as `dnHist`. |
+| `dnTaa[2]` | rgba16float | 2 × 8 | 8.3 MB | resolved output history (rgb, n_t ≤ 1024: exact in fp16) (DN-6) | as `dnOut`. |
+| `dnGradTile` | rgba32float | 16 per tile | 130 KB | (ΣΔ_f, ΣM_f, ΣΔ_i, ΣM_i) over an 8×8 tile (DN-2) | Sums of up to 64 radiance-like values: f32 (tiny texture). |
 | `dnLambda` | r32float | 4 per tile | 33 KB | λ of the 3×3-tile window | tiny. |
 | params | uniform 64 B | – | – | settings, flags, tile sizes, arena offsets | – |
 
-Total ≈ 50 MB at 540p (≈ 42 MB without the PT input copy). The M1 G-buffer (80 B/px f32, `renderer.ts`) is read once
+Total ≈ 71 MB at 540p (≈ 63 MB without the PT input copy). The M1 G-buffer (80 B/px f32, `renderer.ts`) is read once
 per pixel by `dn_temporal` (albedo, ns, pos, flags); data-formats.md P4 ("G-buffer 80 → 40 B in M5.5") is **not**
 done here **(own)**: the G-buffer layout is shared with the M1–M3 debug views and the primary pass, and the denoiser
 reads it once per pixel, so its cost to the denoiser is one 80-byte read; the à-trous iterations read only the compact
@@ -193,7 +198,11 @@ denoiser runs whenever it is on, also while a debug view is shown, so the histor
 | 525 | `dn.integrated` | vec3 | temporally integrated colour (before à-trous) |
 | 526 | `dn.reproj` | code | 0 background, 1 bilinear (all taps), 2 bilinear (partial), 3 ring fallback, 4 disoccluded, 5 reset |
 | 527 | `dn.pairs` | code | gradient pairs of the pixel: bit 0 forward, bit 1 inverse |
+| 528 | `dn.resolveN` | scalar | history length n_t of the output resolve (DN-6) |
 | 530 + i | `dn.level[i]` | vec3 | output of à-trous iteration i (demodulated), i = 0 … 5 |
+| 540 | `dn.demodFactor` | vec3 | a′ of this frame |
+| 541 | `dn.albedoAccum` | vec3 | ā (accumulated a′; remodulates the output) |
+| 542 | `dn.demodCheck` | scalar | lum(c·a′)/lum(L − L1): 1 wherever c is not clamped (the albedo is this sample's) |
 
 ## 10. Timing (HUD) and Q3
 
@@ -240,6 +249,10 @@ the denoiser off.
    ≥ 64 timing submits after 32 warm-up frames, M5 Pro, Chrome with `--enable-webgpu-developer-features`.
    **Pass iff the mean total ≤ 3 ms** on both.
 5. T16 on every PT reference used (`t16.denoiser === 'none'`).
+6. **Edge temporal stability** (Changelog DN-6) on (i) and (vii), frames 40–63, display luminance, edge pixels from the
+   PT reference: static camera, denoised with i.i.d. and with R2 jitter vs the denoiser-off progressive mean (pass iff
+   the edge std and the edge Δ/frame are ≤ the mean's); slow pan 0.5 mm/frame, denoised vs the raw 1-frame output
+   (pass iff the edge |I_t − 2I_{t−1} + I_{t−2}| is ≤ the raw output's).
 
 Writes `validation/out/m55-gate-<time>/summary.json` and `summary.md`. Never writes outside this worktree's
 `validation/out`.
@@ -291,7 +304,7 @@ Writes `validation/out/m55-gate-<time>/summary.json` and `summary.md`. Never wri
   edge pixels flipped from frame to frame (R2: a coherent shift of every edge and texel, the "wobble"). The progressive
   mean the user compared with averages the jitter away. Not the cause: the albedo source. The M1 G-buffer albedo is the
   same sample as `rs_primary`'s (same `pcg3d(runSeed, seedIndex, pixel)` jitter, LOD 0 textures); the harness checks
-  0 primId mismatches between the M1 V-buffer and `rsVbuf` (barycentrics equal to FMA-contraction ulps, ≤ 1e-4), and
+  ≤ 1 primId mismatch in 262 144 pixels between the M1 V-buffer and `rsVbuf` (an exact edge tie; barycentrics equal up to FMA-contraction differences, ≤ 7e-4), and
   view 542 shows lum(c·a′)/lum(L − L1) = 1. Pixel-centre rays (no jitter) would also be stable but alias every edge
   and texel against the box-filtered reference; a resolve keeps the anti-aliasing. Fix: `dn_resolve` (after the last
   à-trous, which now writes `dnOut`, rgba16float) accumulates the output (`dnTaa[2]`, rgba16float: rgb, n_t):
@@ -307,4 +320,24 @@ Writes `validation/out/m55-gate-<time>/summary.json` and `summary.md`. Never wri
   (i): progressive mean 0.0037 / 0.0011, denoiser before DN-6 0.030 / 0.027, with the resolve 0.0013 / 0.0004 (R2 0.0009 / 0.0004);
   (vii): 0.0021 / 0.0007, 0.0051 / 0.0034, 0.0007 / 0.0001 (R2 0.0005 / 0.0001).
   The gate gains the edge-stability step (§11).
+- **DN-7 (systematic darkening; coordinator: "a correctness bug in the display path").** After DN-6 the (vii) output
+  was 2–4 % darker than the reference (raw: +0.1 %). Ablation by stage (vii / (i), frame 63, mean over lit pixels):
+  temporal only −0.5 % / −0.2 %, + the resolve −1.5 % / −1.4 %, growing linearly with the accumulation length
+  (−0.8 % → −1.5 % over 64 frames at a constant per-frame input bias of −0.5 %). Cause: Metal converts f32 to f16 on
+  rgba16float stores **toward zero**, so every store loses ≈ ulp/2 (2⁻¹² relative); an EMA of weight α settles at
+  ≈ −ulp/(2α) (−0.1 % at α_min = 0.2), but a 1/n mean drifts by ≈ −(n/2)·ulp/2 (−0.8 % at n = 64). Not the cause:
+  ā vs a′, texture LOD, sRGB: albedo, a′ and ā are linear values of the same sample (LOD 0 in both pipelines; the
+  ā·c̄ − mean(a′c) covariance term is ≥ 0 for the dielectric demodulation, i.e. could only brighten). Fixes:
+  (1) the 1/n accumulators (ā and n_a: `dnAlb`, L̄1: `dnL1`, the resolve: `dnTaa`) are **rgba32float** (their
+  increments, down to 1/1024 of the value, are below binary16 resolution anyway); (2) every remaining rgba16float store
+  goes through `dn_rn16`, an exact round-half-to-even on the f32 bits, so the hardware conversion is exact. Result
+  (frame 63): temporal only +0.03 % / +0.03 %, + resolve −0.13 % / −0.12 %, full pipeline −0.6 % / −0.35 %: the
+  remainder is the à-trous luminance edge stop (σ_l → ∞: −0.15 % / +0.33 %), the known bias of value-dependent
+  (robust) weights on right-skewed Monte-Carlo noise; it trades against edge preservation and is left as is.
+  Memory: +16.6 MB at 540p (three rgba16float pairs → rgba32float).
+- **DN-8 (recovery of a partially detected change).** λ′ cut the stored history length (up to 64 for the colour, 1024
+  for the resolve), but α ≥ α_min means lengths beyond 1/α_min (colour) or 8 (resolve in the dynamic window) do not
+  change α: a partial cut (λ′ = 0.6 of n = 64 → 26) left α at α_min, and the stale share decayed at 0.8 per frame
+  ("C added": r = 0.76 on the step frame, 9 frames to 95 %). λ′ now cuts the effective lengths min(n, 1/α_min) and
+  min(n_t, 8).
 

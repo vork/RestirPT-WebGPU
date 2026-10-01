@@ -22,7 +22,7 @@
 @group(1) @binding(4) var<storage, read> gbuf: array<GBufTexel>;
 @group(1) @binding(5) var lambdaTex: texture_2d<f32>;
 @group(1) @binding(6) var momCur: texture_2d<f32>;
-@group(1) @binding(7) var taaOut: texture_storage_2d<rgba16float, write>;
+@group(1) @binding(7) var taaOut: texture_storage_2d<rgba32float, write>;   // f32: 1/n_t accumulation (DN-7)
 @group(1) @binding(8) var colourOut: texture_storage_2d<$COLOR_FORMAT, write>;
 
 const DN_TAA_DYN_MAX: f32 = 8.0;
@@ -82,7 +82,8 @@ fn dn_resolve(@builtin(global_invocation_id) gid: vec3u) {
   let lp = clamp((taa_lambda(p) - dn.lambda0) / max(dn.lambda1 - dn.lambda0, 1e-6), 0.0, 1.0);
   var nMax = dn.nMaxT;
   if (dynamic) { nMax = min(nMax, DN_TAA_DYN_MAX); }
-  let nT = select(min(1.0 + (1.0 - lp) * h.a, max(nMax, 1.0)), 1.0, dn_flag(DNF_NO_RESOLVE));
+  let hn = select(h.a, min(h.a, DN_TAA_DYN_MAX), lp > 0.0);   // λ′ cuts the effective length (DN-8)
+  let nT = select(min(1.0 + (1.0 - lp) * hn, max(nMax, 1.0)), 1.0, dn_flag(DNF_NO_RESOLVE));
   var res = cur;
   if (h.a > 0.0 && nT > 1.0) {
     var hist = h.rgb;
@@ -104,7 +105,7 @@ fn dn_resolve(@builtin(global_invocation_id) gid: vec3u) {
     }
     res = mix(hist, cur, max(1.0 / nT, lp));
   }
-  res = dn_fp16v(res);
+  res = max(res, vec3f(0.0));
   textureStore(taaOut, p, vec4f(res, nT));
   textureStore(colourOut, p, vec4f(res, 1.0));
   debug_write1(p, DNV_TAA_N, nT);

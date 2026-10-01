@@ -120,7 +120,7 @@ export class Denoiser {
         label: 'dn-temporal',
         entries: entries([{ buffer: ro }, { texture: tex() }, { texture: tex() }, { texture: tex('uint') }, { texture: tex() }, { texture: tex() }, { texture: tex() }, { buffer: ro },
           { storageTexture: st('rgba16float') }, { storageTexture: st('rgba16float') }, { storageTexture: st('rgba16float') }, { storageTexture: st('rg32uint') },
-          { texture: tex() }, { storageTexture: st('rgba16float') }, { texture: tex() }, { storageTexture: st('rgba16float') }]),
+          { texture: tex() }, { storageTexture: st('rgba32float') }, { texture: tex() }, { storageTexture: st('rgba32float') }]),
       }),
       variance: device.createBindGroupLayout({ label: 'dn-variance', entries: entries([{ texture: tex() }, { texture: tex() }, { texture: tex('uint') }, { storageTexture: st('rgba16float') }]) }),
       atrous: device.createBindGroupLayout({
@@ -131,7 +131,7 @@ export class Denoiser {
       resolve: device.createBindGroupLayout({
         label: `dn-resolve-${colorFormat}`,
         entries: entries([{ texture: tex() }, { texture: tex() }, { texture: tex('uint') }, { texture: tex('uint') }, { buffer: ro }, { texture: tex() }, { texture: tex() },
-          { storageTexture: st('rgba16float') }, { storageTexture: st(colorFormat) }]),
+          { storageTexture: st('rgba32float') }, { storageTexture: st(colorFormat) }]),
       }),
     };
     this.dummyTex = device.createTexture({ label: 'dn-zero', size: [1, 1], format: 'rgba32float', usage: GPUTextureUsage.TEXTURE_BINDING });
@@ -186,7 +186,7 @@ export class Denoiser {
     const pair = (label: string, format: GPUTextureFormat): [GPUTexture, GPUTexture] => [mk(`${label}0`, format), mk(`${label}1`, format)];
     const [tx, ty] = dnTiles(w, h);
     this.t = {
-      w, h, hist: pair('dn-hist', 'rgba16float'), mom: pair('dn-mom', 'rgba16float'), alb: pair('dn-alb', 'rgba16float'), l1: pair('dn-l1', 'rgba16float'), taa: pair('dn-taa', 'rgba16float'), out: mk('dn-out', 'rgba16float'), geo: pair('dn-geo', 'rg32uint'), atrous: pair('dn-atrous', 'rgba16float'),
+      w, h, hist: pair('dn-hist', 'rgba16float'), mom: pair('dn-mom', 'rgba16float'), alb: pair('dn-alb', 'rgba32float'), l1: pair('dn-l1', 'rgba32float'), taa: pair('dn-taa', 'rgba32float'), out: mk('dn-out', 'rgba16float'), geo: pair('dn-geo', 'rg32uint'), atrous: pair('dn-atrous', 'rgba16float'),
       gradTile: mk('dn-grad-tile', 'rgba32float', [tx, ty]), lambda: mk('dn-lambda', 'r32float', [tx, ty]),
     };
     this.groups.clear();
