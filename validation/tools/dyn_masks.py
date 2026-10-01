@@ -15,6 +15,9 @@ refuses empty masks), as are regions below MIN_REGION_PX = 256 pixels; both are 
 Silhouettes (plant N5 only; --sil): M_sil = pixels whose luminance differs from a 4-neighbour by >= 25 % of the larger
 (PT mean at t, pixel level), dilated by one pixel: the geometric/shading edges where a pixel-centre primary (N5) differs
 from the jittered one even with a static camera (Changelog E-6).
+Signed change regions (plants only, with --sil): M_up / M_down = the 4x4 cells with |L_t - L_{t-1}| >= 25 % of the larger
+that got brighter / darker (the sign-resolved M_edge; M_new / M_gone are their extreme cases and are empty for slow light
+or env motion, Changelog E-13).
 Dominance regions (plant sign checks only, not a partition): M_light:<name> = 4x4 blocks where the PT render of frame t
 with only that emitter enabled carries >= 70 % of the full PT's L_t.
 
@@ -158,6 +161,10 @@ def build(ref_t: Path, ref_prev: Path | None, frame: int, out: Path, disocc: Pat
         masks.update(partition(l_t, l_p, mean_t, mean_p, dis))
     if sil:
         masks["M_sil"] = silhouettes(img_t)
+        if with_partition:
+            edge = (np.abs(l_t - l_p) >= EDGE_FRAC * np.maximum(l_t, l_p)) & (np.maximum(l_t, l_p) > 0)
+            masks["M_up"] = edge & (l_t > l_p)
+            masks["M_down"] = edge & (l_t < l_p)
     for name, d in (dominance_refs or {}).items():
         masks[f"M_light:{name}"] = dominance(l_t, block_luma(mean_image(d)))
     sources = {"ref_t": str(ref_t), "ref_prev": None if ref_prev is None else str(ref_prev), "frame": frame,

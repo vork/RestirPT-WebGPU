@@ -209,16 +209,19 @@ for (const s of M5S) {
 
 def('ixs_a_point_256', async () => {
   resetLightIds();
-  const c = await cornellBase();
-  const { mb, mats } = cornellWith(c, { box: true });
-  const L = light('point', new Float32Array(pointM([-0.22, 0.14, -0.21])), 2, { color: [1, 0.9, 0.8] });
-  // linear path x −0.22 → +0.22 over frames 0…40 (1.1 cm/frame ≈ 3 px/frame of the box's shadow edge on the floor),
-  // passing behind the occluder box (x ∈ [−0.02, 0.10], seen from the camera) during frames ≈ 18–30; static after 40
-  const pos = (k: number): V3 => [lerp(-0.22, 0.22, clamp01(k / 40)), 0.14, -0.21];
+  // Open scene (no walls, no env, ρ 0.3): the indirect light in the box's shadow stays far below 1 % of the image mean,
+  // so cells swept by the shadow edge go from dark to lit (M_new) / lit to dark (M_gone) between frames (dyn_masks.py
+  // thresholds 1 % / 5 %). In the Cornell box the indirect light never lets a region drop below 1 % (Changelog E-13).
+  const mats = [v1('floor', { diffuse: [0.3, 0.3, 0.3] }), v1('box', { diffuse: [0.3, 0.3, 0.3] })];
+  const mb = new MeshBuilder().floor(-2, 2, -2, 2, 0, 0).box([0.1, 0, -0.15], [0.45, 0.4, 0.15], 1, { omit: ['-y'] });
+  const L = light('point', new Float32Array(pointM([-1.2, 0.5, -0.6])), 20, { color: [1, 0.9, 0.8] });
+  // linear path x −1.2 → +1.2 (6 cm/frame) behind the box (seen from the camera at +z): behind it during frames ≈ 22–28;
+  // static after 40. The shadow edge on the floor moves ≈ 3–15 px/frame (near → far from the box).
+  const pos = (k: number): V3 => [lerp(-1.2, 1.2, clamp01(k / 40)), 0.5, -0.6];
   await writeSequence('ixs_a_point_256', sceneOf('ixs_a_point_256', mb, mats, [L]), {
-    camera: cornellCam(c), T: 81, testFrames: [1, 10, 25, 40, 80],
-    notes: 'ixs-a: point light on a linear path behind an occluder box (frames 20-30), stops at 40',
-    frame: (k) => ({ lights: { [L.id]: { matrix: pointM(pos(k)), power: 2 } } }),
+    camera: { matrix: lookAt([0.2, 2.0, 2.2], [0.2, 0, -0.2]), yfov: 45 * deg }, T: 81, testFrames: [1, 10, 25, 40, 80],
+    notes: 'ixs-a: point light on a linear path behind an occluder box (frames ~22-28), stops at 40; open low-albedo floor',
+    frame: (k) => ({ lights: { [L.id]: { matrix: pointM(pos(k)), power: 20 } } }),
   });
 });
 
@@ -357,17 +360,39 @@ def('ixs_n4_twolights_256', async () => {
 
 // ---- env sequences (validation/out/m5/scenes) --------------------------------------------------------------------------------------
 
+/** glTF world direction of env texture coordinate (u, v) at rotation γ (math.md#env-mapping envDir; make-m3c.ts). */
+function envDirAt(u: number, v: number, g: number): V3 {
+  const phi = -2 * Math.PI * u + Math.PI, theta = -Math.PI * v + Math.PI;
+  const b = [Math.sin(theta) * Math.cos(phi), Math.sin(theta) * Math.sin(phi), Math.cos(theta)];
+  const cg = Math.cos(g), sg = Math.sin(g);
+  return [cg * b[0] + sg * b[1], b[2], -(-sg * b[0] + cg * b[1])];
+}
+
+/** Synthetic env for ixs-h (dynamic range 10⁶ ≈ 20 EV, a 2.8° patch; the pilots size its variance): sky 0.0002,
+ *  ground 0.0001 (dark shadows), a 4×4-texel patch of 100 at elevation ≈ 25° in the direction −z at γ = 0 (behind the objects as seen from the
+ *  camera). A 1°/frame rotation then moves the long, sharp shadow of a 1.6 m pole several pixels per frame (M_edge /
+ *  cells; with the overcast map no 4×4 cell changed by 25 % between frames, Changelog E-13). */
+function windowEnv(): EnvironmentData {
+  const W = 512, H = 256, t = new Float32Array(W * H * 4);
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) { const v = r >= H / 2 ? 0.0002 : 0.0001; t.set([v, v, v, 1], 4 * (r * W + c)); }
+  const row = Math.round((0.5 + 25 / 180) * H);
+  let bestU = 0, best = -Infinity;
+  for (let c = 0; c < W; c++) { const d = envDirAt((c + 0.5) / W, (row + 0.5) / H, 0); const sc = -d[2] / Math.hypot(d[0], d[2]); if (sc > best) { best = sc; bestU = c; } }
+  for (let r = row - 2; r < row + 2; r++) for (let c = bestU - 2; c < bestU + 2; c++) t.set([100, 100, 100, 1], 4 * (r * W + ((c + W) % W)));
+  return { ...envBase, name: 'patch-512x256', width: W, height: H, texels: t };
+}
+
 def('ixs_h_envrot_256', async () => {
   resetLightIds();
-  const mats = [v1('ground', { diffuse: [0.5, 0.5, 0.5] }), v1('lambert', { diffuse: [0.8, 0.8, 0.8] }), v1('ggx', { diffuse: [0, 0, 0], glossy: [0.9, 0.9, 0.9], roughness: 0.3, mix: 1 }), v1('wall', { diffuse: [0.6, 0.5, 0.4] })];
-  const mb = new MeshBuilder().floor(-2, 2, -2, 2, 0, 0)
+  const mats = [v1('ground', { diffuse: [0.5, 0.5, 0.5] }), v1('lambert', { diffuse: [0.8, 0.8, 0.8] }), v1('ggx', { diffuse: [0, 0, 0], glossy: [0.9, 0.9, 0.9], roughness: 0.3, mix: 1 }), v1('pole', { diffuse: [0.6, 0.5, 0.4] })];
+  const mb = new MeshBuilder().floor(-3, 3, -3, 3, 0, 0)
     .icosphere([-0.5, 0.4, 0], 0.4, 3, 1).icosphere([0.5, 0.4, 0], 0.4, 3, 2)
-    .quad([-2, 0, -1], [2, 0, -1], [2, 1.2, -1], [-2, 1.2, -1], 3);
-  const scene = { ...sceneOf('ixs_h_envrot_256', mb, mats, []), env: hdri(OVERCAST, OVERCAST_GAMMA) };
+    .box([-0.03, 0, -0.63], [0.03, 1.6, -0.57], 3, { omit: ['-y'] });
+  const scene = { ...sceneOf('ixs_h_envrot_256', mb, mats, []), env: windowEnv() };
   await writeSequence('ixs_h_envrot_256', scene, {
-    camera: { matrix: lookAt([0, 1.2, 2.8], [0, 0.35, 0]), yfov: 40 * deg }, T: 41, testFrames: [1, 10, 25, 40],
-    notes: `ixs-h: ${OVERCAST} rotating 1 deg/frame over a Lambert and a GGX r 0.3 sphere, a floor and a wall`,
-    frame: (k) => ({ env: { rotationZ: OVERCAST_GAMMA + k * deg } }),
+    camera: { matrix: lookAt([0, 2.4, 3.2], [0, 0, 0.6]), yfov: 50 * deg }, T: 41, testFrames: [1, 10, 25, 40],
+    notes: 'ixs-h: synthetic env (sky 0.0002, a 4x4-texel patch of 100 at 25 deg) rotating 1 deg/frame over a Lambert and a GGX r 0.3 sphere, a floor and a 1.6 m pole',
+    frame: (k) => ({ env: { rotationZ: k * deg } }),
   });
 });
 

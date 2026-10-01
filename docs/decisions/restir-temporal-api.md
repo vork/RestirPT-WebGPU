@@ -1511,6 +1511,16 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   ixs_f_combined (31 min, R 14 432). No unit is infeasible. Plants on packages without a gating unit (ixs_d_glossy,
   ixs_e_half, ixs_n4_twolights) run 4096 chains (`PLANT_ONLY_R`); the others use their unit's R. Rows:
   `validation/budget.json` `m5_entries`.
+- **E-13 Plant regions under slow motion; ixs_a / ixs_h scripts revised** (§6.2, §6.5; affects nobody's code). The
+  pilot masks showed (a) M_new / M_gone (a 4×4 cell from ≤ 1 % to ≥ 5 % of the image mean between consecutive frames)
+  are empty in the Cornell box (its indirect light never drops a cell below 1 %) and under a 1°/frame env rotation (a
+  shadow edge must cross penumbra + one cell in one frame); (b) with the overcast map no cell changes by 25 % (M_edge
+  empty). Revisions: ixs_a is now an open low-albedo floor (ρ 0.3, no walls, no env) with the box and a point light moving
+  6 cm/frame (M_gone at 10, M_new + M_gone at 25, M_new at 40); ixs_h uses a synthetic env (sky 2·10⁻⁴, a 4×4-texel
+  patch of 100 at 25°, ≈ 20 EV) over the two spheres and a 1.6 m pole (M_edge at every test frame). Plant masks add the
+  sign-resolved edge cells M_up / M_down (|ΔL| ≥ 25 %, brighter / darker; M_new / M_gone are their extreme cases), and the
+  predictions on M_new (−) / M_gone (+) of N1-consistent, N3 and E_{t−1}-with-γ_t are repeated on M_up (−) / M_down (+):
+  the same physics on the cells that exist. Predictions on empty regions stay "not evaluable" (E-6).
 - **B-7 T3-2 harness hook instead of `RS_TEMPORAL_TRACE`** (affects nobody). The composer has no `#define` and the kernel
   passes extra defines only to `rs_initial`, so the T3-2 / T4-t harness does not use a define: `t-select.wgsl` has
   `const TSEL_TRACE_FORCE_P: bool = false`, which the test flips to `true` through `instrumentation.extraSources` (every
