@@ -172,7 +172,7 @@ export const M5_PLANTS: PlantSpec[] = [
   P('U8-1', 'U8-1 w1 < 1 for delta (RSF_PLANT_U8_W1DELTA)', 'u8_c0c_point_b1', '3.4', ['--u8-plant', 'u8W1Delta'], pr([24], 'global', '-')),
   P('U8-3', 'U8-3 no p_k ratio (RSF_PLANT_U8_NO_PK)', 'u8_c0e_rect_b1', '3.4', ['--u8-plant', 'u8NoPk'], pr([24], 'global', 'detect')),
   P('U8-6', 'U8-6 one-sided ignored (RSF_PLANT_U8_ONESIDED)', 'u8_c0e_rect_b1', '3.4', ['--u8-plant', 'u8OneSided'], pr([24], 'global', '+')),
-  P('U8-9', 'U8-9 FAILED dropped from k (RSF_PLANT_U8_FAILED_K)', 'u8_c0e_rect_b1', '3.4', ['--u8-plant', 'u8FailedK'], pr([24], 'global', '-')),
+  P('U8-9', 'U8-9 FAILED dropped from k (RSF_PLANT_U8_FAILED_K)', 'u8_c0e_rect_b1', '3.4', ['--u8-plant', 'u8FailedK'], pr([24], 'global', '+')),   // Δ > 0 (Changelog D-5)
   P('U8-2t', 'U8-2t stale aux across frames (TP_U8_STALE_AUX)', 'ixs_b_area_256', '3.6', ['--tplant', 'u8StaleAux'], pr([16, 24], 'global', 'detect')),
   P('U8-5t', 'U8-5t spot profile of t-1 (TP_U8_SPOT_PREV_AXIS)', 'ixs_c_spot_b03_256', '3.6', ['--tplant', 'u8SpotPrevAxis'], pr([20], 'global', 'detect')),
 ];
