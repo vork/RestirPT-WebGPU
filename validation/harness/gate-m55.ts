@@ -202,7 +202,10 @@ export function milestoneM55(record: Rec, o: M55Options = {}): void {
   const failed = steps.filter((s) => !s.ok).map((s) => s.name);
   const summary = { milestone: 'M5.5', run: runId, created: new Date().toISOString(), ok: failed.length === 0, total_s: Math.round((performance.now() - t0) / 100) / 10, failed, steps };
   writeFileSync(path.join(ROOT, dir, 'summary.json'), `${JSON.stringify(summary, null, 1)}\n`);
-  console.log(`\nsummary: ${dir}/summary.json`);
+  const md = [`# M5.5 gate ${runId}: ${summary.ok ? 'PASS' : 'FAIL'}`, '', '| step | result | detail |', '|---|---|---|',
+    ...steps.map((x) => `| ${x.name} | ${x.ok ? 'pass' : '**FAIL**'} | ${(x.detail ?? '').replace(/\|/g, '/')} |`)].join('\n');
+  writeFileSync(path.join(ROOT, dir, 'summary.md'), `${md}\n`);
+  console.log(`\nsummary: ${dir}/summary.json, summary.md`);
 }
 
 const dnEcho = (l: string) => /^(OK|FAIL)\s|RESULT|lock wait|denoiser .* ms|Error/.test(l);

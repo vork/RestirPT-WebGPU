@@ -69,6 +69,7 @@ with the same parity: identical inputs ⇒ identical outputs (DN9). The PT colou
 |---|---|---|---|---|---|
 | `dnHist[2]` | rgba16float | 2 × 8 | 8.3 MB | demodulated colour history (rgb; a unused) | fp16 keeps 11 significant bits (rel. 4.9·10⁻⁴): far below the Monte-Carlo noise and the 8-bit display after the view transform. Range 6.5·10⁴: the demodulated input is clamped to it (a biased display path; only firefly pixels reach it). |
 | `dnMom[2]` | rgba16float | 2 × 8 | 8.3 MB | (μ_l, σ_l, n, FW): EMA mean and **standard deviation** of the demodulated luminance, history length n, lum(F·W) of the final reservoir (gradient input of the next frame) | The raw second moment would square the dynamic range (fp16 overflows at l > 256) and lose the variance to cancellation (m₂ − m₁² with 2⁻¹¹ relative error leaves a floor of 4.9·10⁻⁴·μ²). The West/Welford EMA update `δ = l − μ; μ += αδ; σ² = (1 − α)(σ² + αδ²)` runs in f32 registers and stores σ, which has the range and precision of the luminance. n ≤ 2048 is exact in fp16 (we cap at 64). FW is a radiance-like estimate (relative precision suffices; a clamp at 6.5·10⁴ only weakens the gradient of a firefly). |
+| `dnAlb[2]` | rgba16float | 2 × 8 | 8.3 MB | accumulated demodulation factor ā (Changelog DN-1) | a′ ∈ [0.02, 1]: fp16 keeps 2⁻¹¹ relative (rgba8unorm would be 1/255 absolute, 20 % at a′ = 0.02). |
 | `dnGeo[2]` | rg32uint | 2 × 8 | 8.3 MB | x: f32 distance to the camera; y: oct 2×16 snorm shading normal | Distance in **f32**: the à-trous depth weight compares neighbour differences against the local depth gradient, which on grazing planes is ~10⁻³ of the distance (fp16 would quantise it). Normal **oct 2×16** (< 0.004° worst case with WGSL's round-to-nearest `pack2x16snorm`; data-formats.md §B3 quotes 0.0025° for an optimised encoder): never fp16 for unit vectors. One guide for the reprojection predicate (prev) and the à-trous edge stops (cur). |
 | `dnAtrous[2]` | rgba16float | 2 × 8 | 8.3 MB | à-trous ping-pong: demodulated colour + variance | Colour as `dnHist`. The variance only steers the luminance edge weight; it saturates at 6.5·10⁴ (σ = 256: such pixels are then filtered by geometry only, which is the desired behaviour for extreme noise). |
 | `dnInput` (PT only) | colour format | 16 | 8.3 MB | copy of the PT 1-spp sample | The PT writes its sample into the colour target, which the denoiser overwrites. |
@@ -76,7 +77,7 @@ with the same parity: identical inputs ⇒ identical outputs (DN9). The PT colou
 | `dnLambda` | r32float | 4 per tile | 33 KB | λ of the 3×3-tile window | tiny. |
 | params | uniform 64 B | – | – | settings, flags, tile sizes, arena offsets | – |
 
-Total ≈ 42 MB at 540p (≈ 34 MB without the PT input copy). The M1 G-buffer (80 B/px f32, `renderer.ts`) is read once
+Total ≈ 50 MB at 540p (≈ 42 MB without the PT input copy). The M1 G-buffer (80 B/px f32, `renderer.ts`) is read once
 per pixel by `dn_temporal` (albedo, ns, pos, flags); data-formats.md P4 ("G-buffer 80 → 40 B in M5.5") is **not**
 done here **(own)**: the G-buffer layout is shared with the M1–M3 debug views and the primary pass, and the denoiser
 reads it once per pixel, so its cost to the denoiser is one 80-byte read; the à-trous iterations read only the compact
@@ -90,7 +91,8 @@ reads it once per pixel, so its cost to the denoiser is one 80-byte read; the à
   demodulation instead of a ×50 gain). albedo = `material_albedo` of the primary G-buffer (V1: diffuse colour; V2:
   base colour × texture × COLOR_0).
 - c = clamp((L_frame − L1)/a′, 0, 65504) per channel (ReSTIR: L_frame = `rsFrame`, L1 = `rsL1`; PT: L1 = 0).
-- Output = a′·filtered + L1. The round trip is exact up to fp16 rounding of `filtered`.
+- Output = ā·filtered + L1 with ā the temporally accumulated a′ (Changelog DN-1; = a′ inside a surface, so the round
+  trip is exact up to fp16 rounding there).
 
 ## 4. Reprojection (DN5)
 
@@ -104,6 +106,7 @@ sp = `frame_project(x₁, prevCam) − 0.5`, z = ‖x₁ − o_{t−1}‖.
   n (weighted, then floored), FW is **not** reprojected (it is a per-pixel value of the previous frame, read at q′ by the
   gradient pass).
 - Background pixels are never destinations; a background previous tap is invalid (z′ = 0).
+- **Static camera** (Changelog DN-1): identity, the pixel's own history whenever the previous frame had a hit there.
 
 TD12 uses n^g; the denoiser uses n^s for both the predicate and the edge stops (one guide) **(own)**: identical on the
 flat-shaded validation scenes, and the 60° threshold makes the difference immaterial on smooth meshes.
@@ -246,3 +249,16 @@ Writes `validation/out/m55-gate-<time>/summary.json` and `summary.md`. Never wri
 ## Changelog
 
 (append-only)
+
+- **DN-1 (implementation, first FLIP trial on (i)).** With the TD12 predicate on every frame and remodulation by the
+  current frame's albedo, silhouettes came out stair-stepped and speckled: each frame's single jittered sample decides
+  which surface (and albedo) a silhouette pixel shows, so its history failed the depth/normal test whenever the
+  previous sample hit the other surface, and remodulation point-sampled the albedo. Two changes:
+  1. **Static camera ⇒ identity reprojection** (`FRAME_CAMERA_MOVED` clear): the pixel's own history is used whenever
+     the previous frame had a hit there. With static geometry (PLAN §0) the pixel footprint is identical, only the
+     jitter moves the sample, exactly as for the progressive mean. With camera motion the §4 rule (TD12) applies.
+  2. **Accumulated demodulation factor ā** (`dnAlb`, rgba16float): a′ is blended with the colour's α and reprojection
+     weights, and the last à-trous pass remodulates with ā instead of the current a′. Inside a surface ā = a′ exactly;
+     at silhouettes and on textures it is the jitter-averaged (box-filtered) factor, so edges and texture detail are
+     anti-aliased like the reference. L1 (directly seen emitters and env) stays per frame.
+  The CPU reference and the GPU suite cover both (U-DN-3 runs the identity path).

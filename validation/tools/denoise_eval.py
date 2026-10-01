@@ -52,11 +52,11 @@ def write_png(path: Path, img: np.ndarray) -> None:
     a = np.clip(img, 0, 1)
     if a.ndim == 2:
         a = np.repeat(a[:, :, None], 3, axis=2)
-    a = (a * 255 + 0.5).astype(np.uint8)
-    out = oiio.ImageOutput.create(str(path))
-    out.open(str(path), oiio.ImageSpec(a.shape[1], a.shape[0], 3, oiio.UINT8))
-    out.write_image(a)
-    out.close()
+    a = np.ascontiguousarray((a * 255 + 0.5).astype(np.uint8))
+    buf = oiio.ImageBuf(oiio.ImageSpec(a.shape[1], a.shape[0], a.shape[2], oiio.UINT8))
+    buf.set_pixels(oiio.ROI(), a)
+    if not buf.write(str(path)):
+        raise RuntimeError(f"{path}: {buf.geterror()}")
 
 
 def cmd_flip(a: argparse.Namespace) -> int:

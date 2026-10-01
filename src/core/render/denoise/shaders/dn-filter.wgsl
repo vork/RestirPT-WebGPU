@@ -5,7 +5,7 @@
 // input passes through).
 //   dn_variance  G1: 0 dnAtrous[0] · 1 dnMom[cur] · 2 dnGeo[cur] · 3 dnAtrous[1] (w)
 //   dn_atrous    G1: 0 dnAtrous[src] · 1 dnGeo[cur] · 2 DnIter · 3 dnAtrous[dst] (w) · 4 dnHist[cur] (w) · 5 colour (w)
-//                · 6 input · 7 L1 · 8 gbuf (ro)
+//                · 6 input · 7 L1 · 8 dnAlb[cur] (the accumulated demodulation factor ā, Changelog DN-1)
 #include "denoise/dn-common.wgsl"
 
 /// One-sided depth gradient per axis at p (the smaller difference, so a silhouette does not inflate it).
@@ -74,7 +74,6 @@ fn dn_variance(@builtin(global_invocation_id) gid: vec3u) {
 #endif
 
 #if DN_ATROUS
-#include "passes/gbuffer.wgsl"
 struct DnIter { iter: u32, step: u32, flags: u32, pad: u32 }
 const DNI_FEEDBACK: u32 = 1u;   // iteration 0: write the output as the colour history (SVGF)
 const DNI_FINAL: u32 = 2u;      // last iteration: remodulate into the colour target
@@ -88,7 +87,7 @@ const DNI_COPY: u32 = 4u;       // no filtering (0 iterations)
 @group(1) @binding(5) var colourOut: texture_storage_2d<$COLOR_FORMAT, write>;
 @group(1) @binding(6) var inputTex: texture_2d<f32>;
 @group(1) @binding(7) var l1Tex: texture_2d<f32>;
-@group(1) @binding(8) var<storage, read> gbuf: array<GBufTexel>;
+@group(1) @binding(8) var albTex: texture_2d<f32>;
 
 
 /// 3×3 Gaussian of the variance around p (SVGF prefilter of the luminance edge stop).
@@ -156,9 +155,8 @@ fn dn_atrous(@builtin(global_invocation_id) gid: vec3u) {
   if ((it.flags & DNI_FEEDBACK) != 0u) { textureStore(histOut, p, vec4f(res.rgb, 0.0)); }
   debug_write3(gid.xy, DNV_LEVEL0 + it.iter, res.rgb);
   if (isFinal) {
-    let idx = u32(p.y) * dn.size.x + u32(p.x);
     let L1 = select(vec3f(0.0), textureLoad(l1Tex, p, 0).rgb, dn_flag(DNF_HAS_L1));
-    textureStore(colourOut, p, vec4f(res.rgb * dn_demod_factor(gbuf[idx].albedo) + L1, 1.0));
+    textureStore(colourOut, p, vec4f(res.rgb * textureLoad(albTex, p, 0).rgb + L1, 1.0));
   } else {
     textureStore(atrousOut, p, res);
   }

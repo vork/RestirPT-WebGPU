@@ -4,7 +4,10 @@
 // for the next frame's gradient.
 // G1: 0 gbuf (ro) · 1 input (rsFrame | the PT sample) · 2 L1 (rsL1 | zero) · 3 dnGeo[prev] · 4 dnHist[prev] · 5 dnMom[prev]
 //     · 6 dnLambda (tile res) · 7 res[final] (ro, ReSTIR; a dummy otherwise) · 8 dnAtrous[0] (w) · 9 dnHist[cur] (w)
-//     · 10 dnMom[cur] (w) · 11 dnGeo[cur] (w)
+//     · 10 dnMom[cur] (w) · 11 dnGeo[cur] (w) · 12 dnAlb[prev] · 13 dnAlb[cur] (w)
+// Changelog DN-1: a static camera reprojects by identity (static geometry: the pixel footprint is the same, only the
+// jitter moves the sample, as for the progressive mean); the demodulation factor a′ is accumulated like the colour
+// (dnAlb) and remodulates the output, so silhouettes and texture detail are anti-aliased over the jitter.
 #include "denoise/dn-common.wgsl"
 #include "passes/gbuffer.wgsl"
 
@@ -20,6 +23,8 @@
 @group(1) @binding(9) var histOut: texture_storage_2d<rgba16float, write>;
 @group(1) @binding(10) var momOut: texture_storage_2d<rgba16float, write>;
 @group(1) @binding(11) var geoOut: texture_storage_2d<rg32uint, write>;
+@group(1) @binding(12) var albPrev: texture_2d<f32>;
+@group(1) @binding(13) var albOut: texture_storage_2d<rgba16float, write>;
 
 const DN_REPROJ_BG: u32 = 0u;
 const DN_REPROJ_FULL: u32 = 1u;
@@ -28,7 +33,7 @@ const DN_REPROJ_RING: u32 = 3u;
 const DN_REPROJ_NONE: u32 = 4u;
 const DN_REPROJ_RESET: u32 = 5u;
 
-struct DnHistory { colour: vec3f, mu: f32, m2: f32, n: f32, w: f32, code: u32 }
+struct DnHistory { colour: vec3f, mu: f32, m2: f32, n: f32, w: f32, code: u32, alb: vec3f }
 
 /// TD12 predicate on a previous-frame tap (denoiser.md §4): a previous hit, dot(n, n′) ≥ 0.5, |z − z′| ≤ 0.1·z′.
 fn dn_tap_valid(c: vec2i, n: vec3f, z: f32) -> bool {
@@ -44,6 +49,7 @@ fn dn_accum_tap(h: ptr<function, DnHistory>, c: vec2i, w: f32) {
   let hc = textureLoad(histPrev, c, 0);
   let m = textureLoad(momPrev, c, 0);
   (*h).colour += w * hc.rgb;
+  (*h).alb += w * textureLoad(albPrev, c, 0).rgb;
   (*h).mu += w * m.x;
   (*h).m2 += w * (m.y * m.y + m.x * m.x);
   (*h).n += w * m.z;
@@ -52,9 +58,13 @@ fn dn_accum_tap(h: ptr<function, DnHistory>, c: vec2i, w: f32) {
 
 /// Reprojected history of a hit pixel: x₁ back-projected with prevCam, bilinear taps around sp (pixel centres at
 /// integers, tpick.wgsl's convention), else the 3×3 ring around round(sp), else none. Normalised.
-fn dn_reproject(pos: vec3f, n: vec3f) -> DnHistory {
-  var h = DnHistory(vec3f(0.0), 0.0, 0.0, 0.0, 0.0, DN_REPROJ_NONE);
+fn dn_reproject(p: vec2u, pos: vec3f, n: vec3f) -> DnHistory {
+  var h = DnHistory(vec3f(0.0), 0.0, 0.0, 0.0, 0.0, DN_REPROJ_NONE, vec3f(0.0));
   if (dn_flag(DNF_RESET)) { h.code = DN_REPROJ_RESET; return h; }
+  if ((frame.flags & FRAME_CAMERA_MOVED) == 0u) {        // static camera: identity (only the previous frame's hit is required)
+    if (dn_guide_dist(textureLoad(geoPrev, p, 0).xy) > 0.0) { dn_accum_tap(&h, vec2i(p), 1.0); h.code = DN_REPROJ_FULL; }
+    return h;
+  }
   if (!(frame_view_depth(pos, frame.prevCam) >= 1e-12)) { return h; }
   let z = length(pos - frame.prevCam.camToWorld[3].xyz);
   let sp = frame_project(pos, frame.prevCam) - vec2f(0.5);
@@ -73,7 +83,7 @@ fn dn_reproject(pos: vec3f, n: vec3f) -> DnHistory {
   if (h.w >= 1e-3) {
     h.code = select(DN_REPROJ_PARTIAL, DN_REPROJ_FULL, valid == 4u);
   } else {
-    h = DnHistory(vec3f(0.0), 0.0, 0.0, 0.0, 0.0, DN_REPROJ_NONE);
+    h = DnHistory(vec3f(0.0), 0.0, 0.0, 0.0, 0.0, DN_REPROJ_NONE, vec3f(0.0));
     let cr = vec2i(floor(sp + vec2f(0.5)));
     for (var dy = -1; dy <= 1; dy++) {
       for (var dx = -1; dx <= 1; dx++) {
@@ -84,7 +94,7 @@ fn dn_reproject(pos: vec3f, n: vec3f) -> DnHistory {
     if (h.w > 0.0) { h.code = DN_REPROJ_RING; } else { return h; }
   }
   let inv = 1.0 / h.w;
-  h.colour *= inv; h.mu *= inv; h.m2 *= inv; h.n *= inv;
+  h.colour *= inv; h.mu *= inv; h.m2 *= inv; h.n *= inv; h.alb *= inv;
   return h;
 }
 
@@ -122,25 +132,29 @@ fn dn_temporal(@builtin(global_invocation_id) gid: vec3u) {
     textureStore(momOut, p, vec4f(0.0, 0.0, 0.0, fw));
     textureStore(histOut, p, vec4f(0.0));
     textureStore(atrousOut, p, vec4f(0.0));
+    textureStore(albOut, p, vec4f(0.0));
     debug_write_code(p, DNV_REPROJ, DN_REPROJ_BG);
     return;
   }
   let L = textureLoad(inputTex, p, 0).rgb;
   let L1 = select(vec3f(0.0), textureLoad(l1Tex, p, 0).rgb, dn_flag(DNF_HAS_L1));
-  let c = dn_fp16v((L - L1) / dn_demod_factor(g.albedo));
+  let ad = dn_demod_factor(g.albedo);
+  let c = dn_fp16v((L - L1) / ad);
   let l = luminance(c);
   let n = g.ns;
-  let h = dn_reproject(g.pos, n);
+  let h = dn_reproject(p, g.pos, n);
   let lambda = dn_lambda(p);
   let lp = clamp((lambda - dn.lambda0) / max(dn.lambda1 - dn.lambda0, 1e-6), 0.0, 1.0);
   let nIn = select(0.0, h.n, h.w > 0.0);
   let nNew = min(1.0 + (1.0 - lp) * nIn, dn.nMax);
   let alpha = max(max(dn.alphaMin, 1.0 / nNew), lp);
   var colour = c;
+  var alb = ad;
   var mu = l;
   var vr = 0.0;
   if (h.w > 0.0) {
     colour = mix(h.colour, c, alpha);
+    alb = mix(h.alb, ad, alpha);
     let mu0 = h.mu;
     let v0 = max(h.m2 - mu0 * mu0, 0.0);
     let d = l - mu0;
@@ -154,6 +168,7 @@ fn dn_temporal(@builtin(global_invocation_id) gid: vec3u) {
   textureStore(momOut, p, vec4f(dn_fp16(mu), dn_fp16(sigma), nNew, fw));
   textureStore(histOut, p, vec4f(colour, 0.0));
   textureStore(atrousOut, p, vec4f(colour, dn_fp16(vr)));
+  textureStore(albOut, p, vec4f(dn_fp16v(alb), 0.0));
   debug_write3(p, DNV_DEMOD, c);
   debug_write3(p, DNV_INTEGRATED, colour);
   debug_write1(p, DNV_HISTORY, nNew);

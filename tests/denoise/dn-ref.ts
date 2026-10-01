@@ -84,11 +84,12 @@ export interface RefState {
   /** rgba16float values as stored. */
   hist: Float64Array;   // W·H·3
   mom: Float64Array;    // W·H·4 (μ, σ, n, FW)
+  alb: Float64Array;    // W·H·3 accumulated demodulation factor ā (Changelog DN-1)
   dist: Float64Array;   // W·H (f32)
   n: V3[];              // decoded guide normals
 }
 export function emptyState(W: number, H: number): RefState {
-  return { W, H, hist: new Float64Array(W * H * 3), mom: new Float64Array(W * H * 4), dist: new Float64Array(W * H), n: Array.from({ length: W * H }, () => [0, 0, 1] as V3) };
+  return { W, H, hist: new Float64Array(W * H * 3), mom: new Float64Array(W * H * 4), alb: new Float64Array(W * H * 3), dist: new Float64Array(W * H), n: Array.from({ length: W * H }, () => [0, 0, 1] as V3) };
 }
 
 export interface RefTemporalIn {
@@ -128,6 +129,7 @@ export function refLambdaAt(inp: RefTemporalIn, x: number, y: number): number {
 /** dn_temporal. */
 export function refTemporal(inp: RefTemporalIn, prev: RefState): RefTemporalOut {
   const { W, H, settings: s } = inp;
+  const moved = inp.cam.yfov !== inp.prevCam.yfov || Array.from({ length: 16 }, (_, k) => inp.cam.camToWorld[k] !== inp.prevCam.camToWorld[k]).some(Boolean);
   const st = emptyState(W, H);
   const atrous0 = new Float64Array(W * H * 4), code = new Uint32Array(W * H), alpha = new Float64Array(W * H), lambdaOut = new Float64Array(W * H), demod = new Float64Array(W * H * 3);
   const pc = camPos(inp.prevCam), cc = camPos(inp.cam);
@@ -141,14 +143,15 @@ export function refTemporal(inp: RefTemporalIn, prev: RefState): RefTemporalOut 
     for (let k = 0; k < 3; k++) demod[3 * i + k] = c[k];
     const l = lum(c);
     // reprojection
-    let hw = 0, hc = [0, 0, 0], hmu = 0, hm2 = 0, hn = 0, cd: number = DN_REPROJ.NONE;
+    let hw = 0, hc = [0, 0, 0], ha = [0, 0, 0], hmu = 0, hm2 = 0, hn = 0, cd: number = DN_REPROJ.NONE;
     const acc = (cx: number, cy: number, w: number) => {
       const j = cy * W + cx;
-      for (let k = 0; k < 3; k++) hc[k] += w * prev.hist[3 * j + k];
+      for (let k = 0; k < 3; k++) { hc[k] += w * prev.hist[3 * j + k]; ha[k] += w * prev.alb[3 * j + k]; }
       const mu = prev.mom[4 * j], sg = prev.mom[4 * j + 1];
       hmu += w * mu; hm2 += w * (sg * sg + mu * mu); hn += w * prev.mom[4 * j + 2]; hw += w;
     };
     if (inp.flags & DNF.RESET) cd = DN_REPROJ.RESET;
+    else if (!moved) { if (prev.dist[i] > 0) { acc(x, y, 1); cd = DN_REPROJ.FULL; } }
     else if (viewDepth(inp.prevCam, p.pos) >= 1e-12) {
       const z = Math.hypot(p.pos[0] - pc[0], p.pos[1] - pc[1], p.pos[2] - pc[2]);
       const pr = project(inp.prevCam, p.pos, W, H);
@@ -164,7 +167,7 @@ export function refTemporal(inp: RefTemporalIn, prev: RefState): RefTemporalOut 
         }
         if (hw >= 1e-3) cd = valid === 4 ? DN_REPROJ.FULL : DN_REPROJ.PARTIAL;
         else {
-          hw = 0; hc = [0, 0, 0]; hmu = 0; hm2 = 0; hn = 0;
+          hw = 0; hc = [0, 0, 0]; ha = [0, 0, 0]; hmu = 0; hm2 = 0; hn = 0;
           const cr = [Math.floor(sp[0] + 0.5), Math.floor(sp[1] + 0.5)];
           for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
             const cxy: [number, number] = [cr[0] + dx, cr[1] + dy];
@@ -174,21 +177,22 @@ export function refTemporal(inp: RefTemporalIn, prev: RefState): RefTemporalOut 
         }
       }
     }
-    if (hw > 0) { hc = hc.map((v) => v / hw); hmu /= hw; hm2 /= hw; hn /= hw; }
+    if (hw > 0) { hc = hc.map((v) => v / hw); ha = ha.map((v) => v / hw); hmu /= hw; hm2 /= hw; hn /= hw; }
     const lambda = refLambdaAt(inp, x, y);
     const lp = Math.min(Math.max((lambda - s.lambda0) / Math.max(s.lambda1 - s.lambda0, 1e-6), 0), 1);
     const nIn = hw > 0 ? hn : 0;
     const nNew = Math.min(1 + (1 - lp) * nIn, s.nMax);
     const al = Math.max(s.alphaMin, 1 / nNew, lp);
-    let col = c, mu = l, vr = 0;
+    let col = c, alb: number[] = a, mu = l, vr = 0;
     if (hw > 0) {
       col = [0, 1, 2].map((k) => hc[k] + al * (c[k] - hc[k]));
+      alb = [0, 1, 2].map((k) => ha[k] + al * (a[k] - ha[k]));
       const v0 = Math.max(hm2 - hmu * hmu, 0);
       const d = l - hmu;
       mu = hmu + al * d;
       vr = (1 - al) * (v0 + al * d * d);
     }
-    for (let k = 0; k < 3; k++) { st.hist[3 * i + k] = st16(col[k]); atrous0[4 * i + k] = st16(col[k]); }
+    for (let k = 0; k < 3; k++) { st.hist[3 * i + k] = st16(col[k]); atrous0[4 * i + k] = st16(col[k]); st.alb[3 * i + k] = st16(alb[k]); }
     atrous0[4 * i + 3] = st16(vr);
     st.mom.set([st16(mu), st16(Math.sqrt(Math.max(vr, 0))), Math.f16round(nNew), fw], 4 * i);
     st.dist[i] = Math.fround(Math.hypot(p.pos[0] - cc[0], p.pos[1] - cc[1], p.pos[2] - cc[2]));
@@ -304,8 +308,7 @@ export function refFilter(s: DenoiserSettings, st: RefState, atrous0: Float64Arr
   const colour = new Float64Array(st.W * st.H * 3);
   for (let i = 0; i < st.W * st.H; i++) {
     if (!(st.dist[i] > 0)) { for (let k = 0; k < 3; k++) colour[3 * i + k] = radiance[3 * i + k]; continue; }
-    const a = demodFactor(px[i].albedo);
-    for (let k = 0; k < 3; k++) colour[3 * i + k] = cur[4 * i + k] * a[k] + (l1 ? l1[3 * i + k] : 0);
+    for (let k = 0; k < 3; k++) colour[3 * i + k] = cur[4 * i + k] * st.alb[3 * i + k] + (l1 ? l1[3 * i + k] : 0);
   }
   return { variance, levels, feedback, colour };
 }

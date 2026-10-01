@@ -165,11 +165,13 @@ async function gpuState(): Promise<{ st: RefState; mom: number[]; atrous: [numbe
   const cur = rig.dn.parity;
   const mom = await f16(t.mom[cur]);
   const hist4 = await f16(t.hist[cur]);
+  const alb4 = await f16(t.alb[cur]);
   const geo = new Uint32Array(await readTex(t.geo[cur]));
   const st = emptyState(W, H);
   for (let i = 0; i < P; i++) {
     st.mom.set(mom.slice(4 * i, 4 * i + 4), 4 * i);
     st.hist.set(hist4.slice(4 * i, 4 * i + 3), 3 * i);
+    st.alb.set(alb4.slice(4 * i, 4 * i + 3), 3 * i);
     st.dist[i] = new Float32Array(Uint32Array.of(geo[2 * i]).buffer)[0];
   }
   return { st, mom, atrous: [await f16(t.atrous[0]), await f16(t.atrous[1])], hist: hist4, colour: await f32(rig.colour) };
