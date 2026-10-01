@@ -1358,9 +1358,9 @@
     }
   ],
   "m5_method": "M5 gate sizing (gate-m5.ts): pilots PT 128 spp x 16 per (package, frame) and 64 chains per unit (E = 16, 256²) in headless Chrome; ms = wall time incl. readback; sizes = PLAN §7.3 rule per test frame and aggregate (incl. mask regions) x1.25, R >= 256 (3.5: 64), multiples of 16; PT spp niceCeil per batch >= 256",
-  "m5_measured_at": "2026-10-01T04:26:23.083Z",
-  "m5_run": "m5-gate-20261001-042448",
-  "m5_plan_hours": 14.12,
+  "m5_measured_at": "2026-10-01T08:19:49.357Z",
+  "m5_run": "m5-gate-20261001-081240",
+  "m5_plan_hours": 14.14,
   "m5_entries": [
     {
       "unit": "m5s_cornell_i@3.3",
@@ -1375,9 +1375,9 @@
       ],
       "chains": 26624,
       "members": 16,
-      "ms_per_chain": 37.78,
-      "ms_per_member_frame": 1.511,
-      "chain_min": 16.77,
+      "ms_per_chain": 37.65,
+      "ms_per_member_frame": 1.506,
+      "chain_min": 16.71,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1395,9 +1395,9 @@
       ],
       "chains": 27760,
       "members": 16,
-      "ms_per_chain": 52.08,
-      "ms_per_member_frame": 2.083,
-      "chain_min": 24.09,
+      "ms_per_chain": 55.39,
+      "ms_per_member_frame": 2.216,
+      "chain_min": 25.63,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1412,9 +1412,9 @@
       "test_frames": [],
       "chains": 1184,
       "members": 16,
-      "ms_per_chain": 589.6,
-      "ms_per_member_frame": 2.047,
-      "chain_min": 11.63,
+      "ms_per_chain": 625.5,
+      "ms_per_member_frame": 2.172,
+      "chain_min": 12.34,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1432,13 +1432,13 @@
       ],
       "chains": 14416,
       "members": 16,
-      "ms_per_chain": 23.13,
-      "ms_per_member_frame": 0.9254,
-      "chain_min": 5.558,
+      "ms_per_chain": 24.47,
+      "ms_per_member_frame": 0.9789,
+      "chain_min": 5.88,
       "tile": 64,
       "cap": "ok",
       "notes": [
-        "tile aggregate enlarged to 64² (unit cap 30 min; at 32²: R 251248, 97 min)"
+        "tile aggregate enlarged to 64² (unit cap 30 min; at 32²: R 251248, 102 min)"
       ]
     },
     {
@@ -1454,13 +1454,13 @@
       ],
       "chains": 14928,
       "members": 16,
-      "ms_per_chain": 39.66,
-      "ms_per_member_frame": 1.586,
-      "chain_min": 9.868,
+      "ms_per_chain": 41.52,
+      "ms_per_member_frame": 1.661,
+      "chain_min": 10.33,
       "tile": 64,
       "cap": "ok",
       "notes": [
-        "tile aggregate enlarged to 64² (unit cap 30 min; at 32²: R 231488, 153 min)"
+        "tile aggregate enlarged to 64² (unit cap 30 min; at 32²: R 231488, 160 min)"
       ]
     },
     {
@@ -1476,9 +1476,9 @@
       ],
       "chains": 8288,
       "members": 16,
-      "ms_per_chain": 52.56,
-      "ms_per_member_frame": 2.102,
-      "chain_min": 7.26,
+      "ms_per_chain": 55.6,
+      "ms_per_member_frame": 2.224,
+      "chain_min": 7.68,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1496,9 +1496,9 @@
       ],
       "chains": 8064,
       "members": 16,
-      "ms_per_chain": 76.12,
-      "ms_per_member_frame": 3.045,
-      "chain_min": 10.23,
+      "ms_per_chain": 81.17,
+      "ms_per_member_frame": 3.247,
+      "chain_min": 10.91,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1513,9 +1513,9 @@
       "test_frames": [],
       "chains": 432,
       "members": 16,
-      "ms_per_chain": 870,
-      "ms_per_member_frame": 3.021,
-      "chain_min": 6.264,
+      "ms_per_chain": 924,
+      "ms_per_member_frame": 3.208,
+      "chain_min": 6.653,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1533,13 +1533,13 @@
       ],
       "chains": 2592,
       "members": 16,
-      "ms_per_chain": 54.72,
-      "ms_per_member_frame": 2.189,
-      "chain_min": 2.364,
+      "ms_per_chain": 58.11,
+      "ms_per_member_frame": 2.324,
+      "chain_min": 2.51,
       "tile": 64,
       "cap": "ok",
       "notes": [
-        "tile aggregate enlarged to 64² (unit cap 30 min; at 32²: R 47200, 43 min)"
+        "tile aggregate enlarged to 64² (unit cap 30 min; at 32²: R 47200, 46 min)"
       ]
     },
     {
@@ -1555,9 +1555,9 @@
       ],
       "chains": 928,
       "members": 16,
-      "ms_per_chain": 77.76,
-      "ms_per_member_frame": 3.11,
-      "chain_min": 1.203,
+      "ms_per_chain": 81.62,
+      "ms_per_member_frame": 3.265,
+      "chain_min": 1.262,
       "tile": 64,
       "cap": "ok",
       "notes": [
@@ -1577,13 +1577,13 @@
       ],
       "chains": 6352,
       "members": 16,
-      "ms_per_chain": 27.01,
-      "ms_per_member_frame": 1.08,
-      "chain_min": 2.859,
+      "ms_per_chain": 28.58,
+      "ms_per_member_frame": 1.143,
+      "chain_min": 3.025,
       "tile": 64,
       "cap": "ok",
       "notes": [
-        "tile aggregate enlarged to 64² (unit cap 30 min; at 32²: R 14366000, 6467 min)"
+        "tile aggregate enlarged to 64² (unit cap 30 min; at 32²: R 14366000, 6843 min)"
       ]
     },
     {
@@ -1599,13 +1599,13 @@
       ],
       "chains": 7840,
       "members": 16,
-      "ms_per_chain": 45.42,
-      "ms_per_member_frame": 1.817,
-      "chain_min": 5.935,
+      "ms_per_chain": 48.07,
+      "ms_per_member_frame": 1.923,
+      "chain_min": 6.282,
       "tile": 64,
       "cap": "ok",
       "notes": [
-        "tile aggregate enlarged to 64² (unit cap 30 min; at 32²: R 4626880, 3503 min)"
+        "tile aggregate enlarged to 64² (unit cap 30 min; at 32²: R 4626880, 3707 min)"
       ]
     },
     {
@@ -1621,9 +1621,9 @@
       ],
       "chains": 8208,
       "members": 16,
-      "ms_per_chain": 13.33,
-      "ms_per_member_frame": 0.5331,
-      "chain_min": 1.823,
+      "ms_per_chain": 14.62,
+      "ms_per_member_frame": 0.5849,
+      "chain_min": 2,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1641,9 +1641,9 @@
       ],
       "chains": 14336,
       "members": 16,
-      "ms_per_chain": 23.18,
-      "ms_per_member_frame": 0.9272,
-      "chain_min": 5.538,
+      "ms_per_chain": 25.3,
+      "ms_per_member_frame": 1.012,
+      "chain_min": 6.046,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1661,9 +1661,9 @@
       ],
       "chains": 864,
       "members": 16,
-      "ms_per_chain": 21.8,
-      "ms_per_member_frame": 0.8722,
-      "chain_min": 0.314,
+      "ms_per_chain": 23.47,
+      "ms_per_member_frame": 0.9389,
+      "chain_min": 0.338,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1681,9 +1681,9 @@
       ],
       "chains": 1120,
       "members": 16,
-      "ms_per_chain": 33.22,
-      "ms_per_member_frame": 1.329,
-      "chain_min": 0.62,
+      "ms_per_chain": 35.54,
+      "ms_per_member_frame": 1.422,
+      "chain_min": 0.6634,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1701,9 +1701,9 @@
       ],
       "chains": 5648,
       "members": 16,
-      "ms_per_chain": 37.44,
-      "ms_per_member_frame": 1.497,
-      "chain_min": 3.524,
+      "ms_per_chain": 39.48,
+      "ms_per_member_frame": 1.579,
+      "chain_min": 3.717,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1721,9 +1721,9 @@
       ],
       "chains": 4416,
       "members": 16,
-      "ms_per_chain": 57.83,
-      "ms_per_member_frame": 2.313,
-      "chain_min": 4.256,
+      "ms_per_chain": 61.46,
+      "ms_per_member_frame": 2.459,
+      "chain_min": 4.524,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1738,9 +1738,9 @@
       "test_frames": [],
       "chains": 352,
       "members": 16,
-      "ms_per_chain": 685.7,
-      "ms_per_member_frame": 2.381,
-      "chain_min": 4.023,
+      "ms_per_chain": 693.9,
+      "ms_per_member_frame": 2.409,
+      "chain_min": 4.071,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1758,9 +1758,9 @@
       ],
       "chains": 256,
       "members": 16,
-      "ms_per_chain": 14.57,
-      "ms_per_member_frame": 0.5826,
-      "chain_min": 0.06215,
+      "ms_per_chain": 15.24,
+      "ms_per_member_frame": 0.6097,
+      "chain_min": 0.06503,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1778,9 +1778,9 @@
       ],
       "chains": 256,
       "members": 16,
-      "ms_per_chain": 32.39,
-      "ms_per_member_frame": 1.296,
-      "chain_min": 0.1382,
+      "ms_per_chain": 30.42,
+      "ms_per_member_frame": 1.217,
+      "chain_min": 0.1298,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1798,9 +1798,9 @@
       ],
       "chains": 2784,
       "members": 16,
-      "ms_per_chain": 19.98,
-      "ms_per_member_frame": 0.7991,
-      "chain_min": 0.9269,
+      "ms_per_chain": 18.01,
+      "ms_per_member_frame": 0.7204,
+      "chain_min": 0.8357,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1818,9 +1818,9 @@
       ],
       "chains": 1760,
       "members": 16,
-      "ms_per_chain": 37.28,
-      "ms_per_member_frame": 1.491,
-      "chain_min": 1.094,
+      "ms_per_chain": 33.68,
+      "ms_per_member_frame": 1.347,
+      "chain_min": 0.9879,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1838,9 +1838,9 @@
       ],
       "chains": 2016,
       "members": 16,
-      "ms_per_chain": 12.36,
-      "ms_per_member_frame": 0.4944,
-      "chain_min": 0.4153,
+      "ms_per_chain": 12.33,
+      "ms_per_member_frame": 0.4933,
+      "chain_min": 0.4143,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1858,9 +1858,9 @@
       ],
       "chains": 384,
       "members": 16,
-      "ms_per_chain": 20.03,
-      "ms_per_member_frame": 0.801,
-      "chain_min": 0.1282,
+      "ms_per_chain": 20.09,
+      "ms_per_member_frame": 0.8036,
+      "chain_min": 0.1286,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1878,9 +1878,9 @@
       ],
       "chains": 19536,
       "members": 16,
-      "ms_per_chain": 16.46,
-      "ms_per_member_frame": 0.6582,
-      "chain_min": 5.358,
+      "ms_per_chain": 15.21,
+      "ms_per_member_frame": 0.6083,
+      "chain_min": 4.951,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1898,9 +1898,9 @@
       ],
       "chains": 17728,
       "members": 16,
-      "ms_per_chain": 35.72,
-      "ms_per_member_frame": 1.429,
-      "chain_min": 10.55,
+      "ms_per_chain": 30.34,
+      "ms_per_member_frame": 1.214,
+      "chain_min": 8.964,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1918,9 +1918,9 @@
       ],
       "chains": 1760,
       "members": 16,
-      "ms_per_chain": 13.52,
-      "ms_per_member_frame": 0.541,
-      "chain_min": 0.3967,
+      "ms_per_chain": 13.37,
+      "ms_per_member_frame": 0.5348,
+      "chain_min": 0.3922,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1938,9 +1938,9 @@
       ],
       "chains": 432,
       "members": 16,
-      "ms_per_chain": 24.5,
-      "ms_per_member_frame": 0.98,
-      "chain_min": 0.1764,
+      "ms_per_chain": 23.91,
+      "ms_per_member_frame": 0.9564,
+      "chain_min": 0.1722,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1958,9 +1958,9 @@
       ],
       "chains": 14224,
       "members": 16,
-      "ms_per_chain": 19.1,
-      "ms_per_member_frame": 0.7642,
-      "chain_min": 4.529,
+      "ms_per_chain": 16.43,
+      "ms_per_member_frame": 0.6574,
+      "chain_min": 3.896,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -1978,9 +1978,9 @@
       ],
       "chains": 13296,
       "members": 16,
-      "ms_per_chain": 37.15,
-      "ms_per_member_frame": 1.486,
-      "chain_min": 8.232,
+      "ms_per_chain": 31.01,
+      "ms_per_member_frame": 1.24,
+      "chain_min": 6.872,
       "tile": 32,
       "cap": "ok",
       "notes": []
@@ -2001,9 +2001,9 @@
       ],
       "chains": 256,
       "members": 16,
-      "ms_per_chain": 85.07,
-      "ms_per_member_frame": 1.05,
-      "chain_min": 0.363,
+      "ms_per_chain": 90.79,
+      "ms_per_member_frame": 1.121,
+      "chain_min": 0.3874,
       "tile": 64,
       "cap": "ok",
       "notes": []
@@ -2025,9 +2025,9 @@
       ],
       "chains": 2656,
       "members": 16,
-      "ms_per_chain": 124.3,
-      "ms_per_member_frame": 3.032,
-      "chain_min": 5.503,
+      "ms_per_chain": 102.4,
+      "ms_per_member_frame": 2.499,
+      "chain_min": 4.535,
       "tile": 64,
       "cap": "ok",
       "notes": []
@@ -2046,9 +2046,9 @@
       ],
       "chains": 10080,
       "members": 16,
-      "ms_per_chain": 101,
-      "ms_per_member_frame": 2.464,
-      "chain_min": 16.97,
+      "ms_per_chain": 88.25,
+      "ms_per_member_frame": 2.152,
+      "chain_min": 14.83,
       "tile": 64,
       "cap": "ok",
       "notes": []
@@ -2067,14 +2067,14 @@
       ],
       "chains": 25488,
       "members": 16,
-      "ms_per_chain": 100.7,
-      "ms_per_member_frame": 2.455,
-      "chain_min": 42.76,
+      "ms_per_chain": 87.48,
+      "ms_per_member_frame": 2.134,
+      "chain_min": 37.16,
       "tile": 128,
       "cap": "raised",
       "notes": [
-        "tile aggregate enlarged to 128² (unit cap 30 min; at 64²: R 28416, 48 min)",
-        "42.8 min > 30 min after the tile enlargement (global aggregate alone: 42.8 min): cap raised once to 90 min (Q4)"
+        "tile aggregate enlarged to 128² (unit cap 30 min; at 64²: R 28416, 41 min)",
+        "37.2 min > 30 min after the tile enlargement (global aggregate alone: 37.2 min): cap raised once to 90 min (Q4)"
       ]
     },
     {
@@ -2096,9 +2096,9 @@
       ],
       "chains": 784,
       "members": 16,
-      "ms_per_chain": 179.9,
-      "ms_per_member_frame": 2.767,
-      "chain_min": 2.35,
+      "ms_per_chain": 158.7,
+      "ms_per_member_frame": 2.442,
+      "chain_min": 2.074,
       "tile": 64,
       "cap": "ok",
       "notes": []
@@ -2117,9 +2117,9 @@
       ],
       "chains": 1824,
       "members": 16,
-      "ms_per_chain": 158.8,
-      "ms_per_member_frame": 2.443,
-      "chain_min": 4.828,
+      "ms_per_chain": 152.9,
+      "ms_per_member_frame": 2.352,
+      "chain_min": 4.647,
       "tile": 64,
       "cap": "ok",
       "notes": []
@@ -2140,15 +2140,15 @@
         21,
         40
       ],
-      "chains": 3408,
+      "chains": 3360,
       "members": 16,
-      "ms_per_chain": 94.32,
-      "ms_per_member_frame": 2.3,
-      "chain_min": 5.357,
+      "ms_per_chain": 100.4,
+      "ms_per_member_frame": 2.448,
+      "chain_min": 5.62,
       "tile": 128,
       "cap": "ok",
       "notes": [
-        "tile aggregate enlarged to 128² (unit cap 30 min; at 64²: R 32608, 51 min)"
+        "tile aggregate enlarged to 128² (unit cap 30 min; at 64²: R 39248, 66 min)"
       ]
     },
     {
@@ -2167,14 +2167,14 @@
       ],
       "chains": 14432,
       "members": 16,
-      "ms_per_chain": 130.7,
-      "ms_per_member_frame": 2.668,
-      "chain_min": 31.44,
+      "ms_per_chain": 129.3,
+      "ms_per_member_frame": 2.639,
+      "chain_min": 31.1,
       "tile": 128,
       "cap": "raised",
       "notes": [
         "tile aggregate enlarged to 128² (unit cap 30 min; at 64²: R 14432, 31 min)",
-        "31.4 min > 30 min after the tile enlargement (global aggregate alone: 31.4 min): cap raised once to 90 min (Q4)"
+        "31.1 min > 30 min after the tile enlargement (global aggregate alone: 31.1 min): cap raised once to 90 min (Q4)"
       ]
     },
     {
@@ -2191,9 +2191,9 @@
       ],
       "chains": 272,
       "members": 16,
-      "ms_per_chain": 78.07,
-      "ms_per_member_frame": 1.593,
-      "chain_min": 0.3539,
+      "ms_per_chain": 76,
+      "ms_per_member_frame": 1.551,
+      "chain_min": 0.3445,
       "tile": 64,
       "cap": "ok",
       "notes": []
@@ -2213,9 +2213,9 @@
       ],
       "chains": 4384,
       "members": 16,
-      "ms_per_chain": 83.97,
-      "ms_per_member_frame": 2.048,
-      "chain_min": 6.136,
+      "ms_per_chain": 88.88,
+      "ms_per_member_frame": 2.168,
+      "chain_min": 6.494,
       "tile": 64,
       "cap": "ok",
       "notes": []
@@ -2236,15 +2236,15 @@
         30,
         31
       ],
-      "chains": 15248,
+      "chains": 14320,
       "members": 16,
-      "ms_per_chain": 78.06,
-      "ms_per_member_frame": 2.439,
-      "chain_min": 19.84,
+      "ms_per_chain": 87.02,
+      "ms_per_member_frame": 2.719,
+      "chain_min": 20.77,
       "tile": 128,
       "cap": "ok",
       "notes": [
-        "tile aggregate enlarged to 128² (unit cap 30 min; at 64²: R 29040, 38 min)"
+        "tile aggregate enlarged to 128² (unit cap 30 min; at 64²: R 29968, 43 min)"
       ]
     },
     {
@@ -2261,9 +2261,9 @@
       ],
       "chains": 2448,
       "members": 16,
-      "ms_per_chain": 127.6,
-      "ms_per_member_frame": 3.112,
-      "chain_min": 5.205,
+      "ms_per_chain": 129.6,
+      "ms_per_member_frame": 3.162,
+      "chain_min": 5.289,
       "tile": 64,
       "cap": "ok",
       "notes": []
@@ -2283,9 +2283,9 @@
       ],
       "chains": 256,
       "members": 16,
-      "ms_per_chain": 73.95,
-      "ms_per_member_frame": 2.55,
-      "chain_min": 0.3155,
+      "ms_per_chain": 76.24,
+      "ms_per_member_frame": 2.629,
+      "chain_min": 0.3253,
       "tile": 64,
       "cap": "ok",
       "notes": []
@@ -2307,9 +2307,9 @@
       ],
       "chains": 992,
       "members": 16,
-      "ms_per_chain": 145.1,
-      "ms_per_member_frame": 3.539,
-      "chain_min": 2.399,
+      "ms_per_chain": 121,
+      "ms_per_member_frame": 2.95,
+      "chain_min": 2,
       "tile": 64,
       "cap": "ok",
       "notes": []
@@ -2331,9 +2331,9 @@
       ],
       "chains": 3008,
       "members": 16,
-      "ms_per_chain": 122.3,
-      "ms_per_member_frame": 2.982,
-      "chain_min": 6.129,
+      "ms_per_chain": 102.9,
+      "ms_per_member_frame": 2.511,
+      "chain_min": 5.161,
       "tile": 64,
       "cap": "ok",
       "notes": []
@@ -2354,15 +2354,15 @@
         21,
         40
       ],
-      "chains": 1968,
+      "chains": 1952,
       "members": 16,
-      "ms_per_chain": 102.9,
-      "ms_per_member_frame": 2.509,
-      "chain_min": 3.374,
+      "ms_per_chain": 111.5,
+      "ms_per_member_frame": 2.72,
+      "chain_min": 3.628,
       "tile": 128,
       "cap": "ok",
       "notes": [
-        "tile aggregate enlarged to 128² (unit cap 30 min; at 64²: R 13856, 24 min)"
+        "tile aggregate enlarged to 128² (unit cap 30 min; at 64²: R 16672, 31 min)"
       ]
     },
     {
@@ -2381,15 +2381,15 @@
         21,
         40
       ],
-      "chains": 8336,
+      "chains": 8304,
       "members": 16,
-      "ms_per_chain": 92.68,
-      "ms_per_member_frame": 2.261,
-      "chain_min": 12.88,
+      "ms_per_chain": 100.3,
+      "ms_per_member_frame": 2.445,
+      "chain_min": 13.88,
       "tile": 128,
       "cap": "ok",
       "notes": [
-        "tile aggregate enlarged to 128² (unit cap 30 min; at 64²: R 21920, 34 min)"
+        "tile aggregate enlarged to 128² (unit cap 30 min; at 64²: R 26384, 44 min)"
       ]
     },
     {
@@ -2411,9 +2411,9 @@
       ],
       "chains": 832,
       "members": 16,
-      "ms_per_chain": 184.1,
-      "ms_per_member_frame": 2.833,
-      "chain_min": 2.553,
+      "ms_per_chain": 167.9,
+      "ms_per_member_frame": 2.583,
+      "chain_min": 2.328,
       "tile": 64,
       "cap": "ok",
       "notes": []
