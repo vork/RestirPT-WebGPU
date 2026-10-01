@@ -13,7 +13,9 @@
 //   T16      every PT reference used carries t16.denoiser === 'none' (harness.ts wrapper).
 // Every render takes the shared GPU lock itself (run-batches.ts, run-denoise.ts, the app smoke; Chrome GPU tests through
 // withGpuLockSync), each hold ≤ 12 min. Output: validation/out/m55-gate-<time>/{summary.json, summary.md}.
-//   npm run validate -- --milestone M5.5 [--only flip,recovery,timing,gate0] [--prerender-ptrefs]
+//   Stability edge temporal stability (Changelog DN-6): static camera, denoised (i.i.d. and R2 jitter) vs the denoiser-off
+//            progressive mean (edge std, Δ/frame); slow pan, denoised vs the raw 1-frame output (second temporal difference).
+//   npm run validate -- --milestone M5.5 [--only gate0,flip,recovery,stability,timing] [--prerender-ptrefs]
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -60,6 +62,10 @@ export const RECOVERY_RUNS: RecoveryRun[] = [
 ];
 export const RECOVERY_SEEDS = 8;
 export const RECOVERY_MAX_FRAMES = 8;
+/** Edge temporal stability (Changelog DN-6, coordinator request): static camera (denoised with i.i.d. and R2 jitter vs the
+ *  denoiser-off progressive mean) and a slow pan (0.5 mm/frame, denoised vs the raw 1-frame output the app shows in
+ *  motion without the denoiser), display luminance, frames 40…63. */
+export const STABILITY = { scenes: ['cornell_i_512', 'vii_textured_512'], frames: [40, 64], pan: '0.0005:24:64' } as const;
 export const TIMING = { width: 960, height: 540, warmup: 32, iterations: 64, scenes: ['cornell_i_512', 'vii_textured_512'], maxMs: 3 } as const;
 
 /** Frame schedule of a recovery run: run frame → package frame. Step k starts at warm + (k−1)·hold. */
@@ -243,11 +249,11 @@ function denoiseRuns(jobs: DnJob[], label: string, add: Add): boolean {
   return ok;
 }
 
-function dnJob(pkg: string, mode: string, seed: number, extra: string[]): DnJob {
+function dnJob(pkg: string, mode: string, seed: number, extra: string[], label = mode): DnJob {
   const argv = ['--package', pkgDir(pkg), '--mode', mode, '--seed', String(seed), ...extra];
   const key = { kind: 'denoise', pkg, packageHash: packageHash(pkgDir(pkg)), argv, code: denoiseCodeHash(), restir: m4CodeHashes().restir };
   const k = sha(stableJson(key)).slice(0, 12);
-  return { argv, run: `m55dn-${pkg}-${mode}-s${seed}-${k}`, dest: path.join(DNRUNS, `${pkg}-${mode}-s${seed}-${k}`), key };
+  return { argv, run: `m55dn-${pkg}-${label}-s${seed}-${k}`, dest: path.join(DNRUNS, `${pkg}-${label}-s${seed}-${k}`), key };
 }
 
 function gateBody(dir: string, add: Add, want: (k: string) => boolean): void {
@@ -347,6 +353,46 @@ function gateBody(dir: string, add: Add, want: (k: string) => boolean): void {
       if (c.code !== 0 && !rep) add(`recovery ${r.label}`, false, c.seconds, undefined, c.out.slice(-400));
     }
     results.recovery = rec;
+  }
+
+  if (want('stability')) {
+    const ev = Array.from({ length: STABILITY.frames[1] - STABILITY.frames[0] }, (_, i) => STABILITY.frames[0] + i).join(',');
+    const base = ['--frames', '64', '--eval-frames', ev];
+    const variants: [string, string[]][] = [['dn-iid', []], ['dn-r2', ['--jitter', 'r2']], ['acc-iid', ['--no-denoise', '--accumulate']],
+      ['slow-dn-iid', ['--pan', STABILITY.pan]], ['slow-raw-iid', ['--no-denoise', '--pan', STABILITY.pan]]];
+    const per = new Map<string, Map<string, DnJob>>();
+    const jobs: DnJob[] = [];
+    for (const pkg of STABILITY.scenes) {
+      const m = new Map<string, DnJob>();
+      for (const [tag, extra] of variants) { const j = dnJob(pkg, 'flip', SEEDS.dn, [...base, ...extra], `stab-${tag}`); m.set(tag, j); jobs.push(j); }
+      per.set(pkg, m);
+    }
+    denoiseRuns(jobs, 'edge-stability renders (static camera, slow pan)', add);
+    const stab: Record<string, unknown> = {};
+    for (const pkg of STABILITY.scenes) {
+      const m = per.get(pkg)!;
+      const ref = refs.get(`${pkg}@base`);
+      if (!ref || ![...m.values()].every((j) => existsSync(path.join(ROOT, j.dest, 'meta.json')))) { add(`edge stability ${pkg}`, false, 0, undefined, 'renders or reference missing'); continue; }
+      const runs = (tags: string[]) => tags.map((t) => `${t}=${path.join(ROOT, m.get(t)!.dest)}`).join(',');
+      const fr = `${STABILITY.frames[0]}:${STABILITY.frames[1]}`;
+      const so = path.join(dir, `stability-${pkg}.json`), mo = path.join(dir, `stability-motion-${pkg}.json`);
+      sh(PY, ['validation/tools/denoise_eval.py', 'stability', '--ref', path.join(ROOT, ref.dir, 'mean.pfm'), '--runs', runs(['acc-iid', 'dn-iid', 'dn-r2']), '--frames', fr, '--out', path.join(ROOT, so)], () => true);
+      sh(PY, ['validation/tools/denoise_eval.py', 'stability', '--motion', '--ref', path.join(ROOT, ref.dir, 'mean.pfm'), '--runs', runs(['slow-raw-iid', 'slow-dn-iid']), '--frames', fr, '--out', path.join(ROOT, mo)], () => true);
+      const S = tryJson(so)?.runs, M = tryJson(mo)?.runs;
+      stab[pkg] = { static: S, motion: M };
+      if (!S || !M) { add(`edge stability ${pkg}`, false, 0, undefined, 'evaluation failed'); continue; }
+      const acc = S['acc-iid'];
+      for (const v of ['dn-iid', 'dn-r2']) {
+        const r = S[v];
+        add(`edge stability ${pkg}, static camera, denoised (${v.slice(3)} jitter) vs the progressive mean: edge std and Δ/frame ≤ the mean's`,
+          r.edge_std <= acc.edge_std && r.edge_dt <= acc.edge_dt, 0, { denoised: r, progressiveMean: acc },
+          `edge std ${r.edge_std.toFixed(4)} vs ${acc.edge_std.toFixed(4)}, Δ ${r.edge_dt.toFixed(4)} vs ${acc.edge_dt.toFixed(4)}; interior std ${r.interior_std.toFixed(4)} vs ${acc.interior_std.toFixed(4)}`);
+      }
+      const dn = M['slow-dn-iid'], raw = M['slow-raw-iid'];
+      add(`edge stability ${pkg}, slow pan (0.5 mm/frame): denoised edge flicker |d2| ≤ the raw 1-frame output's`, dn.edge_d2 <= raw.edge_d2, 0, { denoised: dn, raw },
+        `edge |d2| ${dn.edge_d2.toFixed(4)} vs raw ${raw.edge_d2.toFixed(4)} (×${(dn.edge_d2 / raw.edge_d2).toFixed(2)}); interior ${dn.interior_d2.toFixed(4)} vs ${raw.interior_d2.toFixed(4)}`);
+    }
+    results.stability = stab;
   }
 
   if (want('timing')) {

@@ -3,10 +3,14 @@
 flip      mean LDR-FLIP (Standard view: exposure 1, clamp, sRGB OETF: the app's default display) and HDR-FLIP of the
           raw 1-frame ReSTIR images and of the denoised images against a PT reference; per image, per scene means
           and the ratio raw / denoised. Optionally writes display PNGs (reference, raw, denoised, FLIP maps).
+stability temporal stability of the displayed image with a static camera: per-pixel temporal std and mean frame-to-frame
+          change of the display-encoded luminance on edge pixels (silhouettes, texture edges: ≥ 25 % luminance step to a
+          4-neighbour in the PT reference, dilated 1 px) and on interior pixels.
 recovery  frames until the denoised regional mean recovers 95 % of each ix-e step (tiles.bin of several seeds, the
           step masks from PT references before / after each step).
 
     python denoise_eval.py flip --ref mean.pfm --pairs raw_f16.pfm:dn_f16.pfm,... --out flip.json [--png DIR]
+    python denoise_eval.py stability --ref REF.pfm --runs label=DIR,... --frames 48:64 --out stab.json
     python denoise_eval.py recovery --runs DIR,DIR --steps 32,56,80 --hold 24 --refs B0.pfm:A0.pfm,... --names a,b --out rec.json
 """
 from __future__ import annotations
@@ -93,6 +97,69 @@ def cmd_flip(a: argparse.Namespace) -> int:
     return 0
 
 
+def edge_masks(ref: np.ndarray, step: float = 0.25) -> tuple[np.ndarray, np.ndarray]:
+    lum = ref @ LUMA
+    floor = 0.02 * float(lum.mean())
+    edge = np.zeros(lum.shape, bool)
+    for dy, dx in ((0, 1), (1, 0)):
+        a, b = lum[: lum.shape[0] - dy, : lum.shape[1] - dx], lum[dy:, dx:]
+        e = np.abs(a - b) >= step * np.maximum(np.maximum(a, b), floor)
+        edge[: lum.shape[0] - dy, : lum.shape[1] - dx] |= e
+        edge[dy:, dx:] |= e
+    dil = edge.copy()
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            dil |= np.roll(np.roll(edge, dy, 0), dx, 1)
+    far = dil.copy()
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            far |= np.roll(np.roll(dil, dy, 0), dx, 1)
+    interior = ~far & (lum > floor)
+    return dil, interior
+
+
+def cmd_stability(a: argparse.Namespace) -> int:
+    ref = read_pfm(a.ref)
+    edge, interior = edge_masks(ref)
+    f0, f1 = (int(x) for x in a.frames.split(":"))
+    if a.motion:
+        return stability_motion(a, f0, f1)
+    out = {"frames": [f0, f1], "edge_pixels": int(edge.sum()), "interior_pixels": int(interior.sum()), "metric": "display luminance (Standard view), per-pixel temporal std and mean |frame-to-frame change|", "runs": {}}
+    for item in a.runs.split(","):
+        label, d = item.split("=")
+        frames = [srgb_oetf(read_pfm(Path(d) / f"{a.image}_f{t}.pfm")) @ LUMA for t in range(f0, f1)]
+        st = np.stack(frames)
+        std = st.std(axis=0)
+        dif = np.abs(np.diff(st, axis=0)).mean(axis=0)
+        r = {"edge_std": float(std[edge].mean()), "interior_std": float(std[interior].mean()), "edge_dt": float(dif[edge].mean()), "interior_dt": float(dif[interior].mean())}
+        if a.flip:
+            r["ldr_flip_last"] = flip_pair(ref, read_pfm(Path(d) / f"{a.image}_f{f1 - 1}.pfm"))[0]
+        out["runs"][label] = r
+        print(f"{label:>18}: edge std {r['edge_std']:.4f} dt {r['edge_dt']:.4f} | interior std {r['interior_std']:.4f} dt {r['interior_dt']:.4f}" + (f" | FLIP {r['ldr_flip_last']:.4f}" if a.flip else ""))
+    Path(a.out).write_text(json.dumps(out, indent=1))
+    return 0
+
+
+def stability_motion(a: argparse.Namespace, f0: int, f1: int) -> int:
+    """Slow constant-velocity camera motion: the second temporal difference |I_t − 2 I_{t−1} + I_{t−2}| cancels the
+    (locally linear) motion and keeps flicker; edges from each run's own frames (≥ 25 % luminance steps, dilated)."""
+    out = {"frames": [f0, f1], "metric": "mean |second temporal difference| of the display luminance", "runs": {}}
+    for item in a.runs.split(","):
+        label, d = item.split("=")
+        st = np.stack([srgb_oetf(read_pfm(Path(d) / f"{a.image}_f{t}.pfm")) @ LUMA for t in range(f0, f1)])
+        d2 = np.abs(st[2:] - 2 * st[1:-1] + st[:-2])
+        e_all = np.zeros(d2.shape, bool)
+        i_all = np.zeros(d2.shape, bool)
+        for k in range(d2.shape[0]):
+            e, i = edge_masks(np.repeat(st[k + 1][:, :, None], 3, 2) / np.array([0.2126 + 0.7152 + 0.0722]))
+            e_all[k], i_all[k] = e, i
+        r = {"edge_d2": float(d2[e_all].mean()), "interior_d2": float(d2[i_all].mean())}
+        out["runs"][label] = r
+        print(f"{label:>18}: edge |d2| {r['edge_d2']:.4f} | interior |d2| {r['interior_d2']:.4f}")
+    Path(a.out).write_text(json.dumps(out, indent=1))
+    return 0
+
+
 def tile_means(img: np.ndarray, tx: int, ty: int) -> np.ndarray:
     lum = img @ LUMA
     h, w = lum.shape
@@ -161,6 +228,14 @@ def main() -> int:
     f.add_argument("--pairs", required=True)
     f.add_argument("--out", required=True)
     f.add_argument("--png")
+    t = sub.add_parser("stability")
+    t.add_argument("--ref", required=True)
+    t.add_argument("--runs", required=True, help="label=DIR,...")
+    t.add_argument("--frames", required=True, help="from:to (exclusive)")
+    t.add_argument("--image", default="dn", help="dn (the displayed colour) or raw")
+    t.add_argument("--flip", action="store_true")
+    t.add_argument("--motion", action="store_true", help="slow camera motion: second temporal difference")
+    t.add_argument("--out", required=True)
     r = sub.add_parser("recovery")
     r.add_argument("--runs", required=True)
     r.add_argument("--steps", required=True)
@@ -172,7 +247,7 @@ def main() -> int:
     r.add_argument("--max-frames", dest="max_frames", type=int, default=8)
     r.add_argument("--out", required=True)
     a = p.parse_args()
-    return cmd_flip(a) if a.cmd == "flip" else cmd_recovery(a)
+    return {"flip": cmd_flip, "stability": cmd_stability, "recovery": cmd_recovery}[a.cmd](a)
 
 
 if __name__ == "__main__":

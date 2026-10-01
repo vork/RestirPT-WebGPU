@@ -9,7 +9,7 @@
 #include "common/nan.wgsl"
 #include "debug/debug-common.wgsl"
 
-struct DnParams {          // 64 B
+struct DnParams {          // 80 B
   size: vec2u,             //  0  W, H (internal resolution)
   tiles: vec2u,            //  8  ⌈W/8⌉, ⌈H/8⌉
   flags: u32,              // 16  DNF_*
@@ -22,8 +22,11 @@ struct DnParams {          // 64 B
   sigmaL: f32,             // 44  σ_l (4)
   tsBase: u32,             // 48  global arena word of tState[0] (64 + 6·P·NS_alloc)
   resPlanes: u32,          // 52  reservoir planes per record (10)
-  pad0: u32,               // 56
-  pad1: u32,               // 60
+  sigmaA: f32,             // 56  σ_a of the albedo edge stop (Changelog DN-5; 0 = off)
+  varCorr: f32,            // 60  K of the variance of the integrated colour (Changelog DN-4; 0 = sample variance)
+  nMaxT: f32,              // 64  history cap of the output resolve (Changelog DN-6)
+  sinceChange: u32,        // 68  frames since the last lighting change (0 = this frame; the resolve's dynamic window)
+  pad1: u32, pad2: u32,
 }
 @group(0) @binding(1) var<uniform> dn: DnParams;
 
@@ -34,6 +37,7 @@ const DNF_FW: u32 = 8u;            // write lum(F·W) of the final reservoir int
 const DNF_INVERSE: u32 = 16u;      // inverse gradient pairs (res[w] still holds the temporal output)
 const DNF_GRADIENT: u32 = 32u;     // the gradient passes ran this frame (dnLambda holds this frame's λ)
 const DNF_LAMBDA_CAM: u32 = 64u;   // option gradientOnCamera: also use λ on camera-only frames
+const DNF_NO_RESOLVE: u32 = 128u;  // the output resolve is off (dn_resolve copies; Changelog DN-6)
 
 // Debug view ids (render/denoise/layout.ts DN_VIEW)
 const DNV_VARIANCE: u32 = 520u;
@@ -45,13 +49,19 @@ const DNV_INTEGRATED: u32 = 525u;
 const DNV_REPROJ: u32 = 526u;
 const DNV_PAIRS: u32 = 527u;
 const DNV_LEVEL0: u32 = 530u;
+const DNV_DEMOD_FACTOR: u32 = 540u;
+const DNV_ALB_ACCUM: u32 = 541u;
+const DNV_DEMOD_CHECK: u32 = 542u;
 
 const DN_FP16_MAX: f32 = 65504.0;
 
-/// Demodulation factor a′ (denoiser.md §3): max(albedo, 0.02) per channel, 1 for (near-)black albedo.
+/// Demodulation factor a′ (denoiser.md §3, Changelog DN-3): max(albedo, 0.02) + F0 per channel (F0 = 0.04, the
+/// dielectric Fresnel at normal incidence: the white specular term of a dielectric is not inflated in its low-albedo
+/// channels), 1 for (near-)black albedo.
+const DN_F0: f32 = 0.04;
 fn dn_demod_factor(albedo: vec3f) -> vec3f {
   if (!(max(albedo.x, max(albedo.y, albedo.z)) >= 0.02)) { return vec3f(1.0); }
-  return max(albedo, vec3f(0.02));
+  return max(albedo, vec3f(0.02)) + vec3f(DN_F0);
 }
 
 /// Octahedral encoding of a unit vector to [-1, 1]² (stored as 2 × 16 snorm).

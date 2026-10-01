@@ -31,7 +31,7 @@ const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const SPONZA = 'validation/assets/downloaded/sponza/Sponza.gltf';
 const CORNELL = 'validation/assets/cornell/cornell.glb';
 const HDRI = 'validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr';
-const DN_VIEWS = [520, 521, 522, 523, 524, 525, 526, 527, 530, 531, 532, 533, 534];
+const DN_VIEWS = [520, 521, 522, 523, 524, 525, 526, 527, 528, 530, 531, 532, 533, 534, 540, 541, 542];
 const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
 const { values: args } = parseArgs({ options: { run: { type: 'string' }, 'no-lock': { type: 'boolean', default: false }, scenes: { type: 'string', default: 'cornell,sponza' } } });
 
@@ -163,11 +163,11 @@ async function scenePass(page: Page, OUT: string, scene: string): Promise<void> 
     const s = await readState(page);
     written[id] = s.aovWritten;
     if (s.aovNonFinite > 0) bad.push(`${id}: ${s.aovNonFinite} non-finite`);
-    if ([520, 521, 522, 523, 526, 530, 534].includes(id)) await shot(page, path.join(OUT, `${scene}-view-${id}.png`));
+    if ([520, 521, 522, 523, 526, 528, 530, 534, 540, 541, 542].includes(id)) await shot(page, path.join(OUT, `${scene}-view-${id}.png`));
   }
   await page.evaluate(() => window.__app!.selectDebugView(0));
-  const reg = await page.evaluate(() => window.__app!.debug.registry.list().filter((v) => v.id >= 520 && v.id < 540).length);
-  check(`${scene}: every denoiser view renders a finite AOV`, reg === 14 && bad.length === 0, `${reg} registered${bad.length ? `; ${bad.join('; ')}` : ''}`);
+  const reg = await page.evaluate(() => window.__app!.debug.registry.list().filter((v) => v.id >= 520 && v.id < 550).length);
+  check(`${scene}: every denoiser view renders a finite AOV`, reg === 18 && bad.length === 0, `${reg} registered${bad.length ? `; ${bad.join('; ')}` : ''}`);
   check(`${scene}: views 520 (variance), 521 (history), 522 (α), 526 (reprojection) are written`, written[520] > 0 && written[521] > 0 && written[522] > 0 && written[526] > 0, JSON.stringify(written));
 
   // ---- held frames (DN9)

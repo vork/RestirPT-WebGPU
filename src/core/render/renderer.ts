@@ -812,7 +812,7 @@ export class Renderer {
     const t = d.timingAverage();
     const fl = d.flags;
     const grad = d.kind === 'restir' ? ((fl & 32) ? `gradient ${(fl & 2) ? 'on (lights / env changed)' : 'gated (static lighting)'}` : 'gradient n/a') : 'no gradient (PT)';
-    return `denoiser A-SVGF-lite: ${st.iterations} iters, α_min ${st.alphaMin}, ${grad}, ${d.framesSinceReset} frames since reset`
+    return `denoiser A-SVGF-lite: ${st.iterations} iters, α_min ${st.alphaMin}, resolve ${st.resolve ? 'on' : 'off'}, ${grad}, ${d.framesSinceReset} frames since reset`
       + (t ? `  GPU ${t.totalMs.toFixed(3)} ms (${t.passes.map((p) => `${p.name.replace('dn_', '')} ${p.ms.toFixed(2)}`).join(', ')})` : '');
   }
 

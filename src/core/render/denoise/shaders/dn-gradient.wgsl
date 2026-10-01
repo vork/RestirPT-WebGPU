@@ -5,9 +5,12 @@
 //            shadowed or became zero), b = lum(F·W) of the final reservoir of t−1 at q′ (stored by dn_temporal in dnMom.a)
 //   inverse  (canonical X_c, s = c pixels after T4): a = w̃_c = lum F_c·W_c, b = w̃_c·π_p(X_c)/π_c (0 if X_c's light did
 //            not exist / it was shadowed or zero at t−1); only while res[w] still holds the temporal output (≤ 1 round)
-// Geometric failures (camera motion, footprint, lobe) give no pair. Δ = Σ(a − b), M = Σ max(a, b) (a firefly is scaled to
-// M = 10⁴), summed over 8×8 tiles in workgroup memory; dn_grad_filter turns 3×3 tiles into λ = |ΣΔ| / ΣM.
-//   dn_gradient     G1: 0 arena (ro words) · 1 res[w] (ro) · 2 dnMom[prev] · 3 dnGradTile (rg32float, write)
+// Geometric failures (camera motion, footprint, lobe) give no pair. Per family, Δ = Σ(a − b), M = Σ max(a, b) (a firefly
+// is scaled to M = 10⁴); the inverse pairs exist only on s = c pixels and are weighted by 1/P(s = c) = (w̃_c + w̃_p)/w̃_c
+// (Changelog DN-2). Summed over 8×8 tiles in workgroup memory; dn_grad_filter turns 3×3 tiles into
+// λ = max(|ΣΔ_f|/ΣM_f, |ΣΔ_i|/ΣM_i): forward pairs see the change on the support of p̂_{t−1} (removed / changed light),
+// inverse pairs on the support of p̂_t (added light).
+//   dn_gradient     G1: 0 arena (ro words) · 1 res[w] (ro) · 2 dnMom[prev] · 3 dnGradTile (rgba32float, write)
 //   dn_grad_filter  G1: 0 dnGradTile · 1 dnLambda (r32float, write)
 #include "denoise/dn-common.wgsl"
 
@@ -15,7 +18,7 @@
 @group(1) @binding(0) var<storage, read> arenaWords: array<u32>;
 @group(1) @binding(1) var<storage, read> resW: array<vec4u>;
 @group(1) @binding(2) var momPrev: texture_2d<f32>;
-@group(1) @binding(3) var gradTile: texture_storage_2d<rg32float, write>;
+@group(1) @binding(3) var gradTile: texture_storage_2d<rgba32float, write>;
 
 // tState words (restir/tframe.wgsl TSW_*; layout.ts TS_CONSTS) and flags, slot codes (restir/types.wgsl SC_*)
 const TSW_QPRIME: u32 = 8u;  const TSW_CP: u32 = 9u;  const TSW_FWDCODE: u32 = 10u;  const TSW_FLAGS: u32 = 11u;
@@ -26,7 +29,7 @@ const TS_QPRIME_NONE: u32 = 0xFFFFFFFFu;
 const SC_OK: u32 = 0u;  const SC_O0_LIGHT: u32 = 6u;  const SC_OCCLUDED: u32 = 10u;  const SC_ZERO: u32 = 11u;
 const DN_M_CAP: f32 = 1e4;
 
-var<workgroup> wgSum: array<vec2f, 64>;
+var<workgroup> wgSum: array<vec4f, 64>;
 
 fn ts(ai: u32, w: u32) -> u32 { return arenaWords[dn.tsBase + TS_WORDS * ai + w]; }
 fn tsf(ai: u32, w: u32) -> f32 { return bitcast<f32>(ts(ai, w)); }
@@ -34,11 +37,11 @@ fn tsf(ai: u32, w: u32) -> f32 { return bitcast<f32>(ts(ai, w)); }
 fn dn_light_zero(code: u32) -> bool { let sc = code & 0xFFu; return sc == SC_O0_LIGHT || sc == SC_OCCLUDED || sc == SC_ZERO; }
 fn dn_pos(x: f32) -> f32 { return select(0.0, x, is_finite(x) && x > 0.0); }
 
-struct DnPair { d: f32, m: f32, bits: u32 }
+struct DnPair { df: f32, mf: f32, di: f32, mi: f32, bits: u32 }
 
 /// Gradient pairs of pixel p (atlas index = image index: E = 1, interactive).
 fn dn_pairs(p: vec2u) -> DnPair {
-  var r = DnPair(0.0, 0.0, 0u);
+  var r = DnPair(0.0, 0.0, 0.0, 0.0, 0u);
   let ai = p.y * dn.size.x + p.x;
   let flags = ts(ai, TSW_FLAGS);
   if ((flags & TS_QVALID) == 0u) { return r; }
@@ -49,11 +52,12 @@ fn dn_pairs(p: vec2u) -> DnPair {
   let cP = tsf(ai, TSW_CP);
   let qpx = vec2u(qP % dn.size.x, qP / dn.size.x);
   let b = dn_pos(textureLoad(momPrev, qpx, 0).a);
+  let wp = dn_pos(tsf(ai, TSW_WP));
   if ((fc & 0xFFu) == SC_OK && cP > 0.0) {
-    let a = dn_pos(tsf(ai, TSW_WP) / cP);
-    r.d += a - b; r.m += max(a, b); r.bits |= 1u;
+    let a = dn_pos(wp / cP);
+    r.df = a - b; r.mf = max(a, b); r.bits |= 1u;
   } else if (dn_light_zero(fc)) {
-    r.d -= b; r.m += b; r.bits |= 1u;
+    r.df = -b; r.mf = b; r.bits |= 1u;
   }
   // inverse: X_c (the canonical sample, s = c) evaluated in frame t−1
   if (dn_flag(DNF_INVERSE) && (flags & (TS_SEL_C | TS_INV_DONE)) == (TS_SEL_C | TS_INV_DONE) && (flags & TS_EMPTY_OUT) == 0u) {
@@ -66,20 +70,25 @@ fn dn_pairs(p: vec2u) -> DnPair {
     } else if (dn_light_zero(ic)) {
       bi = 0.0;
     }
-    if (bi >= 0.0) { r.d += a - bi; r.m += max(a, bi); r.bits |= 2u; }
+    if (bi >= 0.0 && a > 0.0) {
+      let wsel = (a + wp) / a;                           // 1/P(s = c) of contribution MIS
+      r.di = wsel * (a - bi); r.mi = wsel * max(a, bi); r.bits |= 2u;
+    }
   }
-  if (r.m > DN_M_CAP) { let s = DN_M_CAP / r.m; r.d *= s; r.m = DN_M_CAP; }
-  if (!(is_finite(r.d) && is_finite(r.m))) { r = DnPair(0.0, 0.0, 0u); }
+  if (r.mf > DN_M_CAP) { let s = DN_M_CAP / r.mf; r.df *= s; r.mf = DN_M_CAP; }
+  if (r.mi > DN_M_CAP) { let s = DN_M_CAP / r.mi; r.di *= s; r.mi = DN_M_CAP; }
+  if (!(is_finite(r.df) && is_finite(r.mf))) { r.df = 0.0; r.mf = 0.0; }
+  if (!(is_finite(r.di) && is_finite(r.mi))) { r.di = 0.0; r.mi = 0.0; }
   return r;
 }
 
 @compute @workgroup_size(8, 8, 1)
 fn dn_gradient(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_index) li: u32, @builtin(workgroup_id) wid: vec3u) {
-  var v = vec2f(0.0);
+  var v = vec4f(0.0);
   let p = gid.xy;
   if (all(p < dn.size)) {
     let r = dn_pairs(p);
-    v = vec2f(r.d, r.m);
+    v = vec4f(r.df, r.mf, r.di, r.mi);
     debug_write_code(p, DNV_PAIRS, r.bits);
   }
   wgSum[li] = v;
@@ -88,7 +97,7 @@ fn dn_gradient(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocat
     if (li < s) { wgSum[li] = wgSum[li] + wgSum[li + s]; }
     workgroupBarrier();
   }
-  if (li == 0u) { textureStore(gradTile, wid.xy, vec4f(wgSum[0], 0.0, 0.0)); }
+  if (li == 0u) { textureStore(gradTile, wid.xy, wgSum[0]); }
 }
 #endif
 
@@ -100,15 +109,17 @@ fn dn_gradient(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocat
 fn dn_grad_filter(@builtin(global_invocation_id) gid: vec3u) {
   let t = vec2i(gid.xy);
   if (any(gid.xy >= dn.tiles)) { return; }
-  var s = vec2f(0.0);
+  var s = vec4f(0.0);
   for (var dy = -1; dy <= 1; dy++) {
     for (var dx = -1; dx <= 1; dx++) {
       let c = t + vec2i(dx, dy);
       if (c.x < 0 || c.y < 0 || c.x >= i32(dn.tiles.x) || c.y >= i32(dn.tiles.y)) { continue; }
-      s += textureLoad(gradTileIn, c, 0).xy;
+      s += textureLoad(gradTileIn, c, 0);
     }
   }
-  let lambda = select(0.0, min(abs(s.x) / s.y, 1.0), s.y > 1e-8);
+  let lf = select(0.0, min(abs(s.x) / s.y, 1.0), s.y > 1e-8);
+  let lv = select(0.0, min(abs(s.z) / s.w, 1.0), s.w > 1e-8);
+  let lambda = max(lf, lv);
   textureStore(lambdaOut, gid.xy, vec4f(lambda, 0.0, 0.0, 0.0));
 }
 #endif

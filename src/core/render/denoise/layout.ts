@@ -3,10 +3,10 @@
 // reads (restir/tframe.wgsl, restir/types.wgsl; checked against render/restir/layout.ts by tests/denoise).
 import type { DebugViewDef } from '../debug-views.ts';
 
-export const DN_PARAMS_SIZE = 64;
+export const DN_PARAMS_SIZE = 80;
 export const DN_ITER_SIZE = 16;
 /** DnParams.flags (dn-common.wgsl DNF_*). */
-export const DNF = { RESET: 1, LAMBDA: 2, HAS_L1: 4, FW: 8, INVERSE: 16, GRADIENT: 32, LAMBDA_CAM: 64 } as const;
+export const DNF = { RESET: 1, LAMBDA: 2, HAS_L1: 4, FW: 8, INVERSE: 16, GRADIENT: 32, LAMBDA_CAM: 64, NO_RESOLVE: 128 } as const;
 /** DnIter.flags (dn-filter.wgsl DNI_*). */
 export const DNI = { FEEDBACK: 1, FINAL: 2, COPY: 4 } as const;
 /** Reprojection outcome codes (view 526; dn-temporal.wgsl DN_REPROJ_*). */
@@ -31,6 +31,15 @@ export interface DenoiserSettings {
   sigmaZ: number;
   sigmaN: number;
   sigmaL: number;
+  /** σ_a of the albedo edge stop on the accumulated demodulation factor (Changelog DN-5; 0 = off). */
+  sigmaA: number;
+  /** K: the edge stops use min(1, K·α/(2 − α)) × the sample variance (the integrated colour's, with K frames per
+   *  independent sample; Changelog DN-4). 0 = the sample variance (SVGF). */
+  varCorr: number;
+  /** Temporal resolve of the output (Changelog DN-6): accumulate the denoised output (static: the progressive mean of
+   *  the denoised frames, up to nMaxT; in motion / under lighting changes: ≤ 8 frames, variance-clipped). */
+  resolve: boolean;
+  nMaxT: number;
   /** History length cap. */
   nMax: number;
   /** Also use λ on camera-only frames (view-dependent glossy changes; default off, denoiser.md §5). */
@@ -38,12 +47,14 @@ export interface DenoiserSettings {
 }
 
 export const DENOISER_DEFAULTS: Readonly<DenoiserSettings> = {
-  iterations: 5, alphaMin: 0.2, lambda0: 0.03, lambda1: 0.15, sigmaZ: 1, sigmaN: 128, sigmaL: 4, nMax: 64, gradientOnCamera: false,
+  iterations: 5, alphaMin: 0.2, lambda0: 0.03, lambda1: 0.15, sigmaZ: 1, sigmaN: 128, sigmaL: 4, sigmaA: 0.05, varCorr: 3, resolve: true, nMaxT: 1024, nMax: 64, gradientOnCamera: false,
 };
 export const DN_MAX_ITERATIONS = 6;
 
 export interface DnParamsCpu {
   width: number; height: number; flags: number; settings: DenoiserSettings; tsBase: number; resPlanes: number;
+  /** Frames since the last lighting change (0 = this frame; Changelog DN-6). */
+  sinceChange?: number;
 }
 
 export const dnTiles = (w: number, h: number): [number, number] => [Math.ceil(w / 8), Math.ceil(h / 8)];
@@ -56,7 +67,7 @@ export function packDnParams(o: DnParamsCpu, out = new ArrayBuffer(DN_PARAMS_SIZ
   u[4] = o.flags >>> 0;
   f[5] = o.settings.nMax; f[6] = o.settings.alphaMin; f[7] = o.settings.lambda0; f[8] = o.settings.lambda1;
   f[9] = o.settings.sigmaZ; f[10] = o.settings.sigmaN; f[11] = o.settings.sigmaL;
-  u[12] = o.tsBase >>> 0; u[13] = o.resPlanes >>> 0; u[14] = 0; u[15] = 0;
+  u[12] = o.tsBase >>> 0; u[13] = o.resPlanes >>> 0; f[14] = o.settings.sigmaA; f[15] = o.settings.varCorr; f[16] = o.settings.nMaxT; u[17] = Math.min(o.sinceChange ?? 0xffff, 0xffff);
   return out;
 }
 
@@ -87,7 +98,7 @@ export const denoiseModeKey = (render: DenoiseRenderMode, restir: DenoiseRestirM
 // ------------------------------------------------------------------------------------------------ debug views (§9)
 
 export const DN_VIEW = {
-  variance: 520, history: 521, alpha: 522, lambda: 523, demod: 524, integrated: 525, reproj: 526, pairs: 527, level0: 530,
+  variance: 520, history: 521, alpha: 522, lambda: 523, demod: 524, integrated: 525, reproj: 526, pairs: 527, taaN: 528, level0: 530, demodFactor: 540, albedoAccum: 541, demodCheck: 542,
 } as const;
 const G = 'Denoiser';
 export const DENOISER_VIEWS: DebugViewDef[] = [
@@ -98,8 +109,12 @@ export const DENOISER_VIEWS: DebugViewDef[] = [
   { id: DN_VIEW.demod, key: 'dn.demod', label: 'demodulated input', group: G, source: 'dn_temporal', kind: 'vec3', range: [0, 1] },
   { id: DN_VIEW.integrated, key: 'dn.integrated', label: 'temporally integrated (demodulated)', group: G, source: 'dn_temporal', kind: 'vec3', range: [0, 1] },
   { id: DN_VIEW.reproj, key: 'dn.reproj', label: 'reprojection (bg / 4 taps / partial / ring / disoccluded / reset)', group: G, source: 'dn_temporal', kind: 'code' },
+  { id: DN_VIEW.taaN, key: 'dn.resolveN', label: 'output resolve history length n_t', group: G, source: 'dn_resolve', kind: 'scalar', range: [0, 64], colormap: 'turbo' },
   { id: DN_VIEW.pairs, key: 'dn.pairs', label: 'gradient pairs (bit 0 forward, bit 1 inverse)', group: G, source: 'dn_gradient', kind: 'code' },
   ...Array.from({ length: DN_MAX_ITERATIONS }, (_, i): DebugViewDef => ({
     id: DN_VIEW.level0 + i, key: `dn.level[${i}]`, label: `à-trous level ${i} output (demodulated, step ${1 << i})`, group: G, source: 'dn_atrous', kind: 'vec3', range: [0, 1],
   })),
+  { id: DN_VIEW.demodFactor, key: 'dn.demodFactor', label: 'a′ of this frame (demodulation factor)', group: G, source: 'dn_temporal', kind: 'vec3', range: [0, 1] },
+  { id: DN_VIEW.albedoAccum, key: 'dn.albedoAccum', label: 'ā (accumulated a′, remodulates the output)', group: G, source: 'dn_temporal', kind: 'vec3', range: [0, 1] },
+  { id: DN_VIEW.demodCheck, key: 'dn.demodCheck', label: 'lum(c·a′)/lum(L − L1) (must be 1)', group: G, source: 'dn_temporal', kind: 'scalar', range: [0.99, 1.01], colormap: 'signed' },
 ];

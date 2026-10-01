@@ -58,7 +58,7 @@ interface PlanPass { name: string; pipeline: GPUComputePipeline; g1: GPUBindGrou
 
 interface Targets {
   w: number; h: number;
-  hist: [GPUTexture, GPUTexture]; mom: [GPUTexture, GPUTexture]; alb: [GPUTexture, GPUTexture]; geo: [GPUTexture, GPUTexture]; atrous: [GPUTexture, GPUTexture];
+  hist: [GPUTexture, GPUTexture]; mom: [GPUTexture, GPUTexture]; alb: [GPUTexture, GPUTexture]; l1: [GPUTexture, GPUTexture]; taa: [GPUTexture, GPUTexture]; out: GPUTexture; geo: [GPUTexture, GPUTexture]; atrous: [GPUTexture, GPUTexture];
   gradTile: GPUTexture; lambda: GPUTexture; input?: GPUTexture;
 }
 
@@ -90,10 +90,12 @@ export class Denoiser {
   private planG0: GPUBindGroup | undefined;
   private planDebug: GPUBindGroup | undefined;
   private lastFlags = 0;
+  /** Frames since the last lighting change (λ gate open, or an accumulation restart without a gradient). */
+  private sinceChange = 0xffff;
   private readonly params: GPUBuffer;
   private readonly iterBufs: GPUBuffer[];
   private readonly g0Layout: GPUBindGroupLayout;
-  private readonly layouts: Record<'gradient' | 'gradFilter' | 'temporal' | 'variance' | 'atrous', GPUBindGroupLayout>;
+  private readonly layouts: Record<'gradient' | 'gradFilter' | 'temporal' | 'variance' | 'atrous' | 'resolve', GPUBindGroupLayout>;
   private readonly empty: GPUBindGroupLayout;
   private readonly emptyGroup: GPUBindGroup;
   private readonly pipelines = new Map<string, GPUComputePipeline>();
@@ -112,19 +114,24 @@ export class Denoiser {
     this.empty = device.createBindGroupLayout({ label: 'dn-empty', entries: [] });
     this.emptyGroup = device.createBindGroup({ label: 'dn-empty', layout: this.empty, entries: [] });
     this.layouts = {
-      gradient: device.createBindGroupLayout({ label: 'dn-gradient', entries: entries([{ buffer: ro }, { buffer: ro }, { texture: tex() }, { storageTexture: st('rg32float') }]) }),
+      gradient: device.createBindGroupLayout({ label: 'dn-gradient', entries: entries([{ buffer: ro }, { buffer: ro }, { texture: tex() }, { storageTexture: st('rgba32float') }]) }),
       gradFilter: device.createBindGroupLayout({ label: 'dn-grad-filter', entries: entries([{ texture: tex() }, { storageTexture: st('r32float') }]) }),
       temporal: device.createBindGroupLayout({
         label: 'dn-temporal',
         entries: entries([{ buffer: ro }, { texture: tex() }, { texture: tex() }, { texture: tex('uint') }, { texture: tex() }, { texture: tex() }, { texture: tex() }, { buffer: ro },
           { storageTexture: st('rgba16float') }, { storageTexture: st('rgba16float') }, { storageTexture: st('rgba16float') }, { storageTexture: st('rg32uint') },
-          { texture: tex() }, { storageTexture: st('rgba16float') }]),
+          { texture: tex() }, { storageTexture: st('rgba16float') }, { texture: tex() }, { storageTexture: st('rgba16float') }]),
       }),
       variance: device.createBindGroupLayout({ label: 'dn-variance', entries: entries([{ texture: tex() }, { texture: tex() }, { texture: tex('uint') }, { storageTexture: st('rgba16float') }]) }),
       atrous: device.createBindGroupLayout({
         label: `dn-atrous-${colorFormat}`,
         entries: entries([{ texture: tex() }, { texture: tex('uint') }, { buffer: { type: 'uniform', minBindingSize: DN_ITER_SIZE } }, { storageTexture: st('rgba16float') },
-          { storageTexture: st('rgba16float') }, { storageTexture: st(colorFormat) }, { texture: tex() }, { texture: tex() }, { texture: tex() }]),
+          { storageTexture: st('rgba16float') }, { storageTexture: st('rgba16float') }, { texture: tex() }, { texture: tex() }, { texture: tex() }]),
+      }),
+      resolve: device.createBindGroupLayout({
+        label: `dn-resolve-${colorFormat}`,
+        entries: entries([{ texture: tex() }, { texture: tex() }, { texture: tex('uint') }, { texture: tex('uint') }, { buffer: ro }, { texture: tex() }, { texture: tex() },
+          { storageTexture: st('rgba16float') }, { storageTexture: st(colorFormat) }]),
       }),
     };
     this.dummyTex = device.createTexture({ label: 'dn-zero', size: [1, 1], format: 'rgba32float', usage: GPUTextureUsage.TEXTURE_BINDING });
@@ -154,13 +161,14 @@ export class Denoiser {
       mk('dn_grad_filter', 'denoise/dn-gradient.wgsl', 'dn_grad_filter', this.layouts.gradFilter, { DN_GRAD_FILTER: true }),
       mk('dn_temporal', 'denoise/dn-temporal.wgsl', 'dn_temporal', this.layouts.temporal, {}),
       mk('dn_variance', 'denoise/dn-filter.wgsl', 'dn_variance', this.layouts.variance, { DN_VARIANCE: true }),
-      mk('dn_atrous', 'denoise/dn-filter.wgsl', 'dn_atrous', this.layouts.atrous, { DN_ATROUS: true, COLOR_FORMAT: this.colorFormat }),
+      mk('dn_atrous', 'denoise/dn-filter.wgsl', 'dn_atrous', this.layouts.atrous, { DN_ATROUS: true }),
+      mk('dn_resolve', 'denoise/dn-resolve.wgsl', 'dn_resolve', this.layouts.resolve, { COLOR_FORMAT: this.colorFormat }),
     ]);
   }
 
   /** Settings change; `reset` when the meaning of the history changes (α_min, demodulation-relevant parameters). */
   setSettings(s: Partial<DenoiserSettings>): void {
-    const resetKeys: (keyof DenoiserSettings)[] = ['alphaMin', 'nMax'];
+    const resetKeys: (keyof DenoiserSettings)[] = ['alphaMin', 'nMax', 'resolve'];
     if (resetKeys.some((k) => s[k] !== undefined && s[k] !== this.settings[k])) this.needsReset = true;
     Object.assign(this.settings, s);
   }
@@ -178,8 +186,8 @@ export class Denoiser {
     const pair = (label: string, format: GPUTextureFormat): [GPUTexture, GPUTexture] => [mk(`${label}0`, format), mk(`${label}1`, format)];
     const [tx, ty] = dnTiles(w, h);
     this.t = {
-      w, h, hist: pair('dn-hist', 'rgba16float'), mom: pair('dn-mom', 'rgba16float'), alb: pair('dn-alb', 'rgba16float'), geo: pair('dn-geo', 'rg32uint'), atrous: pair('dn-atrous', 'rgba16float'),
-      gradTile: mk('dn-grad-tile', 'rg32float', [tx, ty]), lambda: mk('dn-lambda', 'r32float', [tx, ty]),
+      w, h, hist: pair('dn-hist', 'rgba16float'), mom: pair('dn-mom', 'rgba16float'), alb: pair('dn-alb', 'rgba16float'), l1: pair('dn-l1', 'rgba16float'), taa: pair('dn-taa', 'rgba16float'), out: mk('dn-out', 'rgba16float'), geo: pair('dn-geo', 'rg32uint'), atrous: pair('dn-atrous', 'rgba16float'),
+      gradTile: mk('dn-grad-tile', 'rgba32float', [tx, ty]), lambda: mk('dn-lambda', 'r32float', [tx, ty]),
     };
     this.groups.clear();
     this.plan = [];
@@ -236,6 +244,7 @@ export class Denoiser {
     let flags = 0;
     if (reset) flags |= DNF.RESET;
     if (f.kind === 'restir') flags |= DNF.HAS_L1;
+    if (!this.settings.resolve) flags |= DNF.NO_RESOLVE;
     if (r) flags |= DNF.FW;
     if (r?.gradient && !reset) {
       flags |= DNF.GRADIENT;
@@ -244,7 +253,8 @@ export class Denoiser {
       if (r.inverse) flags |= DNF.INVERSE;
     }
     this.lastFlags = flags;
-    this.device.queue.writeBuffer(this.params, 0, packDnParams({ width: t.w, height: t.h, flags, settings: this.settings, tsBase: r?.tsBase ?? 0, resPlanes: 10 }));
+    this.sinceChange = (flags & DNF.LAMBDA) || reset ? 0 : Math.min(this.sinceChange + 1, 0xffff);
+    this.device.queue.writeBuffer(this.params, 0, packDnParams({ width: t.w, height: t.h, flags, settings: this.settings, tsBase: r?.tsBase ?? 0, resPlanes: 10, sinceChange: this.sinceChange }));
     this.writeIterations();
 
     const v = view;
@@ -262,7 +272,7 @@ export class Denoiser {
     plan.push({ name: 'dn_temporal', pipeline: this.pipelines.get('dn_temporal')!, wg,
       g1: this.group(`temporal:${oid(f.gbuf)}:${oid(radiance)}:${oid(l1)}:${r ? oid(r.resFinal) : 0}:${cur}:${(flags & DNF.GRADIENT) ? 1 : 0}`, this.layouts.temporal, [
         { buffer: f.gbuf }, v(radiance), v(l1), v(t.geo[prev]), v(t.hist[prev]), v(t.mom[prev]), (flags & DNF.GRADIENT) ? v(t.lambda) : v(this.dummyTex),
-        { buffer: r?.resFinal ?? this.dummyBuf }, v(t.atrous[0]), v(t.hist[cur]), v(t.mom[cur]), v(t.geo[cur]), v(t.alb[prev]), v(t.alb[cur]),
+        { buffer: r?.resFinal ?? this.dummyBuf }, v(t.atrous[0]), v(t.hist[cur]), v(t.mom[cur]), v(t.geo[cur]), v(t.alb[prev]), v(t.alb[cur]), v(t.l1[prev]), v(t.l1[cur]),
       ]) });
     plan.push({ name: 'dn_variance', pipeline: this.pipelines.get('dn_variance')!, wg,
       g1: this.group(`variance:${cur}`, this.layouts.variance, [v(t.atrous[0]), v(t.mom[cur]), v(t.geo[cur]), v(t.atrous[1])]) });
@@ -271,9 +281,13 @@ export class Denoiser {
       const src = (i + 1) % 2, dst = i % 2;   // dn_variance wrote atrous[1]: iteration 0 reads 1 and writes 0, …
       plan.push({ name: `dn_atrous${iter}`, pipeline: this.pipelines.get('dn_atrous')!, wg,
         g1: this.group(`atrous:${i}:${cur}:${oid(f.colour)}:${oid(radiance)}:${oid(l1)}`, this.layouts.atrous, [
-          v(t.atrous[src]), v(t.geo[cur]), { buffer: this.iterBufs[i] }, v(t.atrous[dst]), v(t.hist[cur]), v(f.colour), v(radiance), v(l1), v(t.alb[cur]),
+          v(t.atrous[src]), v(t.geo[cur]), { buffer: this.iterBufs[i] }, v(t.atrous[dst]), v(t.hist[cur]), v(t.out), v(radiance), v(t.l1[cur]), v(t.alb[cur]),
         ]) });
     });
+    plan.push({ name: 'dn_resolve', pipeline: this.pipelines.get('dn_resolve')!, wg,
+      g1: this.group(`resolve:${cur}:${oid(f.colour)}:${oid(f.gbuf)}:${(flags & DNF.GRADIENT) ? 1 : 0}`, this.layouts.resolve, [
+        v(t.out), v(t.taa[prev]), v(t.geo[cur]), v(t.geo[prev]), { buffer: f.gbuf }, (flags & DNF.GRADIENT) ? v(t.lambda) : v(this.dummyTex), v(t.mom[cur]), v(t.taa[cur]), v(f.colour),
+      ]) });
     this.plan = plan;
     this.planG0 = this.group(`g0:${oid(f.frameUniforms)}`, this.g0Layout, [{ buffer: f.frameUniforms }, { buffer: this.params }]);
     this.planDebug = f.debugGroup;
@@ -369,7 +383,7 @@ export class Denoiser {
   private destroyTargets(): void {
     const t = this.t;
     if (!t) return;
-    for (const x of [...t.hist, ...t.mom, ...t.alb, ...t.geo, ...t.atrous, t.gradTile, t.lambda]) x.destroy();
+    for (const x of [...t.hist, ...t.mom, ...t.alb, ...t.l1, ...t.taa, t.out, ...t.geo, ...t.atrous, t.gradTile, t.lambda]) x.destroy();
     t.input?.destroy();
     this.t = undefined;
   }

@@ -14,7 +14,7 @@ export const dot = (a: ArrayLike<number>, b: ArrayLike<number>): number => a[0] 
 
 export function demodFactor(a: V3): V3 {
   if (!(Math.max(a[0], a[1], a[2]) >= 0.02)) return [1, 1, 1];
-  return [Math.max(a[0], 0.02), Math.max(a[1], 0.02), Math.max(a[2], 0.02)];
+  return [Math.max(a[0], 0.02) + 0.04, Math.max(a[1], 0.02) + 0.04, Math.max(a[2], 0.02) + 0.04];
 }
 
 // ------------------------------------------------------------------------------------------------ octahedral normals
@@ -84,12 +84,13 @@ export interface RefState {
   /** rgba16float values as stored. */
   hist: Float64Array;   // W·H·3
   mom: Float64Array;    // W·H·4 (μ, σ, n, FW)
-  alb: Float64Array;    // W·H·3 accumulated demodulation factor ā (Changelog DN-1)
+  alb: Float64Array;    // W·H·4 accumulated demodulation factor ā and its history length n_a (Changelog DN-1, DN-2)
+  l1: Float64Array;     // W·H·3 accumulated L1 (DN-2)
   dist: Float64Array;   // W·H (f32)
   n: V3[];              // decoded guide normals
 }
 export function emptyState(W: number, H: number): RefState {
-  return { W, H, hist: new Float64Array(W * H * 3), mom: new Float64Array(W * H * 4), alb: new Float64Array(W * H * 3), dist: new Float64Array(W * H), n: Array.from({ length: W * H }, () => [0, 0, 1] as V3) };
+  return { W, H, hist: new Float64Array(W * H * 3), mom: new Float64Array(W * H * 4), alb: new Float64Array(W * H * 4), l1: new Float64Array(W * H * 3), dist: new Float64Array(W * H), n: Array.from({ length: W * H }, () => [0, 0, 1] as V3) };
 }
 
 export interface RefTemporalIn {
@@ -143,10 +144,11 @@ export function refTemporal(inp: RefTemporalIn, prev: RefState): RefTemporalOut 
     for (let k = 0; k < 3; k++) demod[3 * i + k] = c[k];
     const l = lum(c);
     // reprojection
-    let hw = 0, hc = [0, 0, 0], ha = [0, 0, 0], hmu = 0, hm2 = 0, hn = 0, cd: number = DN_REPROJ.NONE;
+    let hw = 0, hc = [0, 0, 0], ha = [0, 0, 0, 0], hl = [0, 0, 0], hmu = 0, hm2 = 0, hn = 0, cd: number = DN_REPROJ.NONE;
     const acc = (cx: number, cy: number, w: number) => {
       const j = cy * W + cx;
-      for (let k = 0; k < 3; k++) { hc[k] += w * prev.hist[3 * j + k]; ha[k] += w * prev.alb[3 * j + k]; }
+      for (let k = 0; k < 3; k++) { hc[k] += w * prev.hist[3 * j + k]; hl[k] += w * prev.l1[3 * j + k]; }
+      for (let k = 0; k < 4; k++) ha[k] += w * prev.alb[4 * j + k];
       const mu = prev.mom[4 * j], sg = prev.mom[4 * j + 1];
       hmu += w * mu; hm2 += w * (sg * sg + mu * mu); hn += w * prev.mom[4 * j + 2]; hw += w;
     };
@@ -167,7 +169,7 @@ export function refTemporal(inp: RefTemporalIn, prev: RefState): RefTemporalOut 
         }
         if (hw >= 1e-3) cd = valid === 4 ? DN_REPROJ.FULL : DN_REPROJ.PARTIAL;
         else {
-          hw = 0; hc = [0, 0, 0]; ha = [0, 0, 0]; hmu = 0; hm2 = 0; hn = 0;
+          hw = 0; hc = [0, 0, 0]; ha = [0, 0, 0, 0]; hl = [0, 0, 0]; hmu = 0; hm2 = 0; hn = 0;
           const cr = [Math.floor(sp[0] + 0.5), Math.floor(sp[1] + 0.5)];
           for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
             const cxy: [number, number] = [cr[0] + dx, cr[1] + dy];
@@ -177,23 +179,28 @@ export function refTemporal(inp: RefTemporalIn, prev: RefState): RefTemporalOut 
         }
       }
     }
-    if (hw > 0) { hc = hc.map((v) => v / hw); ha = ha.map((v) => v / hw); hmu /= hw; hm2 /= hw; hn /= hw; }
+    if (hw > 0) { hc = hc.map((v) => v / hw); ha = ha.map((v) => v / hw); hl = hl.map((v) => v / hw); hmu /= hw; hm2 /= hw; hn /= hw; }
     const lambda = refLambdaAt(inp, x, y);
     const lp = Math.min(Math.max((lambda - s.lambda0) / Math.max(s.lambda1 - s.lambda0, 1e-6), 0), 1);
     const nIn = hw > 0 ? hn : 0;
     const nNew = Math.min(1 + (1 - lp) * nIn, s.nMax);
     const al = Math.max(s.alphaMin, 1 / nNew, lp);
-    let col = c, alb: number[] = a, mu = l, vr = 0;
+    const nA = Math.min(1 + (hw > 0 ? ha[3] : 0), s.nMax);
+    const alA = moved ? Math.max(1 / nA, 0.1) : 1 / nA;
+    let col = c, alb: number[] = a, l1o: number[] = l1, mu = l, vr = 0;
     if (hw > 0) {
       col = [0, 1, 2].map((k) => hc[k] + al * (c[k] - hc[k]));
-      alb = [0, 1, 2].map((k) => ha[k] + al * (a[k] - ha[k]));
+      alb = [0, 1, 2].map((k) => ha[k] + alA * (a[k] - ha[k]));
+      const all = Math.max(alA, lp);
+      l1o = [0, 1, 2].map((k) => hl[k] + all * (l1[k] - hl[k]));
       const v0 = Math.max(hm2 - hmu * hmu, 0);
       const d = l - hmu;
       mu = hmu + al * d;
       vr = (1 - al) * (v0 + al * d * d);
     }
-    for (let k = 0; k < 3; k++) { st.hist[3 * i + k] = st16(col[k]); atrous0[4 * i + k] = st16(col[k]); st.alb[3 * i + k] = st16(alb[k]); }
-    atrous0[4 * i + 3] = st16(vr);
+    for (let k = 0; k < 3; k++) { st.hist[3 * i + k] = st16(col[k]); atrous0[4 * i + k] = st16(col[k]); st.alb[4 * i + k] = st16(alb[k]); st.l1[3 * i + k] = st16(l1o[k]); }
+    st.alb[4 * i + 3] = Math.f16round(nA);
+    atrous0[4 * i + 3] = st16(vr * (s.varCorr > 0 ? Math.min(1, s.varCorr * al / (2 - al)) : 1));   // DN-4
     st.mom.set([st16(mu), st16(Math.sqrt(Math.max(vr, 0))), Math.f16round(nNew), fw], 4 * i);
     st.dist[i] = Math.fround(Math.hypot(p.pos[0] - cc[0], p.pos[1] - cc[1], p.pos[2] - cc[2]));
     st.n[i] = guideNormal(p.ns);
@@ -265,6 +272,8 @@ export function refAtrous(s: DenoiserSettings, st: RefState, src: Float64Array, 
     if (step > 0) {
       const zg = zgrad(st, x, y);
       const lc = lum(res);
+      const ac = [st.alb[4 * i], st.alb[4 * i + 1], st.alb[4 * i + 2]];
+      const invA = s.sigmaA > 0 ? 1 / s.sigmaA : 0;
       let v3 = 0, w3 = 0;
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
         const qx = x + dx, qy = y + dy;
@@ -282,7 +291,8 @@ export function refAtrous(s: DenoiserSettings, st: RefState, src: Float64Array, 
         const j = qy * W + qx, zq = st.dist[j];
         if (!(zq > 0)) continue;
         const cq = [src[4 * j], src[4 * j + 1], src[4 * j + 2]];
-        const wl = Math.exp(-Math.abs(lc - lum(cq)) / phiL);
+        const da = [0, 1, 2].reduce((acc, k) => acc + Math.abs(st.alb[4 * j + k] - ac[k]), 0);
+        const wl = Math.exp(-Math.abs(lc - lum(cq)) / phiL - da * (invA / 3));   // DN-5
         const w = h * wGeo(s, zc, zg, st.n[i], zq, st.n[j], [dx * step, dy * step]) * wl;
         sc = sc.map((v, k) => v + w * cq[k]); sv += w * w * src[4 * j + 3]; sw += w;
       }
@@ -294,7 +304,7 @@ export function refAtrous(s: DenoiserSettings, st: RefState, src: Float64Array, 
 }
 
 /** The whole filter chain after dn_temporal: dn_variance, the à-trous iterations, the remodulated output. */
-export function refFilter(s: DenoiserSettings, st: RefState, atrous0: Float64Array, px: RefPixel[], radiance: ArrayLike<number>, l1: ArrayLike<number> | undefined):
+export function refFilter(s: DenoiserSettings, st: RefState, atrous0: Float64Array, _px: RefPixel[], radiance: ArrayLike<number>, _l1: ArrayLike<number> | undefined):
   { variance: Float64Array; levels: Float64Array[]; feedback: Float64Array; colour: Float64Array } {
   const variance = refVariance(s, st, atrous0);
   let cur: Float64Array = variance;
@@ -308,7 +318,7 @@ export function refFilter(s: DenoiserSettings, st: RefState, atrous0: Float64Arr
   const colour = new Float64Array(st.W * st.H * 3);
   for (let i = 0; i < st.W * st.H; i++) {
     if (!(st.dist[i] > 0)) { for (let k = 0; k < 3; k++) colour[3 * i + k] = radiance[3 * i + k]; continue; }
-    for (let k = 0; k < 3; k++) colour[3 * i + k] = cur[4 * i + k] * st.alb[3 * i + k] + (l1 ? l1[3 * i + k] : 0);
+    for (let k = 0; k < 3; k++) colour[3 * i + k] = cur[4 * i + k] * st.alb[4 * i + k] + st.l1[3 * i + k];
   }
   return { variance, levels, feedback, colour };
 }
@@ -319,40 +329,60 @@ export interface RefTState { flags: number; qPrime: number; cP: number; fwdCode:
 export const SC = { OK: 0, O0_LIGHT: 6, O1: 7, OCCLUDED: 10, ZERO: 11 } as const;
 const lightZero = (c: number) => { const sc = c & 0xff; return sc === SC.O0_LIGHT || sc === SC.OCCLUDED || sc === SC.ZERO; };
 
-/** (Δ, M, bits) of one pixel (dn_pairs). `fwPrev` = dnMom[prev].a, `piC` = lum F of res[w][q]. */
-export function refPairs(t: RefTState, fwPrev: (q: number) => number, piC: number, inverse: boolean, P: number): [number, number, number] {
-  let d = 0, m = 0, bits = 0;
-  if (!(t.flags & 1) || t.qPrime === 0xffffffff || t.qPrime >= P) return [0, 0, 0];
+/** (Δ_f, M_f, Δ_i, M_i, bits) of one pixel (dn_pairs; Changelog DN-2: the inverse pairs weighted by 1/P(s = c)).
+ *  `fwPrev` = dnMom[prev].a, `piC` = lum F of res[w][q]. */
+export function refPairs(t: RefTState, fwPrev: (q: number) => number, piC: number, inverse: boolean, P: number): [number, number, number, number, number] {
+  let df = 0, mf = 0, di = 0, mi = 0, bits = 0;
+  if (!(t.flags & 1) || t.qPrime === 0xffffffff || t.qPrime >= P) return [0, 0, 0, 0, 0];
   const pos = (x: number) => (Number.isFinite(x) && x > 0 ? x : 0);
   const b = pos(fwPrev(t.qPrime));
-  if ((t.fwdCode & 0xff) === SC.OK && t.cP > 0) { const a = pos(t.wp / t.cP); d += a - b; m += Math.max(a, b); bits |= 1; }
-  else if (lightZero(t.fwdCode)) { d -= b; m += b; bits |= 1; }
+  const wp = pos(t.wp);
+  if ((t.fwdCode & 0xff) === SC.OK && t.cP > 0) { const a = pos(wp / t.cP); df = a - b; mf = Math.max(a, b); bits |= 1; }
+  else if (lightZero(t.fwdCode)) { df = -b; mf = b; bits |= 1; }
   if (inverse && (t.flags & (32 | 128)) === (32 | 128) && !(t.flags & 256)) {
     const a = pos(t.wc);
     let bi = -1;
     if ((t.invCode & 0xff) === SC.OK) { if (piC > 0) bi = pos(a * t.piRecomp / piC); } else if (lightZero(t.invCode)) bi = 0;
-    if (bi >= 0) { d += a - bi; m += Math.max(a, bi); bits |= 2; }
+    if (bi >= 0 && a > 0) { const w = (a + wp) / a; di = w * (a - bi); mi = w * Math.max(a, bi); bits |= 2; }
   }
-  if (m > 1e4) { d *= 1e4 / m; m = 1e4; }
-  return [d, m, bits];
+  if (mf > 1e4) { df *= 1e4 / mf; mf = 1e4; }
+  if (mi > 1e4) { di *= 1e4 / mi; mi = 1e4; }
+  return [df, mf, di, mi, bits];
 }
-/** Tile sums (8×8) and λ of the 3×3-tile windows. */
-export function refLambda(W: number, H: number, pairs: [number, number, number][]): { tiles: Float64Array; lambda: Float64Array } {
+/** Tile sums (8×8; Δ_f, M_f, Δ_i, M_i) and λ = max(|ΣΔ_f|/ΣM_f, |ΣΔ_i|/ΣM_i) of the 3×3-tile windows. */
+export function refLambda(W: number, H: number, pairs: number[][]): { tiles: Float64Array; lambda: Float64Array } {
   const [tx, ty] = dnTiles(W, H);
-  const tiles = new Float64Array(tx * ty * 2);
+  const tiles = new Float64Array(tx * ty * 4);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const t = Math.floor(y / 8) * tx + Math.floor(x / 8);
-    tiles[2 * t] += pairs[y * W + x][0]; tiles[2 * t + 1] += pairs[y * W + x][1];
+    for (let k = 0; k < 4; k++) tiles[4 * t + k] += pairs[y * W + x][k];
   }
   const lambda = new Float64Array(tx * ty);
   for (let y = 0; y < ty; y++) for (let x = 0; x < tx; x++) {
-    let sd = 0, sm = 0;
+    const sum = [0, 0, 0, 0];
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
       const cx = x + dx, cy = y + dy;
       if (cx < 0 || cy < 0 || cx >= tx || cy >= ty) continue;
-      sd += tiles[2 * (cy * tx + cx)]; sm += tiles[2 * (cy * tx + cx) + 1];
+      for (let k = 0; k < 4; k++) sum[k] += tiles[4 * (cy * tx + cx) + k];
     }
-    lambda[y * tx + x] = sm > 1e-8 ? Math.min(Math.abs(sd) / sm, 1) : 0;
+    const lf = sum[1] > 1e-8 ? Math.min(Math.abs(sum[0]) / sum[1], 1) : 0;
+    const li = sum[3] > 1e-8 ? Math.min(Math.abs(sum[2]) / sum[3], 1) : 0;
+    lambda[y * tx + x] = Math.max(lf, li);
   }
   return { tiles, lambda };
+}
+
+/** dn_resolve with a static camera and no lighting change in the last 8 frames (Changelog DN-6): every pixel (hit or
+ *  background) α_t = 1/n_t, n_t ≤ nMaxT. `prev` = dnTaa[prev] (rgb, n_t), `out` = the remodulated output (fp16-stored).
+ *  `dynamic`: the n_t ≤ 8 cap (the variance clipping is not modelled: tests use a smooth input there). */
+export function refResolveStatic(s: DenoiserSettings, out: ArrayLike<number>, prev: Float64Array, reset: boolean, P: number, dynamic = false): Float64Array {
+  const res = new Float64Array(P * 4);
+  for (let i = 0; i < P; i++) {
+    const h = !reset ? prev.subarray(4 * i, 4 * i + 4) : new Float64Array(4);
+    const nMax = dynamic ? Math.min(s.nMaxT, 8) : s.nMaxT;
+    const nT = s.resolve ? Math.min(1 + h[3], Math.max(nMax, 1)) : 1;
+    for (let k = 0; k < 3; k++) res[4 * i + k] = st16(h[3] > 0 && nT > 1 ? h[k] + (out[3 * i + k] - h[k]) / nT : out[3 * i + k]);
+    res[4 * i + 3] = Math.f16round(nT);
+  }
+  return res;
 }

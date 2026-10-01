@@ -262,3 +262,49 @@ Writes `validation/out/m55-gate-<time>/summary.json` and `summary.md`. Never wri
      at silhouettes and on textures it is the jitter-averaged (box-filtered) factor, so edges and texture detail are
      anti-aliased like the reference. L1 (directly seen emitters and env) stays per frame.
   The CPU reference and the GPU suite cover both (U-DN-3 runs the identity path).
+- **DN-2 (first gate run: (vii) FLIP ×1.19, "C added" recovered in 10 frames).**
+  1. *ā and L1 get their own history length* n_a (`dnAlb.a`), independent of the gradient (albedo does not change with
+     the lighting): α_a = 1/n_a with a static camera (the jitter's progressive mean: anti-aliased texture detail),
+     max(1/n_a, 0.1) in motion. L1 (directly seen emitters, env) is accumulated the same way (`dnL1[2]`, rgba16float)
+     with α = max(α_a, λ′); the output remodulates as ā·filtered + L̄1.
+  2. *Gradient families.* The inverse pairs exist only on s = c pixels (≈ 25 % of the pixels once c_p = 5), so adding
+     them to the forward sums diluted an added light's change. Each family is now summed apart (tile texture
+     rgba32float: Δ_f, M_f, Δ_i, M_i), the inverse pairs weighted by 1/P(s = c) = (w̃_c + w̃_p)/w̃_c (both in tState), and
+     λ = max(|ΣΔ_f|/ΣM_f, |ΣΔ_i|/ΣM_i): forward pairs see changes on the support of p̂_{t−1} (removed / changed light),
+     selection-weighted inverse pairs on the support of p̂_t (added light).
+- **DN-3 (demodulation with F0).** a′ = max(albedo, 0.02) + 0.04: a dielectric's white specular term divided by the
+  small channels of a coloured albedo (the blue squares of (vii)'s floor) inflated them, and filtering bled them into
+  neighbours of another albedo. Adding the dielectric F0 makes c ≈ E across albedo edges; the round trip stays exact.
+- **DN-4 (variance for the edge stops).** SVGF steers the luminance stop with the variance of the input samples, which
+  does not shrink as the history converges, so a converged history was over-blurred ((vii): temporal accumulation alone
+  beat 5 à-trous iterations). The stop now uses min(1, K·α/(2 − α)) × the sample variance (an EMA of weight α keeps
+  α/(2 − α) of the variance of independent samples; ReSTIR's temporal reuse correlates successive frames, K = 3 frames
+  per independent sample, tuned on (i), (v), (vii), ix-d; K = 0 restores SVGF).
+- **DN-5 (albedo edge stop).** w_l also multiplies exp(−|Δā|₁/(3σ_a)), σ_a = 0.05: the demodulated signal is not smooth
+  across albedo edges where the specular part differs (DN-3 is an approximation), so the filter must not mix them.
+- **DN-6 (temporal resolve of the output; user report "fizzy edges", "R2 wobble").** Reproduced with the eval harness
+  (`denoise_eval.py stability`: per-pixel temporal std and Δ/frame of the display luminance on edge pixels (≥ 25 %
+  luminance step to a 4-neighbour in the PT reference, dilated 1 px) and interior pixels, static camera, frames 40–63;
+  slow pan 0.5 mm/frame: mean |I_t − 2I_{t−1} + I_{t−2}|, which cancels constant-velocity motion). Root cause: the
+  displayed image was each frame's à-trous output, and that follows the frame's jittered primary hits: at a silhouette
+  the jittered sample picks one surface per frame, the guides and the α_min = 0.2 share of new samples follow it, so
+  edge pixels flipped from frame to frame (R2: a coherent shift of every edge and texel, the "wobble"). The progressive
+  mean the user compared with averages the jitter away. Not the cause: the albedo source. The M1 G-buffer albedo is the
+  same sample as `rs_primary`'s (same `pcg3d(runSeed, seedIndex, pixel)` jitter, LOD 0 textures); the harness checks
+  0 primId mismatches between the M1 V-buffer and `rsVbuf` (barycentrics equal to FMA-contraction ulps, ≤ 1e-4), and
+  view 542 shows lum(c·a′)/lum(L − L1) = 1. Pixel-centre rays (no jitter) would also be stable but alias every edge
+  and texel against the box-filtered reference; a resolve keeps the anti-aliasing. Fix: `dn_resolve` (after the last
+  à-trous, which now writes `dnOut`, rgba16float) accumulates the output (`dnTaa[2]`, rgba16float: rgb, n_t):
+  - static camera and no lighting change in the last 8 frames: identity for every pixel, hit or background (the
+    footprint is the same, as for the progressive mean), α_t = 1/n_t, n_t ≤ 1024;
+  - camera motion or a lighting change within 8 frames: the pixel centre reprojected by the G-buffer motion vector
+    (bilinear, no geometric test: a silhouette pixel's jittered hit flips surfaces, a depth / normal test would reject
+    half its history every frame), n_t ≤ 8, variance clipping against the current 3×3 neighbourhood in YCoCg (γ = 1);
+  - λ′ cuts n_t like the colour history, α_t ≥ λ′; reset / disocclusion of the colour history do not reset it.
+  `resolve: false` restores the per-frame output. View 528 shows n_t. The colour history keeps the TD12 rule (q′
+  consistency); only the display resolve uses the motion vector.
+  Measured (static camera, display luminance, edge std / Δ per frame):
+  (i): progressive mean 0.0037 / 0.0011, denoiser before DN-6 0.030 / 0.027, with the resolve 0.0013 / 0.0004 (R2 0.0009 / 0.0004);
+  (vii): 0.0021 / 0.0007, 0.0051 / 0.0034, 0.0007 / 0.0001 (R2 0.0005 / 0.0001).
+  The gate gains the edge-stability step (§11).
+

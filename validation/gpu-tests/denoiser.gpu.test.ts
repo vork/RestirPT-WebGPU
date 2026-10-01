@@ -16,7 +16,7 @@ import { DENOISER_DEFAULTS, DN_REPROJ, DNF, dnTiles, type DenoiserSettings } fro
 import { FrameUniformBuffer, JITTER_NONE, type CameraState } from '../../src/core/render/frame-uniforms.ts';
 import { liveDenoisers } from '../../src/core/render/denoise/registry.ts';
 import {
-  emptyState, refFilter, refLambda, refPairs, refTemporal, st16, rayDir, type RefPixel, type RefState, type RefTState, type V3,
+  emptyState, refFilter, refLambda, refPairs, refResolveStatic, refTemporal, st16, rayDir, type RefPixel, type RefState, type RefTState, type V3,
 } from '../../tests/denoise/dn-ref.ts';
 import { getTestGpu, releaseTestGpu } from './device-factory.ts';
 
@@ -166,19 +166,21 @@ async function gpuState(): Promise<{ st: RefState; mom: number[]; atrous: [numbe
   const mom = await f16(t.mom[cur]);
   const hist4 = await f16(t.hist[cur]);
   const alb4 = await f16(t.alb[cur]);
+  const l14 = await f16(t.l1[cur]);
   const geo = new Uint32Array(await readTex(t.geo[cur]));
   const st = emptyState(W, H);
   for (let i = 0; i < P; i++) {
     st.mom.set(mom.slice(4 * i, 4 * i + 4), 4 * i);
     st.hist.set(hist4.slice(4 * i, 4 * i + 3), 3 * i);
-    st.alb.set(alb4.slice(4 * i, 4 * i + 3), 3 * i);
+    st.alb.set(alb4.slice(4 * i, 4 * i + 4), 4 * i);
+    st.l1.set(l14.slice(4 * i, 4 * i + 3), 3 * i);
     st.dist[i] = new Float32Array(Uint32Array.of(geo[2 * i]).buffer)[0];
   }
   return { st, mom, atrous: [await f16(t.atrous[0]), await f16(t.atrous[1])], hist: hist4, colour: await f32(rig.colour) };
 }
 
 describe('denoiser passes vs the f64 reference', () => {
-  const S0: DenoiserSettings = { ...DENOISER_DEFAULTS, iterations: 0 };
+  const S0: DenoiserSettings = { ...DENOISER_DEFAULTS, iterations: 0, resolve: false };
   let prevRef: RefState;
   let pxA: RefPixel[];
 
@@ -222,7 +224,7 @@ describe('denoiser passes vs the f64 reference', () => {
   });
 
   it('U-DN-3 dn_variance and dn_atrous (N = 2): feedback level and remodulated output', async () => {
-    const S2: DenoiserSettings = { ...DENOISER_DEFAULTS, iterations: 2 };
+    const S2: DenoiserSettings = { ...DENOISER_DEFAULTS, iterations: 2, resolve: false };
     const cam = camAt(0.013);
     const px = scene(cam);
     const radiance = noisy(px, 3), l1 = l1Of(px);
@@ -245,7 +247,7 @@ describe('denoiser passes vs the f64 reference', () => {
   });
 
   it('U-DN-4 dn_gradient / dn_grad_filter: tile sums, λ, and λ driving α', async () => {
-    const S: DenoiserSettings = { ...DENOISER_DEFAULTS, iterations: 1 };
+    const S: DenoiserSettings = { ...DENOISER_DEFAULTS, iterations: 1, resolve: false };
     const cam = camAt(0.013);
     const px = scene(cam);
     const r = rng(9);
@@ -297,8 +299,7 @@ describe('denoiser passes vs the f64 reference', () => {
     const lam = await f32(t.lambda);
     const [tx, ty] = dnTiles(W, H);
     for (let k = 0; k < tx * ty; k++) {
-      expect(Math.abs(tiles[2 * k] - refL.tiles[2 * k])).toBeLessThan(1e-4 * (1 + Math.abs(refL.tiles[2 * k + 1])));
-      expect(Math.abs(tiles[2 * k + 1] - refL.tiles[2 * k + 1])).toBeLessThan(1e-4 * (1 + Math.abs(refL.tiles[2 * k + 1])));
+      for (const c of [0, 1, 2, 3]) expect(Math.abs(tiles[4 * k + c] - refL.tiles[4 * k + c])).toBeLessThan(1e-4 * (1 + Math.abs(refL.tiles[4 * k + (c | 1)])));
       expect(Math.abs(lam[k] - refL.lambda[k])).toBeLessThan(1e-4);
     }
     expect(Math.max(...lam)).toBeGreaterThan(0.3);
@@ -315,8 +316,33 @@ describe('denoiser passes vs the f64 reference', () => {
     for (let i = 0; i < P; i++) if (px[i].hit) expect(g2.mom[4 * i + 2]).toBeGreaterThan(1);
   });
 
+  it('U-DN-6 dn_resolve: static camera, no lighting change for 8 frames ⇒ the progressive mean of the denoised outputs', async () => {
+    const S: DenoiserSettings = { ...DENOISER_DEFAULTS, iterations: 1, resolve: true };
+    const cam = camAt(0.05);
+    const px = scene(cam);
+    const l1 = l1Of(px);
+    let prevTaa = new Float64Array(P * 4);
+    for (let k = 0; k < 12; k++) {
+      const radiance = noisy(px, 40 + k);
+      encodeFrame({ cam, prev: k === 0 ? camAt(0.02) : cam, px, radiance, l1, reset: k === 0, settings: S, kind: 'restir' });
+      const t = rig.dn.textures!;
+      const taa = await f16(t.taa[rig.dn.parity]);
+      if (k >= 8) {                                      // past the dynamic window after the reset (n_t ≤ 8 + clipping)
+        const out = await f16(t.out);
+        const out3 = Array.from({ length: P * 3 }, (_, j) => out[4 * Math.floor(j / 3) + (j % 3)]);
+        const ref = refResolveStatic(S, out3, prevTaa, false, P);
+        expect(maxErr(taa, ref, 1e-3).err).toBeLessThan(3e-3);
+        const colour = await f32(rig.colour);
+        expect(maxErr(colour.filter((_, j) => j % 4 !== 3), Array.from(ref).filter((_, j) => j % 4 !== 3), 1e-3).err).toBeLessThan(1e-3);
+      }
+      prevTaa = Float64Array.from(taa);
+    }
+    // every pixel (background too) accumulates: n_t = 8 + 4 after the 4 static frames
+    for (let i = 0; i < P; i++) expect(prevTaa[4 * i + 3]).toBe(12);
+  });
+
   it('U-DN-5 held frame and timing re-run are bit-identical; no timestamp writes in the frame', async () => {
-    const S: DenoiserSettings = { ...DENOISER_DEFAULTS };
+    const S: DenoiserSettings = { ...DENOISER_DEFAULTS, resolve: false };
     const cam = camAt(0.02);
     const px = scene(cam);
     const radiance = noisy(px, 6), l1 = l1Of(px);

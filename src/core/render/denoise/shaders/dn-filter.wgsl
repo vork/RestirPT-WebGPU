@@ -4,8 +4,8 @@
 // colour history (SVGF); the last iteration remodulates (a′·filtered + L1) into the colour target (background: the
 // input passes through).
 //   dn_variance  G1: 0 dnAtrous[0] · 1 dnMom[cur] · 2 dnGeo[cur] · 3 dnAtrous[1] (w)
-//   dn_atrous    G1: 0 dnAtrous[src] · 1 dnGeo[cur] · 2 DnIter · 3 dnAtrous[dst] (w) · 4 dnHist[cur] (w) · 5 colour (w)
-//                · 6 input · 7 L1 · 8 dnAlb[cur] (the accumulated demodulation factor ā, Changelog DN-1)
+//   dn_atrous    G1: 0 dnAtrous[src] · 1 dnGeo[cur] · 2 DnIter · 3 dnAtrous[dst] (w) · 4 dnHist[cur] (w) · 5 dnOut (w)
+//                · 6 input · 7 dnL1[cur] (accumulated L1, DN-2) · 8 dnAlb[cur] (the accumulated demodulation factor ā, Changelog DN-1)
 #include "denoise/dn-common.wgsl"
 
 /// One-sided depth gradient per axis at p (the smaller difference, so a silhouette does not inflate it).
@@ -84,7 +84,7 @@ const DNI_COPY: u32 = 4u;       // no filtering (0 iterations)
 @group(1) @binding(2) var<uniform> it: DnIter;
 @group(1) @binding(3) var atrousOut: texture_storage_2d<rgba16float, write>;
 @group(1) @binding(4) var histOut: texture_storage_2d<rgba16float, write>;
-@group(1) @binding(5) var colourOut: texture_storage_2d<$COLOR_FORMAT, write>;
+@group(1) @binding(5) var colourOut: texture_storage_2d<rgba16float, write>;   // dnOut: the remodulated output (dn_resolve, DN-6)
 @group(1) @binding(6) var inputTex: texture_2d<f32>;
 @group(1) @binding(7) var l1Tex: texture_2d<f32>;
 @group(1) @binding(8) var albTex: texture_2d<f32>;
@@ -125,6 +125,8 @@ fn dn_atrous(@builtin(global_invocation_id) gid: vec3u) {
     let nc = dn_guide_normal(gc);
     let zg = dn_zgrad(geoCur, p, zc);
     let lc = luminance(c.rgb);
+    let ac = textureLoad(albTex, p, 0).rgb;
+    let invA = select(0.0, 1.0 / dn.sigmaA, dn.sigmaA > 0.0);
     let phiL = dn.sigmaL * sqrt(max(dn_var3(p), 0.0)) + 1e-6;
     let stp = i32(it.step);
     var b3 = array<f32, 5>(0.0625, 0.25, 0.375, 0.25, 0.0625);
@@ -142,7 +144,8 @@ fn dn_atrous(@builtin(global_invocation_id) gid: vec3u) {
         let zq = dn_guide_dist(gq);
         if (!(zq > 0.0)) { continue; }
         let cq = textureLoad(atrousIn, q, 0);
-        let wl = exp(-abs(lc - luminance(cq.rgb)) / phiL);
+        let da = textureLoad(albTex, q, 0).rgb - ac;
+        let wl = exp(-abs(lc - luminance(cq.rgb)) / phiL - (abs(da.x) + abs(da.y) + abs(da.z)) * (invA / 3.0));   // DN-5 albedo stop
         let w = h * dn_w_geo(zc, zg, nc, zq, dn_guide_normal(gq), vec2f(d)) * wl;
         sc += w * cq.rgb;
         sv += w * w * cq.a;
@@ -155,7 +158,7 @@ fn dn_atrous(@builtin(global_invocation_id) gid: vec3u) {
   if ((it.flags & DNI_FEEDBACK) != 0u) { textureStore(histOut, p, vec4f(res.rgb, 0.0)); }
   debug_write3(gid.xy, DNV_LEVEL0 + it.iter, res.rgb);
   if (isFinal) {
-    let L1 = select(vec3f(0.0), textureLoad(l1Tex, p, 0).rgb, dn_flag(DNF_HAS_L1));
+    let L1 = textureLoad(l1Tex, p, 0).rgb;
     textureStore(colourOut, p, vec4f(res.rgb * textureLoad(albTex, p, 0).rgb + L1, 1.0));
   } else {
     textureStore(atrousOut, p, res);

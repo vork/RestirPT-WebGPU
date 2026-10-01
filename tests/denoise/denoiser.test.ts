@@ -52,6 +52,7 @@ describe('mirrors (WGSL ↔ layout.ts ↔ ReSTIR layout)', () => {
     expect(common.DNV_REPROJ).toBe(DN_VIEW.reproj);
     expect(common.DNV_PAIRS).toBe(DN_VIEW.pairs);
     expect(common.DNV_LEVEL0).toBe(DN_VIEW.level0);
+    expect(common.DNV_DEMOD_FACTOR).toBe(DN_VIEW.demodFactor); expect(common.DNV_ALB_ACCUM).toBe(DN_VIEW.albedoAccum); expect(common.DNV_DEMOD_CHECK).toBe(DN_VIEW.demodCheck);
     for (const [k, v] of Object.entries(DNI)) expect(filt[`DNI_${k}`], k).toBe(v);
   });
   it('the gradient pass reads the tState words, flags and slot codes of the M5 contract', () => {
@@ -105,10 +106,10 @@ describe('modes (denoiser.md §8, DN4)', () => {
 });
 
 describe('reference formulas', () => {
-  it('demodulation factor: floor 0.02, black / glossy-only albedo → 1; the round trip is exact', () => {
+  it('demodulation factor: max(albedo, 0.02) + F0 (DN-3), black / glossy-only albedo → 1', () => {
     expect(demodFactor([0, 0, 0])).toEqual([1, 1, 1]);
     expect(demodFactor([0.019, 0.01, 0])).toEqual([1, 1, 1]);
-    expect(demodFactor([0.6, 0.06, 0.01])).toEqual([0.6, 0.06, 0.02]);
+    expect(demodFactor([0.6, 0.06, 0.01]).map((x) => Math.round(x * 1e9) / 1e9)).toEqual([0.64, 0.1, 0.06]);
   });
   it('oct 2×16 snorm guide normals: < 0.004° with round-to-nearest packing (data-formats.md §B3: 0.0025° with an optimised encoder)', () => {
     const r = rng(7);
@@ -141,7 +142,7 @@ describe('reference formulas', () => {
     const W = 24, H = 24, P = W * H;
     const r = rng(3);
     const fw = new Float64Array(P).map(() => 0.5 + r());
-    const mk = (f: (q: number) => [number, number, number]) => refLambda(W, H, Array.from({ length: P }, (_, q) => f(q)));
+    const mk = (f: (q: number) => number[]) => refLambda(W, H, Array.from({ length: P }, (_, q) => f(q)));
     const base = { flags: 1, qPrime: 0, cP: 5, fwdCode: SC.OK, wc: 0, wp: 0, invCode: 0, piRecomp: 0 };
     // light ×2: the forward re-evaluation doubles every history sample
     const x2 = mk((q) => refPairs({ ...base, qPrime: q, wp: 5 * 2 * fw[q] }, (i) => fw[i], 0, false, P));
@@ -154,11 +155,18 @@ describe('reference formulas', () => {
     const mid = rm.lambda[Math.floor(dnTiles(W, H)[0] / 2) * dnTiles(W, H)[0] + 1];
     expect(mid).toBeCloseTo(0.3, 2);
     // camera-induced failure (O1): no pair
-    expect(refPairs({ ...base, fwdCode: SC.O1 }, () => 1, 0, false, P)).toEqual([0, 0, 0]);
-    // added light seen by the canonical sample only (s = c, inverse undefined): a = w̃_c, b = 0
-    expect(refPairs({ ...base, fwdCode: SC.O1, flags: 1 | 32 | 128, wc: 2, invCode: SC.O0_LIGHT }, () => 1, 1, true, P)).toEqual([2, 2, 2]);
+    expect(refPairs({ ...base, fwdCode: SC.O1 }, () => 1, 0, false, P)).toEqual([0, 0, 0, 0, 0]);
+    // added light seen by the canonical sample only (s = c, inverse undefined): a = w̃_c, b = 0, weighted by 1/P(s = c)
+    expect(refPairs({ ...base, fwdCode: SC.O1, flags: 1 | 32 | 128, wc: 2, wp: 6, invCode: SC.O0_LIGHT }, () => 1, 1, true, P)).toEqual([0, 0, 8, 8, 2]);
+    // DN-2: an added light C with share s_C of the new radiance: forward pairs (old lights) unchanged, s = c on a fraction
+    // P(s = c) of the pixels; the selection-weighted inverse family estimates s_C (λ = max of the two families)
+    const sC = 0.4, pSel = 0.25;
+    const add = mk((q) => (q % 4 === 0
+      ? refPairs({ ...base, qPrime: q, wp: 5 * 1, flags: 1 | 32 | 128, wc: pSel / (1 - pSel) * 5, invCode: (q % 20 < 8 ? SC.O0_LIGHT : SC.OK), piRecomp: 1 }, () => 1, 1, true, P)
+      : refPairs({ ...base, qPrime: q, wp: 5 * 1 }, () => 1, 0, true, P)));
+    expect(add.lambda[Math.floor(dnTiles(W, H)[0] / 2) * dnTiles(W, H)[0] + 1]).toBeCloseTo(sC, 1);
     // firefly cap
-    expect(refPairs({ ...base, wp: 5 * 1e6 }, () => 0, 0, false, P)).toEqual([1e4, 1e4, 1]);
+    expect(refPairs({ ...base, wp: 5 * 1e6 }, () => 0, 0, false, P)).toEqual([1e4, 1e4, 0, 0, 1]);
   });
 });
 

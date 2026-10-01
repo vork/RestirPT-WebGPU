@@ -22,7 +22,7 @@ const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const OPTIONS = {
   package: { type: 'string' }, mode: { type: 'string', default: 'flip' }, frames: { type: 'string', default: '64' }, 'eval-frames': { type: 'string' },
   'pkg-frames': { type: 'string' }, seed: { type: 'string', default: '1' }, run: { type: 'string' }, width: { type: 'string' }, height: { type: 'string' },
-  iterations: { type: 'string' }, 'alpha-min': { type: 'string' }, lambda0: { type: 'string' }, lambda1: { type: 'string' },
+  iterations: { type: 'string' }, 'alpha-min': { type: 'string' }, 'sigma-l': { type: 'string' }, 'sigma-a': { type: 'string' }, 'var-corr': { type: 'string' }, 'no-resolve': { type: 'boolean', default: false }, jitter: { type: 'string' }, 'no-denoise': { type: 'boolean', default: false }, accumulate: { type: 'boolean', default: false }, pan: { type: 'string' }, lambda0: { type: 'string' }, lambda1: { type: 'string' },
   warmup: { type: 'string' }, 'timing-submits': { type: 'string' }, 'timing-runs': { type: 'string' }, 'no-dev-features': { type: 'boolean', default: false },
 } as const;
 const parse = (argv?: string[]) => parseArgs({ options: { ...OPTIONS, jobs: { type: 'string' } }, ...(argv ? { args: argv } : {}) }).values;
@@ -46,11 +46,12 @@ function optionsOf(a: ReturnType<typeof parse>, chromeVersion: string): RenderDe
   const mode = a.mode as RenderDenoiseOptions['mode'];
   if (!['flip', 'recovery', 'timing'].includes(mode)) throw new Error('--mode flip|recovery|timing');
   const num = (x?: string) => (x !== undefined ? Number(x) : undefined);
-  const dn = Object.fromEntries(Object.entries({ iterations: num(a.iterations), alphaMin: num(a['alpha-min']), lambda0: num(a.lambda0), lambda1: num(a.lambda1) }).filter(([, v]) => v !== undefined));
+  const dn = Object.fromEntries(Object.entries({ iterations: num(a.iterations), alphaMin: num(a['alpha-min']), lambda0: num(a.lambda0), lambda1: num(a.lambda1), sigmaL: num(a['sigma-l']), sigmaA: num(a['sigma-a']), varCorr: num(a['var-corr']), resolve: a['no-resolve'] ? false : undefined }).filter(([, v]) => v !== undefined));
   return {
     run: a.run ?? `denoise-${path.basename(a.package)}-${mode}-${stamp()}`, package: pkgUrl, seed: Number(a.seed), mode,
     frames: pkgFrames?.length ?? Number(a.frames), pkgFrames, evalFrames: a['eval-frames']?.split(',').map(Number),
-    width: num(a.width), height: num(a.height), denoiser: dn, warmup: num(a.warmup), timingSubmits: num(a['timing-submits']), timingRuns: num(a['timing-runs']), chromeVersion,
+    width: num(a.width), height: num(a.height), denoiser: dn, jitter: a.jitter as RenderDenoiseOptions['jitter'], denoise: !a['no-denoise'], accumulate: a.accumulate,
+    pan: a.pan ? (([dx, from, to]) => ({ dx, from, to }))(a.pan.split(':').map(Number)) : undefined, warmup: num(a.warmup), timingSubmits: num(a['timing-submits']), timingRuns: num(a['timing-runs']), chromeVersion,
   };
 }
 

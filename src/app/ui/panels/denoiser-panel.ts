@@ -1,6 +1,6 @@
 // 'Denoiser' panel (M5.5, docs/decisions/denoiser.md §8–§10; PLAN §6 "Denoiser: variance; history; α"): the toggle
 // (remembered per mode: default on in ReSTIR-interactive, off elsewhere, unavailable in ReSTIR-unbiased), the à-trous
-// iteration count, α_min, the gradient ramp λ₀/λ₁, σ_l, the camera-gradient option, a picker for the denoiser views
+// iteration count, α_min, the gradient ramp λ₀/λ₁, σ_l, σ_a, the camera-gradient option, the temporal resolve (DN-6), a picker for the denoiser views
 // (variance, history length, α, λ, demodulated input, integrated colour, reprojection, gradient pairs, à-trous levels)
 // and the GPU time of the separate timing submits.
 import { DENOISER_DEFAULTS, DENOISER_VIEWS, DN_MAX_ITERATIONS } from '../../../core/render/denoise/layout.ts';
@@ -26,6 +26,8 @@ export function addDenoiserPanel(app: App, r: Renderer, index?: number): Denoise
   f.addBinding(s, 'lambda1', { label: 'gradient λ₁', min: 0.01, max: 1, step: 0.005 }).on('change', q(apply));
   f.addBinding(s, 'sigmaL', { label: 'σ luminance', min: 0.5, max: 16, step: 0.5 }).on('change', q(apply));
   f.addBinding(s, 'gradientOnCamera', { label: 'gradient on camera motion' }).on('change', q(apply));
+  f.addBinding(s, 'resolve', { label: 'temporal resolve (TAA)' }).on('change', q(apply));
+  f.addBinding(s, 'sigmaA', { label: 'σ albedo', min: 0, max: 0.5, step: 0.01 }).on('change', q(apply));
   f.addButton({ title: 'Reset denoiser history' }).on('click', () => r.denoiser?.reset());
   const views: Record<string, number> = { 'beauty (off)': 0 };
   for (const v of DENOISER_VIEWS) views[v.label] = v.id;

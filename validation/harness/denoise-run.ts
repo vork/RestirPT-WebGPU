@@ -12,7 +12,7 @@ import { describeContext, type GpuContext } from '../../src/core/gpu/device.ts';
 import { encodePFM } from '../../src/core/io/pfm.ts';
 import { DebugResources, DebugViewRegistry } from '../../src/core/render/debug-views.ts';
 import { DENOISER_DEFAULTS, type DenoiserSettings } from '../../src/core/render/denoise/layout.ts';
-import { FrameUniformBuffer, JITTER_IID, boundsDiagonal, computeRenderOrigin, type CameraState } from '../../src/core/render/frame-uniforms.ts';
+import { FrameUniformBuffer, JITTER_IID, JITTER_NONE, JITTER_R2, boundsDiagonal, computeRenderOrigin, r2Jitter, type CameraState } from '../../src/core/render/frame-uniforms.ts';
 import { Renderer, type RestirAppMode } from '../../src/core/render/renderer.ts';
 import { fetchScenePackage, resolvePackageFrame } from '../../src/core/scene/scene-package.ts';
 import { packageSha256, uploadFile } from './export-package.ts';
@@ -33,6 +33,13 @@ export interface RenderDenoiseOptions {
   height?: number;
   restirMode?: RestirAppMode;
   denoiser?: Partial<DenoiserSettings>;
+  /** Primary jitter (default 'iid'; the interactive app offers R2 and pixel centre). */
+  jitter?: 'iid' | 'r2' | 'none';
+  /** Denoiser on (default) or off; `accumulate` turns the progressive mean on (the app's denoiser-off display). */
+  denoise?: boolean;
+  accumulate?: boolean;
+  /** Slow camera motion: translate along the camera's right axis by `pan` metres per frame on frames [from, to). */
+  pan?: { dx: number; from: number; to: number };
   /** 'timing': warm-up frames, timing submits and re-runs per submit. */
   warmup?: number;
   timingSubmits?: number;
@@ -68,16 +75,24 @@ fn tiles(@builtin(global_invocation_id) gid: vec3u) {
 }`;
 
 async function readTexture(device: GPUDevice, tex: GPUTexture): Promise<Float32Array> {
+  const u = await readTexture4(device, tex);
+  const f = new Float32Array(u.buffer);
+  const out = new Float32Array(tex.width * tex.height * 3);
+  for (let k = 0; k < tex.width * tex.height; k++) for (let c = 0; c < 3; c++) out[3 * k + c] = f[4 * k + c];
+  return out;
+}
+/** The 4 × 32-bit texels of an rgba32float / rgba32uint texture, bit-exact (row padding removed). */
+async function readTexture4(device: GPUDevice, tex: GPUTexture): Promise<Uint32Array> {
   const W = tex.width, H = tex.height, bpr = Math.ceil((W * 16) / 256) * 256;
   const buf = device.createBuffer({ size: bpr * H, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
   const e = device.createCommandEncoder({ label: 'dn-readback' });
   e.copyTextureToBuffer({ texture: tex }, { buffer: buf, bytesPerRow: bpr }, [W, H]);
   device.queue.submit([e.finish()]);
   await buf.mapAsync(GPUMapMode.READ);
-  const src = new Float32Array(buf.getMappedRange().slice(0));
+  const src = new Uint32Array(buf.getMappedRange().slice(0));
   buf.unmap(); buf.destroy();
-  const out = new Float32Array(W * H * 3);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let c = 0; c < 3; c++) out[(y * W + x) * 3 + c] = src[(y * bpr) / 4 + x * 4 + c];
+  const out = new Uint32Array(W * H * 4);
+  for (let y = 0; y < H; y++) out.set(src.subarray((y * bpr) / 4, (y * bpr) / 4 + W * 4), y * W * 4);
   return out;
 }
 
@@ -98,7 +113,7 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
   debug.resize(W, H);
   const settings0 = { ...DENOISER_DEFAULTS, ...o.denoiser };
   const r = await Renderer.create({ device, debugLayout: debug.layout, debug, features: ctx.features, wgslLanguageFeatures: ctx.wgslLanguageFeatures }, {
-    textureMode: 'validation', watertight: true, renderMode: 'restir', restirMode: o.restirMode ?? 'interactive', temporal: true, accumulate: false,
+    textureMode: 'validation', watertight: true, renderMode: 'restir', restirMode: o.restirMode ?? 'interactive', temporal: true, accumulate: !!o.accumulate,
     maxBounces: p.render.maxBounces ?? 3, lightMode: 'A', envNee: (p.json.env?.sampling ?? 'AUTOMATIC') !== 'NONE',
   });
   const origin = computeRenderOrigin(p.scene.bounds, p.scene.quant);
@@ -114,10 +129,11 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
     const g = await r.setScene(p.scene, origin);
     if (!g) throw new Error('setScene superseded');
     r.resize({ width: W, height: H, color, colorFormat: 'rgba32float', depth, frameUniforms: fu.buffer });
-    r.setDenoise(true);
+    const denoise = o.denoise ?? true;
+    r.setDenoise(denoise);
     r.setDenoiserSettings(settings0);
     if (!await r.prepareRestir()) throw new Error(`ReSTIR compile failed: ${r.restirError}`);
-    if (!await r.prepareDenoiser()) throw new Error(`denoiser compile failed: ${r.denoiserError}`);
+    if (denoise && !await r.prepareDenoiser()) throw new Error(`denoiser compile failed: ${r.denoiserError}`);
     await r.warmup(false);
     const sceneDiag = boundsDiagonal(p.scene.bounds);
     if (o.mode === 'recovery') {
@@ -127,24 +143,30 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
       tilePipe = await device.createComputePipelineAsync({ layout: 'auto', compute: { module, entryPoint: 'tiles' } });
     }
     let prev: CameraState | undefined;
+    const jm = o.jitter === 'r2' ? JITTER_R2 : o.jitter === 'none' ? JITTER_NONE : JITTER_IID;
+    let vbufMismatch = -1, vbufMaxBary = 0;
     const total = o.mode === 'timing' ? (o.warmup ?? 32) : o.frames;
     for (let i = 0; i < total; i++) {
       const st = resolvePackageFrame(p, pkgFrame(i));
       const cam: CameraState = { camToWorld: Array.from(st.camera.camToWorld), yfov: st.camera.yfov, znear: 1e-4 };
+      if (o.pan) {   // slow pan along the camera's right axis (column 0)
+        const k = Math.min(Math.max(i, o.pan.from), o.pan.to) - o.pan.from;
+        for (let a = 0; a < 3; a++) cam.camToWorld[12 + a] += k * o.pan.dx * cam.camToWorld[a];
+      }
       r.setLights(st.lights);
       if (st.env) r.setEnvParams(st.env.params);
       fu.write({
         camera: cam, prevCamera: prev ?? cam, width: W, height: H, frameIndex: i, seedIndex: i, runSeed: o.seed >>> 0, flags: 0,
-        jitterMode: JITTER_IID, jitter: [0.5, 0.5], origin, exposure: 1, time: i / 24, dt: 1 / 24, sceneDiag,
+        jitterMode: jm, jitter: o.jitter === 'r2' ? r2Jitter(i, o.seed >>> 0) : [0.5, 0.5], origin, exposure: 1, time: i / 24, dt: 1 / 24, sceneDiag,
       });
       prev = cam;
       debug.update({ ...debug.settings, mode: 0 }, i);
       const enc = device.createCommandEncoder({ label: `dn-eval-${i}` });
       debug.beginFrame(enc);
       const ok = r.encode(enc, { advanced: true, debugMode: 0, debugGroup: debug.bindGroup, resetTemporal: i === 0, resetHistory: i === 0 });
-      if (!ok || !r.denoisedLastFrame) throw new Error(`frame ${i}: renderer not ready (encode ${ok}, denoised ${r.denoisedLastFrame}; ${r.restirError ?? ''} ${r.denoiserError ?? ''} ${r.lastError ?? ''})`);
-      const d = r.denoiser!;
-      perFrame.push({ flags: d.flags, lambdaGate: (d.flags & 2) !== 0, reset: (d.flags & 1) !== 0 });
+      if (!ok || r.denoisedLastFrame !== denoise) throw new Error(`frame ${i}: renderer not ready (encode ${ok}, denoised ${r.denoisedLastFrame}; ${r.restirError ?? ''} ${r.denoiserError ?? ''} ${r.lastError ?? ''})`);
+      const d = r.denoiser;
+      if (d && denoise) perFrame.push({ flags: d.flags, lambdaGate: (d.flags & 2) !== 0, reset: (d.flags & 1) !== 0 });
       const rs = r.restir!.kernel.resources;
       if (o.mode === 'recovery') {
         device.queue.writeBuffer(tileParams!, 0, new Uint32Array([W, H, tilesX, tilesY, i * nTiles * 2, 0, 0, 0]));
@@ -154,6 +176,18 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
         pass.setPipeline(tilePipe!); pass.setBindGroup(0, bg); pass.dispatchWorkgroups(Math.ceil(tilesX / 8), Math.ceil(tilesY / 8)); pass.end();
       }
       device.queue.submit([enc.finish()]);
+      if (i === 1) {
+        // the denoiser's albedo is the M1 G-buffer's: the same jittered primary hit as rs_primary (V-buffer ids equal)
+        const a = await readTexture4(device, r.vbuffer!), b = await readTexture4(device, rs.vbuf);
+        // primId must match exactly; the f32 barycentrics of the two pipelines may differ by contraction (FMA) ulps
+        vbufMismatch = 0;
+        const fa = new Float32Array(a.buffer), fb = new Float32Array(b.buffer);
+        for (let k = 0; k < W * H; k++) {
+          if (a[4 * k] !== b[4 * k]) { vbufMismatch++; continue; }
+          if (a[4 * k] !== 0xFFFFFFFF) vbufMaxBary = Math.max(vbufMaxBary, Math.abs(fa[4 * k + 1] - fb[4 * k + 1]), Math.abs(fa[4 * k + 2] - fb[4 * k + 2]));
+        }
+        if (vbufMismatch || vbufMaxBary > 1e-4) errors.push(`M1 V-buffer vs rsVbuf: ${vbufMismatch} primId mismatches, max |Δbary| ${vbufMaxBary} (denoiser albedo from another sample)`);
+      }
       if (o.mode === 'flip' && o.evalFrames?.includes(i)) {
         const dn = await readTexture(device, color);
         const raw = await readTexture(device, rs.frameTex);
@@ -211,7 +245,7 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
       kind: 'denoise-eval', mode: o.mode, run: o.run, package: o.package, packageSha256: hash.sha256, seed: o.seed, width: W, height: H, frames: total,
       pkgFrames: Array.from({ length: total }, (_, i) => pkgFrame(i)), evalFrames: o.evalFrames ?? [], tiles: o.mode === 'recovery' ? { tile: TILE, x: tilesX, y: tilesY, layout: 'f32 [frame][tile][dn, raw]' } : undefined,
       renderer: { renderMode: 'restir', restirMode: o.restirMode ?? 'interactive', settings: r.restir?.settings, textureMode: 'validation', intersector: 'woop-watertight', jitter: 'iid', accumulate: false },
-      denoiser: { settings: r.denoiser?.settings, perFrame }, timing, finalizeCounters: fin,
+      denoiser: { on: denoise, settings: r.denoiser?.settings, perFrame }, jitter: o.jitter ?? 'iid', accumulate: !!o.accumulate, pan: o.pan, vbuf: { primIdMismatch: vbufMismatch, maxBaryDiff: vbufMaxBary }, timing, finalizeCounters: fin,
       adapterInfo: { vendor: info.vendor, architecture: info.architecture, description: info.description }, chromeVersion: o.chromeVersion, userAgent: navigator.userAgent,
       files, ok: errors.length === 0, errors, timings: { totalMs: performance.now() - t0 }, createdAt: new Date().toISOString(),
     };
