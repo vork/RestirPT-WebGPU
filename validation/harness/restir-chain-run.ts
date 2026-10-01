@@ -116,7 +116,9 @@ export async function renderRestirChains(ctx: GpuContext, o: RenderRestirChainsO
   const jitterMode = disocc ? JITTER_NONE : JITTER_IID;
   kernel.setView({ camera: { camToWorld: Array.from(f0.camera.camToWorld), yfov: f0.camera.yfov }, width: W, height: H, runSeed: o.seed >>> 0, members: E, jitterMode, jitter: [0.5, 0.5] });
   await kernel.prepare();
-  const runner = new ChainRunner(kernel, { runSeed: o.seed >>> 0, budget: o.budget });
+  // N1-mixed (TP_N1_MIXED) skips rs_refresh_inv by definition (§3.5), so RSC_T_PENDING_LEFT counts the unrefreshed inverse
+  // records on refresh frames: expected for that plant, an error everywhere else (Changelog E-15)
+  const runner = new ChainRunner(kernel, { runSeed: o.seed >>> 0, budget: o.budget, ...(o.tPlants?.includes('n1Mixed') ? { expectedCounters: ['tPendingLeft' as const] } : {}) });
 
   // masks per test frame (fetched once)
   const masks = new Map<number, ChainMasks>();

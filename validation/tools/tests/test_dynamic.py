@@ -221,3 +221,15 @@ def test_merge_npz_deterministic(tmp_path: Path):
     assert (tmp_path / "a/ensemble.npz").read_bytes() == (tmp_path / "b/ensemble.npz").read_bytes()
     z = np.load(tmp_path / "a/ensemble.npz")
     assert int(z["count"]) == 4 and str(z["channels"][0]) == "R"
+
+
+def test_npz_128_tiles_from_64(tmp_path: Path):
+    """Enlarged 128² aggregates of an ensemble npz are the block sums of its 64² tiles (Changelog E-15)."""
+    import stats as S
+    rng = np.random.default_rng(9)
+    imgs = rng.random((5, 200, 136, 3))
+    _npz(tmp_path / "o", imgs)
+    z = dict(np.load(tmp_path / "o/ensemble.npz"))
+    reps = S.replicates_from_sums(z, ("Y", "R", "G", "B"), (128,))
+    direct = S.aggregate_stack(imgs, ("Y", "R", "G", "B"), (128,))
+    assert np.allclose(reps.tiles[128], direct.tiles[128])

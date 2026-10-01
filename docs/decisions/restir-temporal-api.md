@@ -1527,6 +1527,20 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   ixs_c_spot_b03 (43 min) and ixs_f_combined (31 min); ixs_a no longer needs one (R 256). Every plant region exists at
   ≥ 1 predicted frame (pilot mask references). The A/A pair (4×) is the largest single item; 2× would save 1.6 h at the
   power of one unit (coordinator's choice; kept at 4× as M4).
+- **E-15 Harness fixes after the first core run** (m5-gate-20261001-081949; affects nobody's code). (a) compare.py
+  could not evaluate 128² tiles from ensemble.npz (only 16/32/64 are stored): `stats.replicates_from_sums` now builds a
+  requested multiple of 64 as exact block sums of the 64² tile sums (pytest against the image path). Every unit
+  enlarged to 128² (ixs_c_spot_b03, ixs_e_addremove + Talbot + E2, ixs_f_combined, ixs_i_envradio) had failed as
+  "compare failed" for this reason; they are re-evaluated on their first-seed chains (`--reuse-chains`), not
+  re-rendered. (b) The N1-mixed plant skips `rs_refresh_inv` by definition (§3.5), so `RSC_T_PENDING_LEFT` counts its
+  unrefreshed inverse records: expected for runs with `n1Mixed`, still an error everywhere else. (c) A plant compares on
+  its unit's tile size (its 4× PT reference is sized for it; at 64² the PT halves of the ixs_i plant were under-powered,
+  control 0–2/10). (d) The A/A pair is sized from m5s_cornell_i 3.4, a static unit: `--part core` sizes that unit
+  without running it. Options `--reuse-chains DIR` and `--plants id,…|aa` re-evaluate a part after a harness-only fix.
+- **E-16 GPU-lock holds of restir-shift** (coordinator decision; affects gate-m4 and gate-m5). The suite runs as one
+  hold per T3 variant (`-t`, T3-0 + T3-1 ≤ 6 + 18 min = 24 min: the one documented exception to the 12-min rule, since a
+  variant needs that wall time for ≥ 10⁷ round trips in its rarest bins) plus one hold for every other test of the file
+  (≤ 12 min). The first core run held the lock once for 2.5 h (accepted for that run).
 - **B-7 T3-2 harness hook instead of `RS_TEMPORAL_TRACE`** (affects nobody). The composer has no `#define` and the kernel
   passes extra defines only to `rs_initial`, so the T3-2 / T4-t harness does not use a define: `t-select.wgsl` has
   `const TSEL_TRACE_FORCE_P: bool = false`, which the test flips to `true` through `instrumentation.extraSources` (every

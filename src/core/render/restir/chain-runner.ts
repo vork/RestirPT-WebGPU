@@ -196,6 +196,9 @@ export interface ChainRunnerOptions {
   budget?: Partial<SubmitBudget>;
   /** Discarded probe frame (outside every chain's frame range; not advanced ⇒ a reset frame, restir-api.md E2). */
   probeFrame?: number;
+  /** Counters that are expected by construction in this run (e.g. RSC_T_PENDING_LEFT under the N1-mixed plant, which
+   *  skips rs_refresh_inv: §3.5; Changelog E-15); reported, not errors. */
+  expectedCounters?: RscName[];
 }
 
 /**
@@ -420,7 +423,7 @@ export class ChainRunner {
     if (T.counters.negative) e.push(`${T.counters.negative} negative radiance values (T15)`);
     if (T.rsc.bvhOverflow || T.rsc.bvhItercap) e.push(`BVH overflow ${T.rsc.bvhOverflow}, iteration cap ${T.rsc.bvhItercap}`);
     for (const key of ['candNonFinite', 'shiftNonFinite', 'pendingLeft', 'slotMismatch', 'wNonFinite', 'tNonFinite', 'tPendingLeft'] as const) {
-      if (T.rsc[key]) e.push(`RSC ${key} = ${T.rsc[key]} (must be 0)`);
+      if (T.rsc[key] && !this.o.expectedCounters?.includes(key)) e.push(`RSC ${key} = ${T.rsc[key]} (must be 0)`);
     }
     T.queueOverflow.forEach((v, q) => { if (v) e.push(`queue ${q} overflow (counter ${T.queueMaxCounter[q]})`); });
     if (T.submits.overHardCap) e.push(`${T.submits.overHardCap} submits above the ${this.budget.hardCapMs} ms hard cap`);

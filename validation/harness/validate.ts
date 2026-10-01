@@ -44,7 +44,7 @@ const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const { values: args } = parseArgs({ options: {
   milestone: { type: 'string', default: 'M0' }, only: { type: 'string' },
   'pilot-only': { type: 'boolean', default: false }, 'write-budget': { type: 'boolean', default: false },
-  'prerender-ptrefs': { type: 'boolean', default: false }, part: { type: 'string' },
+  'prerender-ptrefs': { type: 'boolean', default: false }, part: { type: 'string' }, 'reuse-chains': { type: 'string' }, plants: { type: 'string' },
 } });
 
 interface Step { name: string; ok: boolean; detail?: string }
@@ -381,7 +381,7 @@ const gates: Record<string, () => void> = {
   M3C: () => milestoneM3c(record, args.only ? new Set(args.only.split(',')) : undefined),
   M4: () => milestoneM4(record, { only: args.only ? new Set(args.only.split(',')) : undefined, pilotOnly: args['pilot-only'], writeBudget: args['write-budget'], prerenderPtRefs: args['prerender-ptrefs'] }),
   M5: () => milestoneM5(record, { only: args.only ? new Set(args.only.split(',')) : undefined, pilotOnly: args['pilot-only'], writeBudget: args['write-budget'],
-    prerenderPtRefs: args['prerender-ptrefs'], part: args.part === 'core' || args.part === 'static' ? args.part : undefined }),
+    prerenderPtRefs: args['prerender-ptrefs'], part: args.part === 'core' || args.part === 'static' ? args.part : undefined, reuseChains: args['reuse-chains'], plants: args.plants ? new Set(args.plants.split(',')) : undefined }),
 };
 const gate = gates[args.milestone!.toUpperCase()];
 if (!gate) {

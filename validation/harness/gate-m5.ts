@@ -31,14 +31,14 @@
 // Before `git worktree remove`, copy validation/out/m5* to the main checkout (M4 lesson).
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { decodePFM, encodePFM } from '../../src/core/io/pfm.ts';
 import { readNpz } from '../../src/core/render/restir/npz.ts';
 import { withGpuLockSync } from './gpu-lock.ts';
 import {
-  LOCK_CHUNK_S, NUM_EPS, chunkBatches, codeHashes as m4CodeHashes, mergeChunkMetas, niceCeil, sizeScene, sizingTarget, t16Problems, tsClosure,
+  LOCK_CHUNK_S, NUM_EPS, chunkBatches, gpuSuiteHolds, codeHashes as m4CodeHashes, mergeChunkMetas, niceCeil, sizeScene, sizingTarget, t16Problems, tsClosure,
   type PilotSide,
 } from './gate-m4.ts';
 
@@ -766,12 +766,20 @@ function summarize(rep: Record<string, any>) {
 
 export interface M5Options {
   only?: Set<string>; part?: 'core' | 'static'; pilotOnly?: boolean; writeBudget?: boolean; prerenderPtRefs?: boolean;
+  /** Reuse the first-seed chain runs of an earlier gate directory (unit chains/<id> with the same R, frames and seed):
+   *  re-evaluates a part after a harness-only fix without re-rendering. Re-runs on disjoint seeds still render. */
+  reuseChains?: string;
+  /** Run only these plants (ids; 'aa' = the A/A pair + synthetic W × 1.003), after the part's sizing; no Gate 0, no units. */
+  plants?: Set<string>;
 }
+let reuseChainsDir: string | undefined;
 
 interface UnitPlan {
   id: string; kind: 'static' | 'avg' | 'dyn' | 'u8'; pkg: string; rung: string; preset: ChainArgs['preset']; variant?: string; extra: string[];
   frames: number; testFrames: number[]; average?: { from: number; to: number }; tile: number; stage: 'B' | 'dyn';
   R: number; chainSeconds: number; msPerChain: number; masks?: string; cap: string; notes: string[];
+  /** Sized for another item (the A/A pair) but not run in this part. */
+  sizeOnly?: boolean;
 }
 interface PtPlan { pkg: string; frame: number | undefined; spp: number; B: number; seconds: number }
 
@@ -794,7 +802,9 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
     add(name, r.code === 0, r.seconds, { log, ...(env ? { env } : {}) }, `exit ${r.code}`);
     return r;
   };
-  const full = !o.only && !o.pilotOnly && !o.prerenderPtRefs;
+  const plantsOnly = !!o.plants;
+  const full = !o.only && !o.pilotOnly && !o.prerenderPtRefs && !plantsOnly;
+  reuseChainsDir = o.reuseChains;
   const doCore = o.part !== 'static', doStatic = o.part !== 'core';
   const sel = (pkg: string) => !o.only || o.only.has(pkg);
   const nU = nUnits();
@@ -813,10 +823,12 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
     for (const [file, what] of GPU_SUITES) {
       const rel = `validation/gpu-tests/${file}.gpu.test.ts`;
       if (!existsSync(path.join(ROOT, rel))) { add(`${file} (chrome): ${what}`, false, 0, undefined, `missing ${rel}`); continue; }
-      withGpuLockSync(`gate-m5-${file}`, () => {
-        runStep(`${file} (chrome): ${what}`, 'npx', ['vitest', 'run', ...vitestConfigArgs(), '--project', 'chrome', '--reporter=verbose', rel],
-          (l) => /Tests |FAIL|✗|×|AssertionError|LOGIC|FP-BOUNDARY|violation/.test(l), GPU_SUITE_ENV[file]);
-      });
+      for (const h of gpuSuiteHolds(file)) {   // restir-shift: one hold per T3 variant (≤ 24 min, E-16), the rest ≤ 12 min
+        withGpuLockSync(`gate-m5-${file}`, () => {
+          runStep(`${file} (chrome)${h.label}: ${what}`, 'npx', ['vitest', 'run', ...vitestConfigArgs(), '--project', 'chrome', '--reporter=verbose', rel, ...h.args],
+            (l) => /Tests |FAIL|✗|×|AssertionError|LOGIC|FP-BOUNDARY|violation/.test(l), GPU_SUITE_ENV[file]);
+        });
+      }
     }
     for (const c of T32_RARE_CASES) {
       withGpuLockSync(`gate-m5-t32-${safe(c)}`, () => {
@@ -844,6 +856,10 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
       units.push(mk({ id: `${pkg}@3.4`, kind: 'u8', pkg, rung: '3.4', preset: 'full', extra: [], frames: STATIC.T, testFrames: [...STATIC.testFrames], tile: 32, stage: 'B' }));
     }
   }
+  if (doCore && !doStatic && !o.only) {
+    // the A/A pair is sized from its unit (m5s_cornell_i 3.4), which belongs to the static part: size it, never run it here
+    units.push(mk({ id: `${AA_PKG}@3.4`, kind: 'static', pkg: AA_PKG, rung: '3.4', preset: 'full', extra: [], frames: STATIC.T, testFrames: [...STATIC.testFrames], tile: 32, stage: 'B', sizeOnly: true }));
+  }
   if (doCore) {
     for (const d of DYN_UNITS.filter((x) => sel(x.pkg))) {
       const s = M5_SEQUENCES.find((x) => x.pkg === d.pkg)!;
@@ -866,8 +882,9 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
   prefetch('pilots', dir, add, (a) => sizeAll(units.map((u) => ({ ...u, notes: [...u.notes] })), new Map(), {}, a));
   sizeAll(units, ptPlans, pilotDirs, add);
   // + a per-invocation overhead (Vite + Chrome start, pipeline compiles, chunking probe): one per lock chunk
-  const invocations = units.reduce((a, u) => a + chainChunks(u.R || E_MEMBERS, E_MEMBERS, u.chainSeconds * 1.2).length, 0) + [...ptPlans.values()].reduce((a, p) => a + Math.ceil(p.B / chunkBatches(p.B, p.seconds * 1.2)), 0);
-  const planHours = (units.reduce((a, u) => a + u.chainSeconds, 0) + [...ptPlans.values()].reduce((a, p) => a + p.seconds, 0) + INVOCATION_OVERHEAD_S * invocations) / 3600;
+  const runUnits = units.filter((u) => !u.sizeOnly);
+  const invocations = runUnits.reduce((a, u) => a + chainChunks(u.R || E_MEMBERS, E_MEMBERS, u.chainSeconds * 1.2).length, 0) + [...ptPlans.values()].reduce((a, p) => a + Math.ceil(p.B / chunkBatches(p.B, p.seconds * 1.2)), 0);
+  const planHours = (runUnits.reduce((a, u) => a + u.chainSeconds, 0) + [...ptPlans.values()].reduce((a, p) => a + p.seconds, 0) + INVOCATION_OVERHEAD_S * invocations) / 3600;
   const extra = planExtras(units, doCore, doStatic);
   const sizing = { units: units.map((u) => ({ id: u.id, R: u.R, frames: u.frames, testFrames: u.testFrames, tile: u.tile, minutes: r4(u.chainSeconds / 60), msPerChain: r4(u.msPerChain), cap: u.cap, notes: u.notes })),
     pt: [...ptPlans.values()].map((p) => ({ ...p, minutes: r4(p.seconds / 60) })), planHours: r4(planHours), extras: extra, totalHours: r4(planHours + extra.hours),
@@ -891,19 +908,19 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
   if (!o.pilotOnly && !o.prerenderPtRefs) {
     // ---- static ladders (3.3 → 3.4 → 3.5) and U8 chains ----------------------------------------------------------------------
     const stopped = new Map<string, string>();
-    for (const u of units.filter((x) => x.kind !== 'dyn')) {
+    for (const u of units.filter((x) => x.kind !== 'dyn' && !x.sizeOnly && !plantsOnly)) {
       if (stopped.has(u.pkg)) { results.push(...u.testFrames.map((t) => ({ unit: `${u.id}-f${t}`, kind: u.kind, rung: u.rung, status: 'not run', ok: false, note: `ladder stopped at ${stopped.get(u.pkg)}` }))); continue; }
       const r = runUnit(u, ptPlans, dir, runId, nU, add);
       results.push(...r);
       if (r.some((x) => !x.ok)) stopped.set(u.pkg, u.rung);
     }
-    if (doStatic) for (const pkg of U8_SCENES.filter(sel)) results.push(...u8M4Rungs(pkg, ptPlans, dir, runId, nU, add));
+    if (doStatic && !plantsOnly) for (const pkg of U8_SCENES.filter(sel)) results.push(...u8M4Rungs(pkg, ptPlans, dir, runId, nU, add));
     // ---- dynamic units ---------------------------------------------------------------------------------------------------
-    for (const u of units.filter((x) => x.kind === 'dyn')) results.push(...runUnit(u, ptPlans, dir, runId, nU, add));
+    for (const u of units.filter((x) => x.kind === 'dyn' && !plantsOnly)) results.push(...runUnit(u, ptPlans, dir, runId, nU, add));
     // ---- plants, synthetic W × 1.003, A/A -----------------------------------------------------------------------------------
-    if (full && doCore) {
-      for (const p of M5_PLANTS) results.push(runPlant(p, units, ptPlans, dir, runId, nU, add));
-      results.push(...aaAndSynthetic(units, ptPlans, dir, runId, nU, add));
+    if ((full && doCore) || plantsOnly) {
+      for (const p of M5_PLANTS.filter((x) => !o.plants || o.plants.has(x.id))) results.push(runPlant(p, units, ptPlans, dir, runId, nU, add));
+      if (!o.plants || o.plants.has('aa')) results.push(...aaAndSynthetic(units, ptPlans, dir, runId, nU, add));
     }
   }
   results.push(...M5_DEFERRED_PLANTS.map((p) => ({ unit: `plant-${p.id}`, kind: 'plant-deferred', status: 'deferred to M6', ok: true, note: `${p.name}: ${p.why}` })));
@@ -1110,7 +1127,16 @@ function runUnit(u: UnitPlan, ptPlans: Map<string, PtPlan>, dir: string, runId: 
   const rounds = u.preset === 'full' ? 1 : 0;
   const args: ChainArgs = { pkg: u.pkg, preset: u.preset, R: u.R, seed: SEEDS.chains, frames: u.frames, testFrames: u.average ? [] : u.testFrames, average: u.average, masks: u.masks, extra: u.extra };
   console.log(`\n--- chains ${u.id}: R ${u.R}, ${u.frames} frames`);
-  const run = chainRun(args, path.join(dir, 'chains', safe(u.id)), u.chainSeconds * 1.2);
+  const dest = path.join(dir, 'chains', safe(u.id));
+  const prev = reuseChainsDir && path.join(reuseChainsDir, 'chains', safe(u.id));
+  const pm = prev ? tryJson(path.join(prev, 'meta.json')) : undefined;
+  const reusable = !!pm && pm.chains === u.R && pm.seed === SEEDS.chains && pm.config?.frames === u.frames;
+  if (reusable) {
+    mkdirSync(path.join(ROOT, dest), { recursive: true });
+    cpSync(path.join(ROOT, prev!), path.join(ROOT, dest), { recursive: true });
+    u.notes.push(`chains reused from ${prev} (harness-only re-evaluation)`);
+  }
+  const run = reusable ? { dir: dest, meta: tryJson(path.join(dest, 'meta.json')), code: 0, out: '', seconds: 0 } : chainRun(args, dest, u.chainSeconds * 1.2);
   const test = (f: string) => writeTest(dir, `${u.id}-${f}`, nU, u.stage, u.tile, u.masks && f !== 'avg' ? { masks: masksOf(u.masks, Number(f.slice(1))).test } : {});
   let seq: Record<string, any> | undefined;
   for (const f of frames) {
@@ -1252,7 +1278,8 @@ function runPlant(p: PlantSpec, units: UnitPlan[], ptPlans: Map<string, PtPlan>,
   const full: Record<string, any> = {};
   let fullOk = false;
   for (const t of frames) {
-    const test = writeTest(dir, `plant-${p.id}-f${t}`, nU, staticScene ? 'B' : 'dyn', staticScene ? 32 : 64, maskDir ? { masks: masksOf(maskDir, t).test } : {});
+    // the plant's 4× PT reference and chains are sized like its unit: compare on the unit's (possibly enlarged) tiles
+    const test = writeTest(dir, `plant-${p.id}-f${t}`, nU, staticScene ? 'B' : 'dyn', base?.tile ?? (staticScene ? 32 : 64), maskDir ? { masks: masksOf(maskDir, t).test } : {});
     tests.set(t, test);
     const cout = path.join(dir, 'compare', safe(`plant-${p.id}-f${t}`));
     compare(path.join(run.dir, `f${t}`), refs.get(t)!.dir, test, cout);
