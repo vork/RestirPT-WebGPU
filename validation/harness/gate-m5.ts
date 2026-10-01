@@ -1111,6 +1111,27 @@ export function planExtras(units: { id: string; pkg: string; rung: string; kind:
   return { gate0: r4(gate0 / 3600) as number, plants: r4(plants / 3600) as number, aa: r4(aa / 3600) as number, u8m4: r4(u8m4 / 3600) as number, hours };
 }
 
+/** --reuse-chains DIR[,DIR…]: copy an earlier gate's first-seed chain run of the same unit / plant into `dest` when it is
+ *  the same run (R, seed, frames, package, plant / variant flags) and error-free (meta ok). Returns the source or undefined. */
+function reusedChains(sub: 'chains' | 'plants', id: string, dest: string, want: { R: number; seed: number; frames: number; pkg: string; extra?: string[]; testFrames?: number[] }): string | undefined {
+  for (const d of (reuseChainsDir ?? '').split(',').filter(Boolean)) {
+    const prev = path.join(d, sub, safe(id));
+    const pm = tryJson(path.join(prev, 'meta.json'));
+    if (!pm?.ok || pm.chains !== want.R || pm.seed !== want.seed || pm.config?.frames !== want.frames || !String(pm.scene?.url ?? '').includes(want.pkg)) continue;
+    const ex = want.extra ?? [];
+    const flag = (k: string) => { const i = ex.indexOf(k); return i >= 0 ? ex[i + 1] : undefined; };
+    const pl = pm.config?.plants ?? {}, st = pm.config?.settings ?? {};
+    if ((flag('--tplant') ?? '') !== (pl.temporal ?? []).join(',') || (flag('--u8-plant') ?? '') !== (pl.u8 ?? []).join(',')) continue;
+    if ((flag('--temporal-mis') ?? 'contribution') !== st.temporalMis || (flag('--refresh') ?? 'exact') !== st.refresh || Number(flag('--boost') ?? 0) !== (st.boostSlots ?? 0)) continue;
+    if (want.testFrames && want.testFrames.join(',') !== (pm.config?.testFrames ?? []).join(',')) continue;
+    rmSync(path.join(ROOT, dest), { recursive: true, force: true });
+    mkdirSync(path.join(ROOT, dest), { recursive: true });
+    cpSync(path.join(ROOT, prev), path.join(ROOT, dest), { recursive: true });
+    return prev;
+  }
+  return undefined;
+}
+
 // ---- running and comparing a unit -------------------------------------------------------------------------------------------
 
 function runUnit(u: UnitPlan, ptPlans: Map<string, PtPlan>, dir: string, runId: string, nU: number, add: Add): Record<string, any>[] {
@@ -1131,15 +1152,9 @@ function runUnit(u: UnitPlan, ptPlans: Map<string, PtPlan>, dir: string, runId: 
   const args: ChainArgs = { pkg: u.pkg, preset: u.preset, R: u.R, seed: SEEDS.chains, frames: u.frames, testFrames: u.average ? [] : u.testFrames, average: u.average, masks: u.masks, extra: u.extra };
   console.log(`\n--- chains ${u.id}: R ${u.R}, ${u.frames} frames`);
   const dest = path.join(dir, 'chains', safe(u.id));
-  const prev = reuseChainsDir && path.join(reuseChainsDir, 'chains', safe(u.id));
-  const pm = prev ? tryJson(path.join(prev, 'meta.json')) : undefined;
-  const reusable = !!pm && pm.chains === u.R && pm.seed === SEEDS.chains && pm.config?.frames === u.frames;
-  if (reusable) {
-    mkdirSync(path.join(ROOT, dest), { recursive: true });
-    cpSync(path.join(ROOT, prev!), path.join(ROOT, dest), { recursive: true });
-    u.notes.push(`chains reused from ${prev} (harness-only re-evaluation)`);
-  }
-  const run = reusable ? { dir: dest, meta: tryJson(path.join(dest, 'meta.json')), code: 0, out: '', seconds: 0 } : chainRun(args, dest, u.chainSeconds * 1.2);
+  const prev = reusedChains('chains', u.id, dest, { R: u.R, seed: SEEDS.chains, frames: u.frames, pkg: u.pkg, extra: u.extra });
+  if (prev) u.notes.push(`chains reused from ${prev} (harness-only re-evaluation)`);
+  const run = prev ? { dir: dest, meta: tryJson(path.join(dest, 'meta.json')), code: 0, out: '', seconds: 0 } : chainRun(args, dest, u.chainSeconds * 1.2);
   const test = (f: string) => writeTest(dir, `${u.id}-${f}`, nU, u.stage, u.tile, u.masks && f !== 'avg' ? { masks: masksOf(u.masks, Number(f.slice(1))).test } : {});
   let seq: Record<string, any> | undefined;
   for (const f of frames) {
@@ -1274,8 +1289,12 @@ function runPlant(p: PlantSpec, units: UnitPlan[], ptPlans: Map<string, PtPlan>,
     refs.set(t, r);
   }
   const lastFrame = Math.max(...frames);
-  const run = chainRun({ pkg: p.pkg, preset: 'full', R, seed: SEEDS.plantBase + M5_PLANTS.indexOf(p), frames: staticScene ? STATIC.T : lastFrame + 1, testFrames: frames, masks: maskDir, extra: p.args },
-    path.join(dir, 'plants', safe(p.id)), (base?.chainSeconds ?? 300) * 1.2);
+  const pdest = path.join(dir, 'plants', safe(p.id));
+  const pseed = SEEDS.plantBase + M5_PLANTS.indexOf(p), pframes = staticScene ? STATIC.T : lastFrame + 1;
+  const reused = reusedChains('plants', p.id, pdest, { R, seed: pseed, frames: pframes, pkg: p.pkg, extra: p.args, testFrames: frames });
+  const run = reused ? { dir: pdest, meta: tryJson(path.join(pdest, 'meta.json')), code: 0, out: '', seconds: 0 }
+    : chainRun({ pkg: p.pkg, preset: 'full', R, seed: pseed, frames: pframes, testFrames: frames, masks: maskDir, extra: p.args }, pdest, (base?.chainSeconds ?? 300) * 1.2);
+  if (reused) data.reused_chains = reused;
   if (!run.dir) { add(`plant ${p.id}: ${p.name} on ${p.pkg}`, false, run.seconds, undefined, run.out.slice(-300)); return { ...data, status: 'chain run failed' }; }
   const tests = new Map<number, string>();
   const full: Record<string, any> = {};
