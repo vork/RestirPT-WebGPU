@@ -984,20 +984,20 @@ with one-sided z ≥ 3; for "only" predictions no region/tile shows the opposite
 | N2 | `TP_NO_JP` | ixs_e_addremove 14, 15 | Δ < 0 in `M_light:A`, Δ > 0 in `M_light:B` |
 | N3 | `TP_N3_STALE` | ixs_a_point 40, 80 | Δ > 0 in `M_gone`, Δ < 0 in `M_new`; T6(b) fails |
 | N4 | `TP_N4_RIS` | ixs_n4_twolights 8, 16 | Δ > 0 globally (D-NEE brightening; +64% is the M → ∞ bound) |
-| N5 | `TP_N5_PIXEL_CENTRE` | ixs_d0_jitter 32; ixs_d_camera 16 | Δ < 0 in `M_edge` (silhouettes) |
+| N5 | `TP_N5_PIXEL_CENTRE` | ixs_d0_jitter 32; ixs_d_camera 16 | Δ > 0 in `M_sil` / `M_edge` (B-12: the inverse loses support, ĉ_c over-weighted) |
 | N6 | `TP_N6_CUR_CAM` | ixs_d_glossy 16, 32 | detected; sign not predicted (reported) |
 | N7 | `TP_N7_PER_LIGHT` | ixs_e_addremove 14, 15 | Δ < 0 in `M_light:B` (pmf_B drops, stale 1/q) |
 | skip rotation refresh | `TP_ENV_NO_ROT_VIS` | ixs_h_envrot 10, 25 | Δ > 0 in `M_edge` |
-| E_{t−1} with γ_t | `TP_ENV_GAMMA_T` | ixs_h_envrot 10, 25 | Δ < 0 in `M_new`, Δ > 0 in `M_gone` |
+| E_{t−1} with γ_t | `TP_ENV_GAMMA_T` | ixs_h_envrot 10, 25 | Δ < 0 in `M_new`, `M_up` and `M_down` (B-12: darkening only) |
 | omit J_P on env | `TP_NO_JP_ENV` | ixs_i_envradio 16, 17 | Δ < 0 in the env-dominant region, Δ > 0 in `M_light:rect` |
 | c_p + 1 | `TP_CP_PLUS1` | m5s_cornell_i 3.4, t = 24 | Δ < 0 globally |
 | W × 1.003 | synthetic (compare.py) | A/A run of m5s_cornell_i 3.4 | detected ≥ 9/10 |
-| U8-1 ω1 < 1 for delta | `RSF_PLANT_U8_W1DELTA` | u8_c0c_point_b1, 3.4 | Δ < 0 |
-| U8-3 no p_k ratio | `RSF_PLANT_U8_NO_PK` | u8_c0e_rect_b1, 3.4 | detected (sign reported) |
+| U8-1 ω1 < 1 for delta | `RSF_PLANT_U8_W1DELTA` | u8_c0c_point_b1, 3.4 | Δ > 0 (B-12: shift-only plant, temporal + spatial) |
+| U8-3 no p_k ratio | `RSF_PLANT_U8_NO_PK` | m5s_cornell_i, 3.4 (B-12: needs case (c) / deep paths; b = 1 has none) | detected (sign reported) |
 | U8-4 J = t_x²/t_y² | `RSF_PLANT_U8_T2` | u8_c0c_point_b0, 3.4 | detected (sign reported) |
-| U8-6 one-sided ignored | `RSF_PLANT_U8_ONESIDED` | u8_c0e_rect_b1, 3.4 | Δ > 0 |
+| U8-6 one-sided ignored | `RSF_PLANT_U8_ONESIDED` | u8_c0e_rect_b1, 3.4 | detected (sign reported; B-12) |
 | U8-9 FAILED dropped from k | `RSF_PLANT_U8_FAILED_K` | u8_c0e_rect_b1, 3.4 | Δ > 0 (over-weighting; Changelog D-5, was "Δ < 0") |
-| U8-2t stale aux across frames | `TP_U8_STALE_AUX` | ixs_b_area 16, 24 | detected |
+| U8-2t stale aux across frames | `TP_U8_STALE_AUX` | ixs_i_envradio 16, 17 (B-12: needs env / emissive-triangle MIS; analytic Mode A has ω1 ≡ 1) | detected |
 | U8-5t spot profile of frame t−1 | `TP_U8_SPOT_PREV_AXIS` | ixs_c_spot_b03 20 | detected |
 | A/A | seeds 7502 / 7503 | m5s_cornell_i 3.4 ×4 | pass; re-splits at nominal rate |
 
@@ -1639,3 +1639,37 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   (f64 T7 toy with the production MIS twins: plant off E = 1.0003, z = 0.7; plant on +14.9 %, z = 456 with 74 % of the
   trials dropping a partner); the M5 gate measured +1.83 % global on u8_c0e_rect_b1 (m5-gate-20261001-081949),
   detected 10/10. The harness sign convention (Δ = ReSTIR − PT) is correct.
+- **B-12 Plant predictions corrected after the M5 core gate (m5-gate-20261001-081949)** (affects T-E `gate-m5.ts` plant
+  rows and scenes; §6.5 table amended). Each plant was checked against its code, re-derived, and confirmed with a toy
+  of the estimator (contribution-MIS temporal step with the stored route + one pairwise spatial round, empty history
+  records counted as TD13) and, for U8-3 / U8-2t, a GPU activity test (`restir-temporal.gpu.test.ts "U8 plant
+  activity"`). Every implementation matches its description; the changes are predictions and scenes:
+  - **Asymmetry of π_p errors under contribution MIS.** ĉ_c(X_c) = π_c/(π_c + c_p·π_p(X_c)) with c_p up to 20. An
+    inverse that UNDER-estimates π_p (in the limit: loses support, π_p := 0) raises ĉ_c from ≈ 1/21 up to 1 while the
+    temporal technique keeps its exact weight: over-counting (Δ > 0, up to +20/21 of the affected paths). An inverse
+    that OVER-estimates π_p (creates support, π_p > 0 where the truth is 0) lowers ĉ_c from 1 to ≈ 1/21: under-counting
+    (Δ < 0, up to −20/21). Toy: π_p := 0 on 30% of the paths → +396%; π_p × 1.6 → −8.3%.
+  - **N5** (pixel-centre previous primary in the inverse): q′ requires a jittered previous HIT, the pixel-centre ray
+    may miss or hit another surface, never the reverse, so the inverse mostly loses support at silhouettes / edges:
+    **Δ > 0** in `M_sil` and `M_edge` (measured +13.7% / +8.9%). gap-temporal §9.4's "darkening" assumed a support
+    loss of the temporal technique; here the stored route keeps the temporal weights exact and only ĉ_c moves.
+  - **env-gamma-t** (inverse with the rotation of frame t): the inverse evaluates the frame-t radiance, i.e. it
+    creates support on newly lit paths (true π_p = 0) and only mildly misweights dimming ones, so the bias is
+    **Δ < 0 in `M_up` and in `M_down`** (dynamic toy, alternating light states: −25% newly lit, −3.4% pure dimming,
+    −17% mixed; measured M_up −61% / −64%, M_down −25% / −20%). `M_new` / `M_gone` were empty in the gate.
+  - **U8-1** (ω1 := 1/(1 + p2) for delta lights) acts only in shifts. The temporal step alone is nearly unbiased
+    (every shifted value carries the same factor, toy −0.10%), but the temporal output stores the scaled F as its own
+    p̂ and the spatial round then mixes it with fresh shifts at other vertices: **Δ > 0** at rung 3.4 (toy +1.35% for
+    ρ ∈ [0.74, 0.95]; measured +0.87%).
+  - **U8-6** (one-sided ignored at the offset) creates shifted support on back-side paths; under pairwise MIS the
+    created support is a consistent extension that moves energy between pixels (toy: global +0.008 ± 0.011%), so the
+    global sign is second order: **detected, sign reported** (measured −0.68%, detected 10/10).
+  - **U8-3** (J without p^y_k) only touches cases (c) and deep; `u8_c0e_rect_b1` (maxBounces 1, rect only, no env,
+    no emissive triangles) has neither, so the plant is bitwise inert there (GPU test: identical reservoirs; with
+    maxBounces 3 the reservoirs change and the 8-frame mean moves −1%). The select-shaped plant of B-8 applies
+    (`pKj = select(…, 1.0, plant)`, the flag reaches `RestirParams.flags`). Run it on a static scene with deep paths:
+    **m5s_cornell_i at 3.4, t = 24** (PT references exist), detected / sign reported.
+  - **U8-2t** (stale aux) acts only where an MIS weight uses p1 in the shift: emissive-triangle and env ends (ω2 of
+    (c), ω1 of env NEE in (b)); in Mode A analytic lights have ω1 ≡ 1 and `aux` is unused, so `ixs_b_area` (rect
+    only) is bitwise inert (GPU test). Run it on **ixs_i_envradio at 16, 17** (env strength ×2 at 16 changes pmf[ENV]
+    and every p1Env): detected.

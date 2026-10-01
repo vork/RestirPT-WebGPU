@@ -825,3 +825,41 @@ describe('T6(c): previous-state provenance and the f64 cross-evaluator', () => {
     rig.destroy();
   });
 });
+
+// ------------------------------------------------------------------------------------------------ U8 plant activity
+
+/** Final reservoirs + mean image of a short `full` chain (camera drift, light script) with the given plant settings. */
+async function plantChain(scene: SceneData, maxBounces: number, lights: (t: number) => LightData[], settings: Partial<RestirSettings>): Promise<{ res: string; mean: number }> {
+  const rig = await restirRig(scene, 64, 64, { preset: 'full', settings: { maxBounces, ...settings }, seed: 7301 });
+  let mean = 0;
+  await runChain(rig, Array.from({ length: 8 }, (_, t) => ({ t, camera: movedCamera(0.02 * t, 0, 0), lights: lights(t) })), async (f) => {
+    if (f.t !== 7) return;
+    const r = new Float32Array((await rig.kernel.readReservoirs('final')).buffer);
+    for (let i = 0; i < 64 * 64; i++) mean += (0.2126 * r[i * RES_WORDS + RW.F] + 0.7152 * r[i * RES_WORDS + RW.F + 1] + 0.0722 * r[i * RES_WORDS + RW.F + 2]) * r[i * RES_WORDS + RW.W];
+  });
+  const res = hashU32(await rig.kernel.readReservoirs('final'));
+  rig.destroy();
+  return { res, mean: mean / (64 * 64) };
+}
+
+describe('U8 plant activity (gate finding 2026-10-01): where U8-3 and U8-2t can act', () => {
+  it('U8-3 (no p_k): bitwise inert with maxBounces 1 and only an analytic light (no case (c) / deep paths); active with deep paths', async () => {
+    const scene = bitFixtureScene('c0e');
+    const L = () => scene.lights;
+    const b1 = [await plantChain(scene, 1, L, {}), await plantChain(scene, 1, L, { plant: { u8NoPk: true } })];
+    const b3 = [await plantChain(scene, 3, L, {}), await plantChain(scene, 3, L, { plant: { u8NoPk: true } })];
+    console.log(`[U8-3] b1 ${JSON.stringify(b1)} b3 ${JSON.stringify(b3)}`);
+    expect(b1[1].res).toBe(b1[0].res);
+    expect(b3[1].res).not.toBe(b3[0].res);
+  });
+  it('U8-2t (stale aux): bitwise inert with only analytic lights (Mode A ω1 ≡ 1, aux unused); active with emissive triangles / env NEE', async () => {
+    const box = bitFixtureScene('c0e');
+    const pw = (s: SceneData) => (t: number) => animatedLights(s.lights, t, s.lights.map((l) => ({ id: l.id, power: (u: number) => (u % 2 ? 1.5 : 1) })));
+    const rect = [await plantChain(box, 3, pw(box), {}), await plantChain(box, 3, pw(box), { tPlant: { u8StaleAux: true } })];
+    const all = allLightsScene();
+    const allL = [await plantChain(all, 3, pw(all), {}), await plantChain(all, 3, pw(all), { tPlant: { u8StaleAux: true } })];
+    console.log(`[U8-2t] rect-only ${JSON.stringify(rect)} emissive + env ${JSON.stringify(allL)}`);
+    expect(rect[1].res).toBe(rect[0].res);
+    expect(allL[1].res).not.toBe(allL[0].res);
+  });
+});
