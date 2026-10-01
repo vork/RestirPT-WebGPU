@@ -682,3 +682,17 @@ BC7 or ASTC for interactive mode only, if the memory budget demands it (E-11).
 15. **Units.** The lattice is in metres after unit conversion. USD `metersPerUnit` must be applied *before*
     `quantizeScene`, otherwise k is chosen in the wrong unit (a cm-authored stage would get a 100× too fine grid,
     still correct but with 7 bits of range lost).
+
+## Gate result after the merge (e251b43, 2026-09-30 → 2026-10-01)
+
+All Cycles references were re-rendered for package v2 (geometry on the global lattice). Every gate passed on its first seed set:
+
+| Gate | Result |
+|---|---|
+| M2 | 24/24 |
+| M3a | 175/175 |
+| M3b | 96/96 |
+| M3c | 173/173 |
+| M4 | 220/220 (including the app smoke and the full restir-shift suite) |
+
+The compact vertex formats are therefore validated end to end against Cycles and against our PT.
