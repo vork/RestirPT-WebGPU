@@ -982,14 +982,14 @@ with one-sided z ≥ 3; for "only" predictions no region/tile shows the opposite
 | N1-mixed r = 0.5 | `TP_N1_MIXED` | ixs_e_half 14, 15 | Δ > 0 in `M_light:A` (≈ +2.3%) |
 | N1-consistent | `TP_N1_MIXED + TM_PP_RECOMPUTE` | ixs_a_point 10, 25 | Δ < 0 in `M_new`; no significant Δ > 0 anywhere ("darkening only") |
 | N2 | `TP_NO_JP` | ixs_e_addremove 14, 15 | Δ < 0 in `M_light:A`, Δ > 0 in `M_light:B` |
-| N3 | `TP_N3_STALE` | ixs_a_point 40, 80 | Δ > 0 in `M_gone`, Δ < 0 in `M_new`; T6(b) fails |
-| N4 | `TP_N4_RIS` | ixs_n4_twolights 8, 16 | Δ > 0 globally (D-NEE brightening; +64% is the M → ∞ bound) |
+| N3 | `TP_N3_STALE` | ixs_a_point 40 | Δ > 0 in `M_down` (and `M_gone` when non-empty); T6(b) fails (C-11, revised after measurement: `M_new` / `M_up` and frame 80 dropped) |
+| N4 | `TP_N4_RIS` | ixs_n4_twolights 8, 16 | Δ < 0 globally (C-11, revised after measurement: ≈ −9 % at M = 8; the +64 % of gap-temporal §5.2 does not apply to contribution MIS) |
 | N5 | `TP_N5_PIXEL_CENTRE` | ixs_d0_jitter 32; ixs_d_camera 16 | Δ > 0 in `M_sil` / `M_edge` (B-12: the inverse loses support, ĉ_c over-weighted) |
 | N6 | `TP_N6_CUR_CAM` | ixs_d_glossy 16, 32 | detected; sign not predicted (reported) |
 | N7 | `TP_N7_PER_LIGHT` | ixs_e_addremove 14, 15 | Δ < 0 in `M_light:B` (pmf_B drops, stale 1/q) |
-| skip rotation refresh | `TP_ENV_NO_ROT_VIS` | ixs_h_envrot 10, 25 | Δ > 0 in `M_edge` |
+| skip rotation refresh | `TP_ENV_NO_ROT_VIS` | ixs_h_envrot 10, 25 | Δ > 0 in `M_down`, Δ < 0 in `M_up` (C-11, revised after measurement; `M_edge` mixes both) |
 | E_{t−1} with γ_t | `TP_ENV_GAMMA_T` | ixs_h_envrot 10, 25 | Δ < 0 in `M_new`, `M_up` and `M_down` (B-12: darkening only) |
-| omit J_P on env | `TP_NO_JP_ENV` | ixs_i_envradio 16, 17 | Δ < 0 in the env-dominant region, Δ > 0 in `M_light:rect` |
+| omit J_P on env | `TP_NO_JP_ENV` | ixs_i_envradio 16, 17 | Δ < 0 in the env-dominant region (C-11, revised after measurement: no Δ > 0 in `M_light:R`) |
 | c_p + 1 | `TP_CP_PLUS1` | m5s_cornell_i 3.4, t = 24 | Δ < 0 globally |
 | W × 1.003 | synthetic (compare.py) | A/A run of m5s_cornell_i 3.4 | detected ≥ 9/10 |
 | U8-1 ω1 < 1 for delta | `RSF_PLANT_U8_W1DELTA` | u8_c0c_point_b1, 3.4 | Δ > 0 (B-12: shift-only plant, temporal + spatial) |
@@ -1354,6 +1354,48 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   vii_textured_512 at 128², D-BSDF / D-NEE records re-evaluated in another pipeline (refresh at x_{d−1}, and a full
   re-trace through every suffix material) vs the path tree's stored rcRad: 11 541 records, max 2.4·10⁻⁷, none > 10⁻⁶
   (cornell_i_512 baseline 1.9·10⁻⁷), so textured vertices show no cross-pipeline jumps today.
+
+- **C-11 Plant review after the M5 core gate (m5-gate-20261001-081949)** (affects T-E `gate-m5.ts` plant rows; T-B
+  informational; §6.5 rows revised after measurement). Each plant checked against its code, re-derived with the
+  π_p-asymmetry of B-12 (an inverse that loses support brightens, one that creates support darkens), and confirmed by a
+  toy of the temporal step (`tests/restir/refresh-ref.test.ts`) and, for N1-mixed, a targeted GPU test.
+  - **N1-mixed / N1-mixed-half / N1-consistent: implementation bug (fixed).** `refreshInvUnits` skipped the inverse
+    refresh under `TP_N1_MIXED` (§3.5 "N1-mixed plant: not run"); T-B's loader then found a stale `sfxOut.inv`, counted
+    `RSC_T_PENDING_LEFT` and made every inverse on a refresh frame undefined (π_p(X_c) := 0, a support loss: the measured
+    +127 % / +25 % / +264 % brightening; N1-consistent's s = p weights became 0 as well, i.e. canonical-only and nearly
+    unbiased). Now the inverse refresh runs under the plant: `lf_slot` / `lf_env` of PREV are the current state there
+    and `lt_translate` is the identity, so it serves exactly the "current-frame canonical suffix" of the plant (no
+    PENDING_LEFT). Targeted GPU test (box, A point + B rect, C point added at 3, A ×2 at 7; 96 chains per side): the
+    region C lights up −35.5 % (z −32), the region A×2 brightens −14.5 % (z −5.3); mechanism test: canonicals ending
+    on the just-added C are O0_LIGHT in the inverse without the plant and defined with it. The §6.5 predictions stand
+    (note: the plant also drops J_P, `lf_slot(PREV)` = cur, as Falcor22 did; same signs). Re-run all three plants.
+  - **N4: prediction revised after measurement, Δ < 0.** The +64 % of gap-temporal §5.2 keeps the old reservoir's W
+    (a UCW of the old target, E_old[W] = 1) and replaces only F. The M5 estimator recomputes W from π_c(Y_p) = F̃ (the
+    re-drawn value) and the stored π_p(Y_p) (an earlier, independent draw): selected s = p contributes
+    π_p(w_c + w_p)/(F̃ + c_p π_p), which saturates in F̃, and mismatched π's act like π_p errors in both directions.
+    Scalar toy (two lights, f = (1, 9), p = ½, c_cap 20, write-back F ← F̃): exact refresh 10.00 (truth 10), N4 with
+    M = 8 → −9.0 % (gate −9.4 % / −10.6 %), M = 1 → −60 %, M = 64 → −1.3 % (the picks become deterministic). C-3's
+    single-sample value is what makes the plant a bias at all (with ·W_RIS it would be an unbiased NEE estimate).
+  - **no-jp-env: M_light:R prediction revised after measurement (no Δ > 0); env-dominant Δ < 0 stands.** The plant omits
+    J_P only for env endpoints (T and T⁻¹); the rect's J_P (0.598 at ixs_i 16: P(env) 0.674 → 0.805) stays correct, so
+    the + of N2 (whose B lost its J_P) does not transfer. Toy (the ixs_i pmfs): env-dominant −14.1 % (−13.3 % one frame
+    later: the bias rides in the history at 17, a TF_LIGHTS_SAME frame), rect-dominant −1.6 %. The gate's numbers
+    (env −3.0 %, R −2.5 %) have the predicted signs, but its PT A/A control passed only 2/10 and 0/10 and the unplanted
+    ixs_i units errored: the ixs_i references need fixing before this plant can be judged (T-E).
+  - **env-no-rot-vis: prediction revised after measurement, M_down +, M_up −.** V := 1 for env NEE ends (N1 / D-NEE)
+    in both directions: forward, an end that became occluded keeps F > 0 (Δ > 0 where it gets darker); inverse, a
+    canonical visible at t but occluded at t−1 gets π_p > 0 (created support, ĉ_c → 1/(1 + c_p), Δ < 0 where it gets
+    brighter). `M_edge` holds both (measured +0.03 % / −0.02 %). Toy: M_down +23.8 %, M_up −19.0 % of the affected
+    paths; only indirect env NEE is affected (class L env ends are traced by the shift), so magnitudes are a fraction of
+    that. Evaluate `M_down` / `M_up` (they exist for ixs_h, env-gamma-t uses them).
+  - **N3: prediction revised after measurement: `M_down` + only, at frame 40.** N3 is the same stale-visibility
+    mechanism on N1 ends (plus stale deep radiance): M_down + (held, +3.8 %, z 11.5), M_up − in principle, but in the
+    open low-albedo ixs_a scene the newly lit region is direct light (class L, exact under N3) and N1 / deep paths are
+    < 1 % of it, below resolution (measured +0.16 %, z 2.0). Frame 80 is 40 frames after the last light change: no
+    refresh frame, the plant is inactive, and every mask was empty — drop it (or keep as detection only).
+  - Plant code checked against its description: N4 (forward only, 8 alias candidates, RIS ∝ lum(f·Λ)/q, single-sample
+    value, ray traced), NO_JP_ENV (env entries only, both directions), ENV_NO_ROT_VIS (env NEE N1 / D-NEE, no ray, VIS
+    set), N3 (C-5 / C-8) — no further implementation change.
 
 ### T-D amendments (debug views, interactive integration, boost)
 

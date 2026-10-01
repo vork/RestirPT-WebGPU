@@ -1091,3 +1091,180 @@ describe('measurement: textured vertices re-evaluated in another pipeline (vii_t
     expect((rep['vii_textured_512'] as { refreshVsStored: { n: number } }).refreshVsStored.n).toBeGreaterThan(100);
   });
 });
+
+// ------------------------------------------------------------------------------------------------ plant signs (targeted)
+
+interface PlantFrame { lights: LightData[]; env?: EnvParamsCpu }
+interface ChainStats { W: number; perChain: Map<number, Float64Array[]>; diag: string[] }   // test frame → per chain: per-pixel luminance (W²)
+
+/** Chains of the `full` preset (E members per batch, `batches` run seeds), frames 0…T−1 through advance() + every
+ *  unit; at the test frames the per-member luminance of rsFrame (the frame's estimate) is collected per chain. */
+async function plantChains(scene: SceneData, o: { W: number; E: number; batches: number; T: number; testFrames: number[]; frame: (t: number) => PlantFrame;
+  settings: Partial<RestirSettings>; seed: number; cam?: { camToWorld: number[]; yfov: number } }): Promise<ChainStats> {
+  const { readTexture4 } = await import('./restir-fixtures.ts');
+  const diag: string[] = [];
+  const rig = await restirRig(scene, o.W, o.W, { preset: 'full', members: o.E, settings: { maxBounces: 3, ...o.settings }, seed: o.seed, cam: o.cam, env: { nee: true } });
+  const k = rig.kernel, device = rig.g.device;
+  const perChain = new Map<number, Float64Array[]>(o.testFrames.map((t) => [t, []]));
+  for (let b = 0; b < o.batches; b++) {
+    k.setView({ camera: o.cam ?? boxCamera(), width: o.W, height: o.W, runSeed: o.seed + 1000 * b, members: o.E, memberBase: 0 });
+    await k.prepare();
+    for (let t = 0; t < o.T; t++) {
+      const f = o.frame(t);
+      const adv = k.advance({ t, camera: o.cam ?? boxCamera(), lights: f.lights, env: f.env ? { params: f.env, mapId: 'env' } : undefined });
+      if (b === 0) await k.readCounters(true);
+      k.beginSubmit();
+      const enc = device.createCommandEncoder();
+      for (const u of k.frameUnits(t, { accum: rig.accum, counters: rig.counters })) u.encode(enc);
+      device.queue.submit([enc.finish()]);
+      await device.queue.onSubmittedWorkDone();
+      if (b === 0 && perChain.has(t)) {
+        const c = await k.readCounters(true);
+        diag.push(`t${t} hist ${adv.histValid} flags ${adv.flags} ${adv.reasons.join(',')} pEnv ${k.lights.summary().pEnv.toFixed(3)} inv ${c.rsc.tInvOk}/${c.rsc.tInvQueued} undef ${c.rsc.tLightUndef} pend ${c.rsc.tPendingLeft} recs ${c.rsc.tRefreshRecs}`);
+      }
+      if (perChain.has(t)) {
+        const a = k.resources.alloc;
+        const px = new Float32Array((await readTexture4(device, k.resources.frameTex)).buffer);
+        for (let m = 0; m < o.E; m++) {
+          const mc = m % a.memberCols, mr = Math.floor(m / a.memberCols);
+          const img = new Float64Array(o.W * o.W);
+          for (let y = 0; y < o.W; y++) for (let x = 0; x < o.W; x++) {
+            const i = 4 * ((mr * o.W + y) * a.atlasW + mc * o.W + x);
+            img[y * o.W + x] = 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+          }
+          perChain.get(t)!.push(img);
+        }
+      }
+    }
+  }
+  const c = await k.readCounters(true);
+  rig.destroy();
+  void c;
+  return { W: o.W, perChain, diag };
+}
+const meanImg = (imgs: Float64Array[]): Float64Array => { const m = new Float64Array(imgs[0].length); for (const im of imgs) for (let i = 0; i < m.length; i++) m[i] += im[i] / imgs.length; return m; };
+/** Relative Δ = (on − off)/off over a pixel region (independent chains on both sides) and its z. */
+function regionDelta(on: Float64Array[], off: Float64Array[], region: (i: number) => boolean): { rel: number; z: number; n: number } {
+  const sums = (imgs: Float64Array[]) => imgs.map((im) => { let s = 0, n = 0; for (let i = 0; i < im.length; i++) if (region(i)) { s += im[i]; n++; } return n ? s / n : 0; });
+  const a = sums(on), b = sums(off);
+  const m = (x: number[]) => x.reduce((p, q) => p + q, 0) / x.length;
+  const v = (x: number[], mu: number) => x.reduce((p, q) => p + (q - mu) ** 2, 0) / (x.length - 1) / x.length;
+  const ma = m(a), mb = m(b);
+  let n = 0; for (let i = 0; i < on[0].length; i++) if (region(i)) n++;
+  return { rel: (ma - mb) / mb, z: (ma - mb) / Math.sqrt(v(a, ma) + v(b, mb)), n };
+}
+
+describe('plant signs, targeted (M5 core gate follow-up, Changelog C-11): N1-mixed after the inverse-refresh fix', () => {
+  const ptA = (power: number) => light({ id: 1, type: 'point', power, matrix: lightMatrixToward([0, -1, 0], [-0.8, 0.5, -1.0]) });
+  const rectB = light({ id: 2, type: 'rect', power: 30, sizeX: 0.5, sizeY: 0.3, matrix: lightMatrixToward([0, -1, 0], [0.6, 1.9, -1.0]) });
+  // C: a point light low near the right wall, so a good share of the canonicals end on it once it is added
+  const spotC = light({ id: 3, type: 'point', power: 60, matrix: lightMatrixToward([0, -1, 0], [1.0, 0.35, -0.4]) });
+
+  it('N1-mixed (TP_N1_MIXED): C added at 3, A ×2 at 7 → Δ < 0 in the regions the change lit up (M_light:C, M_light:A)', async () => {
+    const frame = (t: number): PlantFrame => ({ lights: [ptA(t >= 7 ? 60 : 30), rectB, ...(t >= 3 ? [spotC] : [])] });
+    const base = { W: 32, E: 16, batches: 6, T: 8, testFrames: [2, 3, 6, 7], frame, seed: 5101 };
+    // every light that ever exists is in the base scene (as the ixs packages do), so adding C does not grow the light
+    // capacity (a reallocation is a history reset and would hide the plant)
+    const scene = boxScene([ptA(30), rectB, spotC]);
+    const off = await plantChains(scene, { ...base, settings: {} });
+    const on = await plantChains(scene, { ...base, settings: { tPlant: { n1Mixed: true } } });
+    const rep: Record<string, unknown> = {};
+    for (const [t, prev] of [[3, 2], [7, 6]] as const) {
+      const m0 = meanImg(off.perChain.get(prev)!), m1 = meanImg(off.perChain.get(t)!);
+      const lit = (i: number) => m1[i] > 1e-4 && m1[i] / Math.max(m0[i], 1e-9) > (t === 3 ? 1.5 : 1.3);
+      rep[`f${t} lit-up`] = regionDelta(on.perChain.get(t)!, off.perChain.get(t)!, lit);
+      rep[`f${t} global`] = regionDelta(on.perChain.get(t)!, off.perChain.get(t)!, () => true);
+    }
+    console.log(`[plant N1-mixed] ${JSON.stringify(rep)} diag off ${off.diag.join(' | ')} on ${on.diag.join(' | ')}`);
+    for (const t of [3, 7]) {
+      const r = rep[`f${t} lit-up`] as { rel: number; z: number; n: number };
+      expect(r.n).toBeGreaterThan(20);
+      expect(r.z).toBeLessThan(-3);
+    }
+  });
+
+});
+
+describe('plant applicability on the gate packages (which change classes each plant sees at its test frames)', () => {
+  it('ixs_i (no-jp-env), ixs_h (env-no-rot-vis), ixs_n4 (N4), ixs_e (N1-mixed): TF flags and P(env) at the test frames', async () => {
+    const { fetchScenePackage, resolvePackageFrame } = await import('../../src/core/scene/scene-package.ts');
+    const cases: [string, string, number[]][] = [
+      ['ixs_i_envradio_256', '/validation/out/m5/scenes/ixs_i_envradio_256/', [15, 16, 17]],
+      ['ixs_h_envrot_256', '/validation/out/m5/scenes/ixs_h_envrot_256/', [10, 25]],
+      ['ixs_n4_twolights_256', '/validation/scenes/ixs_n4_twolights_256/', [8, 16]],
+      ['ixs_e_addremove_256', '/validation/scenes/ixs_e_addremove_256/', [8, 14, 15]],
+    ];
+    const out: Record<string, string[]> = {};
+    for (const [name, url, frames] of cases) {
+      let pkg;
+      try { pkg = await fetchScenePackage(url); } catch (e) { out[name] = [`missing: ${(e as Error).message.slice(0, 80)}`]; continue; }
+      const f0 = resolvePackageFrame(pkg, 0);
+      const scene = { ...pkg.scene, env: f0.env?.map ?? pkg.scene.env };
+      const rig = await restirRig(scene, 8, 8, { preset: 'full', settings: { maxBounces: 3 }, cam: { camToWorld: Array.from(f0.camera.camToWorld), yfov: f0.camera.yfov } });
+      const k = rig.kernel;
+      const rows: string[] = [];
+      const last = Math.max(...frames);
+      for (let t = 0; t <= last; t++) {
+        const f = resolvePackageFrame(pkg, t);
+        const adv = k.advance({ t, camera: { camToWorld: Array.from(f.camera.camToWorld), yfov: f.camera.yfov }, lights: f.lights, env: f.env ? { params: f.env.params, mapId: f.env.mapId } : undefined });
+        k.frameUnits(t, { accum: rig.accum, counters: rig.counters });   // advance the roles (nothing submitted)
+        if (frames.includes(t)) {
+          const names = Object.entries({ HIST: K.TF_HIST_VALID, SAME: K.TF_LIGHTS_SAME, REFRESH: K.TF_REFRESH, PMF: K.TF_PMF_CHANGED, ENV_MOVED: K.TF_ENV_MOVED, ENV_RADIO: K.TF_ENV_RADIO, LIGHT_MOVED: K.TF_LIGHT_MOVED })
+            .filter(([, b]) => adv.flags & b).map(([n]) => n).join('|');
+          rows.push(`t${t} ${names} pEnv ${k.lights.summary().pEnv.toFixed(4)} entries ${k.lights.summary().aliasEntries}`);
+        }
+      }
+      out[name] = rows;
+      rig.destroy();
+    }
+    console.log(`[plant applicability] ${JSON.stringify(out, null, 1)}`);
+    expect(Object.keys(out).length).toBe(4);
+    const has = (name: string, t: number, flag: string) => (out[name] ?? []).some((r) => r.startsWith(`t${t} `) && r.split(' ')[1].split('|').includes(flag));
+    expect(has('ixs_i_envradio_256', 16, 'PMF')).toBe(true);         // no-jp-env: pmf[ENV] changes only at 16 (C-11)
+    expect(has('ixs_i_envradio_256', 17, 'SAME')).toBe(true);        //   17 carries the bias in the history only
+    for (const t of [10, 25]) expect(has('ixs_h_envrot_256', t, 'ENV_MOVED')).toBe(true);
+    for (const t of [8, 16]) expect(has('ixs_n4_twolights_256', t, 'REFRESH')).toBe(true);
+    for (const t of [8, 14]) expect(has('ixs_e_addremove_256', t, 'PMF')).toBe(true);
+  });
+});
+
+describe('N1-mixed mechanism (C-11): canonicals on a just-added light are undefined in the inverse (O0_LIGHT) without the plant and defined (π_p > 0) with it', () => {
+  it('frame 3 (C added): inverse codes of canonicals ending on C, plant off vs on', async () => {
+    const { decodeTStateLocal, decodeReservoir, SC_NAMES } = await import('../../src/core/render/restir/layout.ts');
+    const ptA = light({ id: 1, type: 'point', power: 30, matrix: lightMatrixToward([0, -1, 0], [-0.8, 0.5, -1.0]) });
+    const rectB = light({ id: 2, type: 'rect', power: 30, sizeX: 0.5, sizeY: 0.3, matrix: lightMatrixToward([0, -1, 0], [0.6, 1.9, -1.0]) });
+    const spotC = light({ id: 3, type: 'point', power: 60, matrix: lightMatrixToward([0, -1, 0], [1.0, 0.35, -0.4]) });
+    const out: Record<string, Record<string, number>> = {};
+    for (const plant of [false, true]) {
+      const rig = await restirRig(boxScene([ptA, rectB, spotC]), 32, 32, { preset: 'temporal', settings: { maxBounces: 3, tPlant: plant ? { n1Mixed: true } : {} }, seed: 77 });
+      const k = rig.kernel, device = rig.g.device;
+      for (let t = 0; t <= 3; t++) {
+        k.advance({ t, camera: boxCamera(), lights: t >= 3 ? [ptA, rectB, spotC] : [ptA, rectB] });
+        k.beginSubmit();
+        const enc = device.createCommandEncoder();
+        for (const u of k.frameUnits(t, { accum: rig.accum, counters: rig.counters })) u.encode(enc);
+        device.queue.submit([enc.finish()]);
+        await device.queue.onSubmittedWorkDone();
+      }
+      const P = 32 * 32, NS = k.resources.alloc.slots;
+      const ts = await k.readTemporalState();
+      const res = await k.readReservoirs(k.resBase() as 0 | 1);
+      const h: Record<string, number> = {};
+      for (let ai = 0; ai < P; ai++) {
+        const r = decodeReservoir(res, ai);
+        if (r.d === 0 || r.tech !== K.RS_TECH_NEE || (r.end[0] & K.RC_ENTRY_MASK) !== 2) continue;
+        const s = decodeTStateLocal(ts, P, NS, ai);
+        const key = (s.flags & S.TS_INV_QUEUED) ? `inv:${SC_NAMES[s.invCode & 0xff]}` : (s.flags & S.TS_SEL_P) ? 'selP' : `flags:${s.flags}`;
+        h[key] = (h[key] ?? 0) + 1;
+      }
+      out[plant ? 'on' : 'off'] = h;
+      rig.destroy();
+    }
+    console.log(`[diag N1-mixed C] ${JSON.stringify(out)}`);
+    const tot = (h: Record<string, number>) => Object.values(h).reduce((a, b) => a + b, 0);
+    expect(tot(out.off)).toBeGreaterThan(20);
+    expect(out.off['inv:O0_LIGHT'] ?? 0).toBe(Object.entries(out.off).filter(([kk]) => kk.startsWith('inv:')).reduce((a, [, v]) => a + v, 0));
+    expect(out.on['inv:O0_LIGHT'] ?? 0).toBe(0);
+    expect(out.on['inv:OK'] ?? 0).toBeGreaterThan(10);
+  });
+});

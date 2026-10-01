@@ -1,8 +1,10 @@
 // Suffix-refresh unit builders (restir-temporal-api.md §3.5, §4.1, §4.4, TD9). OWNER T-C. Called by stage-temporal.ts:
 //   refreshFwdUnits  rs_refresh_fwd per row band over the atlas, record res[h] → sfxOut.fwd (before T1)
 //   refreshInvUnits  per item chunk: rs_args(q2) + rs_refresh_inv (2D indirect over Q_i), record res[w] → sfxOut.inv
-//                    (after T3 phase A, before T4); not emitted under the N1-mixed plant (the loader then uses stored
-//                    values, §3.5)
+//                    (after T3 phase A, before T4). Also under the N1-mixed plant (Changelog C-11): lf_slot / lf_env
+//                    of PREV are the current state and lt_translate the identity there, so the inverse refresh serves
+//                    the current-frame canonical suffix (the plant's definition); skipping it left sfxOut.inv stale and
+//                    every inverse undefined (π_p(X_c) = 0, a large brightening instead of the planted bias)
 // Both are emitted only on TF_REFRESH frames when the frame's flags are known (`flags`, default: the kernel's current
 // advance); the WGSL entry points also return early without TF_REFRESH (and fwd without TF_HIST_VALID), so emitting
 // them on any temporal frame is correct, only slower. Bind groups are built with the parity and roles of the frame
@@ -36,7 +38,7 @@ export function refreshFwdUnits(k: RestirKernel, t: number, flags?: number): Wor
 
 /** rs_args(q2) + rs_refresh_inv over Q_i, one item chunk per row band (Changelog C7 of restir-api.md). */
 export function refreshInvUnits(k: RestirKernel, t: number, flags?: number): WorkUnit[] {
-  if (!refreshFrame(k, flags, false) || k.settings.tPlant?.n1Mixed) return [];
+  if (!refreshFrame(k, flags, false)) return [];
   const res = k.resources;
   const a = res.alloc;
   const args = k.pipelineSync('rs_args');

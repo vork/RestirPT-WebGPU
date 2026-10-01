@@ -1,7 +1,8 @@
 // Suffix refresh, CPU part (T-C, restir-temporal-api.md §3.2, §3.5, §4.1, §6.1 "§9.3-2"): the class derivation mirror,
 // the discrete PSS change of variables of the light-selection dimension with J_P (exact, f64) and the symmetric
 // undefined predicate over random light-set edits (add / remove / reorder / intensity), and the refresh unit builders
-// (gating by TF_REFRESH / TF_HIST_VALID / history / N1-mixed, row bands, Q_i item chunks, queue selection, args offset).
+// (gating by TF_REFRESH / TF_HIST_VALID / history, N1-mixed, row bands, Q_i item chunks, queue selection, args offset),
+// and the scalar N4 sign model (C-11).
 import { describe, expect, it } from 'vitest';
 import { PATH_CLASS_NAMES, RS_WGSL_CONSTS as K, pathClass } from '../../src/core/render/restir/layout.ts';
 import { refreshClass, refreshEntry, refreshFwdUnits, refreshInvUnits } from '../../src/core/render/restir/refresh.ts';
@@ -118,7 +119,7 @@ function fakeKernel(o: { h: number; w: number; flags?: number; rowBand: number; 
 
 describe('refresh unit builders (restir-temporal-api.md §4.1, §4.4)', () => {
   const REF = K.TF_REFRESH | K.TF_HIST_VALID;
-  it('gating: history, TF_REFRESH, TF_HIST_VALID (fwd), N1-mixed (inv); unknown flags ⇒ emitted (the passes check)', () => {
+  it('gating: history, TF_REFRESH, TF_HIST_VALID (fwd); N1-mixed still emits the inverse (C-11); unknown flags ⇒ emitted (the passes check)', () => {
     expect(refreshFwdUnits(fakeKernel({ h: -1, w: 0, flags: REF, rowBand: 16, atlas: [16, 16] }).k, 3)).toEqual([]);
     expect(refreshFwdUnits(fakeKernel({ h: 0, w: 1, flags: K.TF_HIST_VALID, rowBand: 16, atlas: [16, 16] }).k, 3)).toEqual([]);
     expect(refreshFwdUnits(fakeKernel({ h: 0, w: 1, flags: K.TF_REFRESH, rowBand: 16, atlas: [16, 16] }).k, 3)).toEqual([]);
@@ -126,7 +127,7 @@ describe('refresh unit builders (restir-temporal-api.md §4.1, §4.4)', () => {
     expect(refreshFwdUnits(fakeKernel({ h: 0, w: 1, rowBand: 16, atlas: [16, 16] }).k, 3)).toHaveLength(1);
     expect(refreshFwdUnits(fakeKernel({ h: 0, w: 1, flags: 0, rowBand: 16, atlas: [16, 16] }).k, 3, REF)).toHaveLength(1);   // explicit flags win
     expect(refreshInvUnits(fakeKernel({ h: 0, w: 1, flags: K.TF_HIST_VALID, rowBand: 16, atlas: [16, 16] }).k, 3)).toEqual([]);
-    expect(refreshInvUnits(fakeKernel({ h: 0, w: 1, flags: REF, rowBand: 16, atlas: [16, 16], n1Mixed: true }).k, 3)).toEqual([]);
+    expect(refreshInvUnits(fakeKernel({ h: 0, w: 1, flags: REF, rowBand: 16, atlas: [16, 16], n1Mixed: true }).k, 3)).toHaveLength(1);   // C-11
     expect(refreshInvUnits(fakeKernel({ h: 0, w: 1, flags: REF, rowBand: 16, atlas: [16, 16] }).k, 3)).toHaveLength(1);
   });
 
@@ -148,5 +149,116 @@ describe('refresh unit builders (restir-temporal-api.md §4.1, §4.4)', () => {
     const one = fakeKernel({ h: 1, w: 0, flags: REF, rowBand: 64, atlas: [32, 24] });
     for (const u of refreshInvUnits(one.k, 1)) u.encode({} as GPUCommandEncoder);
     expect(one.calls.filter((c) => c.name === 'rs_args').map((c) => [c.d.treeBase, c.d.treeCount])).toEqual([[0, 0]]);
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ N4 sign (Changelog C-11)
+
+/** Scalar model of one pixel's NEE dimensions under the M5 temporal step (contribution MIS, c_cap 20, the path tree's
+ *  single-candidate canonical W_c = 1, write-back F ← F_t(Y_p)): two lights, p = (½, ½), unoccluded f = (1, 9) (the
+ *  gap-temporal §5.2 example, true value Σf = 10). `M` = 0: exact refresh; M ≥ 1: the N4 plant (the forward refresh
+ *  re-draws the light by RIS over M alias candidates ∝ f/p and keeps the single-sample value f/p of the pick). */
+function n4Chain(M: number, frames: number, seed: number): number {
+  const f = [1, 9], p = [0.5, 0.5], cap = 20;
+  const r = rng(seed);
+  let hist: { l: number; F: number; W: number; c: number } | undefined;
+  let acc = 0, n = 0;
+  for (let t = 0; t < frames; t++) {
+    const l = r() < p[0] ? 0 : 1;
+    const Fc = f[l] / p[l];
+    if (!hist) { hist = { l, F: Fc, W: 1, c: 1 }; continue; }
+    const cP = Math.min(cap, hist.c);
+    let Ft = f[hist.l] / p[hist.l];
+    if (M > 0) {
+      let wSum = 0, pick = 0;
+      for (let j = 0; j < M; j++) { const lj = r() < p[0] ? 0 : 1; const w = f[lj] / p[lj]; wSum += w; if (r() * wSum < w) pick = lj; }
+      Ft = f[pick] / p[pick];
+    }
+    const wc = Fc, wp = cP * Ft * hist.W;
+    let est: number;
+    if (r() * (wc + wp) < wp) {                         // s = p: π_c = lum F_t(Y_p), π_p = stored lum F_p^st
+      const W = hist.F / (Ft + cP * hist.F) * (wc + wp) / Ft;
+      hist = { l: hist.l, F: Ft, W, c: 1 + cP }; est = Ft * W;
+    } else {                                            // s = c: π_p(X_c) exact (inverse refresh unaffected)
+      const W = 1 / (1 + cP) * (wc + wp) / Fc;
+      hist = { l, F: Fc, W, c: 1 + cP }; est = Fc * W;
+    }
+    if (t > 1000) { acc += est; n++; }
+  }
+  return acc / n;
+}
+
+describe('N4 plant sign under contribution MIS (C-11: the +64 % of gap-temporal §5.2 does not apply)', () => {
+  it('exact refresh is unbiased; the synthetic RIS re-draw (forward only) DARKENS: ≈ −9 % at M = 8, → 0 as M → ∞, −59 % at M = 1', () => {
+    const exact = n4Chain(0, 400_000, 1), m1 = n4Chain(1, 400_000, 2), m8 = n4Chain(8, 400_000, 3), m64 = n4Chain(64, 400_000, 4);
+    console.log(`[N4 scalar] exact ${exact.toFixed(3)} M1 ${m1.toFixed(3)} M8 ${m8.toFixed(3)} M64 ${m64.toFixed(3)} (true 10)`);
+    expect(Math.abs(exact / 10 - 1)).toBeLessThan(0.01);
+    expect(m8 / 10 - 1).toBeLessThan(-0.05);
+    expect(m8 / 10 - 1).toBeGreaterThan(-0.15);
+    expect(m1 / 10 - 1).toBeLessThan(-0.4);
+    expect(m64).toBeGreaterThan(m8);
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ env plants (C-11)
+
+/** Scalar model with two path kinds (p = ½ each) through the same temporal step as n4Chain. Kind 0 carries the plant:
+ *  `jpOmit` omits its J_P = pmf_t/pmf_{t−1} in T and T⁻¹ (TP_NO_JP_ENV with kind 0 = env NEE), `staleVis` serves its end
+ *  visibility as V := 1 in T and T⁻¹ (TP_ENV_NO_ROT_VIS / N3 on N1 / D-NEE ends). Returns the relative bias at `step`. */
+function envToy(o: { f: [number, number]; pmf: (t: number) => [number, number]; vis: (t: number) => number; step: number;
+  jpOmit?: boolean; staleVis?: boolean; chains: number; seed: number; at?: number }): number {
+  const r = rng(o.seed), cap = 20, at = o.at ?? o.step;
+  let acc = 0;
+  const F = (l: number, t: number, v: number) => (o.f[l] * (l === 0 ? v : 1)) / o.pmf(t)[l];
+  for (let ch = 0; ch < o.chains; ch++) {
+    let hist: { l: number; F: number; W: number; c: number } | undefined;
+    for (let t = 0; t <= at; t++) {
+      const p = o.pmf(t);
+      const l = r() < p[0] ? 0 : 1;
+      const Fc = F(l, t, o.vis(t));
+      if (!hist) { hist = { l, F: Fc, W: Fc > 0 ? 1 : 0, c: 1 }; continue; }
+      const cP = Math.min(cap, hist.c);
+      const jp = (lj: number) => (o.jpOmit && lj === 0 ? 1 : o.pmf(t)[lj] / o.pmf(t - 1)[lj]);
+      const Ft = F(hist.l, t, o.staleVis && hist.l === 0 && hist.F > 0 ? 1 : o.vis(t));
+      const wc = Fc, wp = cP * Ft * hist.W * jp(hist.l);
+      let est = 0;
+      if (wc + wp === 0) hist = { l, F: 0, W: 0, c: 1 + cP };
+      else if (r() * (wc + wp) < wp) {
+        const piP = hist.F / jp(hist.l);
+        const W = piP / (Ft + cP * piP) * (wc + wp) / Ft;
+        hist = { l: hist.l, F: Ft, W, c: 1 + cP }; est = Ft * W;
+      } else {
+        const piP = F(l, t - 1, o.staleVis && l === 0 ? 1 : o.vis(t - 1)) / jp(l);   // F_{t−1}(T⁻¹X_c)·J_P⁻¹
+        const W = Fc / (Fc + cP * piP) * (wc + wp) / Fc;
+        hist = { l, F: Fc, W, c: 1 + cP }; est = Fc * W;
+      }
+      if (t === at) acc += est;
+    }
+  }
+  const truth = o.f[1] + o.f[0] * o.vis(at);
+  return acc / o.chains / truth - 1;
+}
+
+describe('env plant signs under contribution MIS (C-11, revised after measurement)', () => {
+  const pmf = (s: number) => (t: number): [number, number] => (t >= s ? [0.805, 0.195] : [0.674, 0.326]);   // ixs_i at 16
+  it('no-jp-env: Δ < 0 where the env dominates, no Δ > 0 where the other light dominates (unlike N2), and the bias persists one frame', () => {
+    const one = () => 1;
+    const envDom = envToy({ f: [9, 1], pmf: pmf(20), vis: one, step: 20, jpOmit: true, chains: 60_000, seed: 11 });
+    const envDomNext = envToy({ f: [9, 1], pmf: pmf(20), vis: one, step: 20, at: 21, jpOmit: true, chains: 60_000, seed: 12 });
+    const rDom = envToy({ f: [1, 9], pmf: pmf(20), vis: one, step: 20, jpOmit: true, chains: 60_000, seed: 13 });
+    const exact = envToy({ f: [9, 1], pmf: pmf(20), vis: one, step: 20, chains: 60_000, seed: 14 });
+    console.log(`[no-jp-env toy] env-dominant ${envDom.toFixed(4)} (+1 frame ${envDomNext.toFixed(4)}) R-dominant ${rDom.toFixed(4)} exact ${exact.toFixed(4)}`);
+    expect(Math.abs(exact)).toBeLessThan(0.01);
+    expect(envDom).toBeLessThan(-0.05);
+    expect(envDomNext).toBeLessThan(-0.05);
+    expect(rDom).toBeLessThan(0.005);
+  });
+  it('env-no-rot-vis (and N3 on N1 ends): Δ > 0 where the end becomes occluded (M_down), Δ < 0 where it becomes visible (M_up)', () => {
+    const pm = (): [number, number] => [0.5, 0.5];
+    const down = envToy({ f: [1, 4], pmf: pm, vis: (t) => (t >= 20 ? 0 : 1), step: 20, staleVis: true, chains: 60_000, seed: 21 });
+    const up = envToy({ f: [1, 4], pmf: pm, vis: (t) => (t >= 20 ? 1 : 0), step: 20, staleVis: true, chains: 60_000, seed: 22 });
+    console.log(`[env-no-rot-vis toy] M_down ${down.toFixed(4)} M_up ${up.toFixed(4)}`);
+    expect(down).toBeGreaterThan(0.05);
+    expect(up).toBeLessThan(-0.05);
   });
 });
