@@ -57,7 +57,11 @@ export const RESTIR_PRESETS: Record<RestirPresetName, Partial<RestirSettings>> =
   // TD24: interactive gains temporal on and the reciprocal disocclusion boost (3 slots, TD21; Q7: on interactively,
   // off in validation except the gating ixs_d unit). The interactive temporal units run on frames the renderer
   // prepares with advanceInteractive() (renderer.ts, TD20).
-  interactive: { trees: 1, rounds: 1, slots: 3, diskRadius: 30, rr: true, rrMinBounces: 3, temporal: true, boostSlots: 3 },
+  // Coordinator decision TD-I1 (2026-10-01, user-approved): interactive c_cap 5, not 20. Contribution MIS gives an
+  // undefined inverse shift (π_p = 0) the whole Σw̃ including the history weight, i.e. a ~(1+c_p)× spike that then
+  // persists ~c_p frames (diag 2026-10-01: births 3.7× over-represented at edges). c_cap 5: edge RMSE 0.041 → 0.021,
+  // spike events −62%, still unbiased (constant cap). Validation presets ('temporal', 'full') keep the spec's 20.
+  interactive: { trees: 1, rounds: 1, slots: 3, diskRadius: 30, rr: true, rrMinBounces: 3, temporal: true, boostSlots: 3, cCap: 5 },
   criteria2022: { ...OFFLINE, criteria: '2022' },
   // M5 rungs (TD24; math §25: RR off in 3.2–3.6)
   temporal: { trees: 1, rounds: 0, rr: false, temporal: true, boostSlots: 0 },

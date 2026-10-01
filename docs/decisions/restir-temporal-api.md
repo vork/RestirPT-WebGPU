@@ -1601,3 +1601,12 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
     with T4's F_{t−1} = π_p(X_c)/J_inv per channel within max(1e-4, 64·2⁻²³·κ) (κ = the f32 conditioning: 1/|cos| at y
     and the light, the spot profile's log slope; the M4 U-11 rule); it needs no `rc-dual.ts` change (the dual has no
     light / BSDF value evaluator; `bsdf-ref.ts` is its f64 BSDF).
+
+### Coordinator amendments
+
+- **TD-I1 (2026-10-01, approved by the user).** The `interactive` preset uses `cCap: 5` instead of 20; validation presets keep 20.
+  - **Cause.** In the corner-firefly diagnosis, contribution MIS gave the whole Σw̃ to the canonical sample whenever the inverse shift was undefined (π_p = 0). The history weight came with it, so each such pixel showed a spike of about (1 + c_p)× that lasted about c_p frames.
+  - **Effect.** With c_cap 5, edge-band RMSE drops from 0.041 to 0.021 and spike events fall by 62%. A constant cap keeps the estimator unbiased.
+- **Q4 / C-10 (2026-10-01).** `ENV_COMPACT_IN_VALIDATION` stays `false`.
+  - **What failed.** Setting it to `true` made ENV-U7 and the ENV-F tests fail on Chrome. Those tests assume the flag is false: they still check the hardware-filtered path, and their fixtures are not exactly representable in rgb9e5.
+  - **Why it stays.** The change would only save memory, so it is deferred to M8. That needs the fixtures and the format choice made exactness-aware first.
