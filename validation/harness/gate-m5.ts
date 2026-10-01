@@ -772,7 +772,11 @@ export interface M5Options {
   reuseChains?: string;
   /** Run only these plants (ids; 'aa' = the A/A pair + synthetic W × 1.003), after the part's sizing; no Gate 0, no units. */
   plants?: Set<string>;
+  /** Fresh, disjoint seeds for the plants (chains and their 4× PT references): plants whose prediction was revised after a
+   *  measurement are confirmed out of sample (coordinator, B-12 / D-5). Default 0. */
+  plantSeedOffset?: number;
 }
+let plantSeedOffset = 0;
 let reuseChainsDir: string | undefined;
 
 interface UnitPlan {
@@ -808,6 +812,7 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
   const plantsOnly = !!o.plants;
   const full = !o.only && !o.pilotOnly && !o.prerenderPtRefs && !plantsOnly;
   reuseChainsDir = o.reuseChains;
+  plantSeedOffset = o.plantSeedOffset ?? 0;
   const doCore = o.part !== 'static', doStatic = o.part !== 'core';
   const sel = (pkg: string) => !o.only || o.only.has(pkg);
   const nU = nUnits();
@@ -1284,17 +1289,18 @@ function runPlant(p: PlantSpec, units: UnitPlan[], ptPlans: Map<string, PtPlan>,
   const refs = new Map<number, Run>();
   for (const t of frames) {
     const plan = ptPlans.get(`${p.pkg}:${staticScene ? 'base' : t}`) ?? { spp: 1024, B: B_PT, seconds: 120 };
-    const r = ptRef(p.pkg, staticScene ? undefined : t, plan.spp * CALIB_FACTOR, B_PT, SEEDS.ptCalib, add, plan.seconds * CALIB_FACTOR * 1.2);
+    const r = ptRef(p.pkg, staticScene ? undefined : t, plan.spp * CALIB_FACTOR, B_PT, SEEDS.ptCalib + plantSeedOffset, add, plan.seconds * CALIB_FACTOR * 1.2);
     if (!r) return { ...data, status: 'PT reference failed' };
     refs.set(t, r);
   }
   const lastFrame = Math.max(...frames);
   const pdest = path.join(dir, 'plants', safe(p.id));
-  const pseed = SEEDS.plantBase + M5_PLANTS.indexOf(p), pframes = staticScene ? STATIC.T : lastFrame + 1;
+  const pseed = SEEDS.plantBase + M5_PLANTS.indexOf(p) + plantSeedOffset, pframes = staticScene ? STATIC.T : lastFrame + 1;
   const reused = reusedChains('plants', p.id, pdest, { R, seed: pseed, frames: pframes, pkg: p.pkg, extra: p.args, testFrames: frames });
   const run = reused ? { dir: pdest, meta: tryJson(path.join(pdest, 'meta.json')), code: 0, out: '', seconds: 0 }
     : chainRun({ pkg: p.pkg, preset: 'full', R, seed: pseed, frames: pframes, testFrames: frames, masks: maskDir, extra: p.args }, pdest, (base?.chainSeconds ?? 300) * 1.2);
   if (reused) data.reused_chains = reused;
+  if (plantSeedOffset) data.seeds = { chains: pseed, ptCalib: SEEDS.ptCalib + plantSeedOffset, note: 'fresh disjoint seeds (prediction revised after measurement, B-12 / D-5)' };
   if (!run.dir) { add(`plant ${p.id}: ${p.name} on ${p.pkg}`, false, run.seconds, undefined, run.out.slice(-300)); return { ...data, status: 'chain run failed' }; }
   const tests = new Map<number, string>();
   const full: Record<string, any> = {};

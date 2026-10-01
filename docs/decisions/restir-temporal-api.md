@@ -1547,6 +1547,11 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   died. The page now uploads in 8 MB parts that run-batches.ts concatenates (verified: 16 000 chains, 133 MB npz). The
   T3-2 rare-bin `-t` patterns are regex-escaped (the "+" in two case names had skipped them silently), and a vitest step
   that runs no test now fails.
+- **E-18 Out-of-sample confirmation of revised plant predictions** (coordinator decision). Plants whose predicted sign
+  was revised after the core measurement (B-12: N5-d0, N5-d, E_{t−1}-with-γ_t, U8-1, U8-6; D-5: U8-9) are re-rendered
+  on fresh, disjoint seeds (`--plant-seed-offset 1000`: plant chains 8101 + index, 4× PT references 8201) and reported as
+  "revised after measurement (B-12/D-5), confirmed on fresh seeds"; they never reuse the measurement they were revised on.
+  `--reuse-chains` is used only for the 128² aggregation fix (E-15) of unchanged predictions / units.
 - **B-7 T3-2 harness hook instead of `RS_TEMPORAL_TRACE`** (affects nobody). The composer has no `#define` and the kernel
   passes extra defines only to `rs_initial`, so the T3-2 / T4-t harness does not use a define: `t-select.wgsl` has
   `const TSEL_TRACE_FORCE_P: bool = false`, which the test flips to `true` through `instrumentation.extraSources` (every
