@@ -1541,6 +1541,12 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   hold per T3 variant (`-t`, T3-0 + T3-1 ≤ 6 + 18 min = 24 min: the one documented exception to the 12-min rule, since a
   variant needs that wall time for ≥ 10⁷ round trips in its rarest bins) plus one hold for every other test of the file
   (≤ 12 min). The first core run held the lock once for 2.5 h (accepted for that run).
+- **E-17 Large chain uploads** (affects nobody's code). Playwright receives every page request body through its CDP
+  pipe as one JSON string; an ensemble.npz above ~80 MB (≥ ~900 batches in one invocation: m5s_cornell_i / spot_grazing
+  3.3 of the first static run) exceeded V8's 512 M-character limit in the driver (ERR_STRING_TOO_LONG) and the chain run
+  died. The page now uploads in 8 MB parts that run-batches.ts concatenates (verified: 16 000 chains, 133 MB npz). The
+  T3-2 rare-bin `-t` patterns are regex-escaped (the "+" in two case names had skipped them silently), and a vitest step
+  that runs no test now fails.
 - **B-7 T3-2 harness hook instead of `RS_TEMPORAL_TRACE`** (affects nobody). The composer has no `#define` and the kernel
   passes extra defines only to `rs_initial`, so the T3-2 / T4-t harness does not use a define: `t-select.wgsl` has
   `const TSEL_TRACE_FORCE_P: bool = false`, which the test flips to `true` through `instrumentation.extraSources` (every

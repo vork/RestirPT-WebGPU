@@ -64,6 +64,16 @@ export interface RenderRestirChainsReport { ok: boolean; run: string; files: str
 /** Temporal plants are validation-only and never part of an unbiased unit. */
 export const UNBIASED_CHAIN_PRESETS: readonly RestirPresetName[] = ['temporal', 'full', 'initial', 'initial-rr', 'offline', 'criteria2022'];
 
+/** Upload in ≤ 8 MB parts `<name>.part###` (run-batches.ts concatenates them): Playwright receives every request body
+ *  through its CDP pipe as a JSON string, and a single upload above ~80 MB exceeds V8's 512 M-character string limit in
+ *  the driver (ERR_STRING_TOO_LONG; Changelog E-17). */
+const UPLOAD_PART = 8 << 20;
+async function uploadParts(run: string, name: string, bytes: Uint8Array): Promise<string> {
+  const n = Math.max(1, Math.ceil(bytes.length / UPLOAD_PART));
+  for (let i = 0; i < n; i++) await uploadFile(run, `${name}.part${String(i).padStart(3, '0')}`, bytes.subarray(i * UPLOAD_PART, Math.min(bytes.length, (i + 1) * UPLOAD_PART)));
+  return name;
+}
+
 async function fetchBytes(url: string): Promise<Uint8Array> {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
@@ -180,7 +190,7 @@ export async function renderRestirChains(ctx: GpuContext, o: RenderRestirChainsO
     }
     for (const [f, c] of collectors) {
       const dir = f === 'avg' ? 'avg' : `f${f}`;
-      await uploadFile(o.run, `${dir}__ensemble.npz`, writeNpz(c.npzArrays() as NpzArray[]));
+      await uploadParts(o.run, `${dir}__ensemble.npz`, writeNpz(c.npzArrays() as NpzArray[]));
       files.push(`${dir}__ensemble.npz`);
       if (c.nonFinite) errors.push(`frame ${f}: ${c.nonFinite} non-finite member pixels in the reduction`);
     }

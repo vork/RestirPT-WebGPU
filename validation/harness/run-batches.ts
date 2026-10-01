@@ -32,7 +32,7 @@
 import { quantizeScene } from '../../src/core/scene/quantize.ts';
 import { execFile } from 'node:child_process';
 import { existsSync, lstatSync } from 'node:fs';
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -271,6 +271,13 @@ async function main(shared?: SharedPage): Promise<number> {
       if (!rep.ok) { failures++; console.log(`     errors: ${rep.errors.join('; ')}`); }
       const dir = path.join(OUT, runId);
       if (chains) {   // chain runs upload "<sub>__<file>" (single path components): move them to <sub>/<file>
+        // large files arrive as "<name>.part###" (restir-chain-run.ts uploadParts): concatenate in order
+        const parts = new Map<string, string[]>();
+        for (const f of (await readdir(dir)).sort()) { const m = /^(.+)\.part\d{3}$/.exec(f); if (m) parts.set(m[1], [...(parts.get(m[1]) ?? []), f]); }
+        for (const [name, ps] of parts) {
+          await writeFile(path.join(dir, name), Buffer.concat(await Promise.all(ps.map((p) => readFile(path.join(dir, p))))));
+          for (const p of ps) await rm(path.join(dir, p));
+        }
         for (const f of await readdir(dir)) {
           const m = /^([\w.-]+)__(.+)$/.exec(f);
           if (!m) continue;
