@@ -1594,6 +1594,10 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   on fresh, disjoint seeds (`--plant-seed-offset 1000`: plant chains 8101 + index, 4× PT references 8201) and reported as
   "revised after measurement (B-12/D-5), confirmed on fresh seeds"; they never reuse the measurement they were revised on.
   `--reuse-chains` is used only for the 128² aggregation fix (E-15) of unchanged predictions / units.
+- **E-19 E-15 (b) withdrawn; C-11 rows.** The N1-mixed PENDING_LEFT counts were an implementation bug (C-11: the unit
+  builder skipped `rs_refresh_inv` under the plant), so the T16 exception is removed: RSC_T_PENDING_LEFT must be 0 for
+  every run. The N3, N4, env-no-rot-vis and no-jp-env rows of C-11 are revised after measurement and confirmed on fresh
+  seeds (E-18); the N1 plants re-render on their normal seeds (unchanged predictions, fixed implementation).
 - **B-7 T3-2 harness hook instead of `RS_TEMPORAL_TRACE`** (affects nobody). The composer has no `#define` and the kernel
   passes extra defines only to `rs_initial`, so the T3-2 / T4-t harness does not use a define: `t-select.wgsl` has
   `const TSEL_TRACE_FORCE_P: bool = false`, which the test flips to `true` through `instrumentation.extraSources` (every

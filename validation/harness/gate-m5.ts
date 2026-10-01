@@ -158,16 +158,16 @@ export const M5_PLANTS: PlantSpec[] = [
   P('N1-mixed-half', 'N1 mixed, A x0.5 (TP_N1_MIXED)', 'ixs_e_half_256', '3.6', ['--tplant', 'n1Mixed'], pr([14, 15], 'M_light:A', '+'), { dominance: { frames: [14, 15], names: ['A'] } }),
   P('N1-consistent', 'N1 consistent (TP_N1_MIXED + TM_PP_RECOMPUTE)', 'ixs_a_point_256', '3.6', ['--tplant', 'n1Mixed', '--temporal-check', 'recompute'], [...pr([10, 25], 'M_new', '-'), ...pr([10, 25], 'M_up', '-')], { only: '-' }),
   P('N2', 'N2 omit J_P (TP_NO_JP)', 'ixs_e_addremove_256', '3.6', ['--tplant', 'noJP'], [...pr([14, 15], 'M_light:A', '-'), ...pr([14, 15], 'M_light:B', '+')], { dominance: { frames: [14, 15], names: ['A', 'B'] } }),
-  P('N3', 'N3 stale suffix radiance (TP_N3_STALE)', 'ixs_a_point_256', '3.6', ['--tplant', 'n3Stale'], [...pr([40, 80], 'M_gone', '+'), ...pr([40, 80], 'M_new', '-'), ...pr([40, 80], 'M_down', '+'), ...pr([40, 80], 'M_up', '-')]),
-  P('N4', 'N4 fresh RIS re-draw (TP_N4_RIS, synthetic)', 'ixs_n4_twolights_256', '3.6', ['--tplant', 'n4Ris'], pr([8, 16], 'global', '+')),
+  P('N3', 'N3 stale suffix radiance (TP_N3_STALE)', 'ixs_a_point_256', '3.6', ['--tplant', 'n3Stale'], [...pr([40], 'M_down', '+'), ...pr([40], 'M_gone', '+')]),   // C-11: direct light exact under N3; no refresh frame after 40
+  P('N4', 'N4 fresh RIS re-draw (TP_N4_RIS, synthetic)', 'ixs_n4_twolights_256', '3.6', ['--tplant', 'n4Ris'], pr([8, 16], 'global', '-')),   // C-11
   P('N5-d0', 'N5 pixel-centre prev primary (TP_N5_PIXEL_CENTRE)', 'ixs_d0_jitter_256', '3.6', ['--tplant', 'n5PixelCentre'], pr([32], 'M_sil', '+')),   // B-12
   P('N5-d', 'N5 pixel-centre prev primary (TP_N5_PIXEL_CENTRE)', 'ixs_d_camera_256', '3.6', ['--tplant', 'n5PixelCentre'], pr([16], 'M_edge', '+')),   // B-12
   P('N6', 'N6 current camera in E_{t-1} (TP_N6_CUR_CAM)', 'ixs_d_glossy_256', '3.6', ['--tplant', 'n6CurCam'], pr([16, 32], 'global', '?')),
   P('N7', 'N7 per-light refresh mask (TP_N7_PER_LIGHT)', 'ixs_e_addremove_256', '3.6', ['--tplant', 'n7PerLight'], pr([14, 15], 'M_light:B', '-'), { dominance: { frames: [14, 15], names: ['B'] } }),
-  P('env-no-rot-vis', 'skip the rotation refresh (TP_ENV_NO_ROT_VIS)', 'ixs_h_envrot_256', '3.6', ['--tplant', 'envNoRotVis'], pr([10, 25], 'M_edge', '+')),
+  P('env-no-rot-vis', 'skip the rotation refresh (TP_ENV_NO_ROT_VIS)', 'ixs_h_envrot_256', '3.6', ['--tplant', 'envNoRotVis'], [...pr([10, 25], 'M_down', '+'), ...pr([10, 25], 'M_up', '-')]),   // C-11
   // M_new / M_gone are empty under a 1°/frame rotation (E-13): their sign-resolved edge cells M_up / M_down carry the prediction
   P('env-gamma-t', 'E_{t-1} with gamma_t (TP_ENV_GAMMA_T)', 'ixs_h_envrot_256', '3.6', ['--tplant', 'envGammaT'], [...pr([10, 25], 'M_new', '-'), ...pr([10, 25], 'M_up', '-'), ...pr([10, 25], 'M_down', '-')], { only: '-' }),   // B-12: darkening only
-  P('no-jp-env', 'omit J_P on env (TP_NO_JP_ENV)', 'ixs_i_envradio_256', '3.6', ['--tplant', 'noJPEnv'], [...pr([16, 17], 'M_light:env', '-'), ...pr([16, 17], 'M_light:R', '+')], { dominance: { frames: [16, 17], names: ['env', 'R'] } }),
+  P('no-jp-env', 'omit J_P on env (TP_NO_JP_ENV)', 'ixs_i_envradio_256', '3.6', ['--tplant', 'noJPEnv'], pr([16, 17], 'M_light:env', '-'), { dominance: { frames: [16, 17], names: ['env', 'R'] } }),   // C-11
   P('cp-plus1', 'c_p + 1 in the MIS denominator (TP_CP_PLUS1)', 'm5s_cornell_i', '3.4', ['--tplant', 'cpPlus1'], pr([24], 'global', '-')),
   P('U8-1', 'U8-1 w1 < 1 for delta (RSF_PLANT_U8_W1DELTA)', 'u8_c0c_point_b1', '3.4', ['--u8-plant', 'u8W1Delta'], pr([24], 'global', '+')),   // B-12
   P('U8-3', 'U8-3 no p_k ratio (RSF_PLANT_U8_NO_PK)', 'm5s_cornell_i', '3.4',   // B-12: needs case (c) / deep paths
