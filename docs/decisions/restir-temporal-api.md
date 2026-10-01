@@ -996,7 +996,7 @@ with one-sided z ≥ 3; for "only" predictions no region/tile shows the opposite
 | U8-3 no p_k ratio | `RSF_PLANT_U8_NO_PK` | u8_c0e_rect_b1, 3.4 | detected (sign reported) |
 | U8-4 J = t_x²/t_y² | `RSF_PLANT_U8_T2` | u8_c0c_point_b0, 3.4 | detected (sign reported) |
 | U8-6 one-sided ignored | `RSF_PLANT_U8_ONESIDED` | u8_c0e_rect_b1, 3.4 | Δ > 0 |
-| U8-9 FAILED dropped from k | `RSF_PLANT_U8_FAILED_K` | u8_c0e_rect_b1, 3.4 | Δ < 0 (energy loss) |
+| U8-9 FAILED dropped from k | `RSF_PLANT_U8_FAILED_K` | u8_c0e_rect_b1, 3.4 | Δ > 0 (over-weighting; Changelog D-5, was "Δ < 0") |
 | U8-2t stale aux across frames | `TP_U8_STALE_AUX` | ixs_b_area 16, 24 | detected |
 | U8-5t spot profile of frame t−1 | `TP_U8_SPOT_PREV_AXIS` | ixs_c_spot_b03 20 | detected |
 | A/A | seeds 7502 / 7503 | m5s_cornell_i 3.4 ×4 | pass; re-splits at nominal rate |
@@ -1624,3 +1624,18 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
 - **Q4 / C-10 (2026-10-01).** `ENV_COMPACT_IN_VALIDATION` stays `false`.
   - **What failed.** Setting it to `true` made ENV-U7 and the ENV-F tests fail on Chrome. Those tests assume the flag is false: they still check the hardware-filtered path, and their fixtures are not exactly representable in rgb9e5.
   - **Why it stays.** The change would only save memory, so it is deferred to M8. That needs the fixtures and the format choice made exactness-aware first.
+- **D-5 U8-9 predicted sign corrected: Δ > 0, not Δ < 0** (affects T-E: `gate-m5.ts` prediction of U8-9 `'-'` → `'+'`;
+  §6.5 table row amended). Plant 9 (`mis.wgsl spatial_resample`, the `continue` on `!jw_valid(G_j)`) drops a partner
+  whose sample does not shift into c from S_c, i.e. from k, a = c_c/k, the m_c sum, the 1/(k + 1) normaliser and
+  c_out; the boost slots are ordinary slots here and follow the same rule. A FAILED partner contributes w_j = 0 either
+  way, so the plant changes only the weights of the *other* techniques, and it renormalises them over fewer techniques
+  exactly on the realizations where the dropped one contributes nothing. For a point y that partner j could produce,
+  the correct weights satisfy m_c(y) + Σ_i m_i(y) + m_j(y) = 1; with the plant, conditioned on j's sample failing, the
+  remaining weights sum to 1 instead of 1 − m_j(y) (k = 1: m_c = [1 + p̂_c/(p̂_c + c_j·p̂_{←j})]/2 < 1 becomes 1), while
+  j's own contribution on its successful realizations is unchanged. The expected total weight at y exceeds 1 ⇒
+  **brightening**. ("Energy loss" would be the opposite plant — FAILED partners kept in the normaliser *and* their
+  producible region not counted, the classic 1/M darkening.) Code check: the `continue` sits after the consistency
+  counters and before `qs[s] = q; k++; cOut += c_j`, matching the definition. Confirmation: `tests/restir/plant9.test.ts`
+  (f64 T7 toy with the production MIS twins: plant off E = 1.0003, z = 0.7; plant on +14.9 %, z = 456 with 74 % of the
+  trials dropping a partner); the M5 gate measured +1.83 % global on u8_c0e_rect_b1 (m5-gate-20261001-081949),
+  detected 10/10. The harness sign convention (Δ = ReSTIR − PT) is correct.
