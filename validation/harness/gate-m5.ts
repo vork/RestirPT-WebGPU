@@ -193,8 +193,8 @@ export const GPU_SUITES: [string, string][] = [
   ['pt', 'M3 regression'], ['bsdf', 'M3 regression'], ['lights', 'M3 regression'], ['env-sampling', 'M3 regression'], ['glass', 'M3 regression'], ['pt-glass', 'M3 regression'],
 ];
 export const GPU_SUITE_ENV: Record<string, Record<string, string>> = { 'restir-shift': { VITE_T3_MS: String(18 * 60_000) } };
-/** T3-2 at ≥ 10⁶ round trips per bin (restir-temporal-api.md B-11): three separate lock holds of ≈ 5 min GPU each. */
-export const T32_RARE_ENV = { VITE_T32_RARE_PAIRS: '80000', VITE_T32_RARE_RES: '256', VITE_T32_MIN_BIN: '1000000' };
+/** T3-2 at ≥ 10⁶ round trips per bin (restir-temporal-api.md B-11): three separate lock holds of ≈ 2–2.3 min GPU each (B-11, bddc333). */
+export const T32_RARE_ENV = { VITE_T32_RARE_PAIRS: '16000', VITE_T32_RARE_RES: '256', VITE_T32_MIN_BIN: '1000000' };
 export const T32_RARE_CASES = ['rare bins: translate', 'rare bins: add / remove + intensity', 'rare bins: moving lights + env'];
 
 /** Suite FWER units × {Y, R, G, B}: every (scene/sequence, rung, test frame) unit + plants + synthetic + A/A. */
