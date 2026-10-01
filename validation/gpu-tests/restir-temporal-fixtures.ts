@@ -204,7 +204,7 @@ fn rs_trace_recon(cosY: f32, cosK: f32, dist: f32, edgeK: f32) { }
 }`;
 
 export interface T32Bin { name: string; trials: number; fwdOk: number; rtOk: number; logic: number; fp: number; fBad: number; jBad: number; noInv: number; fwd: Record<string, number>; inv: Record<string, number> }
-export interface T32Result { bins: T32Bin[]; total: { trials: number; fwdOk: number; rtOk: number; logic: number; fp: number; edgeFp: number; envFilter: number }; logicSamples: string[]; envFilterSamples: string[]; platform: number; candOverflow: number }
+export interface T32Result { bins: T32Bin[]; total: { trials: number; fwdOk: number; rtOk: number; logic: number; fp: number; edgeFp: number }; logicSamples: string[]; platform: number; candOverflow: number }
 
 /** GPU round-trip checks of test frames (after a frame with forced s = p in robust mode): scene-free check kernel over
  *  every pixel (bins, codes, F / J reciprocity, margin FP) + a traced re-run of the candidate inverses (edge FP). */
@@ -259,8 +259,8 @@ export class T32Harness {
     const f = new Float32Array(u.buffer);
     const bins: T32Bin[] = [];
     const nCand = Math.min(u[CAND0], CAND_CAP);
-    const edgeFpPerBin = new Array(T32_BINS).fill(0), envPerBin = new Array(T32_BINS).fill(0);
-    const logicSamples: string[] = [], envFilterSamples: string[] = [];
+    const edgeFpPerBin = new Array(T32_BINS).fill(0);
+    const logicSamples: string[] = [];
     let platform = 0;
     for (let i = 0; i < nCand; i++) {
       const o = CAND0 + 1 + i * CW;
@@ -268,29 +268,20 @@ export class T32Harness {
       const edge = f[o + 8], recode = u[o + 9], kind = u[o + 11];
       if (u[o + 10] !== 1 || (kind !== 1 && recode !== invCode)) platform++;          // re-run missing / not reproducing T4
       if (edge < 1e-6) { edgeFpPerBin[bin]++; continue; }
-      // restir-temporal-api.md C-9 (open): an env-escape end (BSDF_ENV) re-evaluated in another pipeline differs at the
-      // ulp level in envUV, which the hardware bilinear filter turns into ≤ ~5e-3 on high-frequency texels. Reported as
-      // its own class (not LOGIC) while C-9 is open: F-only mismatch, J exact, BSDF_ENV technique.
-      const tech = (u[o + 12] >>> 8) & 3;
-      if (kind === 3 && tech === 3 && f[o + 6] <= 1e-2 && f[o + 7] <= 1e-4) {
-        envPerBin[bin]++;
-        if (envFilterSamples.length < 8) envFilterSamples.push(`t${t} ai${ai} ${T32_CASES[bin >> 1]}/${bin & 1 ? 'k>2' : 'k2'} eF ${f[o + 6]}`);
-        continue;
-      }
       if (logicSamples.length < 24) logicSamples.push(`t${t} ai${ai} ${T32_CASES[bin >> 1]}/${bin & 1 ? 'k>2' : 'k2'} kind ${kind} inv ${SC_NAMES[invCode & 15]} fwdJ ${u2f(fj)} invJ ${u2f(ij)} eF ${f[o + 6]} eJ ${f[o + 7]} minEdge ${edge}`);
     }
-    const tot = { trials: 0, fwdOk: 0, rtOk: 0, logic: 0, fp: 0, edgeFp: 0, envFilter: 0 };
+    const tot = { trials: 0, fwdOk: 0, rtOk: 0, logic: 0, fp: 0, edgeFp: 0 };
     for (let b = 0; b < T32_BINS; b++) {
       const o = b * BW;
       const codes = (base: number) => Object.fromEntries(SC_NAMES.map((n, i) => [n, u[o + base + i]]).filter(([, x]) => x));
       const bb: T32Bin = {
         name: `${T32_CASES[b >> 1]}/${b & 1 ? 'k>2' : 'k2'}`, trials: u[o], fwdOk: u[o + 1], rtOk: u[o + 2],
-        logic: u[o + 3] - edgeFpPerBin[b] - envPerBin[b], fp: u[o + 4] + edgeFpPerBin[b], fBad: u[o + 5], jBad: u[o + 6], noInv: u[o + 7], fwd: codes(8), inv: codes(24),
+        logic: u[o + 3] - edgeFpPerBin[b], fp: u[o + 4] + edgeFpPerBin[b], fBad: u[o + 5], jBad: u[o + 6], noInv: u[o + 7], fwd: codes(8), inv: codes(24),
       };
       bins.push(bb);
-      tot.trials += bb.trials; tot.fwdOk += bb.fwdOk; tot.rtOk += bb.rtOk; tot.logic += bb.logic; tot.fp += bb.fp; tot.edgeFp += edgeFpPerBin[b]; tot.envFilter += envPerBin[b];
+      tot.trials += bb.trials; tot.fwdOk += bb.fwdOk; tot.rtOk += bb.rtOk; tot.logic += bb.logic; tot.fp += bb.fp; tot.edgeFp += edgeFpPerBin[b];
     }
-    return { bins, total: tot, logicSamples, envFilterSamples, platform, candOverflow: Math.max(0, u[CAND0] - CAND_CAP) };
+    return { bins, total: tot, logicSamples, platform, candOverflow: Math.max(0, u[CAND0] - CAND_CAP) };
   }
 
   destroy(): void { this.stats.destroy(); }

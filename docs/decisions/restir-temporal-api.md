@@ -1559,10 +1559,10 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
     2.79·10⁹ round trips, minimum bin 6.9·10⁶; add / remove + intensity (16 000) 5.4·10⁸, minimum 1.43·10⁶; moving
     lights + env (16 000) 6.6·10⁸, minimum 1.66·10⁶; LOGIC 0, FP 0, PLATFORM 0 everywhere. The `allLightsScene` cases
     stay at the defaults (12 pairs, 128², < 1 s each).
-  - C-9 (open, T-C): BSDF_ENV escape ends re-evaluated in another pipeline differ by ≤ ~5e-3 (envUV ulp jitter ×
-    bilinear weight quantisation). T3-2 reports such F-only mismatches (J exact, technique BSDF_ENV, eF ≤ 1e-2) as class
-    `envFilter`, bounded at 2e-5 of the trials, not as LOGIC; measured 12–16 per 2·10⁶ round trips on light-change
-    frames, 0 without a refresh and 0 on smooth envs. Removing the class is part of the C-9 decision.
+  - C-9: an interim T3-2 class `envFilter` (BSDF_ENV escapes, F-only mismatch ≤ 1e-2 from envUV ulp jitter × hardware
+    bilinear quantisation) existed between 0c936d2 and C-10; **removed** after T-C's C-10 (331e0dd: explicit f32
+    bilinear, fma envUV / envDir): env escapes count as LOGIC again, measured 0 (5.4·10⁸ + 6.6·10⁸ light-change round
+    trips on t3_rare_256 + studio_small_09).
   - T6(b) runs every `ixs_*` package (incl. the four env sequences from `validation/out/m5/scenes`) through T-E's
     `ChainRunner` (`spec.afterFrame`, 0cf847c) with the `full` preset in robust mode (E = 2 chains): mismatches / robust
     checks ≤ 1e-5 at the test frames and over all frames (measured 0 of ≈ 6.6·10⁷). N1-mixed on ixs_e_addremove: every

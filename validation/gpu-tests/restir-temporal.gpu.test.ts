@@ -449,7 +449,6 @@ export async function runT32(c: T32Case, pairs = T32_PAIRS, W = T32_RES): Promis
 
 function reportT32(tag: string, x: Awaited<ReturnType<typeof runT32>>, pairs: number): void {
   const lines = x.r.bins.filter((b) => b.trials).map((b) => `  ${b.name.padEnd(14)} trials=${b.trials} fwdOk=${b.fwdOk} rtOk=${b.rtOk} LOGIC=${b.logic} FP=${b.fp} F=${b.fBad} J=${b.jBad} fwd=${JSON.stringify(b.fwd)} inv=${JSON.stringify(b.inv)}`);
-  if (x.r.envFilterSamples.length) console.log(`[T3-2 ${tag}] C-9 env-filter: ${x.r.envFilterSamples.join('; ')}`);
   console.log(`[T3-2 ${tag}] ${JSON.stringify(x.r.total)} platform ${x.r.platform} lightClass ${x.lightClass} refresh ${x.refreshFrames}/${pairs} ${(x.ms / pairs).toFixed(1)} ms/pair\n${lines.join('\n')}${x.r.logicSamples.length ? '\n  LOGIC: ' + x.r.logicSamples.join('\n  LOGIC: ') : ''}`);
 }
 
@@ -469,7 +468,6 @@ describe('T3-2 / T4-t: production round trips T⁻¹(T(X_p)) with forced s = p (
       expect(x.r.total.rtOk).toBeGreaterThan(1000);
       expect(x.r.total.logic).toBe(0);
       expect(x.r.total.fp / Math.max(x.r.total.trials, 1)).toBeLessThanOrEqual(1e-5);
-      expect(x.r.total.envFilter / Math.max(x.r.total.trials, 1)).toBeLessThanOrEqual(2e-5);   // C-9 (open), bounded rate
     });
   }
 });
