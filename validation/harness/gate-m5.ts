@@ -160,20 +160,21 @@ export const M5_PLANTS: PlantSpec[] = [
   P('N2', 'N2 omit J_P (TP_NO_JP)', 'ixs_e_addremove_256', '3.6', ['--tplant', 'noJP'], [...pr([14, 15], 'M_light:A', '-'), ...pr([14, 15], 'M_light:B', '+')], { dominance: { frames: [14, 15], names: ['A', 'B'] } }),
   P('N3', 'N3 stale suffix radiance (TP_N3_STALE)', 'ixs_a_point_256', '3.6', ['--tplant', 'n3Stale'], [...pr([40, 80], 'M_gone', '+'), ...pr([40, 80], 'M_new', '-'), ...pr([40, 80], 'M_down', '+'), ...pr([40, 80], 'M_up', '-')]),
   P('N4', 'N4 fresh RIS re-draw (TP_N4_RIS, synthetic)', 'ixs_n4_twolights_256', '3.6', ['--tplant', 'n4Ris'], pr([8, 16], 'global', '+')),
-  P('N5-d0', 'N5 pixel-centre prev primary (TP_N5_PIXEL_CENTRE)', 'ixs_d0_jitter_256', '3.6', ['--tplant', 'n5PixelCentre'], pr([32], 'M_sil', '-')),
-  P('N5-d', 'N5 pixel-centre prev primary (TP_N5_PIXEL_CENTRE)', 'ixs_d_camera_256', '3.6', ['--tplant', 'n5PixelCentre'], pr([16], 'M_edge', '-')),
+  P('N5-d0', 'N5 pixel-centre prev primary (TP_N5_PIXEL_CENTRE)', 'ixs_d0_jitter_256', '3.6', ['--tplant', 'n5PixelCentre'], pr([32], 'M_sil', '+')),   // B-12
+  P('N5-d', 'N5 pixel-centre prev primary (TP_N5_PIXEL_CENTRE)', 'ixs_d_camera_256', '3.6', ['--tplant', 'n5PixelCentre'], pr([16], 'M_edge', '+')),   // B-12
   P('N6', 'N6 current camera in E_{t-1} (TP_N6_CUR_CAM)', 'ixs_d_glossy_256', '3.6', ['--tplant', 'n6CurCam'], pr([16, 32], 'global', '?')),
   P('N7', 'N7 per-light refresh mask (TP_N7_PER_LIGHT)', 'ixs_e_addremove_256', '3.6', ['--tplant', 'n7PerLight'], pr([14, 15], 'M_light:B', '-'), { dominance: { frames: [14, 15], names: ['B'] } }),
   P('env-no-rot-vis', 'skip the rotation refresh (TP_ENV_NO_ROT_VIS)', 'ixs_h_envrot_256', '3.6', ['--tplant', 'envNoRotVis'], pr([10, 25], 'M_edge', '+')),
   // M_new / M_gone are empty under a 1°/frame rotation (E-13): their sign-resolved edge cells M_up / M_down carry the prediction
-  P('env-gamma-t', 'E_{t-1} with gamma_t (TP_ENV_GAMMA_T)', 'ixs_h_envrot_256', '3.6', ['--tplant', 'envGammaT'], [...pr([10, 25], 'M_new', '-'), ...pr([10, 25], 'M_gone', '+'), ...pr([10, 25], 'M_up', '-'), ...pr([10, 25], 'M_down', '+')]),
+  P('env-gamma-t', 'E_{t-1} with gamma_t (TP_ENV_GAMMA_T)', 'ixs_h_envrot_256', '3.6', ['--tplant', 'envGammaT'], [...pr([10, 25], 'M_new', '-'), ...pr([10, 25], 'M_up', '-'), ...pr([10, 25], 'M_down', '-')], { only: '-' }),   // B-12: darkening only
   P('no-jp-env', 'omit J_P on env (TP_NO_JP_ENV)', 'ixs_i_envradio_256', '3.6', ['--tplant', 'noJPEnv'], [...pr([16, 17], 'M_light:env', '-'), ...pr([16, 17], 'M_light:R', '+')], { dominance: { frames: [16, 17], names: ['env', 'R'] } }),
   P('cp-plus1', 'c_p + 1 in the MIS denominator (TP_CP_PLUS1)', 'm5s_cornell_i', '3.4', ['--tplant', 'cpPlus1'], pr([24], 'global', '-')),
-  P('U8-1', 'U8-1 w1 < 1 for delta (RSF_PLANT_U8_W1DELTA)', 'u8_c0c_point_b1', '3.4', ['--u8-plant', 'u8W1Delta'], pr([24], 'global', '-')),
-  P('U8-3', 'U8-3 no p_k ratio (RSF_PLANT_U8_NO_PK)', 'u8_c0e_rect_b1', '3.4', ['--u8-plant', 'u8NoPk'], pr([24], 'global', 'detect')),
-  P('U8-6', 'U8-6 one-sided ignored (RSF_PLANT_U8_ONESIDED)', 'u8_c0e_rect_b1', '3.4', ['--u8-plant', 'u8OneSided'], pr([24], 'global', '+')),
+  P('U8-1', 'U8-1 w1 < 1 for delta (RSF_PLANT_U8_W1DELTA)', 'u8_c0c_point_b1', '3.4', ['--u8-plant', 'u8W1Delta'], pr([24], 'global', '+')),   // B-12
+  P('U8-3', 'U8-3 no p_k ratio (RSF_PLANT_U8_NO_PK)', 'm5s_cornell_i', '3.4',   // B-12: needs case (c) / deep paths
+    ['--u8-plant', 'u8NoPk'], pr([24], 'global', 'detect')),
+  P('U8-6', 'U8-6 one-sided ignored (RSF_PLANT_U8_ONESIDED)', 'u8_c0e_rect_b1', '3.4', ['--u8-plant', 'u8OneSided'], pr([24], 'global', 'detect')),   // B-12: sign reported
   P('U8-9', 'U8-9 FAILED dropped from k (RSF_PLANT_U8_FAILED_K)', 'u8_c0e_rect_b1', '3.4', ['--u8-plant', 'u8FailedK'], pr([24], 'global', '+')),   // Δ > 0 (Changelog D-5)
-  P('U8-2t', 'U8-2t stale aux across frames (TP_U8_STALE_AUX)', 'ixs_b_area_256', '3.6', ['--tplant', 'u8StaleAux'], pr([16, 24], 'global', 'detect')),
+  P('U8-2t', 'U8-2t stale aux across frames (TP_U8_STALE_AUX)', 'ixs_i_envradio_256', '3.6', ['--tplant', 'u8StaleAux'], pr([16, 17], 'global', 'detect')),   // B-12: needs env MIS
   P('U8-5t', 'U8-5t spot profile of t-1 (TP_U8_SPOT_PREV_AXIS)', 'ixs_c_spot_b03_256', '3.6', ['--tplant', 'u8SpotPrevAxis'], pr([20], 'global', 'detect')),
 ];
 /** U8 plants deferred to M6 (Q6; B-9: U8-4 J = t_x²/t_y² needs x_{d−1} of case (a) in the shift source). Listed in the
