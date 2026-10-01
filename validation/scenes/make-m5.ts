@@ -288,8 +288,10 @@ function defAddRemove(name: string, T: number, testFrames: number[], aScale: num
     const A = light('point', new Float32Array(pointM(pA)), 3, { color: [1, 0.8, 0.6] });
     const bM = rotYMatrix(c.rect.matrix, 0, [0.14, 0.53, -0.08]);
     const B = light('rect', new Float32Array(bM), 3, { sizeX: c.rect.sizeX, sizeY: c.rect.sizeY });
-    const pC: V3 = [0.12, 0.45, 0.25], dC = norm([0.55, -0.6, -1]);
-    const C = light('spot', lightToward(dC, pC), 3, { spotSize: 40 * deg, spotBlend: 0.2, color: [0.7, 0.85, 1] });
+    // C points up at the back half of the ceiling (≈ 20 cm away, cone 90°), which A (near the floor) and B (facing down)
+    // barely light: M_light:C
+    const pC: V3 = [-0.05, 0.35, 0.1], dC = norm([-0.2, 1, -0.5]);
+    const C = light('spot', lightToward(dC, pC), 6, { spotSize: 90 * deg, spotBlend: 0.2, color: [0.7, 0.85, 1] });
     await writeSequence(name, sceneOf(name, mb, mats, [A, B, C]), {
       camera: cornellCam(c), T, testFrames,
       notes: `ixs-e: A point + B rect at 1:1; C spot added at 8; A x${aScale} at 14; B removed at 20 (true add/remove: enabled flags)`,
@@ -297,7 +299,7 @@ function defAddRemove(name: string, T: number, testFrames: number[], aScale: num
         lights: {
           [A.id]: { matrix: pointM(pA), power: k >= 14 ? 3 * aScale : 3 },
           [B.id]: { matrix: bM, power: 3, enabled: k < 20 },
-          [C.id]: { matrix: Array.from(C.matrix), power: 3, enabled: k >= 8 },
+          [C.id]: { matrix: Array.from(C.matrix), power: 6, enabled: k >= 8 },
         },
       }),
       extra: { lightNames: { A: A.id, B: B.id, C: C.id } },
@@ -396,16 +398,18 @@ def('ixs_h_envrot_256', async () => {
   });
 });
 
-async function cornellOpenScene(name: string, withRect: boolean) {
+async function cornellOpenScene(name: string, withRect: boolean, rect?: { matrix: Float32Array; power: number }) {
   const c = await cornellBase();
   const { mb, mats } = cornellWith(c, { open: true, box: true });
-  const R = withRect ? [light('rect', c.rect.matrix, c.rect.power, { sizeX: c.rect.sizeX, sizeY: c.rect.sizeY })] : [];
+  const R = withRect ? [light('rect', rect?.matrix ?? c.rect.matrix, rect?.power ?? c.rect.power, { sizeX: c.rect.sizeX, sizeY: c.rect.sizeY })] : [];
   return { c, R, scene: { ...sceneOf(name, mb, mats, R), env: hdri(OVERCAST, OVERCAST_GAMMA) } as SceneData };
 }
 
 def('ixs_i_envradio_256', async () => {
   resetLightIds();
-  const { c, R, scene } = await cornellOpenScene('ixs_i_envradio_256', true);
+  // the interior rect faces the back wall from 16 cm (left of the occluder box): that wall patch is rect-dominated
+  // (M_light:R) even at env strength 2, the env dominates the rest (M_light:env)
+  const { c, R, scene } = await cornellOpenScene('ixs_i_envradio_256', true, { matrix: lightToward([0, 0, -1], [-0.15, 0.12, -0.12]), power: 4 });
   const L = R[0];
   await writeSequence('ixs_i_envradio_256', scene, {
     camera: cornellCam(c), T: 32, testFrames: [15, 16, 17, 24, 25, 30, 31],

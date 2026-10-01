@@ -655,7 +655,7 @@ function packageHashMaybe(dir: string): string | null { return existsSync(path.j
 interface MaskSet { dir: string; names: string[]; testMasks: { name: string; file: string }[]; bits: Map<number, Uint16Array> }
 
 /** dyn_masks.py for one package: mask PT refs at t and t−1 (seed 7301), the disocc harness run, dominance renders. */
-function buildMasks(pkg: string, frames: number[], add: Add, o: { partition?: boolean; dominance?: { frames: number[]; names: string[] }; sil?: boolean; tag?: string } = {}): MaskSet | undefined {
+export function buildMasks(pkg: string, frames: number[], add: Add, o: { partition?: boolean; dominance?: { frames: number[]; names: string[] }; sil?: boolean; tag?: string } = {}): MaskSet | undefined {
   const tag = o.tag ?? (o.dominance || o.sil ? 'plant' : 'gate');
   const dir = path.join(MASKS, pkg, tag);
   const partition = o.partition ?? true;

@@ -366,3 +366,10 @@ which changes only the interactive `RestirFramePass.encode`, not the batch path)
   20) — "any config change resets history" and nothing else does; temporal units on every frame; preset of the rung,
   RR off, cCap 20, jitter iid, Mode A, spatial rounds executed = rounds; maxBounces / scene bytes / resolution / env NEE /
   frame = the PT reference's.
+
+**Pilot sizing (2026-10-01, `budget.json` `m5_entries`, harness 908aa2b+).** 49 sized units = 7.0 h of chains + PT
+references (static 3.3–3.5 + U8 3.3/3.4: 2.6 h of chains; rung 3.6: 2.8 h), + Gate 0 ≈ 1.5 h, plants ≈ 1.9 h, A/A ≈ 3.2 h
+(2 × 4 × the m5s_cornell_i 3.4 chains), U8 M4 rungs ≈ 0.5 h ⇒ 14.1 h > 14 h: two parts (Q3), `--part core` ≈ 9.6 h and
+`--part static` ≈ 3.3 h. Tile enlargements by the 30-min cap: m5s_spot_grazing, glass_mirror_A, many_lights (32² → 64²);
+ixs_c_spot_b03, ixs_e_addremove (+ Talbot, E2), ixs_f_combined, ixs_i_envradio (64² → 128²). Q4 raises (global alone
+> 30 min): ixs_c_spot_b03 (43 min, R 25 488) and ixs_f_combined (31 min, R 14 432). No unit is infeasible.
