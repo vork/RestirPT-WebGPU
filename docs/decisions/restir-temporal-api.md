@@ -1334,7 +1334,26 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   Not a refresh logic error; T-B's T3-2 rare-light "LOGIC" cases (12–16 per 2·10⁶, env escapes only) are this effect.
   Options: (a) an explicit f32 bilinear in `envRadianceScaled` (4 × textureLoad, f32 weights: continuous in uv, so ulp
   jitter stays ≈ 10⁻⁷; changes the PT's env bits, U-PT-BITS / U-M4-BITS goldens re-recorded); (b) classify as
-  FP-BOUNDARY (rate-bounded) in T3-2 / T6(b). Recommendation: (a) (owner T-A, `lights/env.wgsl`).
+  FP-BOUNDARY (rate-bounded) in T3-2 / T6(b). Recommendation: (a) (owner T-A, `lights/env.wgsl`). **Resolved by C-10.**
+- **C-10 Explicit, pipeline-stable env lookup** (coordinator decision on C-9; T-C owns the `lights/env.wgsl` edit, T-A
+  finished; affects T-B T3-2 / T6(b): drop the env allowance (B-11), every env user, U-PT-BITS). `envRadianceScaled` →
+  `envTexel(uv)`: explicit f32 bilinear, x = fma(uv, (W, H), −½), i₀ = ⌊x⌋ with repeat/repeat wrap (seam and pole rows,
+  Cycles `EXTENSION_REPEAT`, ENV-U7), four `textureLoad`s, fma lerps; non-finite uv (bit test) → 0. `envToBlender`,
+  `envUV`, `envDir` use explicit fma and constant reciprocals of 2π, π (u at the exact poles stays 0.5). Measuring the
+  software bilinear alone was not enough (env-escape errors fell from 1.8·10⁻³ to 2.4·10⁻⁴, 2.5 % of records > 10⁻⁶):
+  pipelines also contracted envUV / the texel coordinate differently; with explicit fma they are bit-stable. Single path:
+  camera miss, BSDF escapes, NEE_ENV, refresh and shifts all go through `envRadiance_s` → `envTexel`; the sampler binding
+  stays in the layout (`_ = sEnv`). **Intentional env bit change:** U-PT-BITS c0s re-recorded (384b0b6b → a75ae07a);
+  U-M4-BITS (no env in (i) / (x) quads) and U-RIS-1 unchanged. Results (Chrome 154 / Metal): ENV-U7 exact weights
+  ≤ 7.2·10⁻⁸ rel (crafted 0, pole wrap exact); ENV-U7b studio_small_09 1k, 2·10⁵ uv incl. seam / poles ≤ 1.2·10⁻⁷ from an
+  f64 bilinear at the f32 texel coordinate, rgb9e5ufloat bit-identical to rgba32float (Q4 no longer applies to the
+  renderer, platform-lanes Q4 note); ENV-U2 du/dv ≤ 1.1·10⁻⁷; t3_rare_256 + studio_small_09 idempotence / cache round
+  trip / refresh vs re-trace: every technique ≤ 2.4·10⁻⁷, env escapes B1 exact, D-BSDF ≤ 1.5·10⁻⁷ (allowance removed).
+  Cycles on Metal keeps 8-bit hardware weights: per-lookup ≤ 2⁻⁹·Δtexel, zero mean over a footprint; the M3c / M4 env
+  gates are re-run at the M5 merge (math.md §5 [M5 addition]). Material textures (measured, no change): on
+  vii_textured_512 at 128², D-BSDF / D-NEE records re-evaluated in another pipeline (refresh at x_{d−1}, and a full
+  re-trace through every suffix material) vs the path tree's stored rcRad: 11 541 records, max 2.4·10⁻⁷, none > 10⁻⁶
+  (cornell_i_512 baseline 1.9·10⁻⁷), so textured vertices show no cross-pipeline jumps today.
 
 ### T-D amendments (debug views, interactive integration, boost)
 

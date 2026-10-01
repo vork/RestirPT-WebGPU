@@ -1,6 +1,6 @@
-// Shared f64 references for the env-lighting tests (M3c): Cycles-identical mapping, the GPU's bilinear repeat lookup
-// (Apple GPUs quantize the bilinear fraction to 8 bits, round to nearest — ENV-U7; Cycles on Metal uses the same
-// sampler), synthetic maps and HDRI loading for both GPU lanes.
+// Shared f64 references for the env-lighting tests (M3c): Cycles-identical mapping, the env bilinear repeat lookup
+// (M5 C-10: env.wgsl envTexel is an explicit f32 bilinear with exact weights; the hardware sampler of M3 quantized the
+// fraction to 8 bits on Apple GPUs — `bits` keeps that emulation for comparisons), synthetic maps and HDRI loading.
 import type { EnvironmentData } from '../../src/core/scene/types.ts';
 import { decodeHdr } from '../../src/core/scene/env/hdr.ts';
 
@@ -29,8 +29,9 @@ export function envDir(u: number, v: number, g: number): V3 {
   return [rx, b[2], -ry];
 }
 
-/** GPU-equivalent bilinear lookup, repeat/repeat, rows bottom-up, fraction quantized to `bits` (8 on Apple GPUs). */
-export function envLookup(env: Pick<EnvironmentData, 'texels' | 'width' | 'height'>, u: number, v: number, bits: number | undefined = 8): V3 {
+/** GPU-equivalent bilinear lookup, repeat/repeat, rows bottom-up; exact weights (env.wgsl envTexel, C-10) unless
+ *  `bits` quantizes the fraction (the M3 hardware sampler: 8 on Apple GPUs). */
+export function envLookup(env: Pick<EnvironmentData, 'texels' | 'width' | 'height'>, u: number, v: number, bits?: number): V3 {
   const W = env.width, H = env.height, t = env.texels;
   const x = u * W - 0.5, y = v * H - 0.5;
   const x0 = Math.floor(x), y0 = Math.floor(y);

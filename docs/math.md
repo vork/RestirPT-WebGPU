@@ -273,6 +273,14 @@ v  = (acos(clamp(b.z, −1, 1)) − π) / (−π)   = 1 − acos(b.z)/π
   - Sampler `repeat/repeat`, `linear/linear`, lookup `textureSampleLevel(texEnv, sEnv, (u,v), 0)`.
   - This reproduces Cycles' `EXTENSION_REPEAT` quirk: within half a texel of a pole the lookup
     blends the top and bottom rows. Do not "fix" it.
+  - **[M5 addition, restir-temporal-api.md C-10]** The lookup is an explicit f32 bilinear instead of the
+    hardware sampler: x = fma(uv, (W, H), −½), i₀ = ⌊x⌋ wrapped (repeat/repeat, as above), t = x − ⌊x⌋,
+    four `textureLoad`s and fma lerps; `envUV` / `envDir` use explicit fma and constant reciprocals of 2π, π.
+    The hardware filter quantizes t (8 bit on Apple GPUs, the same root cause as platform-lanes Q4), which made
+    ulp-level `envUV` differences between pipelines jumps of up to 2·10⁻³ in L_env on high-frequency maps, so
+    the same stored path had different F in the path tree, the refresh and the shifts. The explicit lookup is
+    continuous in uv, exact in f32 for every texel format, and bit-stable across pipelines. (Cycles on Metal
+    keeps the quantized hardware weights: a ≤ 2⁻⁹·Δtexel per-lookup difference with zero mean over a footprint.)
 - **Radiance.** `L_env(ω) = strength · tint ⊙ texel(envUV(ω))`. This one function is
   `envRadiance(uv, scale)`.
   - NEE-env samples evaluate `envRadiance(uv_sampled)` directly, with no direction round trip.

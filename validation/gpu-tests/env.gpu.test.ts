@@ -1,6 +1,8 @@
 // ENV-U2 and ENV-U7 (plan §7.4 M1; env §5), both GPU lanes.
 // ENV-U2: env.wgsl envUV/envDir vs an f64 port of Cycles direction_to_equirectangular (+ R_z(γ)·C).
-// ENV-U7: hardware bilinear + repeat/repeat (incl. the pole wrap) through env-gpu.ts + envRadiance vs a CPU emulation.
+// ENV-U7: the env bilinear + repeat/repeat (incl. the pole wrap) through env-gpu.ts + envRadiance vs an f64 reference.
+// M5 (restir-temporal-api.md Changelog C-10): envRadiance is an explicit f32 bilinear (exact weights), no longer the
+// hardware sampler (8-bit fraction on Apple GPUs); ENV-U7b checks it on a 1k HDRI and across texel formats (Q4).
 import { afterAll, describe, expect, it } from 'vitest';
 import { getTestGpu, lane, releaseTestGpu } from './device-factory.ts';
 import { composeWgsl, createCheckedShaderModule } from '../../src/core/gpu/wgsl-composer.ts';
@@ -203,7 +205,7 @@ describe(`env (${lane()})`, () => {
     for (const b of [dirBuf, uvInBuf, outUV, outDir, outDir2, prm]) b.destroy();
   });
 
-  it('ENV-U7: hardware bilinear + repeat/repeat incl. pole wrap == CPU emulation', async () => {
+  it('ENV-U7: explicit f32 bilinear + repeat/repeat incl. pole wrap == f64 reference (exact weights)', async () => {
     const { device, features, wgslLanguageFeatures } = await getTestGpu();
     const W = 8, H = 4;
     // Distinct texels, rows bottom-up (row 0 = nadir). r: 1 + c + 8r; g: 100 + 17c − 9r; b: 2^(c%4)·(r+1).
@@ -296,10 +298,65 @@ describe(`env (${lane()})`, () => {
       randomMaxRelExactWeights: Number(randMax.toExponential(3)), randomMaxRelQuantizedWeightsByBits: fit, poleWrap: { got: wrapGot, expect: wrapExpect },
       envBackgroundVsRadiance: Number(bgMax.toExponential(2)) }));
     expect(craftedMax).toBeLessThan(1e-6);
-    // Apple GPUs quantize the bilinear fraction to 8 bits (round to nearest): exact match with that emulation.
-    // Cycles on Metal uses the same hardware sampler, so this is parity, not an error; vs exact weights it is ≤ 2^-9·Δtexel.
-    expect(fit[8]).toBeLessThan(1e-6);
+    // C-10: exact weights (the M3 hardware sampler matched the 8-bit emulation instead; Cycles on Metal still does,
+    // a ≤ 2^-9·Δtexel per-lookup difference that averages out over any pixel footprint).
+    expect(randMax).toBeLessThan(1e-6);
     uvBuf.destroy(); out.destroy(); outBg.destroy(); destroyEnvResources(res);
+  });
+  it('ENV-U7b: envRadiance on studio_small_09 1k ≡ f64 bilinear at the f32 texel coordinate (seam, poles); compact formats bit-identical (Q4)', async () => {
+    const { device, features, wgslLanguageFeatures } = await getTestGpu();
+    const { loadHdri } = await import('./env-fixtures.ts');
+    const env = await loadHdri('studio_small_09_1k.hdr');
+    if (!env) { console.warn('ENV-U7b: studio_small_09_1k.hdr missing; skipped'); return; }
+    const W = env.width, H = env.height, t = env.texels;
+    const shader = composeWgsl('tests/env-u7.wgsl', { sources: { ...shaderSources, 'tests/env-u7.wgsl': U7_WGSL }, defines: envDefines(0, 0), features, wgslLanguageFeatures });
+    const module = await createCheckedShaderModule(device, shader, 'env-u7b');
+    const pipeline = await device.createComputePipelineAsync({ layout: 'auto', compute: { module, entryPoint: 'main' } });
+    const rnd = xorshift(4242);
+    const N = 200_000;
+    const uvs = new Float32Array(2 * N);
+    for (let i = 0; i < N; i++) {
+      const k = i % 4;
+      const u = k === 0 ? (rnd() - 0.5) * 4 / W : rnd();
+      const v = k === 1 ? rnd() * 1.5 / H : k === 2 ? 1 - rnd() * 1.5 / H : rnd();
+      uvs.set([u, v], 2 * i);
+    }
+    const uvBuf = device.createBuffer({ size: uvs.byteLength, usage: GPUBufferUsage.STORAGE, mappedAtCreation: true });
+    new Float32Array(uvBuf.getMappedRange()).set(uvs); uvBuf.unmap();
+    const out = device.createBuffer({ size: N * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+    const outBg = device.createBuffer({ size: N * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+    const run = async (res: Awaited<ReturnType<typeof createEnvResources>>) => {
+      const bg = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [...envBindGroupEntries(res, 0), { binding: 3, resource: { buffer: uvBuf } }, { binding: 4, resource: { buffer: out } }, { binding: 5, resource: { buffer: outBg } }] });
+      const enc = device.createCommandEncoder();
+      const pass = enc.beginComputePass(); pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.dispatchWorkgroups(Math.ceil(N / 64)); pass.end();
+      device.queue.submit([enc.finish()]);
+      return new Float32Array(await readBuffer(device, out, N * 16));
+    };
+    const f32res = await createEnvResources(device, env, 'env-u7b-f32', { format: 'rgba32float' });
+    const g = await run(f32res);
+    const at = (c: number, r: number, k: number) => t[4 * ((((r % H) + H) % H) * W + (((c % W) + W) % W)) + k];
+    let maxRel = 0;
+    for (let i = 0; i < N; i++) {
+      // reference: the f32 texel coordinate x = fl(fl(u·W) − 0.5) (as the shader forms it), f64 weights and lerps
+      const x = Math.fround(Math.fround(uvs[2 * i] * W) - 0.5), y = Math.fround(Math.fround(uvs[2 * i + 1] * H) - 0.5);
+      const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0;
+      for (let k = 0; k < 3; k++) {
+        const a = at(x0, y0, k), b = at(x0 + 1, y0, k), c = at(x0, y0 + 1, k), d = at(x0 + 1, y0 + 1, k);
+        const ref = (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
+        const m = Math.max(a, b, c, d, 1e-30);
+        maxRel = Math.max(maxRel, Math.abs(g[4 * i + k] - ref) / m);
+      }
+    }
+    const formats: Record<string, number> = {};
+    const cmp = await createEnvResources(device, env, 'env-u7b-compact', { mode: 'interactive' });   // smallest exact format
+    const gc = await run(cmp);
+    let diff = 0;
+    for (let i = 0; i < N; i++) for (let k = 0; k < 3; k++) if (gc[4 * i + k] !== g[4 * i + k]) diff++;
+    formats[cmp.format] = diff;
+    console.log('ENV-U7b', lane(), JSON.stringify({ W, H, N, maxRelVsF64AtF32Coord: Number(maxRel.toExponential(3)), compactFormatMismatches: formats }));
+    expect(maxRel).toBeLessThan(1e-6);
+    expect(diff).toBe(0);
+    uvBuf.destroy(); out.destroy(); outBg.destroy(); destroyEnvResources(f32res); destroyEnvResources(cmp);
   });
   it('env-grid overlay: axis discs, rings and horizon', async () => {
     const { device, features, wgslLanguageFeatures } = await getTestGpu();

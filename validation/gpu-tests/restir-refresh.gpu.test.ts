@@ -964,7 +964,7 @@ describe('T6(b) robust mode detects the stale-suffix plants N3 and N7 (Changelog
 
 // ------------------------------------------------------------------------------------------------ high-frequency HDRI
 
-describe('§9.3-3 / §9.3-4 on t3_rare_256 with the studio_small_09 HDRI (T-B T3-2 follow-up: D-BSDF env escapes)', () => {
+describe('§9.3-3 / §9.3-4 on t3_rare_256 with the studio_small_09 HDRI: env escapes ≤ 1e-6 (C-9 / C-10)', () => {
   it('idempotence (same frame) and refresh vs re-trace (lights moved + env rotation/strength) per technique', async () => {
     const { loadHdri } = await import('./env-fixtures.ts');
     const { T3_ENV_ID, t3Scene } = await import('../scenes/make-m4.ts');
@@ -991,7 +991,7 @@ describe('§9.3-3 / §9.3-4 on t3_rare_256 with the studio_small_09 HDRI (T-B T3
         const s = (st[key] ??= { n: 0, max: 0, bad: 0 });
         s.n++;
         if (e > s.max) { s.max = e; s.worst = `${of[OUT_WORDS * i].toExponential(5)} vs ${exp[0].toExponential(5)}`; }
-        if (e > 1e-4) s.bad++;
+        if (e > 1e-6) s.bad++;
       }
       return st;
     };
@@ -1039,20 +1039,55 @@ describe('§9.3-3 / §9.3-4 on t3_rare_256 with the studio_small_09 HDRI (T-B T3
     const rtBad = Object.values(rt).reduce((a, s) => a + s.bad, 0);
     const strip = ({ bad, n, ...rest }: CmpRep) => { void bad; void n; return rest; };
     console.log(`[t3_rare HDRI] idempotence ${JSON.stringify(idem)}\n fwd ${JSON.stringify(strip(fwd))}\n inv ${JSON.stringify(strip(inv))}\n round trip ${JSON.stringify(rt)}`);
-    // Env-escape ends (technique 3, B1 and D-BSDF) evaluate L_env(envUV(ω)) from a direction: envUV differs between
-    // pipelines at the ulp level and the hardware bilinear filter (8-bit sub-texel weights) turns that into ≤ 2·10⁻³ on
-    // a high-frequency HDRI (Changelog C-9; open). Every other technique must be exact; env escapes are bounded in rate.
-    const envKeys = (st: Record<string, { n: number; bad: number }>) => Object.entries(st).filter(([kk]) => kk.endsWith('/3'));
-    const other = (st: Record<string, { n: number; bad: number }>) => Object.entries(st).filter(([kk]) => !kk.endsWith('/3')).reduce((a, [, v]) => a + v.bad, 0);
-    const idemSt = idem as Record<string, { n: number; bad: number }>[];
-    expect(idemSt.reduce((a, st) => a + other(st), 0) + other(rt)).toBe(0);
-    const envN = [...idemSt, rt].flatMap(envKeys).reduce((a, [, v]) => a + v.n, 0), envBad = [...idemSt, rt].flatMap(envKeys).reduce((a, [, v]) => a + v.bad, 0);
-    console.log(`[t3_rare HDRI] env-escape filter flips ${envBad} / ${envN} (idempotence + round trip); idemBad ${idemBad}, rtBad ${rtBad}`);
-    expect(envBad / Math.max(envN, 1)).toBeLessThanOrEqual(5e-3);
+    // C-9 / C-10: env escapes (technique 3) evaluate L_env(envUV(ω)) from a stored direction; with the explicit f32
+    // bilinear every technique, env escapes included, is within 1e-6 of the stored cache (no allowance).
+    expect(idemBad).toBe(0);
+    expect(rtBad).toBe(0);
     for (const x of [fwd, inv]) {
       expect(x.bad.every((b) => b === 0)).toBe(true);
       expect(x.undefMismatch + x.entryBad + x.visMismatch + x.replayFail + x.idsMismatch + x.endMismatch).toBe(0);
     }
     rig.destroy();
+  });
+});
+
+// ------------------------------------------------------------------------------------------------ material textures (measurement)
+
+describe('measurement: textured vertices re-evaluated in another pipeline (vii_textured_512; coordinator C-10 item 3)', () => {
+  it('stored rcRad (path-tree pipeline) vs refresh (x_{d−1} material) and vs full re-trace (every suffix material): report', async () => {
+    const { fetchScenePackage } = await import('../../src/core/scene/scene-package.ts');
+    const W = 128, P = W * W;
+    const sources = { 'restir/rc.wgsl': TEST_RC_DR };
+    const rep: Record<string, unknown> = {};
+    for (const name of ['vii_textured_512', 'cornell_i_512']) {
+      const pkg = await fetchScenePackage(`/validation/scenes/${name}/`);
+      const rig = await restirRig(pkg.scene, W, W, {
+        preset: 'temporal', dumpCandidates: true, cam: { camToWorld: Array.from(pkg.camera.matrix), yfov: pkg.camera.yfov }, extraSources: sources,
+        settings: { maxBounces: 4 }, seed: 23,
+      });
+      const k = rig.kernel;
+      const hist = { n: 0, gt1e6: 0, gt1e5: 0, gt1e4: 0, gt1e3: 0, max: 0 };
+      const histRt = { n: 0, gt1e6: 0, gt1e5: 0, gt1e4: 0, gt1e3: 0, max: 0 };
+      const add = (h: typeof hist, e: number) => { h.n++; h.max = Math.max(h.max, e); if (e > 1e-6) h.gt1e6++; if (e > 1e-5) h.gt1e5++; if (e > 1e-4) h.gt1e4++; if (e > 1e-3) h.gt1e3++; };
+      for (let f = 0; f < 2; f++) {
+        const adv = await canonicalFrame(rig, f, pkg.scene.lights);
+        void adv;
+        const r = harvest(await k.readCandidateDump(), P);
+        const o = await runRefresh(k, r, K.RS_FS_CUR, K.RS_FS_CUR, { sources });
+        const rt = await runRetrace(k, r, k.resources.views.vbuf, K.RS_FS_CUR, K.RS_FS_CUR, sources);
+        const of = new Float32Array(o.buffer), rf = new Float32Array(rt.buffer), recF32 = new Float32Array(r.rec.buffer);
+        for (let i = 0; i < r.n; i++) {
+          const c = recClass(r, i);
+          if (c !== C.DNEE && c !== C.DBSDF) continue;
+          const b = i * RES_WORDS + RW.rcRad;
+          add(hist, rel3(of, recF32, OUT_WORDS * i, b));
+          if ((rt[OUT_WORDS * i + 4] & (16 | 4 | 32)) === 0) add(histRt, rel3(rf, recF32, OUT_WORDS * i, b));
+        }
+      }
+      rep[name] = { refreshVsStored: hist, retraceVsStored: histRt };
+      rig.destroy();
+    }
+    console.log(`[material textures] ${JSON.stringify(rep)}`);
+    expect((rep['vii_textured_512'] as { refreshVsStored: { n: number } }).refreshVsStored.n).toBeGreaterThan(100);
   });
 });

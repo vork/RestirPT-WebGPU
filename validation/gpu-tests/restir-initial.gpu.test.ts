@@ -21,8 +21,9 @@ afterAll(releaseTestGpu);
 
 // U-PT-BITS (1): hashes of 64-spp PT images (Chrome lane / Metal). Recorded on the pre-refactor tree (commit 6efd0bd:
 // c0c 10d55063, c0e 87ffe26f, c0m 2aa85291, x_quads 194ab49b, c0s 378997d3) and re-recorded on the quantized fixture
-// geometry (data-formats.md P1: lattice positions, TRI_FLAT, oct normals, vertex arena).
-const PT_BITS: Record<BitFixture, string> = { c0c: 'fbc9b735', c0e: 'beac8da6', c0m: '7302afbf', x_quads: '0d5a782a', c0s: '384b0b6b' };
+// geometry (data-formats.md P1: lattice positions, TRI_FLAT, oct normals, vertex arena). c0s re-recorded for M5 C-10
+// (restir-temporal-api.md: explicit f32 env bilinear + fma envUV, intentional env bit change; was 384b0b6b).
+const PT_BITS: Record<BitFixture, string> = { c0c: 'fbc9b735', c0e: 'beac8da6', c0m: '7302afbf', x_quads: '0d5a782a', c0s: 'a75ae07a' };
 
 describe('U-PT-BITS: the PT is bit-identical after the env-sample / length1 / bsdf_query refactors', () => {
   it('(1) image hashes of 64 spp on C0c, C0e, C0m, (x) quads, C0s', async () => {
