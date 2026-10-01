@@ -799,7 +799,9 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
     const log = path.join(dir, 'logs', `${safe(name).slice(0, 80)}.log`);
     mkdirSync(path.join(ROOT, dir, 'logs'), { recursive: true });
     writeFileSync(path.join(ROOT, log), r.out);
-    add(name, r.code === 0, r.seconds, { log, ...(env ? { env } : {}) }, `exit ${r.code}`);
+    // a vitest step whose filter (-t) matched no test exits 0 with every test skipped: that is a failure of the gate
+    const noTests = argv[0] === 'vitest' && !/\d+ passed/.test(r.out);
+    add(name, r.code === 0 && !noTests, r.seconds, { log, ...(env ? { env } : {}) }, `exit ${r.code}${noTests ? ', no test ran' : ''}`);
     return r;
   };
   const plantsOnly = !!o.plants;
@@ -830,10 +832,10 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
         });
       }
     }
-    for (const c of T32_RARE_CASES) {
+    for (const c of T32_RARE_CASES) {   // -t is a regex: the names contain "+" (escaped below)
       withGpuLockSync(`gate-m5-t32-${safe(c)}`, () => {
         runStep(`restir-temporal T3-2 ${c} (>= 1e6 per bin; LOGIC 0, FP <= 1e-5, PLATFORM 0)`, 'npx', ['vitest', 'run', ...vitestConfigArgs(), '--project', 'chrome', '--reporter=verbose', '--testTimeout', '900000',
-          'validation/gpu-tests/restir-temporal.gpu.test.ts', '-t', c], (l) => /Tests |FAIL|✗|×|AssertionError|LOGIC|FP-BOUNDARY|PLATFORM|bin/.test(l), T32_RARE_ENV);
+          'validation/gpu-tests/restir-temporal.gpu.test.ts', '-t', c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')], (l) => /Tests |FAIL|✗|×|AssertionError|LOGIC|FP-BOUNDARY|PLATFORM|bin/.test(l), T32_RARE_ENV);
       });
     }
     uTr1(dir, add);

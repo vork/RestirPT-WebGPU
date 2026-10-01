@@ -499,7 +499,9 @@ export function milestoneM4(record: Rec, o: M4Options = {}): void {
     const log = path.join(dir, 'logs', `${name.replace(/[^\w.-]+/g, '_').slice(0, 80)}.log`);
     mkdirSync(path.join(ROOT, dir, 'logs'), { recursive: true });
     writeFileSync(path.join(ROOT, log), r.out);
-    add(name, r.code === 0, r.seconds, { log, ...(env ? { env } : {}) }, `exit ${r.code}`);
+    // a vitest step whose filter (-t) matched no test exits 0 with every test skipped: that is a failure of the gate
+    const noTests = argv[0] === 'vitest' && !/\d+ passed/.test(r.out);
+    add(name, r.code === 0 && !noTests, r.seconds, { log, ...(env ? { env } : {}) }, `exit ${r.code}${noTests ? ', no test ran' : ''}`);
     return r;
   };
   const full = !o.only && !o.pilotOnly && !o.prerenderPtRefs;
