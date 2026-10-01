@@ -6,7 +6,9 @@ import { renderBatches, type RenderBatchesOptions, type RenderBatchesReport } fr
 import { renderRestirBatches, type RenderRestirBatchesOptions, type RenderRestirBatchesReport } from './restir-batch-run.ts';
 import { renderRestirChains, type RenderRestirChainsOptions, type RenderRestirChainsReport } from './restir-chain-run.ts';
 import { exportAndUpload } from './export-package.ts';
+import { renderDenoise, type RenderDenoiseOptions, type RenderDenoiseReport } from './denoise-run.ts';
 import { fetchScenePackage, type ExportScenePackageOptions } from '../../src/core/scene/scene-package.ts';
+import { denoiserT16State } from '../../src/core/render/denoise/registry.ts';
 
 export interface SmokeReport {
   ok: boolean;
@@ -31,6 +33,9 @@ export interface Harness {
   renderRestirBatches(opts: RenderRestirBatchesOptions): Promise<RenderRestirBatchesReport>;
   /** M5 (restir-temporal-api.md §6.3–§6.5): temporal chains (ensemble atlas, per-test-frame ensemble.npz). */
   renderRestirChains(opts: RenderRestirChainsOptions): Promise<RenderRestirChainsReport>;
+  /** M5.5 (docs/decisions/denoiser.md §11): the denoiser evaluation on the interactive renderer (not a validation
+   *  readback: the renderer and its denoiser are destroyed before it returns). */
+  renderDenoise(opts: RenderDenoiseOptions): Promise<RenderDenoiseReport>;
   /** M2: re-export a scene package (read from `packageUrl`) to validation/out/<run>/ (bridge round trip). */
   reexportPackage(packageUrl: string, run: string, overrides?: Partial<ExportScenePackageOptions>): Promise<{ files: string[]; sha256: string }>;
 }
@@ -59,6 +64,29 @@ async function post(path: string, body: BodyInit, contentType: string): Promise<
 export async function upload(run: string, name: string, bytes: Uint8Array): Promise<void> {
   const q = new URLSearchParams({ run, name });
   await post(`/__harness/upload?${q}`, bytes as Uint8Array<ArrayBuffer>, 'application/octet-stream');
+}
+
+/**
+ * T16 "no denoiser in validation readbacks" (PLAN §7.4; docs/decisions/denoiser.md DN4, §11): the denoiser exists only
+ * inside the interactive Renderer, which no validation runner builds. Every validation entry point runs through this
+ * wrapper: a live denoiser on the page before or after the run fails it, and the measured state replaces the run's
+ * `t16.denoiser` in meta.json (PT references gain a t16 block). The gates require 'none'.
+ */
+async function t16Denoiser<R extends { ok: boolean; run: string; meta: Record<string, unknown>; errors: string[] }>(run: string, f: () => Promise<R>): Promise<R> {
+  const before = denoiserT16State();
+  const r = await f();
+  const after = denoiserT16State();
+  const state = before === 'none' && after === 'none' ? 'none' : `ACTIVE (before: ${before}; after: ${after})`;
+  const t16 = (r.meta.t16 ?? {}) as Record<string, unknown>;
+  r.meta.t16 = { ...t16, denoiser: state, denoiserCheck: 'harness.ts: live Denoiser objects on the validation page before and after the run (render/denoise/registry.ts)' };
+  if (state !== 'none') {
+    r.errors.push(`T16: a denoiser is live on the validation page (${state})`);
+    r.ok = false;
+    r.meta.ok = false;
+    r.meta.errors = r.errors;
+  }
+  await upload(run, 'meta.json', new TextEncoder().encode(JSON.stringify(r.meta, null, 1)));
+  return r;
 }
 
 const harness: Harness = {
@@ -98,17 +126,22 @@ const harness: Harness = {
 
   async renderBatches(opts) {
     const ctx = await getContext();
-    return renderBatches(ctx, opts);
+    return t16Denoiser(opts.run, () => renderBatches(ctx, opts));
   },
 
   async renderRestirBatches(opts) {
     const ctx = await getContext();
-    return renderRestirBatches(ctx, opts);
+    return t16Denoiser(opts.run, () => renderRestirBatches(ctx, opts));
   },
 
   async renderRestirChains(opts) {
     const ctx = await getContext();
-    return renderRestirChains(ctx, opts);
+    return t16Denoiser(opts.run, () => renderRestirChains(ctx, opts));
+  },
+
+  async renderDenoise(opts) {
+    const ctx = await getContext();
+    return renderDenoise(ctx, opts);
   },
 
   async reexportPackage(packageUrl, run, overrides = {}) {

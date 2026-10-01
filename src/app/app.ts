@@ -89,6 +89,9 @@ export interface AppHooks {
   /** M5: a paused frame re-displays the last rendered frame without re-running its passes (ReSTIR with temporal on,
    *  TD20): keep the debug AOV of that frame instead of clearing it (only while the view is unchanged). */
   holdsFrameWhenPaused?(app: App): boolean;
+  /** M5.5: called right after the frame's queue.submit (before the next frame writes any uniform): the renderer's
+   *  separate denoiser timing submit (docs/decisions/denoiser.md DN9, platform-lanes.md Q3). */
+  afterSubmit?(app: App): void;
 }
 
 export interface BeforeFrameInfo {
@@ -574,6 +577,7 @@ export class App {
     this.device.queue.submit([enc.finish()]);
     this.timestamps.afterSubmit();
     this.probe.afterSubmit();
+    this.hooks.afterSubmit?.(this);
 
     this.frameCounter++;
     if (advance) {

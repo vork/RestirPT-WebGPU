@@ -34,6 +34,7 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { decodePFM, encodePFM } from '../../src/core/io/pfm.ts';
+import { denoiserT16Problems } from './t16.ts';
 import { withGpuLockSync } from './gpu-lock.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -332,6 +333,7 @@ export function t16Problems(rs: Record<string, any>, pt: Record<string, any>, o:
   if (o.plant && !(t.plantsNamed?.length > 0)) p.push('plant run without a named plant');
   if (t.internalScale !== 1) p.push(`internal scale ${t.internalScale}`);
   if (t.denoiser !== 'none' || t.upscaler !== 'none') p.push('denoiser/upscaler active');
+  p.push(...denoiserT16Problems(pt, 'PT reference', false));   // M5.5: our PT side too (pre-M5.5 caches carry no record)
   if (!/^linear /.test(t.readback ?? '')) p.push('readback is not the linear radiance (accumulation buffer / ensemble sums)');
   if (t.jitterMode !== 'iid-per-run' || rs.config?.jitter !== 'iid-per-run') p.push('jitter is not iid-per-run');
   if (pt.config?.jitter !== 'iid-per-run') p.push('PT reference jitter is not iid-per-run');
@@ -411,7 +413,7 @@ export function codeHashes(): { pt: string; restir: string; ptFiles: number; res
   return codeHashCache;
 }
 
-function packageHash(dir: string): string {
+export function packageHash(dir: string): string {
   return hashFiles(readdirSync(path.join(ROOT, dir)).filter((n) => statSync(path.join(ROOT, dir, n)).isFile()).sort().map((n) => path.join(dir, n)));
 }
 
@@ -456,7 +458,7 @@ function batchImages(dir: string, meta: Record<string, any>): PilotSide {
 
 type Add = (name: string, ok: boolean, seconds: number, data?: unknown, detail?: string) => void;
 type Rec = (name: string, ok: boolean, detail?: string) => void;
-interface Run { dir: string; meta: Record<string, any>; seconds: number; cacheHit?: boolean }
+export interface Run { dir: string; meta: Record<string, any>; seconds: number; cacheHit?: boolean }
 
 export interface M4Options {
   only?: Set<string>; pilotOnly?: boolean; writeBudget?: boolean;
@@ -700,7 +702,7 @@ export function mergeChunkMetas(metas: Record<string, any>[]): Record<string, an
  * estimate exceeds LOCK_CHUNK_S is rendered as consecutive --batch-offset chunks (one lock hold each; the same samples —
  * ReSTIR batches bitwise, PT batches up to f32 summation order, ≤ 3e-7 relative) and merged: batch files moved into `dest`, meta.json merged, mean.pfm recomputed.
  */
-function runBatches(argv: string[], run: string, dest: string, o: { B?: number; estSeconds?: number } = {}): { dir?: string; meta?: Record<string, any>; code: number; out: string; seconds: number } {
+export function runBatches(argv: string[], run: string, dest: string, o: { B?: number; estSeconds?: number } = {}): { dir?: string; meta?: Record<string, any>; code: number; out: string; seconds: number } {
   const echo = (l: string) => /^(FAIL)\s|errors:|Error|lock wait/.test(l);
   const B = o.B ?? 0, k = B && !argv.includes('--members') ? chunkBatches(B, o.estSeconds) : B;
   mkdirSync(path.dirname(path.join(ROOT, dest)), { recursive: true });
@@ -741,7 +743,7 @@ function runBatches(argv: string[], run: string, dest: string, o: { B?: number; 
   return { code: meta.ok ? 0 : 1, out, seconds, dir: dest, meta };
 }
 
-function cachedRun(cacheRoot: string, keyObj: Record<string, unknown>, label: string, argv: string[], B: number, add: Add, stepName: string, estSeconds?: number): Run | undefined {
+export function cachedRun(cacheRoot: string, keyObj: Record<string, unknown>, label: string, argv: string[], B: number, add: Add, stepName: string, estSeconds?: number): Run | undefined {
   const key = sha(stableJson(keyObj)).slice(0, 16);
   const dest = path.join(cacheRoot, `${label}-${key}`);
   const meta = tryJson(path.join(dest, 'meta.json'));
