@@ -75,6 +75,10 @@ export const UNIT_CAP_RAISED_S = 90 * 60;
 /** Plan above this ⇒ the two-part split (Q3). */
 export const SPLIT_HOURS = 14;
 export const CALIB_FACTOR = 4;
+/** Chains of a plant on a package without a gating unit (ixs_d_glossy, ixs_e_half, ixs_n4; Changelog E-12). */
+export const PLANT_ONLY_R = 4096;
+/** Gate-0 wall estimate (M5 + M4 + M3 suites incl. the 18-min T3 runs and the three T3-2 rare-bin holds, app smoke). */
+export const GATE0_EST_H = 1.5;
 /** Wall seconds per run-batches invocation outside the GPU batches (Vite + Chrome start, compiles, probe), for the plan. */
 export const INVOCATION_OVERHEAD_S = 30;
 export const STATIC = { T: 25, testFrames: [1, 24] } as const;
@@ -478,7 +482,8 @@ const noAdd: Add = () => undefined;
 function prefetch(label: string, dir: string, add: Add, fn: (a: Add) => void): void {
   collect = [];
   try { fn(noAdd); } finally { /* keep what was collected */ }
-  const jobs = collect;
+  // the same render can be requested twice in one pass (frame t's reference is frame t+1's t−1 reference): once
+  const jobs = [...new Map(collect.map((j) => [j.label, j])).values()];
   collect = undefined;
   if (!jobs.length) return;
   const groups: Job[][] = [];
@@ -862,14 +867,16 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
   // + a per-invocation overhead (Vite + Chrome start, pipeline compiles, chunking probe): one per lock chunk
   const invocations = units.reduce((a, u) => a + chainChunks(u.R || E_MEMBERS, E_MEMBERS, u.chainSeconds * 1.2).length, 0) + [...ptPlans.values()].reduce((a, p) => a + Math.ceil(p.B / chunkBatches(p.B, p.seconds * 1.2)), 0);
   const planHours = (units.reduce((a, u) => a + u.chainSeconds, 0) + [...ptPlans.values()].reduce((a, p) => a + p.seconds, 0) + INVOCATION_OVERHEAD_S * invocations) / 3600;
+  const extra = planExtras(units, doCore, doStatic);
   const sizing = { units: units.map((u) => ({ id: u.id, R: u.R, frames: u.frames, testFrames: u.testFrames, tile: u.tile, minutes: r4(u.chainSeconds / 60), msPerChain: r4(u.msPerChain), cap: u.cap, notes: u.notes })),
-    pt: [...ptPlans.values()].map((p) => ({ ...p, minutes: r4(p.seconds / 60) })), planHours: r4(planHours), split: planHours > SPLIT_HOURS, pilots: pilotDirs };
+    pt: [...ptPlans.values()].map((p) => ({ ...p, minutes: r4(p.seconds / 60) })), planHours: r4(planHours), extras: extra, totalHours: r4(planHours + extra.hours),
+    split: planHours + extra.hours > SPLIT_HOURS, pilots: pilotDirs };
   writeFileSync(path.join(ROOT, dir, 'sizing.json'), `${JSON.stringify(sizing, null, 1)}\n`);
-  add(`M5 plan: ${units.length} units, ${r4(planHours)} h of chains + PT references${planHours > SPLIT_HOURS ? ` > ${SPLIT_HOURS} h: run as --part core + --part static (Q3)` : ''}`,
+  add(`M5 plan: ${units.length} units, ${r4(planHours)} h of chains + PT references, + ${r4(extra.hours)} h (Gate 0, plants, A/A, U8 M4 rungs) = ${r4(planHours + extra.hours)} h${planHours + extra.hours > SPLIT_HOURS ? ` > ${SPLIT_HOURS} h: run as --part core + --part static (Q3)` : ''}`,
     !units.some((u) => u.cap === 'infeasible'), 0, sizing, units.filter((u) => u.cap === 'infeasible').map((u) => `${u.id} infeasible (Q4: escalate)`).join('; ') || undefined);
   const budget = budgetRows(units, ptPlans);
   writeFileSync(path.join(ROOT, dir, 'budget-m5.json'), `${JSON.stringify(budget, null, 1)}\n`);
-  if (o.writeBudget) mergeBudget(budget, runId, planHours, add);
+  if (o.writeBudget) mergeBudget(budget, runId, planHours + extra.hours, add);
   if (full && doCore) budgetRowsPresent(add);
 
   const results: Record<string, any>[] = [];
@@ -1037,7 +1044,8 @@ function sizeAll(units: UnitPlan[], ptPlans: Map<string, PtPlan>, pilotDirs: Rec
       const c = res.z.chains[u.id], dd = dec(u.id);
       u.R = c.R; u.chainSeconds = c.seconds; u.msPerChain = c.msPerChain; u.tile = tile;
       u.cap = dd.status === 'enlarge' ? 'ok' : dd.status;
-      if (dd.status === 'raised') u.notes.push(`global aggregate needs > ${UNIT_CAP_S / 60} min: cap raised once to ${UNIT_CAP_RAISED_S / 60} min (Q4)`);
+      const gmin = (res.zg.chains[u.id].seconds / 60).toFixed(1);
+      if (dd.status === 'raised') u.notes.push(`${(c.seconds / 60).toFixed(1)} min > ${UNIT_CAP_S / 60} min after the tile enlargement (global aggregate alone: ${gmin} min): cap raised once to ${UNIT_CAP_RAISED_S / 60} min (Q4)`);
       if (dd.status === 'infeasible') u.notes.push(`infeasible within ${UNIT_CAP_RAISED_S / 60} min: escalated to the coordinator (Q4)`);
     }
     for (const [f, p] of Object.entries(res.z.pt)) {
@@ -1062,6 +1070,25 @@ function ptPilotSideTile(pkg: string, frame: number | undefined, tile: number, a
 }
 
 const ptSizeFile = (pkg: string, frame: number | undefined) => path.join(M5_OUT, 'ptsize', `${pkg}-f${frame ?? 'base'}-${codeHashes().pt.slice(0, 16)}-${packageHash(pkgDir(pkg)).slice(0, 16)}.json`);
+
+/** Plan estimate of the parts that are not sized units: Gate 0, plants (their base unit's chains for the frames up to
+ *  the last predicted one; plant-only packages at PLANT_ONLY_R with the median ms per member-frame), A/A (2 × 4× the
+ *  m5s_cornell_i 3.4 chains), U8 M4 rungs (≈ 5 min per scene). Hours. */
+export function planExtras(units: { id: string; pkg: string; rung: string; kind: string; variant?: string; frames: number; msPerChain: number; chainSeconds: number }[], core = true, stat = true): { gate0: number; plants: number; aa: number; u8m4: number; hours: number } {
+  const rates = units.filter((u) => u.msPerChain > 0).map((u) => u.msPerChain / u.frames).sort((a, b) => a - b);
+  const msPerMemberFrame = rates.length ? rates[Math.floor(rates.length / 2)] : 3;
+  let plants = 0;
+  for (const p of M5_PLANTS) {
+    const last = Math.max(...p.predict.map((x) => x.frame)) + 1;
+    const base = units.find((u) => u.pkg === p.pkg && (p.rung === '3.4' ? u.rung === '3.4' : u.kind === 'dyn' && u.variant === 'base'));
+    plants += base ? base.chainSeconds * Math.min(1, last / base.frames) : (PLANT_ONLY_R * last * msPerMemberFrame) / 1000;
+  }
+  const aaU = units.find((u) => u.pkg === AA_PKG && u.rung === '3.4');
+  const aa = aaU ? 2 * CALIB_FACTOR * aaU.chainSeconds : 0;
+  const gate0 = GATE0_EST_H * 3600, u8m4 = U8_SCENES.length * 300;
+  const hours = ((core ? gate0 + plants + aa : 0) + (stat ? u8m4 : 0)) / 3600;
+  return { gate0: r4(gate0 / 3600) as number, plants: r4(plants / 3600) as number, aa: r4(aa / 3600) as number, u8m4: r4(u8m4 / 3600) as number, hours };
+}
 
 // ---- running and comparing a unit -------------------------------------------------------------------------------------------
 
@@ -1200,7 +1227,7 @@ function runPlant(p: PlantSpec, units: UnitPlan[], ptPlans: Map<string, PtPlan>,
   const seq = M5_SEQUENCES.find((s) => s.pkg === p.pkg);
   const staticScene = !seq;
   const base = units.find((u) => u.pkg === p.pkg && (p.rung === '3.4' ? u.rung === '3.4' : u.kind === 'dyn' && u.variant === 'base'));
-  const R = base?.R ?? R_FLOOR;
+  const R = base?.R ?? PLANT_ONLY_R;
   const data: Record<string, any> = { unit: `plant-${p.id}`, kind: 'plant', scene: p.pkg, rung: p.rung, plant: p.name, ok: false };
   // masks: partition (dyn) + dominance regions
   let maskDir: string | undefined;

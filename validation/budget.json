@@ -1356,5 +1356,1737 @@
       "tile": 32,
       "aggregate_enlarged": false
     }
+  ],
+  "m5_method": "M5 gate sizing (gate-m5.ts): pilots PT 128 spp x 16 per (package, frame) and 64 chains per unit (E = 16, 256²) in headless Chrome; ms = wall time incl. readback; sizes = PLAN §7.3 rule per test frame and aggregate (incl. mask regions) x1.25, R >= 256 (3.5: 64), multiples of 16; PT spp niceCeil per batch >= 256",
+  "m5_measured_at": "2026-10-01T04:14:19.975Z",
+  "m5_run": "m5-gate-20261001-041411",
+  "m5_plan_hours": 15.99,
+  "m5_entries": [
+    {
+      "unit": "m5s_cornell_i@3.3",
+      "scene": "m5s_cornell_i",
+      "rung": "3.3",
+      "preset": "temporal",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 26624,
+      "members": 16,
+      "ms_per_chain": 37.78,
+      "ms_per_member_frame": 1.511,
+      "chain_min": 16.77,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "m5s_cornell_i@3.4",
+      "scene": "m5s_cornell_i",
+      "rung": "3.4",
+      "preset": "full",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 27760,
+      "members": 16,
+      "ms_per_chain": 52.08,
+      "ms_per_member_frame": 2.083,
+      "chain_min": 24.09,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "m5s_cornell_i@3.5",
+      "scene": "m5s_cornell_i",
+      "rung": "3.5",
+      "preset": "full",
+      "variant": null,
+      "frames": 288,
+      "test_frames": [],
+      "chains": 1184,
+      "members": 16,
+      "ms_per_chain": 589.6,
+      "ms_per_member_frame": 2.047,
+      "chain_min": 11.63,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "m5s_spot_grazing@3.3",
+      "scene": "m5s_spot_grazing",
+      "rung": "3.3",
+      "preset": "temporal",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 14416,
+      "members": 16,
+      "ms_per_chain": 23.13,
+      "ms_per_member_frame": 0.9254,
+      "chain_min": 5.558,
+      "tile": 64,
+      "cap": "ok",
+      "notes": [
+        "tile aggregate enlarged to 64² (unit cap 30 min; at 32²: R 251248, 97 min)"
+      ]
+    },
+    {
+      "unit": "m5s_spot_grazing@3.4",
+      "scene": "m5s_spot_grazing",
+      "rung": "3.4",
+      "preset": "full",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 14928,
+      "members": 16,
+      "ms_per_chain": 39.66,
+      "ms_per_member_frame": 1.586,
+      "chain_min": 9.868,
+      "tile": 64,
+      "cap": "ok",
+      "notes": [
+        "tile aggregate enlarged to 64² (unit cap 30 min; at 32²: R 231488, 153 min)"
+      ]
+    },
+    {
+      "unit": "m5s_glossy_v1@3.3",
+      "scene": "m5s_glossy_v1",
+      "rung": "3.3",
+      "preset": "temporal",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 8288,
+      "members": 16,
+      "ms_per_chain": 52.56,
+      "ms_per_member_frame": 2.102,
+      "chain_min": 7.26,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "m5s_glossy_v1@3.4",
+      "scene": "m5s_glossy_v1",
+      "rung": "3.4",
+      "preset": "full",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 8064,
+      "members": 16,
+      "ms_per_chain": 76.12,
+      "ms_per_member_frame": 3.045,
+      "chain_min": 10.23,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "m5s_glossy_v1@3.5",
+      "scene": "m5s_glossy_v1",
+      "rung": "3.5",
+      "preset": "full",
+      "variant": null,
+      "frames": 288,
+      "test_frames": [],
+      "chains": 432,
+      "members": 16,
+      "ms_per_chain": 870,
+      "ms_per_member_frame": 3.021,
+      "chain_min": 6.264,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "m5s_glass_mirror_A@3.3",
+      "scene": "m5s_glass_mirror_A",
+      "rung": "3.3",
+      "preset": "temporal",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 2592,
+      "members": 16,
+      "ms_per_chain": 54.72,
+      "ms_per_member_frame": 2.189,
+      "chain_min": 2.364,
+      "tile": 64,
+      "cap": "ok",
+      "notes": [
+        "tile aggregate enlarged to 64² (unit cap 30 min; at 32²: R 47200, 43 min)"
+      ]
+    },
+    {
+      "unit": "m5s_glass_mirror_A@3.4",
+      "scene": "m5s_glass_mirror_A",
+      "rung": "3.4",
+      "preset": "full",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 928,
+      "members": 16,
+      "ms_per_chain": 77.76,
+      "ms_per_member_frame": 3.11,
+      "chain_min": 1.203,
+      "tile": 64,
+      "cap": "ok",
+      "notes": [
+        "tile aggregate enlarged to 64² (unit cap 30 min; at 32²: R 12048, 16 min)"
+      ]
+    },
+    {
+      "unit": "m5s_many_lights@3.3",
+      "scene": "m5s_many_lights",
+      "rung": "3.3",
+      "preset": "temporal",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 6352,
+      "members": 16,
+      "ms_per_chain": 27.01,
+      "ms_per_member_frame": 1.08,
+      "chain_min": 2.859,
+      "tile": 64,
+      "cap": "ok",
+      "notes": [
+        "tile aggregate enlarged to 64² (unit cap 30 min; at 32²: R 14366000, 6467 min)"
+      ]
+    },
+    {
+      "unit": "m5s_many_lights@3.4",
+      "scene": "m5s_many_lights",
+      "rung": "3.4",
+      "preset": "full",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 7840,
+      "members": 16,
+      "ms_per_chain": 45.42,
+      "ms_per_member_frame": 1.817,
+      "chain_min": 5.935,
+      "tile": 64,
+      "cap": "ok",
+      "notes": [
+        "tile aggregate enlarged to 64² (unit cap 30 min; at 32²: R 4626880, 3503 min)"
+      ]
+    },
+    {
+      "unit": "m5s_alpha_foliage@3.3",
+      "scene": "m5s_alpha_foliage",
+      "rung": "3.3",
+      "preset": "temporal",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 8208,
+      "members": 16,
+      "ms_per_chain": 13.33,
+      "ms_per_member_frame": 0.5331,
+      "chain_min": 1.823,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "m5s_alpha_foliage@3.4",
+      "scene": "m5s_alpha_foliage",
+      "rung": "3.4",
+      "preset": "full",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 14336,
+      "members": 16,
+      "ms_per_chain": 23.18,
+      "ms_per_member_frame": 0.9272,
+      "chain_min": 5.538,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "m5s_c0q_openbox_b13@3.3",
+      "scene": "m5s_c0q_openbox_b13",
+      "rung": "3.3",
+      "preset": "temporal",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 864,
+      "members": 16,
+      "ms_per_chain": 21.8,
+      "ms_per_member_frame": 0.8722,
+      "chain_min": 0.314,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "m5s_c0q_openbox_b13@3.4",
+      "scene": "m5s_c0q_openbox_b13",
+      "rung": "3.4",
+      "preset": "full",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 1120,
+      "members": 16,
+      "ms_per_chain": 33.22,
+      "ms_per_member_frame": 1.329,
+      "chain_min": 0.62,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "m5s_overcast_rect_b3@3.3",
+      "scene": "m5s_overcast_rect_b3",
+      "rung": "3.3",
+      "preset": "temporal",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 5648,
+      "members": 16,
+      "ms_per_chain": 37.44,
+      "ms_per_member_frame": 1.497,
+      "chain_min": 3.524,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "m5s_overcast_rect_b3@3.4",
+      "scene": "m5s_overcast_rect_b3",
+      "rung": "3.4",
+      "preset": "full",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 4416,
+      "members": 16,
+      "ms_per_chain": 57.83,
+      "ms_per_member_frame": 2.313,
+      "chain_min": 4.256,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "m5s_overcast_rect_b3@3.5",
+      "scene": "m5s_overcast_rect_b3",
+      "rung": "3.5",
+      "preset": "full",
+      "variant": null,
+      "frames": 288,
+      "test_frames": [],
+      "chains": 352,
+      "members": 16,
+      "ms_per_chain": 685.7,
+      "ms_per_member_frame": 2.381,
+      "chain_min": 4.023,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "u8_c0c_point_b0@3.3",
+      "scene": "u8_c0c_point_b0",
+      "rung": "3.3",
+      "preset": "temporal",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 256,
+      "members": 16,
+      "ms_per_chain": 14.57,
+      "ms_per_member_frame": 0.5826,
+      "chain_min": 0.06215,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "u8_c0c_point_b0@3.4",
+      "scene": "u8_c0c_point_b0",
+      "rung": "3.4",
+      "preset": "full",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 256,
+      "members": 16,
+      "ms_per_chain": 32.39,
+      "ms_per_member_frame": 1.296,
+      "chain_min": 0.1382,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "u8_c0c_point_b1@3.3",
+      "scene": "u8_c0c_point_b1",
+      "rung": "3.3",
+      "preset": "temporal",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 2784,
+      "members": 16,
+      "ms_per_chain": 19.98,
+      "ms_per_member_frame": 0.7991,
+      "chain_min": 0.9269,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "u8_c0c_point_b1@3.4",
+      "scene": "u8_c0c_point_b1",
+      "rung": "3.4",
+      "preset": "full",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 1760,
+      "members": 16,
+      "ms_per_chain": 37.28,
+      "ms_per_member_frame": 1.491,
+      "chain_min": 1.094,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "u8_c0d_spot_b0@3.3",
+      "scene": "u8_c0d_spot_b0",
+      "rung": "3.3",
+      "preset": "temporal",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 2016,
+      "members": 16,
+      "ms_per_chain": 12.36,
+      "ms_per_member_frame": 0.4944,
+      "chain_min": 0.4153,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "u8_c0d_spot_b0@3.4",
+      "scene": "u8_c0d_spot_b0",
+      "rung": "3.4",
+      "preset": "full",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 384,
+      "members": 16,
+      "ms_per_chain": 20.03,
+      "ms_per_member_frame": 0.801,
+      "chain_min": 0.1282,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "u8_c0d_spot_b1@3.3",
+      "scene": "u8_c0d_spot_b1",
+      "rung": "3.3",
+      "preset": "temporal",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 19536,
+      "members": 16,
+      "ms_per_chain": 16.46,
+      "ms_per_member_frame": 0.6582,
+      "chain_min": 5.358,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "u8_c0d_spot_b1@3.4",
+      "scene": "u8_c0d_spot_b1",
+      "rung": "3.4",
+      "preset": "full",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 17728,
+      "members": 16,
+      "ms_per_chain": 35.72,
+      "ms_per_member_frame": 1.429,
+      "chain_min": 10.55,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "u8_c0e_rect_b0@3.3",
+      "scene": "u8_c0e_rect_b0",
+      "rung": "3.3",
+      "preset": "temporal",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 1760,
+      "members": 16,
+      "ms_per_chain": 13.52,
+      "ms_per_member_frame": 0.541,
+      "chain_min": 0.3967,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "u8_c0e_rect_b0@3.4",
+      "scene": "u8_c0e_rect_b0",
+      "rung": "3.4",
+      "preset": "full",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 432,
+      "members": 16,
+      "ms_per_chain": 24.5,
+      "ms_per_member_frame": 0.98,
+      "chain_min": 0.1764,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "u8_c0e_rect_b1@3.3",
+      "scene": "u8_c0e_rect_b1",
+      "rung": "3.3",
+      "preset": "temporal",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 14224,
+      "members": 16,
+      "ms_per_chain": 19.1,
+      "ms_per_member_frame": 0.7642,
+      "chain_min": 4.529,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "u8_c0e_rect_b1@3.4",
+      "scene": "u8_c0e_rect_b1",
+      "rung": "3.4",
+      "preset": "full",
+      "variant": null,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "chains": 13296,
+      "members": 16,
+      "ms_per_chain": 37.15,
+      "ms_per_member_frame": 1.486,
+      "chain_min": 8.232,
+      "tile": 32,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "ixs_a_point_256@3.6",
+      "scene": "ixs_a_point_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "base",
+      "frames": 81,
+      "test_frames": [
+        1,
+        10,
+        25,
+        40,
+        80
+      ],
+      "chains": 11488,
+      "members": 16,
+      "ms_per_chain": 230.3,
+      "ms_per_member_frame": 2.843,
+      "chain_min": 44.1,
+      "tile": 128,
+      "cap": "raised",
+      "notes": [
+        "tile aggregate enlarged to 128² (unit cap 30 min; at 64²: R 17344, 67 min)",
+        "44.1 min > 30 min after the tile enlargement (global aggregate alone: 44.1 min): cap raised once to 90 min (Q4)"
+      ]
+    },
+    {
+      "unit": "ixs_b_area_256@3.6",
+      "scene": "ixs_b_area_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "base",
+      "frames": 41,
+      "test_frames": [
+        15,
+        16,
+        17,
+        24,
+        25,
+        40
+      ],
+      "chains": 2656,
+      "members": 16,
+      "ms_per_chain": 124.3,
+      "ms_per_member_frame": 3.032,
+      "chain_min": 5.503,
+      "tile": 64,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "ixs_c_spot_b0_256@3.6",
+      "scene": "ixs_c_spot_b0_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "base",
+      "frames": 41,
+      "test_frames": [
+        5,
+        20,
+        40
+      ],
+      "chains": 10080,
+      "members": 16,
+      "ms_per_chain": 101,
+      "ms_per_member_frame": 2.464,
+      "chain_min": 16.97,
+      "tile": 64,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "ixs_c_spot_b03_256@3.6",
+      "scene": "ixs_c_spot_b03_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "base",
+      "frames": 41,
+      "test_frames": [
+        5,
+        20,
+        40
+      ],
+      "chains": 25488,
+      "members": 16,
+      "ms_per_chain": 100.7,
+      "ms_per_member_frame": 2.455,
+      "chain_min": 42.76,
+      "tile": 128,
+      "cap": "raised",
+      "notes": [
+        "tile aggregate enlarged to 128² (unit cap 30 min; at 64²: R 28416, 48 min)",
+        "42.8 min > 30 min after the tile enlargement (global aggregate alone: 42.8 min): cap raised once to 90 min (Q4)"
+      ]
+    },
+    {
+      "unit": "ixs_d_camera_256@3.6",
+      "scene": "ixs_d_camera_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "base",
+      "frames": 65,
+      "test_frames": [
+        8,
+        16,
+        24,
+        32,
+        40,
+        48,
+        56,
+        64
+      ],
+      "chains": 784,
+      "members": 16,
+      "ms_per_chain": 179.9,
+      "ms_per_member_frame": 2.767,
+      "chain_min": 2.35,
+      "tile": 64,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "ixs_d0_jitter_256@3.6",
+      "scene": "ixs_d0_jitter_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "base",
+      "frames": 65,
+      "test_frames": [
+        8,
+        32,
+        64
+      ],
+      "chains": 1824,
+      "members": 16,
+      "ms_per_chain": 158.8,
+      "ms_per_member_frame": 2.443,
+      "chain_min": 4.828,
+      "tile": 64,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "ixs_e_addremove_256@3.6",
+      "scene": "ixs_e_addremove_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "base",
+      "frames": 41,
+      "test_frames": [
+        8,
+        9,
+        14,
+        15,
+        20,
+        21,
+        40
+      ],
+      "chains": 12128,
+      "members": 16,
+      "ms_per_chain": 102.5,
+      "ms_per_member_frame": 2.5,
+      "chain_min": 20.72,
+      "tile": 64,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "ixs_f_combined_256@3.6",
+      "scene": "ixs_f_combined_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "base",
+      "frames": 49,
+      "test_frames": [
+        8,
+        24,
+        25,
+        40,
+        48
+      ],
+      "chains": 14432,
+      "members": 16,
+      "ms_per_chain": 130.7,
+      "ms_per_member_frame": 2.668,
+      "chain_min": 31.44,
+      "tile": 128,
+      "cap": "raised",
+      "notes": [
+        "tile aggregate enlarged to 128² (unit cap 30 min; at 64²: R 14432, 31 min)",
+        "31.4 min > 30 min after the tile enlargement (global aggregate alone: 31.4 min): cap raised once to 90 min (Q4)"
+      ]
+    },
+    {
+      "unit": "ixs_g_sun_256@3.6",
+      "scene": "ixs_g_sun_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "base",
+      "frames": 49,
+      "test_frames": [
+        8,
+        24,
+        48
+      ],
+      "chains": 272,
+      "members": 16,
+      "ms_per_chain": 78.07,
+      "ms_per_member_frame": 1.593,
+      "chain_min": 0.3539,
+      "tile": 64,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "ixs_h_envrot_256@3.6",
+      "scene": "ixs_h_envrot_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "base",
+      "frames": 41,
+      "test_frames": [
+        1,
+        10,
+        25,
+        40
+      ],
+      "chains": 480,
+      "members": 16,
+      "ms_per_chain": 129.7,
+      "ms_per_member_frame": 3.162,
+      "chain_min": 1.037,
+      "tile": 64,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "ixs_i_envradio_256@3.6",
+      "scene": "ixs_i_envradio_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "base",
+      "frames": 32,
+      "test_frames": [
+        15,
+        16,
+        17,
+        24,
+        25,
+        30,
+        31
+      ],
+      "chains": 528,
+      "members": 16,
+      "ms_per_chain": 82.67,
+      "ms_per_member_frame": 2.583,
+      "chain_min": 0.7275,
+      "tile": 64,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "ixs_j_envcombo_256@3.6",
+      "scene": "ixs_j_envcombo_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "base",
+      "frames": 41,
+      "test_frames": [
+        8,
+        24,
+        40
+      ],
+      "chains": 2448,
+      "members": 16,
+      "ms_per_chain": 127.6,
+      "ms_per_member_frame": 3.112,
+      "chain_min": 5.205,
+      "tile": 64,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "ixs_k_envswap_256@3.6",
+      "scene": "ixs_k_envswap_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "base",
+      "frames": 29,
+      "test_frames": [
+        19,
+        20,
+        21,
+        28
+      ],
+      "chains": 256,
+      "members": 16,
+      "ms_per_chain": 73.95,
+      "ms_per_member_frame": 2.55,
+      "chain_min": 0.3155,
+      "tile": 64,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "ixs_b_area_256@3.6-talbot",
+      "scene": "ixs_b_area_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "talbot",
+      "frames": 41,
+      "test_frames": [
+        15,
+        16,
+        17,
+        24,
+        25,
+        40
+      ],
+      "chains": 992,
+      "members": 16,
+      "ms_per_chain": 145.1,
+      "ms_per_member_frame": 3.539,
+      "chain_min": 2.399,
+      "tile": 64,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "ixs_b_area_256@3.6-e2",
+      "scene": "ixs_b_area_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "e2",
+      "frames": 41,
+      "test_frames": [
+        15,
+        16,
+        17,
+        24,
+        25,
+        40
+      ],
+      "chains": 3008,
+      "members": 16,
+      "ms_per_chain": 122.3,
+      "ms_per_member_frame": 2.982,
+      "chain_min": 6.129,
+      "tile": 64,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "ixs_e_addremove_256@3.6-talbot",
+      "scene": "ixs_e_addremove_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "talbot",
+      "frames": 41,
+      "test_frames": [
+        8,
+        9,
+        14,
+        15,
+        20,
+        21,
+        40
+      ],
+      "chains": 10848,
+      "members": 16,
+      "ms_per_chain": 111.7,
+      "ms_per_member_frame": 2.724,
+      "chain_min": 20.19,
+      "tile": 64,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "ixs_e_addremove_256@3.6-e2",
+      "scene": "ixs_e_addremove_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "e2",
+      "frames": 41,
+      "test_frames": [
+        8,
+        9,
+        14,
+        15,
+        20,
+        21,
+        40
+      ],
+      "chains": 10832,
+      "members": 16,
+      "ms_per_chain": 98.94,
+      "ms_per_member_frame": 2.413,
+      "chain_min": 17.86,
+      "tile": 64,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "ixs_d_camera_256@3.6-boost",
+      "scene": "ixs_d_camera_256",
+      "rung": "3.6",
+      "preset": "full",
+      "variant": "boost",
+      "frames": 65,
+      "test_frames": [
+        8,
+        16,
+        24,
+        32,
+        40,
+        48,
+        56,
+        64
+      ],
+      "chains": 832,
+      "members": 16,
+      "ms_per_chain": 184.1,
+      "ms_per_member_frame": 2.833,
+      "chain_min": 2.553,
+      "tile": 64,
+      "cap": "ok",
+      "notes": []
+    },
+    {
+      "unit": "pt:m5s_cornell_i:base",
+      "scene": "m5s_cornell_i",
+      "rung": "pt",
+      "frame": null,
+      "pt_spp": 8192,
+      "B": 16,
+      "pt_min": 1.383
+    },
+    {
+      "unit": "pt:m5s_spot_grazing:base",
+      "scene": "m5s_spot_grazing",
+      "rung": "pt",
+      "frame": null,
+      "pt_spp": 14336,
+      "B": 16,
+      "pt_min": 1.198
+    },
+    {
+      "unit": "pt:m5s_glossy_v1:base",
+      "scene": "m5s_glossy_v1",
+      "rung": "pt",
+      "frame": null,
+      "pt_spp": 10240,
+      "B": 16,
+      "pt_min": 2.663
+    },
+    {
+      "unit": "pt:m5s_glass_mirror_A:base",
+      "scene": "m5s_glass_mirror_A",
+      "rung": "pt",
+      "frame": null,
+      "pt_spp": 640,
+      "B": 16,
+      "pt_min": 0.1864
+    },
+    {
+      "unit": "pt:m5s_many_lights:base",
+      "scene": "m5s_many_lights",
+      "rung": "pt",
+      "frame": null,
+      "pt_spp": 6144,
+      "B": 16,
+      "pt_min": 0.7846
+    },
+    {
+      "unit": "pt:m5s_alpha_foliage:base",
+      "scene": "m5s_alpha_foliage",
+      "rung": "pt",
+      "frame": null,
+      "pt_spp": 3584,
+      "B": 16,
+      "pt_min": 0.174
+    },
+    {
+      "unit": "pt:m5s_c0q_openbox_b13:base",
+      "scene": "m5s_c0q_openbox_b13",
+      "rung": "pt",
+      "frame": null,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.03174
+    },
+    {
+      "unit": "pt:m5s_overcast_rect_b3:base",
+      "scene": "m5s_overcast_rect_b3",
+      "rung": "pt",
+      "frame": null,
+      "pt_spp": 2560,
+      "B": 16,
+      "pt_min": 0.5007
+    },
+    {
+      "unit": "pt:u8_c0c_point_b0:base",
+      "scene": "u8_c0c_point_b0",
+      "rung": "pt",
+      "frame": null,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.00831
+    },
+    {
+      "unit": "pt:u8_c0c_point_b1:base",
+      "scene": "u8_c0c_point_b1",
+      "rung": "pt",
+      "frame": null,
+      "pt_spp": 4096,
+      "B": 16,
+      "pt_min": 0.1735
+    },
+    {
+      "unit": "pt:u8_c0d_spot_b0:base",
+      "scene": "u8_c0d_spot_b0",
+      "rung": "pt",
+      "frame": null,
+      "pt_spp": 448,
+      "B": 16,
+      "pt_min": 0.01066
+    },
+    {
+      "unit": "pt:u8_c0d_spot_b1:base",
+      "scene": "u8_c0d_spot_b1",
+      "rung": "pt",
+      "frame": null,
+      "pt_spp": 28672,
+      "B": 16,
+      "pt_min": 1.125
+    },
+    {
+      "unit": "pt:u8_c0e_rect_b0:base",
+      "scene": "u8_c0e_rect_b0",
+      "rung": "pt",
+      "frame": null,
+      "pt_spp": 1280,
+      "B": 16,
+      "pt_min": 0.038
+    },
+    {
+      "unit": "pt:u8_c0e_rect_b1:base",
+      "scene": "u8_c0e_rect_b1",
+      "rung": "pt",
+      "frame": null,
+      "pt_spp": 20480,
+      "B": 16,
+      "pt_min": 0.8139
+    },
+    {
+      "unit": "pt:ixs_a_point_256:1",
+      "scene": "ixs_a_point_256",
+      "rung": "pt",
+      "frame": 1,
+      "pt_spp": 1792,
+      "B": 16,
+      "pt_min": 0.3126
+    },
+    {
+      "unit": "pt:ixs_a_point_256:10",
+      "scene": "ixs_a_point_256",
+      "rung": "pt",
+      "frame": 10,
+      "pt_spp": 3072,
+      "B": 16,
+      "pt_min": 0.539
+    },
+    {
+      "unit": "pt:ixs_a_point_256:25",
+      "scene": "ixs_a_point_256",
+      "rung": "pt",
+      "frame": 25,
+      "pt_spp": 3584,
+      "B": 16,
+      "pt_min": 0.6437
+    },
+    {
+      "unit": "pt:ixs_a_point_256:40",
+      "scene": "ixs_a_point_256",
+      "rung": "pt",
+      "frame": 40,
+      "pt_spp": 2048,
+      "B": 16,
+      "pt_min": 0.3581
+    },
+    {
+      "unit": "pt:ixs_a_point_256:80",
+      "scene": "ixs_a_point_256",
+      "rung": "pt",
+      "frame": 80,
+      "pt_spp": 320,
+      "B": 16,
+      "pt_min": 0.05587
+    },
+    {
+      "unit": "pt:ixs_b_area_256:15",
+      "scene": "ixs_b_area_256",
+      "rung": "pt",
+      "frame": 15,
+      "pt_spp": 384,
+      "B": 16,
+      "pt_min": 0.06735
+    },
+    {
+      "unit": "pt:ixs_b_area_256:16",
+      "scene": "ixs_b_area_256",
+      "rung": "pt",
+      "frame": 16,
+      "pt_spp": 384,
+      "B": 16,
+      "pt_min": 0.06832
+    },
+    {
+      "unit": "pt:ixs_b_area_256:17",
+      "scene": "ixs_b_area_256",
+      "rung": "pt",
+      "frame": 17,
+      "pt_spp": 384,
+      "B": 16,
+      "pt_min": 0.068
+    },
+    {
+      "unit": "pt:ixs_b_area_256:24",
+      "scene": "ixs_b_area_256",
+      "rung": "pt",
+      "frame": 24,
+      "pt_spp": 384,
+      "B": 16,
+      "pt_min": 0.06758
+    },
+    {
+      "unit": "pt:ixs_b_area_256:25",
+      "scene": "ixs_b_area_256",
+      "rung": "pt",
+      "frame": 25,
+      "pt_spp": 384,
+      "B": 16,
+      "pt_min": 0.06694
+    },
+    {
+      "unit": "pt:ixs_b_area_256:40",
+      "scene": "ixs_b_area_256",
+      "rung": "pt",
+      "frame": 40,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.04441
+    },
+    {
+      "unit": "pt:ixs_c_spot_b0_256:5",
+      "scene": "ixs_c_spot_b0_256",
+      "rung": "pt",
+      "frame": 5,
+      "pt_spp": 4096,
+      "B": 16,
+      "pt_min": 0.5889
+    },
+    {
+      "unit": "pt:ixs_c_spot_b0_256:20",
+      "scene": "ixs_c_spot_b0_256",
+      "rung": "pt",
+      "frame": 20,
+      "pt_spp": 3584,
+      "B": 16,
+      "pt_min": 0.5186
+    },
+    {
+      "unit": "pt:ixs_c_spot_b0_256:40",
+      "scene": "ixs_c_spot_b0_256",
+      "rung": "pt",
+      "frame": 40,
+      "pt_spp": 2560,
+      "B": 16,
+      "pt_min": 0.3756
+    },
+    {
+      "unit": "pt:ixs_c_spot_b03_256:5",
+      "scene": "ixs_c_spot_b03_256",
+      "rung": "pt",
+      "frame": 5,
+      "pt_spp": 3072,
+      "B": 16,
+      "pt_min": 0.4483
+    },
+    {
+      "unit": "pt:ixs_c_spot_b03_256:20",
+      "scene": "ixs_c_spot_b03_256",
+      "rung": "pt",
+      "frame": 20,
+      "pt_spp": 1536,
+      "B": 16,
+      "pt_min": 0.2245
+    },
+    {
+      "unit": "pt:ixs_c_spot_b03_256:40",
+      "scene": "ixs_c_spot_b03_256",
+      "rung": "pt",
+      "frame": 40,
+      "pt_spp": 1536,
+      "B": 16,
+      "pt_min": 0.2263
+    },
+    {
+      "unit": "pt:ixs_d_camera_256:8",
+      "scene": "ixs_d_camera_256",
+      "rung": "pt",
+      "frame": 8,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.0436
+    },
+    {
+      "unit": "pt:ixs_d_camera_256:16",
+      "scene": "ixs_d_camera_256",
+      "rung": "pt",
+      "frame": 16,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.04672
+    },
+    {
+      "unit": "pt:ixs_d_camera_256:24",
+      "scene": "ixs_d_camera_256",
+      "rung": "pt",
+      "frame": 24,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.04745
+    },
+    {
+      "unit": "pt:ixs_d_camera_256:32",
+      "scene": "ixs_d_camera_256",
+      "rung": "pt",
+      "frame": 32,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.0466
+    },
+    {
+      "unit": "pt:ixs_d_camera_256:40",
+      "scene": "ixs_d_camera_256",
+      "rung": "pt",
+      "frame": 40,
+      "pt_spp": 384,
+      "B": 16,
+      "pt_min": 0.07021
+    },
+    {
+      "unit": "pt:ixs_d_camera_256:48",
+      "scene": "ixs_d_camera_256",
+      "rung": "pt",
+      "frame": 48,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.0466
+    },
+    {
+      "unit": "pt:ixs_d_camera_256:56",
+      "scene": "ixs_d_camera_256",
+      "rung": "pt",
+      "frame": 56,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.04686
+    },
+    {
+      "unit": "pt:ixs_d_camera_256:64",
+      "scene": "ixs_d_camera_256",
+      "rung": "pt",
+      "frame": 64,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.04468
+    },
+    {
+      "unit": "pt:ixs_d0_jitter_256:8",
+      "scene": "ixs_d0_jitter_256",
+      "rung": "pt",
+      "frame": 8,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.04454
+    },
+    {
+      "unit": "pt:ixs_d0_jitter_256:32",
+      "scene": "ixs_d0_jitter_256",
+      "rung": "pt",
+      "frame": 32,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.04462
+    },
+    {
+      "unit": "pt:ixs_d0_jitter_256:64",
+      "scene": "ixs_d0_jitter_256",
+      "rung": "pt",
+      "frame": 64,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.04442
+    },
+    {
+      "unit": "pt:ixs_e_addremove_256:8",
+      "scene": "ixs_e_addremove_256",
+      "rung": "pt",
+      "frame": 8,
+      "pt_spp": 1024,
+      "B": 16,
+      "pt_min": 0.1863
+    },
+    {
+      "unit": "pt:ixs_e_addremove_256:9",
+      "scene": "ixs_e_addremove_256",
+      "rung": "pt",
+      "frame": 9,
+      "pt_spp": 1024,
+      "B": 16,
+      "pt_min": 0.1864
+    },
+    {
+      "unit": "pt:ixs_e_addremove_256:14",
+      "scene": "ixs_e_addremove_256",
+      "rung": "pt",
+      "frame": 14,
+      "pt_spp": 1024,
+      "B": 16,
+      "pt_min": 0.1862
+    },
+    {
+      "unit": "pt:ixs_e_addremove_256:15",
+      "scene": "ixs_e_addremove_256",
+      "rung": "pt",
+      "frame": 15,
+      "pt_spp": 1024,
+      "B": 16,
+      "pt_min": 0.1886
+    },
+    {
+      "unit": "pt:ixs_e_addremove_256:20",
+      "scene": "ixs_e_addremove_256",
+      "rung": "pt",
+      "frame": 20,
+      "pt_spp": 6144,
+      "B": 16,
+      "pt_min": 1.086
+    },
+    {
+      "unit": "pt:ixs_e_addremove_256:21",
+      "scene": "ixs_e_addremove_256",
+      "rung": "pt",
+      "frame": 21,
+      "pt_spp": 6144,
+      "B": 16,
+      "pt_min": 1.088
+    },
+    {
+      "unit": "pt:ixs_e_addremove_256:40",
+      "scene": "ixs_e_addremove_256",
+      "rung": "pt",
+      "frame": 40,
+      "pt_spp": 6144,
+      "B": 16,
+      "pt_min": 1.081
+    },
+    {
+      "unit": "pt:ixs_f_combined_256:8",
+      "scene": "ixs_f_combined_256",
+      "rung": "pt",
+      "frame": 8,
+      "pt_spp": 640,
+      "B": 16,
+      "pt_min": 0.1154
+    },
+    {
+      "unit": "pt:ixs_f_combined_256:24",
+      "scene": "ixs_f_combined_256",
+      "rung": "pt",
+      "frame": 24,
+      "pt_spp": 1024,
+      "B": 16,
+      "pt_min": 0.1983
+    },
+    {
+      "unit": "pt:ixs_f_combined_256:25",
+      "scene": "ixs_f_combined_256",
+      "rung": "pt",
+      "frame": 25,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.04937
+    },
+    {
+      "unit": "pt:ixs_f_combined_256:40",
+      "scene": "ixs_f_combined_256",
+      "rung": "pt",
+      "frame": 40,
+      "pt_spp": 640,
+      "B": 16,
+      "pt_min": 0.1208
+    },
+    {
+      "unit": "pt:ixs_f_combined_256:48",
+      "scene": "ixs_f_combined_256",
+      "rung": "pt",
+      "frame": 48,
+      "pt_spp": 768,
+      "B": 16,
+      "pt_min": 0.1438
+    },
+    {
+      "unit": "pt:ixs_g_sun_256:8",
+      "scene": "ixs_g_sun_256",
+      "rung": "pt",
+      "frame": 8,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.01804
+    },
+    {
+      "unit": "pt:ixs_g_sun_256:24",
+      "scene": "ixs_g_sun_256",
+      "rung": "pt",
+      "frame": 24,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.01805
+    },
+    {
+      "unit": "pt:ixs_g_sun_256:48",
+      "scene": "ixs_g_sun_256",
+      "rung": "pt",
+      "frame": 48,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.01812
+    },
+    {
+      "unit": "pt:ixs_h_envrot_256:1",
+      "scene": "ixs_h_envrot_256",
+      "rung": "pt",
+      "frame": 1,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.05408
+    },
+    {
+      "unit": "pt:ixs_h_envrot_256:10",
+      "scene": "ixs_h_envrot_256",
+      "rung": "pt",
+      "frame": 10,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.05412
+    },
+    {
+      "unit": "pt:ixs_h_envrot_256:25",
+      "scene": "ixs_h_envrot_256",
+      "rung": "pt",
+      "frame": 25,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.05435
+    },
+    {
+      "unit": "pt:ixs_h_envrot_256:40",
+      "scene": "ixs_h_envrot_256",
+      "rung": "pt",
+      "frame": 40,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.0539
+    },
+    {
+      "unit": "pt:ixs_i_envradio_256:15",
+      "scene": "ixs_i_envradio_256",
+      "rung": "pt",
+      "frame": 15,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.05222
+    },
+    {
+      "unit": "pt:ixs_i_envradio_256:16",
+      "scene": "ixs_i_envradio_256",
+      "rung": "pt",
+      "frame": 16,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.05167
+    },
+    {
+      "unit": "pt:ixs_i_envradio_256:17",
+      "scene": "ixs_i_envradio_256",
+      "rung": "pt",
+      "frame": 17,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.05151
+    },
+    {
+      "unit": "pt:ixs_i_envradio_256:24",
+      "scene": "ixs_i_envradio_256",
+      "rung": "pt",
+      "frame": 24,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.05149
+    },
+    {
+      "unit": "pt:ixs_i_envradio_256:25",
+      "scene": "ixs_i_envradio_256",
+      "rung": "pt",
+      "frame": 25,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.05189
+    },
+    {
+      "unit": "pt:ixs_i_envradio_256:30",
+      "scene": "ixs_i_envradio_256",
+      "rung": "pt",
+      "frame": 30,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.05232
+    },
+    {
+      "unit": "pt:ixs_i_envradio_256:31",
+      "scene": "ixs_i_envradio_256",
+      "rung": "pt",
+      "frame": 31,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.05232
+    },
+    {
+      "unit": "pt:ixs_j_envcombo_256:8",
+      "scene": "ixs_j_envcombo_256",
+      "rung": "pt",
+      "frame": 8,
+      "pt_spp": 384,
+      "B": 16,
+      "pt_min": 0.08584
+    },
+    {
+      "unit": "pt:ixs_j_envcombo_256:24",
+      "scene": "ixs_j_envcombo_256",
+      "rung": "pt",
+      "frame": 24,
+      "pt_spp": 320,
+      "B": 16,
+      "pt_min": 0.08002
+    },
+    {
+      "unit": "pt:ixs_j_envcombo_256:40",
+      "scene": "ixs_j_envcombo_256",
+      "rung": "pt",
+      "frame": 40,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.06288
+    },
+    {
+      "unit": "pt:ixs_k_envswap_256:19",
+      "scene": "ixs_k_envswap_256",
+      "rung": "pt",
+      "frame": 19,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.05174
+    },
+    {
+      "unit": "pt:ixs_k_envswap_256:20",
+      "scene": "ixs_k_envswap_256",
+      "rung": "pt",
+      "frame": 20,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.05154
+    },
+    {
+      "unit": "pt:ixs_k_envswap_256:21",
+      "scene": "ixs_k_envswap_256",
+      "rung": "pt",
+      "frame": 21,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.05159
+    },
+    {
+      "unit": "pt:ixs_k_envswap_256:28",
+      "scene": "ixs_k_envswap_256",
+      "rung": "pt",
+      "frame": 28,
+      "pt_spp": 256,
+      "B": 16,
+      "pt_min": 0.05152
+    }
   ]
 }

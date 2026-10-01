@@ -1502,6 +1502,15 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   in groups of ≤ 10 min of estimated GPU work, then runs the phase for real on the caches. With the main checkout's
   gates holding the lock for hours, one lock wait per group instead of per render is the difference between hours and
   days of wall time; each hold stays ≤ 12 min.
+- **E-12 Pilot sizing outcome and plan (2026-10-01, pilots on 5a7ea37 + harness bc81128).** 49 sized units: 7.9 h of
+  chains + PT references (static 2.8 h, dynamic 4.0 h incl. per-invocation overhead), + Gate 0 ≈ 1.5 h, plants ≈ 2.9 h,
+  A/A ≈ 3.2 h (2 × 4× the m5s_cornell_i 3.4 chains, R 27 760), U8 M4 rungs ≈ 0.5 h ⇒ ≈ 16 h > 14 h: the gate runs as
+  the two parts of Q3 (core ≈ 11.7 h, static ≈ 3.6 h). Tile enlargements (control 5): m5s_spot_grazing, glass_mirror_A,
+  many_lights 32² → 64²; ixs_a_point, ixs_c_spot_b03, ixs_f_combined 64² → 128². Q4 raises (global aggregate alone
+  above 30 min, cap 90 min once): ixs_a_point (44 min, R 11 488 × 81 frames), ixs_c_spot_b03 (43 min, R 25 488),
+  ixs_f_combined (31 min, R 14 432). No unit is infeasible. Plants on packages without a gating unit (ixs_d_glossy,
+  ixs_e_half, ixs_n4_twolights) run 4096 chains (`PLANT_ONLY_R`); the others use their unit's R. Rows:
+  `validation/budget.json` `m5_entries`.
 - **B-7 T3-2 harness hook instead of `RS_TEMPORAL_TRACE`** (affects nobody). The composer has no `#define` and the kernel
   passes extra defines only to `rs_initial`, so the T3-2 / T4-t harness does not use a define: `t-select.wgsl` has
   `const TSEL_TRACE_FORCE_P: bool = false`, which the test flips to `true` through `instrumentation.extraSources` (every

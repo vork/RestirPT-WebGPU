@@ -168,6 +168,9 @@ export async function renderRestirChains(ctx: GpuContext, o: RenderRestirChainsO
     for (const t of disoccFrames) {
       tDis = t;
       await runner.runBatch(spec, 0, chainBase, () => undefined);
+      // each disocclusion "batch" is a different 2-frame chain (t−1, t): their reset patterns legitimately differ
+      // (ixs_k: the map swap at 20 resets frame 1 of the f20 chain), so the cross-batch check does not apply here
+      runner.totals.resetMismatches.length = 0;
       const m = await runner.disocclusionMask();
       const name = `f${t}__disocc.bin`;
       await uploadFile(o.run, name, m);
