@@ -101,7 +101,8 @@ const OPTIONS = {
   tplant: { type: 'string' },
   'u8-plant': { type: 'string' },
   mode: { type: 'string' },
-  } as const;
+  'max-spp-per-dispatch': { type: 'string' },
+} as const;
 const parse = (argv?: string[]) => parseArgs({ options: { ...OPTIONS, jobs: { type: 'string' } }, ...(argv ? { args: argv } : {}) }).values;
 let args = parse();
 
@@ -260,6 +261,8 @@ async function main(shared?: SharedPage): Promise<number> {
           batchOffset: args['batch-offset'] ? Number(args['batch-offset']) : undefined, maxBounces: args['max-bounces'] !== undefined ? Number(args['max-bounces']) : undefined, rr: args.rr,
           technique: args.technique as PtTechnique | undefined, plant, lightMode: args['light-mode'], env,
           width: args.width ? Number(args.width) : undefined, height: args.height ? Number(args.height) : undefined, seed, chromeVersion, frame,
+          // PT: cap the samples per dispatch (each dispatch is one submit) so a slowed-down GPU stays under the 200 ms hard cap
+          ...(args['max-spp-per-dispatch'] ? { budget: { maxSamplesPerDispatch: Number(args['max-spp-per-dispatch']) } } : {}),
         });
       } finally {
         releaseGpuLock();

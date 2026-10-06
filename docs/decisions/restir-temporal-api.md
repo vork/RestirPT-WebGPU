@@ -1605,6 +1605,14 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   controls of no-jp-env / U8-2t passed only 2–5/10, and 64 pilot chains could not see the tail. C-11 dropped the
   M_light:R prediction, so the rect is back at the (xiv) ceiling position (the first pilot sized that scene at R 528).
   ixs_i@3.6, no-jp-env (fresh seeds) and U8-2t re-run on the regenerated package.
+- **E-21 PT submits under the hard cap; A/A size** (coordinator decisions). Two PT re-run references of the E-13 ixs_i
+  (14 336 spp × 16) failed T16 with single submits of 0.9–1.2 s at the adaptive ≤ 256 spp per dispatch (one dispatch =
+  one submit; batch wall times varied 3.5×, an external slowdown). The gate's PT runs now use
+  `run-batches --max-spp-per-dispatch 32` (≈ 20 ms nominal at 256², 10× headroom; results equal up to f32 summation
+  order). The A/A pair stays as run: 4× the core-part sizing of m5s_cornell_i 3.4 (64² tiles, R 2 272 → 9 088 chains; the
+  core run measured 90 ms/chain, so 32² exceeded the 30-min cap), not 4× the static-part sizing (32², R 27 760 at
+  55 ms/chain): it passed (Δ_Y +0.003 %) and the synthetic W × 1.003 plant was detected 10/10 at the same power, which
+  is what the A/A calibrates. The cap decision depends on measured timing; both sizings are recorded in validation.md.
 - **B-7 T3-2 harness hook instead of `RS_TEMPORAL_TRACE`** (affects nobody). The composer has no `#define` and the kernel
   passes extra defines only to `rs_initial`, so the T3-2 / T4-t harness does not use a define: `t-select.wgsl` has
   `const TSEL_TRACE_FORCE_P: bool = false`, which the test flips to `true` through `instrumentation.extraSources` (every

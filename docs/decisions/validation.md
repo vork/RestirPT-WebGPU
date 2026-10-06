@@ -373,3 +373,10 @@ references (static 3.3–3.5 + U8 3.3/3.4: 2.6 h of chains; rung 3.6: 2.8 h), + 
 `--part static` ≈ 3.3 h. Tile enlargements by the 30-min cap: m5s_spot_grazing, glass_mirror_A, many_lights (32² → 64²);
 ixs_c_spot_b03, ixs_e_addremove (+ Talbot, E2), ixs_f_combined, ixs_i_envradio (64² → 128²). Q4 raises (global alone
 > 30 min): ixs_c_spot_b03 (43 min, R 25 488) and ixs_f_combined (31 min, R 14 432). No unit is infeasible.
+
+**A/A sizing (coordinator decision, Changelog E-21).** The A/A pair (seeds 7502 / 7503, m5s_cornell_i 3.4 at t = 24) ran
+at 4× the core-part sizing of its unit: the core run measured 90 ms per chain, so 32² tiles would have taken 42 min
+(> 30-min cap) and the unit was sized at 64² tiles, R 2 272 → A/A 9 088 chains per seed. The static part, measuring
+55 ms per chain, gated the same unit at 32² tiles with R 27 760. The tile decision depends on measured timing. The A/A
+was kept as run: it passed (Δ_Y +0.003 %) and the synthetic W × 1.003 plant was detected 10/10 at the same power, which
+is what the A/A calibrates; mirroring the static sizing (111 k chains per seed, ≈ 3.4 h) was not spent.

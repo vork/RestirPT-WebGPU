@@ -81,6 +81,8 @@ export const PLANT_ONLY_R = 4096;
 export const GATE0_EST_H = 1.5;
 /** Wall seconds per run-batches invocation outside the GPU batches (Vite + Chrome start, compiles, probe), for the plan. */
 export const INVOCATION_OVERHEAD_S = 30;
+/** Samples per PT dispatch (one submit each) in the gate's PT runs (E-21). */
+export const PT_MAX_SPP_PER_DISPATCH = 32;
 export const STATIC = { T: 25, testFrames: [1, 24] } as const;
 export const AVG = { T: 288, from: 32, to: 287 } as const;
 export const DELTA = { B: { global: 0.002, tile: 0.01, mask: 0.01, tile0: 32 }, dyn: { global: 0.002, tile: 0.02, mask: 0.03, tile0: 64 } } as const;
@@ -516,7 +518,9 @@ function ptRunInto(pdir: string, frame: number | undefined, spp: number, B: numb
   const k = chunkBatches(B, estSeconds);
   mkdirSync(path.dirname(path.join(ROOT, dest)), { recursive: true });
   rmSync(path.join(ROOT, dest), { recursive: true, force: true });
-  const base = ['--package', pdir, '--kernel', 'pt', '--spp', String(spp), '--seed', String(seed), ...(frame !== undefined ? ['--frames', String(frame)] : []), ...extra];
+  // ≤ 32 spp per dispatch/submit (≈ 20 ms nominal at 256²): PT references of the first ixs_i run had 0.9–1.2 s submits
+  // (hard cap 200 ms) at the adaptive ≤ 256 (E-21); the result is the same up to f32 summation order
+  const base = ['--package', pdir, '--kernel', 'pt', '--spp', String(spp), '--seed', String(seed), '--max-spp-per-dispatch', String(PT_MAX_SPP_PER_DISPATCH), ...(frame !== undefined ? ['--frames', String(frame)] : []), ...extra];
   const produced = (run: string) => path.join(ROOT, 'validation/out', frame !== undefined ? `${run}-f${frame}` : run);
   const metas: Record<string, any>[] = [];
   let seconds = 0, out = '';
