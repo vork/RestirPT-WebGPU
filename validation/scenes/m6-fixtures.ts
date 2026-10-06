@@ -11,7 +11,7 @@
 //   t3_glass_pane_256  t3_glass_256 + a thin vertical rough-glass pane (r 0.3) across the room: neighbouring pixels see
 //                 its two sides, so reconnections to a G_R vertex on the pane flip sides (glass side-flip counter).
 //   t3_glass_256  (make-m4.ts) is gating in M6 (D13 → rung 3.9): no change here.
-import type { EnvironmentData, MaterialData, TextureData } from '../../src/core/scene/types.ts';
+import type { EnvironmentData, LightData, MaterialData, TextureData } from '../../src/core/scene/types.ts';
 import type { LightMode } from '../../src/core/render/lights-gpu.ts';
 import { T3_MAT, light, lightToward, principled, t3Scene, type T3Scene, type V3 } from './make-m4.ts';
 
@@ -20,7 +20,7 @@ export interface T3Card { c: V3; u: V3; v: V3; hu: number; hv: number }
 
 const nrm = (a: V3): V3 => { const l = Math.hypot(a[0], a[1], a[2]); return [a[0] / l, a[1] / l, a[2] / l]; };
 
-function leafTexture(): TextureData {
+export function leafTexture(): TextureData {
   let a = 0x1234567;
   const R = () => { a = (Math.imul(a, 1664525) + 1013904223) >>> 0; return a / 4294967296; };
   const blobs = Array.from({ length: 14 }, () => ({ x: 20 + 88 * R(), y: 16 + 96 * R(), rx: 8 + 14 * R(), ry: 5 + 9 * R(), r: Math.PI * R() }));
@@ -39,6 +39,15 @@ function leafTexture(): TextureData {
   return { name: 'leaves', width: W, height: H, pixels, wrapS: 'repeat', wrapT: 'repeat', filter: 'linear' };
 }
 
+/** The three analytic area lights crossed by BSDF rays with geometry behind (t3_modeb_*, m6_crossings_B_256). */
+export function crossingLights(): LightData[] {
+  return [
+    light(6, 'rect', lightToward([0, 0, 1], [0.05, 0.95, -0.55]), 12, { sizeX: 0.5, sizeY: 0.35 }),
+    light(7, 'rect', lightToward([0, -1, 0], [0.35, 1.55, 0.15]), 10, { sizeX: 0.35, sizeY: 0.35 }),
+    light(8, 'disk', lightToward([-1, 0, 0], [1.3, 0.8, -0.55]), 8, { sizeX: 0.45 }),
+  ];
+}
+
 export function t3M6Scene(variant: T3M6Variant, env?: EnvironmentData): T3Scene & { cards: T3Card[]; lightMode: LightMode } {
   const cards: T3Card[] = [];
   if (variant === 't3_glass_pane_256') {
@@ -50,11 +59,7 @@ export function t3M6Scene(variant: T3M6Variant, env?: EnvironmentData): T3Scene 
   }
   if (variant === 't3_modeb_256' || variant === 't3_modeb_rare_256') {
     const t = t3Scene(variant === 't3_modeb_256' ? 't3_cases_256' : 't3_rare_256', env, (b) => {
-      b.lights.push(
-        light(6, 'rect', lightToward([0, 0, 1], [0.05, 0.95, -0.55]), 12, { sizeX: 0.5, sizeY: 0.35 }),
-        light(7, 'rect', lightToward([0, -1, 0], [0.35, 1.55, 0.15]), 10, { sizeX: 0.35, sizeY: 0.35 }),
-        light(8, 'disk', lightToward([-1, 0, 0], [1.3, 0.8, -0.55]), 8, { sizeX: 0.45 }),
-      );
+      b.lights.push(...crossingLights());
     });
     return { ...t, notes: `${variant}: t3_cases_256 + 3 crossing lights, Mode B (restir-m6-api.md §4)`, cards, lightMode: 'B' };
   }

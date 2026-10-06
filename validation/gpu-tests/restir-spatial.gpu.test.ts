@@ -6,8 +6,8 @@ import { readBuffer } from '../../src/core/gpu/readback.ts';
 import { EnsembleCollector, decodeEnsStats, ensStatsLayout } from '../../src/core/render/restir/ensemble.ts';
 import { RS_WGSL_CONSTS as K, RES_WORDS, RW, TS_CONSTS, TS_WORDS, TSW, arenaWords, rfPack } from '../../src/core/render/restir/layout.ts';
 import { readNpz, writeNpz } from '../../src/core/render/restir/npz.ts';
-import { pairLayer, pairPartner, pairTransform } from '../../src/core/render/restir/pairing.ts';
-import { PAIR_TEX_SIZES } from '../../src/core/render/restir/presets.ts';
+import { gaussLayer, pairLayer, pairPartner, pairTransform } from '../../src/core/render/restir/pairing.ts';
+import { GAUSS_PAIR_SIZES, PAIR_TEX_SIZES } from '../../src/core/render/restir/presets.ts';
 import { ensStatsFloats } from '../../src/core/render/restir/resources.ts';
 import { queueArgs } from '../../src/core/render/restir/stage-spatial.ts';
 import { misWeightsAt } from '../../tests/restir/mis-ref.ts';
@@ -162,21 +162,22 @@ fn t33_main(@builtin(global_invocation_id) gid: vec3u) {
 }
 `;
 
-describe('T3-3/M4: paired-acceptance symmetry', () => {
-  for (const [W, H] of [[960, 540], [1024, 1024]] as const) {
-    it(`${W}×${H}: partner(partner(p)) = p, A(p,q) = A(q,p) bitwise over 8 dihedral codes; slot acceptedness equal on both sides`, async () => {
-      const rig = await restirRig(bitFixtureScene('x_quads'), W, H, { preset: 'offline', settings: { maxBounces: 1, trees: 1, rounds: 1, slots: 6 } });
+/** T3-3 on one resolution with the M4 disk maps (T3-3/M4) or the M6 σ = 16 Gaussian maps (T3-3/M6, restir-m6-api.md §4). */
+async function t33Case(W: number, H: number, pairing: 'disk' | 'gauss'): Promise<void> {
+      const rig = await restirRig(bitFixtureScene('x_quads'), W, H, { preset: 'offline', settings: { maxBounces: 1, trees: 1, rounds: 1, slots: 6, pairing } });
       const k = rig.kernel, res = k.resources, dev = rig.g.device;
       const fr = await rig.frames(1);
       expect(fr.arena.rsc.slotMismatch).toBe(0);
       expect(fr.arena.rsc.pendingLeft).toBe(0);
       // (1) production slots of round 0 of frame 0 vs the TS mirror of the transform and maps
       const body = await arenaBody(rig);
-      const R = k.settings.diskRadius, NS = 6;
-      const layers = PAIR_TEX_SIZES.slice(0, NS).map((w, s) => pairLayer(w, R, s));
+      const gauss = pairing === 'gauss';
+      const R = gauss ? 127 : k.settings.diskRadius, NS = 6;   // Gaussian maps: |d| ≤ 127 per axis (T14)
+      const SIZES = gauss ? GAUSS_PAIR_SIZES : PAIR_TEX_SIZES;
+      const layers = SIZES.slice(0, NS).map((w, s) => (gauss ? gaussLayer(w, 16, s) : pairLayer(w, R, s)));
       let bad = 0, accepted = 0, noPartnerAccepted = 0;
       for (let s = 0; s < NS; s++) {
-        const tr = pairTransform(11, 0, 0, 0, s, PAIR_TEX_SIZES[s]);
+        const tr = pairTransform(11, 0, 0, 0, s, SIZES[s]);
         for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
           const ai = y * W + x;
           const jw = body[4 * (ai * NS + s) + 3];
@@ -196,13 +197,13 @@ describe('T3-3/M4: paired-acceptance symmetry', () => {
       const NT = 16;
       await submit(rig, (enc) => k.encodeCustom(enc, pipeline, g2, { t: 0, treeCount: NT, treeBase: R }, [Math.ceil(W / 8), Math.ceil(H / 8)], false));
       const o = new Uint32Array(await readBuffer(dev, out, (16 + W * H) * 4));
-      const tr0 = pairTransform(11, 0, 0, 0, 0, PAIR_TEX_SIZES[0]);
+      const tr0 = pairTransform(11, 0, 0, 0, 0, SIZES[0]);
       let mirrorBad = 0;
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
         const q = pairPartner(layers[0], tr0, [x, y], W, H);
         if (o[16 + y * W + x] !== (q ? q[1] * W + q[0] : 0xFFFFFFFF)) mirrorBad++;
       }
-      console.log(`[T3-3/M4 ${W}×${H}] slots: accepted ${accepted}, mismatched ${bad}, accepted-without-partner ${noPartnerAccepted}; kernel: codes 0x${o[0].toString(16)} paired ${o[1]} non-reciprocal ${o[2]} A-asymmetric ${o[3]} A-accepted ${o[4]} |d|>R ${o[5]}; mirror mismatches ${mirrorBad}`);
+      console.log(`[T3-3/${gauss ? 'M6 gauss' : 'M4'} ${W}×${H}] slots: accepted ${accepted}, mismatched ${bad}, accepted-without-partner ${noPartnerAccepted}; kernel: codes 0x${o[0].toString(16)} paired ${o[1]} non-reciprocal ${o[2]} A-asymmetric ${o[3]} A-accepted ${o[4]} |d|>R ${o[5]}; mirror mismatches ${mirrorBad}`);
       expect(bad).toBe(0);
       expect(noPartnerAccepted).toBe(0);
       expect(accepted).toBeGreaterThan(W * H);
@@ -214,7 +215,17 @@ describe('T3-3/M4: paired-acceptance symmetry', () => {
       expect(mirrorBad).toBe(0);
       out.destroy();
       rig.destroy();
-    });
+}
+
+describe('T3-3/M4: paired-acceptance symmetry', () => {
+  for (const [W, H] of [[960, 540], [1024, 1024]] as const) {
+    it(`${W}×${H}: partner(partner(p)) = p, A(p,q) = A(q,p) bitwise over 8 dihedral codes; slot acceptedness equal on both sides`, () => t33Case(W, H, 'disk'));
+  }
+});
+
+describe('T3-3/M6: paired-acceptance symmetry with the σ = 16 Gaussian maps', () => {
+  for (const [W, H] of [[960, 540], [1024, 1024]] as const) {
+    it(`${W}×${H} gauss: partner(partner(p)) = p, A(p,q) = A(q,p) bitwise, acceptedness equal on both sides, RSC_SLOT_MISMATCH = 0`, () => t33Case(W, H, 'gauss'));
   }
 });
 
