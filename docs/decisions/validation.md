@@ -381,18 +381,52 @@ at 4× the core-part sizing of its unit: the core run measured 90 ms per chain, 
 was kept as run: it passed (Δ_Y +0.003 %) and the synthetic W × 1.003 plant was detected 10/10 at the same power, which
 is what the A/A calibrates; mirroring the static sizing (111 k chains per seed, ≈ 3.4 h) was not spent.
 
-**Result (provisional, 2026-10-06; runs m5-gate-20261001-081949 core, -162035 static + re-runs, -203321 128²
-re-evaluation, -20261002-051049 / -074225 plants, the ixs_i re-runs after E-20).**
-- Gate 0 green: every M5 / M4 / M3 Chrome suite, cpu (435), python, make-m5 determinism, U-TR-1, M5 app smoke; T3-2 rare
-  bins (translate, add/remove + intensity, moving lights + env) 5.6–7.1·10⁸ trials each, LOGIC = FP = PLATFORM = 0.
-- Static: 77/77 (3.3/3.4 × 8 scenes × t ∈ {1, 24}, 3.5 × 3, U8 chains 24, U8 M4 rungs 18): |Δ_Y| ≤ 0.023 %, worst
-  tile ≤ 0.31 %.
-- Rung 3.6: 18/18 units (every test frame + drift / failing-tile statistics): |Δ_Y| ≤ 0.063 %, worst tile ≤ 0.39 %,
-  |drift z| ≤ 2.2; all counters 0.
-- Plants: 17 of 20 pass (U8-4 deferred to M6). Revised after measurement and confirmed on fresh seeds (E-18): N3, N4,
-  N5-d0, N5-d, U8-1, U8-6, U8-9, no-jp-env. Open: env-no-rot-vis and E_{t−1}-with-γ_t (predictions with T-C), U8-2t
-  (active — T-B's GPU test moves an emissive + env mean by +0.006 % — but below the gate's resolution on ixs_i:
-  +0.02 %, z 1.0, MDB 0.06–0.09 %).
-- A/A passes (Δ_Y +0.003 %); synthetic W × 1.003 detected 10/10, A/A re-splits ok.
-- Harness fixes found by the gate: 128² aggregates from npz (E-15), chunked npz uploads (E-17), escaped `-t` patterns
-  (E-17), the N1-mixed refresh (C-11), the ixs_i rect (E-20), PT samples per dispatch (E-21).
+**M5 gate result (final, 2026-10-06; harness through 42c8dbe, kernel code e871ea6 + the C-11 N1 fix a8045d6).**
+Runs (all under `validation/out/`, copied to the main checkout): core `m5-gate-20261001-081949`; static
+`m5-gate-20261001-162035` + re-run `-191515` (cornell_i, spot_grazing, u8_c0c_point_b1); 128² re-evaluation
+`-203321` (`--reuse-chains`, aggregation fix only); plants `-20261002-051049` (fresh seeds), `-074225` (N1 trio, U8-3,
+A/A); ixs_i after E-20 `-20261006-180639` (unit), `-180833` (no-jp-env), `-180946` (U8-2t, moved to Gate 0); env-γ_t
+third seed set `-181922`; T3-2 addendum `m5-core-addendum/`.
+
+| Part | Result |
+|---|---|
+| Gate 0 | green: restir-tframe, restir-temporal 47/47, restir-refresh, restir-debug, restir-initial, restir-shift 25/25 (one 2.5 h hold in this run; E-16 splits it per T3 variant from now on), restir-spatial, M3 regressions; typecheck, cpu 435, python, make-m5 determinism, U-TR-1, M5 app smoke; T3-2 rare bins (translate / add-remove + intensity / moving lights + env) 5.6–7.1·10⁸ trials each, LOGIC = FP = PLATFORM = 0; U8 plant activity (U8-2t, E-22) |
+| Static 3.3–3.5 + U8 | 77/77: 3.3/3.4 × 8 scenes × t ∈ {1, 24} (32), 3.5 × 3, U8 chains 24, U8 M4 rungs 18; \|Δ_Y\| ≤ 0.023 %, worst tile ≤ 0.31 % |
+| Rung 3.6 | 18/18 (13 sequences + Talbot / E2 on ixs_b and ixs_e + boost on ixs_d), every test frame + drift / failing-tile statistics; \|Δ_Y\| ≤ 0.063 %, worst tile ≤ 0.39 %, \|drift z\| ≤ 2.2; every counter 0 |
+| Plants | 18 of 19 gating plants pass with their predictions; env-no-rot-vis detect-only (resolution-limited, C-12); U8-2t Gate 0 (E-22); U8-4/7/8/10 deferred to M6 |
+| Calibration | A/A (7502 vs 7503, m5s_cornell_i 3.4, 4×) pass, Δ_Y +0.003 %; synthetic W × 1.003 detected 10/10, control 10/10, A/A re-splits ok |
+
+Plants (Δ = ReSTIR − PT relative, Y; every row detected 10/10 with the PT A/A control ≥ 9/10 and the full comparison
+failing; "fresh seeds" = rendered on disjoint seeds after the prediction was revised, E-18 / E-23):
+
+| Plant | Scene, frames | Prediction | Measured | Status |
+|---|---|---|---|---|
+| N1-mixed | ixs_e 8, 14, 15 | M_light:C −, M_light:A − | −70.4 %, −19.9 %, −18.9 % | pass (re-rendered after the C-11 fix) |
+| N1-mixed r 0.5 | ixs_e_half 14, 15 | M_light:A + | +61.6 %, +58.5 % | pass (C-11 fix) |
+| N1-consistent | ixs_a 10, 25 | M_new −, M_up − (only −) | M_up −38 % / −82 %, M_new −88 % (f25; empty at f10) | pass (C-11 fix) |
+| N2 | ixs_e 14, 15 | M_light:A −, M_light:B + | −16.0 / −15.2 %, +44.9 / +42.7 % | pass |
+| N3 | ixs_a 40 | M_down +, M_gone + | M_down +3.1 % (z 8.1); M_gone empty | revised after measurement (C-11), confirmed on fresh seeds |
+| N4 | ixs_n4 8, 16 | global − | −9.3 %, −10.6 % | revised (C-11), confirmed on fresh seeds |
+| N5 | ixs_d0 32 / ixs_d 16 | M_sil + / M_edge + | +13.7 % / +8.8 % | revised (B-12), confirmed on fresh seeds |
+| N6 | ixs_d_glossy 16, 32 | detect (sign not predicted, Q5) | −0.14 %, −0.22 % | pass |
+| N7 | ixs_e 14, 15 | M_light:B − | −5.0 %, −4.7 % | pass |
+| skip rotation refresh | ixs_h 10, 25 | detect (expected M_down +, M_up −; informational) | M_down +0.22 %, +0.20 % (z 2.1, 1.6) | detect-only, resolution-limited (C-12) |
+| E_{t−1} with γ_t | ixs_h 10, 25 | M_new, M_up, M_down, global − | M_up −61 / −64 %, M_down −25 / −20 %, global −9.7 / −15.3 % | revised (B-12, C-12), confirmed on a third seed set |
+| omit J_P on env | ixs_i 16, 17 | M_light:env − | −1.9 %, −1.8 % | revised (C-11), confirmed on fresh seeds (after E-20) |
+| c_p + 1 | m5s_cornell_i 3.4 t 24 | global − | −46.7 % | pass |
+| W × 1.003 | A/A run | detected | 10/10 | pass |
+| U8-1 ω1 < 1 for delta | u8_c0c_point_b1 | global + | +0.87 % | revised (B-12), confirmed on fresh seeds |
+| U8-3 no p_k ratio | m5s_cornell_i 3.4 t 24 | detect | −1.1 % | pass (scene moved by B-12: inert without deep paths) |
+| U8-4 J = t_x²/t_y² | — | — | — | deferred to M6 (B-9) |
+| U8-6 one-sided ignored | u8_c0e_rect_b1 | detect (sign reported) | −0.68 % | revised (B-12), confirmed on fresh seeds |
+| U8-9 FAILED dropped from k | u8_c0e_rect_b1 | global + | +1.83 % | revised (D-5), confirmed on fresh seeds |
+| U8-2t stale aux | — | Gate-0 activity test | emissive + env mean +0.006 %, reservoirs differ; rect-only bitwise identical | active, bias below δ (E-22) |
+| U8-5t spot axis of t−1 | ixs_c_spot_b03 20 | detect | −2.95 % | pass |
+| A/A | m5s_cornell_i 3.4 ×4 | pass | Δ_Y +0.003 % | pass |
+
+Harness fixes found by the gate (restir-temporal-api.md Changelog): E-15 128² aggregates from ensemble.npz; E-16 one
+GPU-lock hold per T3 variant (≤ 24 min, the documented exception); E-17 chain npz uploads in 8 MB parts (Playwright CDP
+string limit) and regex-escaped `-t` patterns (two T3-2 cases had silently run no test); E-18 / E-23 fresh disjoint seeds
+for predictions revised after measurement; E-19 / C-11 the N1-mixed inverse refresh (no PENDING_LEFT exception); E-20
+the ixs_i rect back at the ceiling (the E-13 placement made the scene heavy-tailed); E-21 PT runs at ≤ 32 spp per
+dispatch (hard cap) and the A/A sizing rationale; E-22 U8-2t as a Gate-0 activity test.
