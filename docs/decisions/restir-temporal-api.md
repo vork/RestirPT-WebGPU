@@ -1650,6 +1650,10 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   emissive + env, bitwise identical with analytic lights only). The plan's U8 ladder intends per-feature detection at δ;
   this flag's effect is structurally sub-δ in Mode A without light tiles — revisit in M6 when light tiles / RIS-NEE make
   the aux path matter more.
+- **E-23 C-12 env plant rows on fresh seeds.** E_{t−1}-with-γ_t keeps M_new / M_up / M_down "−", adds global "−" and drops
+  "only" (the left-edge brightening is a real support loss of direct env NEE canonicals, C-12); env-no-rot-vis becomes
+  detection-only ("resolution-limited", expected M_down + / M_up −, C-12). Both rows were set after measurement, so they
+  run on a second set of disjoint seeds (`--plant-seed-offset 2000`: plant chains 9101 + index, 4× PT 9201).
 - **B-7 T3-2 harness hook instead of `RS_TEMPORAL_TRACE`** (affects nobody). The composer has no `#define` and the kernel
   passes extra defines only to `rs_initial`, so the T3-2 / T4-t harness does not use a define: `t-select.wgsl` has
   `const TSEL_TRACE_FORCE_P: bool = false`, which the test flips to `true` through `instrumentation.extraSources` (every
