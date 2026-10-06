@@ -568,7 +568,7 @@ function ensurePackages(add: Add): void {
 
 // ------------------------------------------------------------------------------------------------ the gate
 
-export interface M6Options { part?: Part; only?: Set<string>; pilotOnly?: boolean; plantSeedOffset?: number }
+export interface M6Options { part?: Part; only?: Set<string>; pilotOnly?: boolean; plantSeedOffset?: number; writeBudget?: boolean }
 
 export function milestoneM6(record: Rec, o: M6Options = {}): void {
   const t0 = performance.now();
@@ -615,6 +615,9 @@ export function milestoneM6(record: Rec, o: M6Options = {}): void {
     }
   }
   writeFileSync(path.join(ROOT, dir, 'sizing.json'), `${JSON.stringify({ seq: results.filter((r) => r.sizing).map((r) => ({ unit: r.unit, ...r.sizing })), chains: sizing }, null, 1)}\n`);
+  const rows = budgetRows(results, sizing);
+  writeFileSync(path.join(ROOT, dir, 'budget-m6.json'), `${JSON.stringify(rows, null, 1)}\n`);
+  if (o.writeBudget && rows.length) mergeBudget(rows, runId, add);
   const failed = steps.filter((x) => !x.ok).map((x) => x.name);
   const kinds = ['seq', 'chain-static', 'chain-dyn', 'gate5', 'gate5-twin', 'plant', 'aa'];
   const perPart = Object.fromEntries(PARTS.filter((p) => p !== 'core').map((p) => {
@@ -629,6 +632,31 @@ export function milestoneM6(record: Rec, o: M6Options = {}): void {
   writeFileSync(path.join(ROOT, dir, 'summary.json'), `${JSON.stringify(summary, null, 1)}\n`);
   writeFileSync(path.join(ROOT, dir, 'summary.md'), summaryMd(summary, results));
   console.log(`\n${table(results)}\nsummary: ${dir}/summary.json (${summary.total_s} s)`);
+}
+
+/** budget.json M6 rows: per sequential unit (PT / ReSTIR sizes and minutes) and per chain unit (R, minutes). */
+function budgetRows(results: Record<string, any>[], chainSizing: Record<string, any>): Record<string, unknown>[] {
+  const rows: Record<string, unknown>[] = [];
+  for (const r of results.filter((x) => x.kind === 'seq' && x.sizing)) {
+    const z = r.sizing;
+    rows.push({ unit: r.unit, part: r.part, rung: r.rung, scene: r.scene, preset: r.preset, settings: r.settings, light_mode: r.lightMode, B: z.B, pt_spp: z.ptSpp, pt_min: z.pt_min,
+      frames_per_batch: z.frames, restir_min: z.restir_min, tile: z.tile, measured_restir_min: r.restir_minutes });
+  }
+  for (const [part, zs] of Object.entries(chainSizing)) {
+    for (const u of (zs as any).units ?? []) rows.push({ unit: u.id, part, kind: 'chains', R: u.R, frames: u.frames, test_frames: u.testFrames, tile: u.tile, chain_min: u.minutes, ms_per_chain: u.msPerChain, cap: u.cap });
+  }
+  return rows;
+}
+function mergeBudget(rows: Record<string, unknown>[], runId: string, add: Add): void {
+  const p = path.join(ROOT, 'validation/budget.json');
+  const b = JSON.parse(readFileSync(p, 'utf8')) as Record<string, any>;
+  const keep = (b.m6_entries ?? []).filter((e: any) => !rows.some((r) => r.unit === e.unit));
+  b.m6_method = 'M6 sizing (gate-m6.ts): PT pilot 128 spp x B and ReSTIR pilot of the unit configuration (offline presets 8 frames, initial 128) x B in headless Chrome; chain units by gate-m5 sizeGroup (64-chain pilots); PLAN §7.3 rule x1.25';
+  b.m6_measured_at = new Date().toISOString();
+  b.m6_runs = [...new Set([...(b.m6_runs ?? []), runId])];
+  b.m6_entries = [...keep, ...rows];
+  writeFileSync(p, `${JSON.stringify(b, null, 2)}\n`);
+  add('budget.json M6 rows written (--write-budget)', true, 0, { rows: b.m6_entries.length });
 }
 
 function table(results: Record<string, any>[]): string {

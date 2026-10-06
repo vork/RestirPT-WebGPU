@@ -395,7 +395,7 @@ const gates: Record<string, () => void> = {
     plantSeedOffset: args['plant-seed-offset'] ? Number(args['plant-seed-offset']) : undefined }),
   'M5.5': () => milestoneM55(record, { only: args.only ? new Set(args.only.split(',')) : undefined, prerenderPtRefs: args['prerender-ptrefs'] }),
   M6: () => milestoneM6(record, { part: M6_PARTS.includes(args.part as M6Part) ? args.part as M6Part : undefined, only: args.only ? new Set(args.only.split(',')) : undefined,
-    pilotOnly: args['pilot-only'], plantSeedOffset: args['plant-seed-offset'] ? Number(args['plant-seed-offset']) : undefined }),
+    pilotOnly: args['pilot-only'], plantSeedOffset: args['plant-seed-offset'] ? Number(args['plant-seed-offset']) : undefined, writeBudget: args['write-budget'] }),
 };
 const gate = gates[args.milestone!.toUpperCase()];
 if (!gate) {
