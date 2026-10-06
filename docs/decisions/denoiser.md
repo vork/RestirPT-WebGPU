@@ -38,8 +38,11 @@ same encoder and submit:
 ```
 ReSTIR temporal frames only (gradient available, §4):
   dn_gradient        8×8 wg, per pixel → workgroup sums        tState (arena ro), res[w] plane 0 (ro), dnMom[prev].a
-                                                               → dnGradTile (rg32float, W/8 × H/8): (ΣΔ, ΣM)
-  dn_grad_filter     8×8 wg over tiles                         dnGradTile → dnLambda (r32float, W/8 × H/8): λ of a 3×3-tile window
+                                                               input, L1, dnHist[prev], dnAlb[prev] (colour family, DN-11)
+                                                               → dnGradTile (rgba32float, W/8 × H/8): (ΣΔ_f, ΣM_f, ΣΔ_i, ΣM_i)
+                                                               → dnGradTile2 (rgba32float): (Σcur, Σold, Σcur², N)
+  dn_grad_filter     8×8 wg over tiles                         dnGradTile, dnGradTile2 → dnLambda (r32float, W/8 × H/8): λ of a
+                                                               3×3-tile window (inverse family: (2·invRadius + 1)², DN-10)
 PT only:
   copy colour → dnInput                                        (the PT writes its 1-spp sample into the colour target)
 every mode:
@@ -49,7 +52,8 @@ every mode:
                                                                → dnAtrous[0] (colour, temporal variance), dnHist[cur] (integrated
                                                                  colour, overwritten by à-trous 0's output), dnMom[cur], dnGeo[cur]
   dn_variance        8×8 wg                                    dnAtrous[0], dnMom[cur], dnGeo[cur] → dnAtrous[1] (n < 4: 7×7
-                                                               bilateral spatial variance; else copy)
+                                                               bilateral spatial variance; else copy), dnLumG (3×3 prefiltered
+                                                               luminance guide of à-trous 0, DN-13)
   dn_atrous i        8×8 wg, i = 0 … N−1, step 2^i             dnAtrous[src], dnGeo[cur] → dnAtrous[dst]
                        i = 0 also writes dnHist[cur] (SVGF feedback of the first iteration)
                        i = N−1 remodulates: ā·filtered + L̄1 → dnOut (pass-through for background; Changelog DN-1/2/6)
@@ -71,18 +75,20 @@ with the same parity: identical inputs ⇒ identical outputs (DN9). The PT colou
 |---|---|---|---|---|---|
 | `dnHist[2]` | rgba16float | 2 × 8 | 8.3 MB | demodulated colour history (rgb; a unused) | fp16 keeps 11 significant bits (rel. 4.9·10⁻⁴): far below the Monte-Carlo noise and the 8-bit display after the view transform. Range 6.5·10⁴: the demodulated input is clamped to it (a biased display path; only firefly pixels reach it). |
 | `dnMom[2]` | rgba16float | 2 × 8 | 8.3 MB | (μ_l, σ_l, n, FW): EMA mean and **standard deviation** of the demodulated luminance, history length n, lum(F·W) of the final reservoir (gradient input of the next frame) | The raw second moment would square the dynamic range (fp16 overflows at l > 256) and lose the variance to cancellation (m₂ − m₁² with 2⁻¹¹ relative error leaves a floor of 4.9·10⁻⁴·μ²). The West/Welford EMA update `δ = l − μ; μ += αδ; σ² = (1 − α)(σ² + αδ²)` runs in f32 registers and stores σ, which has the range and precision of the luminance. n ≤ 2048 is exact in fp16 (we cap at 64). FW is a radiance-like estimate (relative precision suffices; a clamp at 6.5·10⁴ only weakens the gradient of a firefly). |
-| `dnAlb[2]` | rgba16float | 2 × 8 | 8.3 MB | accumulated demodulation factor ā (Changelog DN-1) | a′ ∈ [0.02, 1]: fp16 keeps 2⁻¹¹ relative (rgba8unorm would be 1/255 absolute, 20 % at a′ = 0.02). |
+| `dnAlb[2]` | rgba32float | 2 × 16 | 16.6 MB | accumulated demodulation factor ā, n_a (Changelog DN-1, DN-2) | a′ ∈ [0.02, 1.04]. A 1/n mean: its increments (down to 1/1024 of the value) are below binary16 resolution, and Metal's round-toward-zero f16 stores bias it (DN-7). |
 | `dnGeo[2]` | rg32uint | 2 × 8 | 8.3 MB | x: f32 distance to the camera; y: oct 2×16 snorm shading normal | Distance in **f32**: the à-trous depth weight compares neighbour differences against the local depth gradient, which on grazing planes is ~10⁻³ of the distance (fp16 would quantise it). Normal **oct 2×16** (< 0.004° worst case with WGSL's round-to-nearest `pack2x16snorm`; data-formats.md §B3 quotes 0.0025° for an optimised encoder): never fp16 for unit vectors. One guide for the reprojection predicate (prev) and the à-trous edge stops (cur). |
 | `dnAtrous[2]` | rgba16float | 2 × 8 | 8.3 MB | à-trous ping-pong: demodulated colour + variance | Colour as `dnHist`. The variance only steers the luminance edge weight; it saturates at 6.5·10⁴ (σ = 256: such pixels are then filtered by geometry only, which is the desired behaviour for extreme noise). |
 | `dnInput` (PT only) | colour format | 16 | 8.3 MB | copy of the PT 1-spp sample | The PT writes its sample into the colour target, which the denoiser overwrites. |
-| `dnL1[2]` | rgba16float | 2 × 8 | 8.3 MB | accumulated L1 (Changelog DN-2) | emitter / env radiance seen directly; fp16 range clamps only extreme suns (display path). |
+| `dnL1[2]` | rgba32float | 2 × 16 | 16.6 MB | accumulated L1 (Changelog DN-2) | a 1/n mean of emitter / env radiance seen directly: f32 as `dnAlb` (DN-7). |
 | `dnOut` | rgba16float | 8 | 4.1 MB | remodulated output of the last à-trous (DN-6) | display radiance, as `dnHist`. |
-| `dnTaa[2]` | rgba16float | 2 × 8 | 8.3 MB | resolved output history (rgb, n_t ≤ 1024: exact in fp16) (DN-6) | as `dnOut`. |
+| `dnTaa[2]` | rgba32float | 2 × 16 | 16.6 MB | resolved output history (rgb, n_t ≤ 1024) (DN-6) | a 1/n_t mean: f32 as `dnAlb` (DN-7). |
+| `dnLumG` | r32float | 4 | 2.1 MB | prefiltered luminance guide of à-trous 0 (DN-13) | written and read within the frame; f32 because it feeds a difference against σ_l·σ. |
 | `dnGradTile` | rgba32float | 16 per tile | 130 KB | (ΣΔ_f, ΣM_f, ΣΔ_i, ΣM_i) over an 8×8 tile (DN-2) | Sums of up to 64 radiance-like values: f32 (tiny texture). |
+| `dnGradTile2` | rgba32float | 16 per tile | 130 KB | (Σcur, Σold, Σcur², N) colour family over an 8×8 tile (DN-11) | as `dnGradTile`. |
 | `dnLambda` | r32float | 4 per tile | 33 KB | λ of the 3×3-tile window | tiny. |
-| params | uniform 64 B | – | – | settings, flags, tile sizes, arena offsets | – |
+| params | uniform 96 B | – | – | settings, flags, tile sizes, arena offsets | – |
 
-Total ≈ 71 MB at 540p (≈ 63 MB without the PT input copy). The M1 G-buffer (80 B/px f32, `renderer.ts`) is read once
+Total ≈ 90 MB at 540p (≈ 82 MB without the PT input copy; DN-7 made three 1/n accumulators rgba32float). The M1 G-buffer (80 B/px f32, `renderer.ts`) is read once
 per pixel by `dn_temporal` (albedo, ns, pos, flags); data-formats.md P4 ("G-buffer 80 → 40 B in M5.5") is **not**
 done here **(own)**: the G-buffer layout is shared with the M1–M3 debug views and the primary pass, and the denoiser
 reads it once per pixel, so its cost to the denoiser is one 80-byte read; the à-trous iterations read only the compact
@@ -168,6 +174,9 @@ Iteration i, step s = 2^i, 5×5 B3-spline kernel h = (1/16, 1/4, 3/8, 1/4, 1/16)
   camera distance (the smaller of the two per axis, so a silhouette does not inflate it).
 - normal: w_n = max(0, n_p·n_q)^σ_n, σ_n = 128.
 - luminance: w_l = exp(−|l_p − l_q| / (σ_l·√(g₃ₓ₃(Var_p)) + 10⁻⁶)), σ_l = 4, g₃ₓ₃ = 3×3 Gaussian of the variance.
+  Off while the colour history is younger than 4 frames (DN-12). In iteration 0, l is the 3×3 geometry-weighted
+  prefiltered luminance (DN-13); with a converged output (static ≥ 8 frames) l is the demodulated previous output (DN-9).
+- albedo: exp(−|ā_p − ā_q|₁ / (3σ_a)), σ_a = 0.05 (DN-5).
 - background taps and taps outside the image have weight 0.
 - colour = Σ h w c_q / Σ h w; variance = Σ h² w² Var_q / (Σ h w)² (SVGF variance propagation).
 
@@ -252,7 +261,9 @@ the denoiser off.
 6. **Edge temporal stability** (Changelog DN-6) on (i) and (vii), frames 40–63, display luminance, edge pixels from the
    PT reference: static camera, denoised with i.i.d. and with R2 jitter vs the denoiser-off progressive mean (pass iff
    the edge std and the edge Δ/frame are ≤ the mean's); slow pan 0.5 mm/frame, denoised vs the raw 1-frame output
-   (pass iff the edge |I_t − 2I_{t−1} + I_{t−2}| is ≤ the raw output's).
+   (pass iff the edge |I_t − 2I_{t−1} + I_{t−2}| is ≤ the raw output's). Reported, not gating: pixel-centre primaries
+   (`--jitter none`) with the denoiser, the alternative to the resolve: their edge std and LDR-FLIP against the
+   box-filtered reference next to the jittered + resolved output's.
 
 Writes `validation/out/m55-gate-<time>/summary.json` and `summary.md`. Never writes outside this worktree's
 `validation/out`.
@@ -340,4 +351,35 @@ Writes `validation/out/m55-gate-<time>/summary.json` and `summary.md`. Never wri
   change α: a partial cut (λ′ = 0.6 of n = 64 → 26) left α at α_min, and the stale share decayed at 0.8 per frame
   ("C added": r = 0.76 on the step frame, 9 frames to 95 %). λ′ now cuts the effective lengths min(n, 1/α_min) and
   min(n_t, 8).
-
+- **DN-9 (luminance guide from the converged output).** With static camera and lighting (no change for 8 frames,
+  `DNF_GUIDE`) and n_t ≥ 8 at both pixels, the à-trous luminance stop compares the demodulated previous resolved output
+  lum((T̄ − L̄1)/ā) instead of this frame's noisy values. Weights that depend on the values being filtered pull the
+  mean toward the mode of right-skewed Monte-Carlo noise (the remainder of DN-7). Frame 16 / 32 / 48 / 63 bias on (vii):
+  −0.68 / −0.66 / −0.65 / −0.62 % without, −0.57 / −0.47 / −0.44 / −0.40 % with; (i): −0.38 … −0.35 % → −0.28 … −0.09 %.
+  FLIP ratio cost: (vii) 2.31 → 2.27, (i) 3.34 → 3.18 (the guide is smoother, so the stop is slightly weaker). On by
+  default (`guide`): the bias is what the user sees on a still image; both scenes stay well above the ×2 criterion.
+- **DN-10 (inverse family window).** The inverse pairs exist only on s = c pixels whose canonical sample picked the
+  changed light, so a 3×3-tile window often holds only a few. Their window is now (2·invRadius + 1)² tiles (default 3:
+  7×7 tiles); the forward family keeps 3×3. Recovery after "C added" did not change (12 frames at radius 3 and 6, r on
+  the step frame 0.737 / 0.731): the inverse family was not the limiting factor (DN-12).
+- **DN-11 (colour family).** A third, sample-independent gradient family per 8×8 tile: the mean of this frame's raw
+  estimate L − L1 against the remodulated history at q′ (dnHist[prev]·ā[prev]), over the 3×3-tile window,
+  λ_c = max(0, |m_cur − m_old| − 3·se)/max(m_cur, m_old) with se the standard error of m_cur, N ≥ 16 pairs; λ = max of the
+  three families. It sees changes that the reservoir pairs sample sparsely (an added light's indirect share) and a
+  history that still lags. Its noise allowance makes it insensitive to changes below ≈ 3 se, so it did not move the
+  "C added" recovery either; it is kept as a safety net for large changes (U-DN-4 checks it against the CPU reference).
+- **DN-12 (no luminance stop on young histories; "C added" in 12 frames).** After DN-10/11 the C-added output was still
+  26 % low on the step frame (r = 0.74) and climbed for 12 frames; disabling the luminance stop for young histories
+  (below) removes the deficit, which locates the cause: the luminance stop on a 1–3 sample history. Its variance is the 7×7 spatial
+  estimate, the samples of the new light are rare and bright, and w_l rejects exactly those taps, so the filter
+  returns the dark mode. The stop now applies only once the colour history holds n ≥ `lumMinN` = 4 frames; younger
+  pixels are filtered by geometry and albedo only (blurrier for ≤ 3 frames, but unbiased). Recovery (4 seeds): C added
+  12 → 8 frames (r = 0.98, 0.97, 0.96, 0.90, 0.92, …), A × 2 3 → 4, B removed 1 → 4 (r = 0.88 for 3 frames: the wider
+  blur mixes masked tiles with unchanged neighbours until n reaches 4). FLIP unchanged ((i) 3.11, (vii) 2.25,
+  (v) 2.93, ix-d 2.05).
+- **DN-13 (prefiltered luminance guide).** In à-trous iteration 0 both sides of the luminance stop use a 3×3 binomial,
+  geometry-weighted prefilter of the integrated luminance (`dnLumG`, r32float, written by `dn_variance`) rather than
+  each tap's own value. This lowers the variance of the compared values without changing the weights' dependence on
+  geometry. Later iterations filter already smoothed values and keep their own. Bias (frame mean of 16 / 32 / 48 / 63):
+  (i) −0.05 → −0.02 %, (vii) −0.42 → −0.40 %, (v) −0.55 → −0.48 %, ix-d −0.24 → −0.10 %; FLIP and recovery frames unchanged
+  (C added r at k = 8: 0.952 → 0.957). Cost: one 3×3 pass inside `dn_variance`.
