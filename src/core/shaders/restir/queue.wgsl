@@ -8,14 +8,21 @@
 // are read with reset); producers queue_append (one atomicAdd per item, D18; past capacity only the overflow flag is
 // set); rs_args writes the 2D indirect args of n = min(counter, capacity), hdr.n, hdr.capacity and the overflow flag;
 // consumers (@workgroup_size(64), 2D indirect dispatch) take item index queue_item(...) and exit past hdr.n.
+// M5 (OWNER T-B; restir-temporal-api.md TD16, §2.8): q1 = Q_f and q2 = Q_i of the temporal stage, each with capacity P,
+// items at [0, P) and [P, 2P) of the item region; rs_args selects the queue from RsDispatch.flags >> RSD_QUEUE_SHIFT.
 #include "restir/frame.wgsl"
 
 struct ShiftArenaRW { hdr: array<atomic<u32>, 64>, words: array<u32> }
 struct ShiftArenaRO { hdr: array<u32, 64>, words: array<u32> }
 
 fn rs_atlas_pixels() -> u32 { return rsParams.atlasSize.x * rsParams.atlasSize.y; }
-/// Queue capacity (every queue is worst-case sized: one item per (pixel, slot)).
-fn queue_capacity() -> u32 { return rs_atlas_pixels() * rsParams.numSlots; }
+/// NS_alloc (restir-temporal-api.md TD16, B.3): the arena's slot count; max(numSlots, 2) with RSF_TEMPORAL so the
+/// item region holds Q_f and Q_i (P items each). Temporal off: numSlots (bitwise M4).
+fn rs_ns_alloc() -> u32 {
+  return select(rsParams.numSlots, max(rsParams.numSlots, 2u), (rsParams.flags & RSF_TEMPORAL) != 0u);
+}
+/// Queue capacity of q0 = the arena's region sizes (every region is worst-case sized: one item per (pixel, slot)).
+fn queue_capacity() -> u32 { return rs_atlas_pixels() * rs_ns_alloc(); }
 fn slot_index(ai: u32, s: u32) -> u32 { return ai * rsParams.numSlots + s; }
 fn arena_slot_word(ai: u32, s: u32) -> u32 { return 4u * slot_index(ai, s); }
 fn arena_code_word(ai: u32, s: u32) -> u32 { return 4u * queue_capacity() + slot_index(ai, s); }
@@ -49,10 +56,18 @@ fn rs_hdr(w: u32) -> u32 { return atomicLoad(&rsArena.hdr[w]); }
 /// Add n to arena counter c (RSC_*).
 fn rs_count(c: u32, n: u32) { if (n != 0u) { atomicAdd(&rsArena.hdr[c], n); } }
 /// Append one item to queue q (one atomicAdd per item, D18); past capacity only the overflow flag is set.
+/// M5 (restir-temporal-api.md TD16): in the temporal passes (RS_TEMPORAL, which include restir/tframe.wgsl) queue q
+/// uses its own item region and capacity (tframe.wgsl queue_item_base / queue_capacity_q: q0 [0, P·NS_alloc), q1 = Q_f
+/// [0, P), q2 = Q_i [P, 2P)); every other pass appends to q0 only, exactly as in M4.
 fn queue_append(q: u32, item: u32) {
   let i = atomicAdd(&rsArena.hdr[4u * q], 1u);
+#if RS_TEMPORAL
+  if (i >= queue_capacity_q(q)) { atomicStore(&rsArena.hdr[4u * q + 3u], 1u); return; }
+  rsArena.words[arena_item_word(queue_item_base(q) + i)] = item;
+#else
   if (i >= queue_capacity()) { atomicStore(&rsArena.hdr[4u * q + 3u], 1u); return; }
   rsArena.words[arena_item_word(i)] = item;
+#endif
 }
 /// Write slot (ai, s): (FJ.rgb, J word) and its packed code word (§2.6).
 fn arena_slot_write(ai: u32, s: u32, FJ: vec3f, jw: u32, code: u32) {

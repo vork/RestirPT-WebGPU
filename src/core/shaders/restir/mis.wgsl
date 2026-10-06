@@ -10,6 +10,8 @@
 //   1 = off; the final-round shade carries it so that the W × s plant reaches the image).
 // Do NOT copy EvanLuo42's MIS (arguments swapped). Write-back of a partner sample: copy all ten planes of resIn[j],
 // then F = G/J, jDen = J·jDen_j, W, c (res_select_shifted).
+// M5 (OWNER T-D): boost slots (TD21) are ordinary slots here (the loops run over numSlots = slots + boostSlots);
+// U8 plant 9 (RSF_PLANT_U8_FAILED_K) drops failed neighbours from S_c.
 #include "common/math.wgsl"
 #include "restir/reservoir.wgsl"
 #include "restir/queue.wgsl"
@@ -102,6 +104,9 @@ fn spatial_resample(p: RsPix, round: u32, finalRound: bool) {
     if (jw_accepted(jw) != jw_accepted(jwq)) { atomicAdd(&misCnt[1], 1u); }
     if (!jw_accepted(jw) || !pr.valid) { continue; }
     if (jw == JW_PENDING) { atomicAdd(&misCnt[0], 1u); }
+    // U8 plant 9 (RSF_PLANT_U8_FAILED_K, validation only; restir-temporal-api.md §6.5): failed neighbours (G_j not VALID)
+    // are removed from S_c, i.e. from k, the normaliser 1/(k+1) and c_out (biased: energy loss).
+    if ((rsParams.flags & RSF_PLANT_U8_FAILED_K) != 0u && !jw_valid(jwq)) { continue; }
     qs[s] = q;
     k++;
     cOut += rp_c(resin_plane(q, RP_SEED));

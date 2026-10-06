@@ -69,9 +69,14 @@ fn light_sample_entry(x: vec3f, slot: LightSlot, entry: u32, u: vec2f) -> LightS
 /// p1 of a BSDF-sampled hit on emissive triangle primId at z (unit geometric normal ngz) seen from x (math.md#mis:
 /// recomputed at the hit's previous vertex). 0 when the triangle is not an NEE entry.
 fn tri_light_p1(x: vec3f, z: vec3f, ngz: vec3f, primId: u32) -> f32 {
+  return tri_light_p1_s(x, z, ngz, primId, lightsParams.cur);
+}
+
+/// tri_light_p1 under light slot `slot` (frame-selected, restir-temporal-api.md §3.1; triangles are static, only the
+/// pmf and the entry offset nAnalytic depend on the frame).
+fn tri_light_p1_s(x: vec3f, z: vec3f, ngz: vec3f, primId: u32, slot: LightSlot) -> f32 {
   let i = emissive_entry_of_prim(primId);
   if (i == LIGHT_NONE) { return 0.0; }
-  let slot = lightsParams.cur;
   if (slot.nEntries == 0u) { return 0.0; }
   let d = z - x;
   let dist2 = dot(d, d);
@@ -84,7 +89,11 @@ fn tri_light_p1(x: vec3f, z: vec3f, ngz: vec3f, primId: u32) -> f32 {
 /// p1 of a BSDF-sampled crossing of analytic area light `entry` (rect/disk) at z, seen from x (Mode B, M3b: the
 /// BSDF_ANALYTIC technique). One-sided; 0 behind the light. Same q = P(L)/A as NEE, so ω1 + ω2 = 1 exactly.
 fn analytic_area_p1(x: vec3f, entry: u32, z: vec3f) -> f32 {
-  let slot = lightsParams.cur;
+  return analytic_area_p1_s(x, entry, z, lightsParams.cur);
+}
+
+/// analytic_area_p1 under light slot `slot` (records and pmf of that frame).
+fn analytic_area_p1_s(x: vec3f, entry: u32, z: vec3f, slot: LightSlot) -> f32 {
   let r = light_load(slot, entry);
   let d = z - x;
   let dist2 = dot(d, d);

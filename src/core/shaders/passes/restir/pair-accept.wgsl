@@ -6,6 +6,9 @@
 //   else PENDING (handled by rs_spatial_shift).
 // Every slot is written exactly once per round (the map is an involution). One thread per atlas pixel, background
 // pixels included (A0 rejects them). Counters are aggregated per workgroup (RSC_ACCEPTED, RSC_QUEUED, SC histogram).
+// M5 boost (OWNER T-D; restir-temporal-api.md TD21, §3.7): slots s ≥ numSlots − boostSlots accept a pair iff
+// A0 ∧ (dis(p) ∨ dis(q)) (restir/pairing.wgsl pair_boost_accept), evaluated by the same min thread; without the boost
+// (boostSlots = 0, always with temporal off) the loop is the M4 one.
 // G2: 0 resIn ro · 1 shiftArena rw · 2 rsVbuf · 3 rsGeo · 4 pairTex.
 #include "restir/frame.wgsl"
 #include "restir/reservoir.wgsl"
@@ -47,6 +50,7 @@ fn pa_pixel(p: RsPix) {
   let r = rsDispatch.round;
   let vbP = rs_vbuf(p.px);
   let geoP = rs_geo(p.px);
+  let firstBoost = pair_first_boost_slot();
   for (var s = 0u; s < rsParams.numSlots; s++) {
     let pr = pair_partner(p.local, p.member, t, r, s);
     if (!pr.valid) { pa_not_accepted(p.ai, s); continue; }
@@ -60,7 +64,9 @@ fn pa_pixel(p: RsPix) {
     let qpx = pair_atlas_px(p, pr.partner);
     let qai = pair_atlas_index(qpx);
     if (p.ai > qai) { continue; }                 // the partner's thread owns the pair
-    if (!pair_A0(vbP, geoP, rs_vbuf(qpx), rs_geo(qpx))) {   // canonical order: G[min], G[max]
+    var a = pair_A0(vbP, geoP, rs_vbuf(qpx), rs_geo(qpx));   // canonical order: G[min], G[max]
+    if (s >= firstBoost) { a = pair_boost_accept(a, pair_disoccluded(p.ai), pair_disoccluded(qai)); }
+    if (!a) {
       pa_not_accepted(p.ai, s);
       pa_not_accepted(qai, s);
       continue;

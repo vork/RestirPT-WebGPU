@@ -21,8 +21,9 @@ afterAll(releaseTestGpu);
 
 // U-PT-BITS (1): hashes of 64-spp PT images (Chrome lane / Metal). Recorded on the pre-refactor tree (commit 6efd0bd:
 // c0c 10d55063, c0e 87ffe26f, c0m 2aa85291, x_quads 194ab49b, c0s 378997d3) and re-recorded on the quantized fixture
-// geometry (data-formats.md P1: lattice positions, TRI_FLAT, oct normals, vertex arena).
-const PT_BITS: Record<BitFixture, string> = { c0c: 'fbc9b735', c0e: 'beac8da6', c0m: '7302afbf', x_quads: '0d5a782a', c0s: '384b0b6b' };
+// geometry (data-formats.md P1: lattice positions, TRI_FLAT, oct normals, vertex arena). c0s re-recorded for M5 C-10
+// (restir-temporal-api.md: explicit f32 env bilinear + fma envUV, intentional env bit change; was 384b0b6b).
+const PT_BITS: Record<BitFixture, string> = { c0c: 'fbc9b735', c0e: 'beac8da6', c0m: '7302afbf', x_quads: '0d5a782a', c0s: 'a75ae07a' };
 
 describe('U-PT-BITS: the PT is bit-identical after the env-sample / length1 / bsdf_query refactors', () => {
   it('(1) image hashes of 64 spp on C0c, C0e, C0m, (x) quads, C0s', async () => {
@@ -297,7 +298,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   if (pr.valid || a0 || d.x != 1 || w < 0.0 || res_needs_replay(src.flags)) { queue_append(0u, (p.ai << 3u) | 0u); }
   rs_count(RSC_CODE_BASE + rs_slot_code_sc(o.code), 1u);
   spatial_resample(p, 0u, true);
-  let r = replay_prefix(src.seed, vertex_from_ids(dst.prim, dst.bary.x, dst.bary.y, dst.camPos), dst.prim, dst.camPos, dst.thr, 3u, 4u, 0u);
+  let r = replay_prefix(src.seed, vertex_from_ids(dst.prim, dst.bary.x, dst.bary.y, dst.camPos), dst.prim, dst.camPos, dst.thr, 3u, 4u, 0u, RS_FS_CUR);
   rs_count(RSC_CODE_BASE + rs_slot_code_sc(r.code), 1u);
   pathtree_run(p, rs_frame_key(p.member, rs_t(), p.localIdx), 0u, 1u, true, true);
   rsdbg_slot(p.px, 0u, o.code, o.J, false);

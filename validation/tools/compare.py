@@ -123,7 +123,7 @@ def load_replicates(src: Source, channels, tile_sizes, masks=None, mask_names=()
     the first and second half (for the A/A noise-floor metrics)."""
     if src.kind == "npz":
         with np.load(src.npz, allow_pickle=False) as z:
-            reps = S.replicates_from_sums({k: z[k] for k in z.files}, channels)
+            reps = S.replicates_from_sums({k: z[k] for k in z.files}, channels, tile_sizes)
         if masks is not None and reps.masks is None:
             raise InputError(f"{src.npz}: test.json declares masks but the npz has no 'masks' sums")
         return reps, None

@@ -50,6 +50,34 @@ const SFX_BSDF_END: u32 = 1u;  const SFX_ESCAPE: u32 = 2u;  const SFX_VALID: u32
 // A3: lobeHist "no event" nibble and word (§2.2 word 23)
 const RS_HIST_NONE: u32 = 0xFFFFFFFFu;
 
+// ---- M5 (restir-temporal-api.md §2.1 and appendix B.1, normative; append-only) ----------------------------------
+const RS_FS_CUR: u32 = 0u;  const RS_FS_PREV: u32 = 1u;
+const TF_HIST_VALID: u32 = 1u;  const TF_LIGHTS_SAME: u32 = 2u;  const TF_ENV_SAME: u32 = 4u;  const TF_REFRESH: u32 = 8u;
+const TF_PMF_CHANGED: u32 = 16u;  const TF_ENV_MOVED: u32 = 32u;  const TF_ENV_RADIO: u32 = 64u;  const TF_LIGHT_MOVED: u32 = 128u;
+const TF_RESET: u32 = 256u;  const TF_CAM_SAME: u32 = 512u;
+const TM_TALBOT: u32 = 1u;  const TM_PP_RECOMPUTE: u32 = 2u;  const TM_ROBUST: u32 = 4u;  const TM_E2: u32 = 8u;
+const TP_N1_MIXED: u32 = 1u;  const TP_NO_JP: u32 = 2u;  const TP_NO_JP_ENV: u32 = 4u;  const TP_N3_STALE: u32 = 8u;
+const TP_N4_RIS: u32 = 16u;  const TP_N5_PIXEL_CENTRE: u32 = 32u;  const TP_N6_CUR_CAM: u32 = 64u;  const TP_N7_PER_LIGHT: u32 = 128u;
+const TP_ENV_NO_ROT_VIS: u32 = 256u;  const TP_ENV_GAMMA_T: u32 = 512u;  const TP_CP_PLUS1: u32 = 1024u;
+const TP_U8_STALE_AUX: u32 = 2048u;  const TP_U8_SPOT_PREV_AXIS: u32 = 4096u;
+const RSF_TEMPORAL: u32 = 64u;
+const RSF_PLANT_U8_W1DELTA: u32 = 256u;  const RSF_PLANT_U8_NO_PK: u32 = 512u;  const RSF_PLANT_U8_T2: u32 = 1024u;
+const RSF_PLANT_U8_ONESIDED: u32 = 2048u;  const RSF_PLANT_U8_FAILED_K: u32 = 4096u;
+const RSD_QUEUE_SHIFT: u32 = 8u;  const RSD_PHASE_B: u32 = 32u;
+const LCB_MOVED: u32 = 1u;  const LCB_RADIO: u32 = 2u;  const LCB_ADDED: u32 = 4u;
+const RS_PASS_T_REFRESH_FWD: u32 = 9u;  const RS_PASS_T_CLASSIFY: u32 = 10u;  const RS_PASS_T_FWD: u32 = 11u;
+const RS_PASS_T_REFRESH_INV: u32 = 12u;  const RS_PASS_T_INV: u32 = 13u;  const RS_PASS_T_PLANT: u32 = 14u;
+const STREAM_TEMPORAL_PICK: u32 = 0x2c1b3c6du;
+const SFX_DELTA_END: u32 = 8u;
+const RSC_T_QVALID: u32 = 48u;  const RSC_T_DISOCC: u32 = 49u;  const RSC_T_FWD_QUEUED: u32 = 50u;  const RSC_T_FWD_OK: u32 = 51u;
+const RSC_T_SEL_P: u32 = 52u;  const RSC_T_INV_QUEUED: u32 = 53u;  const RSC_T_INV_OK: u32 = 54u;  const RSC_T_EMPTY_OUT: u32 = 55u;
+const RSC_T_LIGHT_UNDEF: u32 = 56u;  const RSC_T_CLASS_UNDEF: u32 = 57u;  const RSC_T_REFRESH_RECS: u32 = 58u;
+const RSC_T_REFRESH_RAYS: u32 = 59u;  const RSC_T_E2_ZEROED: u32 = 60u;  const RSC_T_ROBUST_MISMATCH: u32 = 61u;
+const RSC_T_NONFINITE: u32 = 62u;  const RSC_T_PENDING_LEFT: u32 = 63u;
+const RS_Q_SPATIAL: u32 = 0u;  const RS_Q_FWD: u32 = 1u;  const RS_Q_INV: u32 = 2u;
+// restir-temporal-api.md Changelog B-9: light-driven undefined temporal shifts (free header word 28, both directions)
+const RSC_T_LIGHT_CLASS: u32 = 28u;
+
 /// Packed slot code word (§2.6): sc | term << 8 | pair << 12 | f16(margin) << 16.
 fn rs_slot_code(sc: u32, term: u32, pair: u32, margin: f32) -> u32 {
   return (sc & 0xFFu) | ((term & 0xFu) << 8u) | ((pair & 0xFu) << 12u) | ((pack2x16float(vec2f(margin, 0.0)) & 0xFFFFu) << 16u);

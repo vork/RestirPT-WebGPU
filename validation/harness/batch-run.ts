@@ -12,7 +12,7 @@ import { computeRenderOrigin } from '../../src/core/render/frame-uniforms.ts';
 import { SceneGpu } from '../../src/core/render/scene-gpu.ts';
 import { parseLightMode } from '../../src/core/render/lights-gpu.ts';
 import { loadScene as loadGltfScene } from '../../src/core/scene/load-scene.ts';
-import { fetchScenePackage } from '../../src/core/scene/scene-package.ts';
+import { BASE_ENV_MAP, resolvePackageFrame, fetchScenePackage } from '../../src/core/scene/scene-package.ts';
 import type { SceneData } from '../../src/core/scene/types.ts';
 import { isUsdName, loadUsd } from '../../src/core/scene/usd/load-usd.ts';
 import { packageSha256, uploadFile } from './export-package.ts';
@@ -73,7 +73,7 @@ export interface RenderBatchesReport {
 export const stable = (v: unknown): string => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x)
   ? Object.fromEntries(Object.entries(x as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
 
-interface FrameOverride { env?: { rotationZ?: number; strength?: number; tint?: [number, number, number] } }
+interface FrameOverride { env?: { rotationZ?: number; strength?: number; tint?: [number, number, number]; visibleToCamera?: boolean } }
 
 export async function loadSource(o: Pick<RenderBatchesOptions, 'package' | 'sceneUrl' | 'frame'>): Promise<{ scene: SceneData; camera: { camToWorld: ArrayLike<number>; yfov: number }; size?: [number, number]; source: Record<string, unknown>; frame?: FrameOverride }> {
   if (o.package) {
@@ -85,14 +85,14 @@ export async function loadSource(o: Pick<RenderBatchesOptions, 'package' | 'scen
     if (o.frame !== undefined) {
       const f = p.frames?.find((x) => x.frame === o.frame);
       if (!f) throw new Error(`${o.package}: no frame ${o.frame} in scene.json frames`);
-      if (f.camera) camera = { camToWorld: Float64Array.from(f.camera.matrix), yfov: f.camera.yfov };
-      if (f.lights) {
-        scene = { ...scene, lights: scene.lights.map((l) => {
-          const ov = f.lights![String(l.id)];
-          return ov ? { ...l, ...(ov.matrix ? { matrix: new Float32Array(ov.matrix) } : {}), ...(ov.power !== undefined ? { power: ov.power } : {}) } : l;
-        }) };
-      }
-      frame = { env: f.env };
+      // M5 (restir-temporal-api.md TD27): the full frame state (enabled lights, radiometric / size overrides, env tint and
+      // map swaps). M3 packages (matrix / power / rotationZ / strength only) resolve to exactly the previous state.
+      const r = resolvePackageFrame(p, o.frame);
+      if (f.camera) camera = { camToWorld: r.camera.camToWorld, yfov: r.camera.yfov };
+      if (f.lights) scene = { ...scene, lights: r.lights };
+      if (r.env && r.env.mapId !== BASE_ENV_MAP) scene = { ...scene, env: { ...r.env.map, ...r.env.params } };
+      frame = { env: f.env ? Object.fromEntries(Object.entries({ rotationZ: f.env.rotationZ, strength: f.env.strength, tint: f.env.tint, visibleToCamera: f.env.visibleToCamera })
+        .filter(([, v]) => v !== undefined)) as FrameOverride['env'] : undefined };
     }
     return {
       scene, camera, size: [p.render.width, p.render.height], frame,

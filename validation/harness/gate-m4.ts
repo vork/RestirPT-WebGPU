@@ -128,6 +128,23 @@ export const GPU_SUITES: [string, string][] = [
  */
 export const GPU_SUITE_ENV: Record<string, Record<string, string>> = { 'restir-shift': { VITE_T3_MS: String(18 * 60_000) } };
 
+/**
+ * GPU-lock holds of a Gate-0 suite (≤ 12 min each, coordinator rule; restir-temporal-api.md Changelog E-16). restir-shift
+ * is split: one hold per T3 variant (`-t`), ≤ 24 min each (T3-0 at VITE_T3_MS/3 + T3-1 at VITE_T3_MS = 18 min; the one
+ * documented exception to the 12-min rule, since a variant needs that wall time for ≥ 10⁷ round trips in its rarest
+ * bins), plus one hold for every other test of the file.
+ */
+export const T3_DESCRIBE = 'T3-0 / T2 / T3-1 / T4 / T3-D / U5 / T3-ENV / U-12 on the t3 fixtures';
+export const T3_VARIANT_TESTS = ['t3_cases_256', 't3_rare_256', 't3_cases_256_noenv', 't3_cases_256_envonly', 't3_cases_256_envonly (env NEE off)', 't3_cutoff_256'];
+const reEsc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export function gpuSuiteHolds(file: string): { label: string; args: string[] }[] {
+  if (file !== 'restir-shift') return [{ label: '', args: [] }];
+  return [
+    { label: ' [all but the T3 variants]', args: ['-t', `^(?!.*${reEsc(T3_DESCRIBE)})`] },
+    ...T3_VARIANT_TESTS.map((v) => ({ label: ` [T3 ${v}]`, args: ['-t', `${reEsc(T3_DESCRIBE)}.* ${reEsc(v)}$`] })),
+  ];
+}
+
 /** Suite FWER units: every scene × rung + ensemble + 2022 + the rendered plants + the synthetic plant + A/A, × {Y,R,G,B}. */
 export function nUnits(): number { return 4 * (M4_SCENES.length * M4_RUNGS.length + 2 + PLANTS.length + 1 + 1); }   // A/A and W×1.003 count once each
 
@@ -482,7 +499,9 @@ export function milestoneM4(record: Rec, o: M4Options = {}): void {
     const log = path.join(dir, 'logs', `${name.replace(/[^\w.-]+/g, '_').slice(0, 80)}.log`);
     mkdirSync(path.join(ROOT, dir, 'logs'), { recursive: true });
     writeFileSync(path.join(ROOT, log), r.out);
-    add(name, r.code === 0, r.seconds, { log, ...(env ? { env } : {}) }, `exit ${r.code}`);
+    // a vitest step whose filter (-t) matched no test exits 0 with every test skipped: that is a failure of the gate
+    const noTests = argv[0] === 'vitest' && !/\d+ passed/.test(r.out);
+    add(name, r.code === 0 && !noTests, r.seconds, { log, ...(env ? { env } : {}) }, `exit ${r.code}${noTests ? ', no test ran' : ''}`);
     return r;
   };
   const full = !o.only && !o.pilotOnly && !o.prerenderPtRefs;
@@ -504,10 +523,12 @@ export function milestoneM4(record: Rec, o: M4Options = {}): void {
     for (const [file, what] of GPU_SUITES) {
       const rel = `validation/gpu-tests/${file}.gpu.test.ts`;
       if (!existsSync(path.join(ROOT, rel))) { add(`${file} (chrome): ${what}`, false, 0, undefined, `missing ${rel}`); continue; }
-      withGpuLockSync(`gate-m4-${file}`, () => {
-        runStep(`${file} (chrome): ${what}`, 'npx', ['vitest', 'run', ...vitestConfigArgs(), '--project', 'chrome', '--reporter=verbose', rel],
-          (l) => /Tests |FAIL|✗|×|AssertionError|LOGIC|FP-BOUNDARY|violation/.test(l), GPU_SUITE_ENV[file]);
-      });
+      for (const h of gpuSuiteHolds(file)) {
+        withGpuLockSync(`gate-m4-${file}`, () => {
+          runStep(`${file} (chrome)${h.label}: ${what}`, 'npx', ['vitest', 'run', ...vitestConfigArgs(), '--project', 'chrome', '--reporter=verbose', rel, ...h.args],
+            (l) => /Tests |FAIL|✗|×|AssertionError|LOGIC|FP-BOUNDARY|violation/.test(l), GPU_SUITE_ENV[file]);
+        });
+      }
     }
     if (existsSync(path.join(ROOT, 'validation/harness/m4-app-smoke.ts'))) {
       runStep('M4 app smoke (ReSTIR mode on Cornell + HDRI, every M4 view, inspector dump, HUD f_r)', 'npx',

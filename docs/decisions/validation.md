@@ -314,3 +314,119 @@ which changes only the interactive `RestirFramePass.encode`, not the batch path)
   - `initial`: bit-identical on (i), (iv) and (x).
   - `offline`, where spatial shifts run: identical sample selection. Pixel values differ only by f32 rounding: at most 3.9e-7 relative, image means within 1.2e-10 relative. That is 4 orders of magnitude below the Stage-B δ (0.2% global).
 - **Conclusion:** the M4 Stage-B results stand for the merged code without a re-run.
+
+# M5: temporal reuse and dynamics, Gate 3 rungs 3.3–3.6 (restir-temporal-api.md §6, PLAN §5 M5, §7.1, §7.3, §7.4 M5)
+
+`npm run validate -- --milestone M5 [--part core|static]` runs `validation/harness/gate-m5.ts` (owner T-E):
+- **Gate 0.** Typecheck; cpu lane (`tests/restir/*` incl. `gate-m5-config.test.ts`, tmis, tqueue, refresh-ref,
+  light-maps, config-hash, frame-state); python tests (`validation/tools/tests`, incl. `test_dynamic.py` for
+  dynamic.py / dyn_masks.py / plant_sign.py); `make-m5.ts` determinism (twice, byte-identical, and the committed
+  packages equal the generator's output); the Chrome GPU suites `restir-tframe`, `restir-temporal`, `restir-refresh`,
+  `restir-debug` and the M4/M3 regressions (one GPU-lock hold per suite); `budget.json` M5 rows; the M5 app smoke.
+- **Scenes** (`validation/scenes/make-m5.ts`; env packages in `validation/out/m5/scenes`): the static subset `m5s_*`
+  (the M4 packages of (i), (iii), (v) V1, (vi) A, (x), (xii), C0q(d), (xiv) overcast + rect with render 256², every other
+  byte identical; TD28); 16 sequences `ixs_*_256` with dense frames and a `sequence` block (TD27, §6.2); the U8 scenes
+  `u8_c0{c,d,e}_*_b{0,1}` (TD30). (xiii) and the kloof scenes are reported, not gating (Q2).
+- **Chains** (TD25, restir-temporal-api.md Changelog E-1). E = 16 chains per 256² atlas; a chain is reset at t = 0 and
+  follows the package's frames; chain id = memberBase + member; one chain run serves every test frame of its unit. At a
+  test frame the atlas `rsFrame` is copied and reduced on the host (f64) into `f<t>/ensemble.npz` (rows = chains, tiles
+  16/32/64, global, mask regions, per-pixel moments). Submits never span a frame boundary (TD26). GPU-lock chunks are
+  whole batches (`--batch-offset`), merged by `dynamic.py merge-npz`.
+- **Rungs.** 3.3 (`temporal`) and 3.4 (`full`) on the 8 static scenes at t ∈ {1, 24} of 25-frame chains, stage B
+  (0.2 % global, 1 % per 32² tile); 3.5 = the per-chain mean of frames 32…287 on (i), (v) V1, (xiv) overcast + rect
+  (Q9, stage B); per scene the ladder stops at the first failing rung. 3.6: 18 units (13 sequences + Talbot and E2 on
+  ixs_b / ixs_e (Q11) + boost 3 on ixs_d (Q7)), stage `dyn` per test frame (0.2 % global, 2 % per 64² tile, 3 % per mask
+  region) plus `dynamic.py sequence`: the drift of Δ_f over the test frames (OLS slope, sandwich variance across the
+  shared chains, gate |z| ≤ z_{1−α_u/2}, Changelog E-2) and the failing-tile count per frame vs Binomial(m, 0.01) at α_u.
+- **PT references** (our PT, RR off, seed 7001 / re-run 107001) at every test frame (`--frames t`, the resolved frame
+  state of `resolvePackageFrame`) and one base-state reference per static package (E-8); cached in
+  `validation/out/m5/ptrefs` keyed by package bytes, frame, size, seed and the PT code closure; sizes frozen per PT code
+  (`validation/out/m5/ptsize`).
+- **Masks** (`dyn_masks.py`, §6.4; E-3): partition M_disocc (the chain runner's `--mode disocc`: pixel-centre V-buffers
+  at t−1 and t through the production `temporal_pixel`), M_new, M_gone, M_edge, M_steady from 4×4-block means of fixed
+  mask references (512 spp × 4, seed 7301) at t and t−1; plants add M_sil and the dominance regions M_light:<name>
+  (single-emitter PT renders of derived packages, E-7). Regions < 256 px are dropped.
+- **Sizing** (PLAN §7.3; §6.4). Pilots: PT 128 spp × 16 per (package, frame), 64 chains per unit (seed 7011 / 7012).
+  Per test frame and aggregate (global, gate tiles, mask regions; Y/R/G/B) u = per-sample variance / (D·T)², T =
+  δ/(t_{0.99,15} + z_{1−0.005/m}); the PT samples of a frame are shared by every chain variant of the package (static:
+  3.3/3.4/3.5; dyn: base/Talbot/E2/boost); the joint allocation minimises GPU time, × 1.25, R ≥ 256 (3.5: 64, E-4) in
+  multiples of 16, PT spp per batch niceCeil ≥ 256, B = 16. Unit cap 30 min per side: the tile aggregate is enlarged
+  one step (32² → 64², 64² → 128²; masks unchanged); a unit whose global aggregate alone exceeds the cap gets 90 min once
+  (Q4), beyond that it is `infeasible` and goes to the coordinator. Plan > 14 h ⇒ `--part core` + `--part static` (Q3).
+- **Plants** (§6.5, TD29; plant_sign.py): 20 rendered plants (U8-4 is deferred to M6 with U8-7, 8, 10 by B-9 / Q6 and listed as such in the summary) at 1× chains against 4× PT references (seed 7201), chains
+  cut after the last predicted frame; a plant passes iff detected (half of the planted chains vs a PT half fails in
+  ≥ 9/10 repeats, PT A/A ≥ 9/10, E-5; full comparison not `pass`) AND every evaluable prediction holds (one-sided z ≥ 3
+  on its region; "only" predictions: no opposite-sign region/tile with z ≥ 4; empty regions are "not evaluable", E-6).
+  Synthetic W × 1.003 + calibrate A/A re-splits (`dynamic.py calibrate`) on the A/A run; **A/A**: m5s_cornell_i 3.4 at
+  t = 24, seeds 7502 vs 7503, 4× size, must pass.
+- **U8 ladder**: the six u8 scenes through 3.1 / 3.1b / 3.2 (M4 sequential harness) and 3.3 / 3.4 (chains); all pass.
+- **T15/T16 per chain run** (restir-chain-run.ts + `t16ChainProblems`): NaN/Inf/negatives 0, every RSC error counter
+  incl. `RSC_T_NONFINITE` / `RSC_T_PENDING_LEFT` 0, q0–q2 overflow 0, no submit over 200 ms, identical reset patterns in
+  every batch; **history valid on every frame except t = 0 and the package's `resetFrames`** (ixs_k: the map swap at
+  20) — "any config change resets history" and nothing else does; temporal units on every frame; preset of the rung,
+  RR off, cCap 20, jitter iid, Mode A, spatial rounds executed = rounds; maxBounces / scene bytes / resolution / env NEE /
+  frame = the PT reference's.
+
+**Pilot sizing (2026-10-01, `budget.json` `m5_entries`, harness 908aa2b+).** 49 sized units = 7.0 h of chains + PT
+references (static 3.3–3.5 + U8 3.3/3.4: 2.6 h of chains; rung 3.6: 2.8 h), + Gate 0 ≈ 1.5 h, plants ≈ 1.9 h, A/A ≈ 3.2 h
+(2 × 4 × the m5s_cornell_i 3.4 chains), U8 M4 rungs ≈ 0.5 h ⇒ 14.1 h > 14 h: two parts (Q3), `--part core` ≈ 9.6 h and
+`--part static` ≈ 3.3 h. Tile enlargements by the 30-min cap: m5s_spot_grazing, glass_mirror_A, many_lights (32² → 64²);
+ixs_c_spot_b03, ixs_e_addremove (+ Talbot, E2), ixs_f_combined, ixs_i_envradio (64² → 128²). Q4 raises (global alone
+> 30 min): ixs_c_spot_b03 (43 min, R 25 488) and ixs_f_combined (31 min, R 14 432). No unit is infeasible.
+
+**A/A sizing (coordinator decision, Changelog E-21).** The A/A pair (seeds 7502 / 7503, m5s_cornell_i 3.4 at t = 24) ran
+at 4× the core-part sizing of its unit: the core run measured 90 ms per chain, so 32² tiles would have taken 42 min
+(> 30-min cap) and the unit was sized at 64² tiles, R 2 272 → A/A 9 088 chains per seed. The static part, measuring
+55 ms per chain, gated the same unit at 32² tiles with R 27 760. The tile decision depends on measured timing. The A/A
+was kept as run: it passed (Δ_Y +0.003 %) and the synthetic W × 1.003 plant was detected 10/10 at the same power, which
+is what the A/A calibrates; mirroring the static sizing (111 k chains per seed, ≈ 3.4 h) was not spent.
+
+**M5 gate result (final, 2026-10-06; harness through 42c8dbe, kernel code e871ea6 + the C-11 N1 fix a8045d6).**
+Runs (all under `validation/out/`, copied to the main checkout): core `m5-gate-20261001-081949`; static
+`m5-gate-20261001-162035` + re-run `-191515` (cornell_i, spot_grazing, u8_c0c_point_b1); 128² re-evaluation
+`-203321` (`--reuse-chains`, aggregation fix only); plants `-20261002-051049` (fresh seeds), `-074225` (N1 trio, U8-3,
+A/A); ixs_i after E-20 `-20261006-180639` (unit), `-180833` (no-jp-env), `-180946` (U8-2t, moved to Gate 0); env-γ_t
+third seed set `-181922`; T3-2 addendum `m5-core-addendum/`.
+
+| Part | Result |
+|---|---|
+| Gate 0 | green: restir-tframe, restir-temporal 47/47, restir-refresh, restir-debug, restir-initial, restir-shift 25/25 (one 2.5 h hold in this run; E-16 splits it per T3 variant from now on), restir-spatial, M3 regressions; typecheck, cpu 435, python, make-m5 determinism, U-TR-1, M5 app smoke; T3-2 rare bins (translate / add-remove + intensity / moving lights + env) 5.6–7.1·10⁸ trials each, LOGIC = FP = PLATFORM = 0; U8 plant activity (U8-2t, E-22) |
+| Static 3.3–3.5 + U8 | 77/77: 3.3/3.4 × 8 scenes × t ∈ {1, 24} (32), 3.5 × 3, U8 chains 24, U8 M4 rungs 18; \|Δ_Y\| ≤ 0.023 %, worst tile ≤ 0.31 % |
+| Rung 3.6 | 18/18 (13 sequences + Talbot / E2 on ixs_b and ixs_e + boost on ixs_d), every test frame + drift / failing-tile statistics; \|Δ_Y\| ≤ 0.063 %, worst tile ≤ 0.39 %, \|drift z\| ≤ 2.2; every counter 0 |
+| Plants | 18 of 19 gating plants pass with their predictions; env-no-rot-vis detect-only (resolution-limited, C-12); U8-2t Gate 0 (E-22); U8-4/7/8/10 deferred to M6 |
+| Calibration | A/A (7502 vs 7503, m5s_cornell_i 3.4, 4×) pass, Δ_Y +0.003 %; synthetic W × 1.003 detected 10/10, control 10/10, A/A re-splits ok |
+
+Plants (Δ = ReSTIR − PT relative, Y; every row detected 10/10 with the PT A/A control ≥ 9/10 and the full comparison
+failing; "fresh seeds" = rendered on disjoint seeds after the prediction was revised, E-18 / E-23):
+
+| Plant | Scene, frames | Prediction | Measured | Status |
+|---|---|---|---|---|
+| N1-mixed | ixs_e 8, 14, 15 | M_light:C −, M_light:A − | −70.4 %, −19.9 %, −18.9 % | pass (re-rendered after the C-11 fix) |
+| N1-mixed r 0.5 | ixs_e_half 14, 15 | M_light:A + | +61.6 %, +58.5 % | pass (C-11 fix) |
+| N1-consistent | ixs_a 10, 25 | M_new −, M_up − (only −) | M_up −38 % / −82 %, M_new −88 % (f25; empty at f10) | pass (C-11 fix) |
+| N2 | ixs_e 14, 15 | M_light:A −, M_light:B + | −16.0 / −15.2 %, +44.9 / +42.7 % | pass |
+| N3 | ixs_a 40 | M_down +, M_gone + | M_down +3.1 % (z 8.1); M_gone empty | revised after measurement (C-11), confirmed on fresh seeds |
+| N4 | ixs_n4 8, 16 | global − | −9.3 %, −10.6 % | revised (C-11), confirmed on fresh seeds |
+| N5 | ixs_d0 32 / ixs_d 16 | M_sil + / M_edge + | +13.7 % / +8.8 % | revised (B-12), confirmed on fresh seeds |
+| N6 | ixs_d_glossy 16, 32 | detect (sign not predicted, Q5) | −0.14 %, −0.22 % | pass |
+| N7 | ixs_e 14, 15 | M_light:B − | −5.0 %, −4.7 % | pass |
+| skip rotation refresh | ixs_h 10, 25 | detect (expected M_down +, M_up −; informational) | M_down +0.22 %, +0.20 % (z 2.1, 1.6) | detect-only, resolution-limited (C-12) |
+| E_{t−1} with γ_t | ixs_h 10, 25 | M_new, M_up, M_down, global − | M_up −61 / −64 %, M_down −25 / −20 %, global −9.7 / −15.3 % | revised (B-12, C-12), confirmed on a third seed set |
+| omit J_P on env | ixs_i 16, 17 | M_light:env − | −1.9 %, −1.8 % | revised (C-11), confirmed on fresh seeds (after E-20) |
+| c_p + 1 | m5s_cornell_i 3.4 t 24 | global − | −46.7 % | pass |
+| W × 1.003 | A/A run | detected | 10/10 | pass |
+| U8-1 ω1 < 1 for delta | u8_c0c_point_b1 | global + | +0.87 % | revised (B-12), confirmed on fresh seeds |
+| U8-3 no p_k ratio | m5s_cornell_i 3.4 t 24 | detect | −1.1 % | pass (scene moved by B-12: inert without deep paths) |
+| U8-4 J = t_x²/t_y² | — | — | — | deferred to M6 (B-9) |
+| U8-6 one-sided ignored | u8_c0e_rect_b1 | detect (sign reported) | −0.68 % | revised (B-12), confirmed on fresh seeds |
+| U8-9 FAILED dropped from k | u8_c0e_rect_b1 | global + | +1.83 % | revised (D-5), confirmed on fresh seeds |
+| U8-2t stale aux | — | Gate-0 activity test | emissive + env mean +0.006 %, reservoirs differ; rect-only bitwise identical | active, bias below δ (E-22) |
+| U8-5t spot axis of t−1 | ixs_c_spot_b03 20 | detect | −2.95 % | pass |
+| A/A | m5s_cornell_i 3.4 ×4 | pass | Δ_Y +0.003 % | pass |
+
+Harness fixes found by the gate (restir-temporal-api.md Changelog): E-15 128² aggregates from ensemble.npz; E-16 one
+GPU-lock hold per T3 variant (≤ 24 min, the documented exception); E-17 chain npz uploads in 8 MB parts (Playwright CDP
+string limit) and regex-escaped `-t` patterns (two T3-2 cases had silently run no test); E-18 / E-23 fresh disjoint seeds
+for predictions revised after measurement; E-19 / C-11 the N1-mixed inverse refresh (no PENDING_LEFT exception); E-20
+the ixs_i rect back at the ceiling (the E-13 placement made the scene heavy-tailed); E-21 PT runs at ≤ 32 spp per
+dispatch (hard cap) and the A/A sizing rationale; E-22 U8-2t as a Gate-0 activity test.

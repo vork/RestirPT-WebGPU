@@ -273,6 +273,14 @@ v  = (acos(clamp(b.z, −1, 1)) − π) / (−π)   = 1 − acos(b.z)/π
   - Sampler `repeat/repeat`, `linear/linear`, lookup `textureSampleLevel(texEnv, sEnv, (u,v), 0)`.
   - This reproduces Cycles' `EXTENSION_REPEAT` quirk: within half a texel of a pole the lookup
     blends the top and bottom rows. Do not "fix" it.
+  - **[M5 addition, restir-temporal-api.md C-10]** The lookup is an explicit f32 bilinear instead of the
+    hardware sampler: x = fma(uv, (W, H), −½), i₀ = ⌊x⌋ wrapped (repeat/repeat, as above), t = x − ⌊x⌋,
+    four `textureLoad`s and fma lerps; `envUV` / `envDir` use explicit fma and constant reciprocals of 2π, π.
+    The hardware filter quantizes t (8 bit on Apple GPUs, the same root cause as platform-lanes Q4), which made
+    ulp-level `envUV` differences between pipelines jumps of up to 2·10⁻³ in L_env on high-frequency maps, so
+    the same stored path had different F in the path tree, the refresh and the shifts. The explicit lookup is
+    continuous in uv, exact in f32 for every texel format, and bit-stable across pipelines. (Cycles on Metal
+    keeps the quantized hardware weights: a ≤ 2⁻⁹·Δtexel per-lookup difference with zero mean over a footprint.)
 - **Radiance.** `L_env(ω) = strength · tint ⊙ texel(envUV(ω))`. This one function is
   `envRadiance(uv, scale)`.
   - NEE-env samples evaluate `envRadiance(uv_sampled)` directly, with no direction round trip.
@@ -963,6 +971,21 @@ pairing      = pcg4d(runSeed ⊕ member·φ, t, (round<<8)|slot, STREAM_PAIRING)
 ```
 The counters depend only on (tree, vertex, candidate kind), so splitting trees across dispatches is bitwise neutral.
 
+**[M5 addition, restir-temporal-api.md]** Temporal streams and chain seeds (docs/decisions/restir-temporal-api.md §5):
+```
+temporal pick   = pcg4d(runSeed ⊕ member·φ, t, localIdx, STREAM_TEMPORAL_PICK = 0x2c1b3c6d)
+                  ξ = (u01(.x), u01(.y)) stochastic rounding of the back-projected position; ring rotation = .z & 7
+temporal select = u01(pcg4d(key.x, key.y ⊕ RS_PASS_TEMPORAL·φ, counter, STREAM_RESAMPLE)), key of the DESTINATION
+                  pixel; counter 0 = canonical, 1 = temporal (streamed in that order, contribution MIS and Talbot alike)
+```
+- q′ never reads the path streams or reservoir contents, so it is sample-independent in the sense of
+  [temporal](#temporal).
+- **Validation chains:** the chain id is the member id (`memberBase + atlas member`); `t` is the animation frame counted
+  from the chain's reset (t = 0 has no history); every chain of a run shares `runSeed` and the scene script. A chain is
+  a deterministic function of (runSeed, chain id, frames 0…t, scene states 0…t). Interactive: t = the app's
+  `seedIndex`; freezing the seed resets history every frame, because identical canonical seeds are not independent
+  candidates.
+
 ---
 
 <a id="path-tree"></a>
@@ -1077,6 +1100,8 @@ belongs to `restir/reservoir.wgsl`. This section defines the semantics.
   (i<<16)|j, h2)`; BSDF_ENV `(0xFFFFFFF1, 0, 0)` with ω in rcWi; none `0xFFFFFFFF`. The endpoint triple is stored for
   every path in addition to the rc triple. **Empty** reservoir ⇔ `d = 0` (W = 0, F = 0, c = 1 on a hit pixel);
   **background** ⇔ bg flag, d = 0, c = 0.
+- **[M5 addition, restir-temporal-api.md]** Suffix flag `SFX_DELTA_END` (word 27 bit 3): the final BSDF event of a BSDF-ended path was a delta lobe
+  (ω2 = 1). The refresh of deep BSDF ends needs it; `lobeHist` covers only x₁…x₈ while d ≤ 15.
 - Class is derivable and **not stored** ([light-changes](#light-changes)):
   - L: k = d ∧ NEE
   - N1: k = d−1 ∧ NEE
@@ -1149,6 +1174,16 @@ J_M = A_t/A_{t−1}                  only for case (d) on a RESIZED Mode-B analy
 inverse shift (t → t−1): the reciprocal factors, J_P⁻¹ = pmf_{t−1}(L)/pmf_t(L).
 ```
 - Delta lights and the sun: J = 1 spatially, and J = J_P temporally.
+- **[M5 addition, restir-temporal-api.md]** **Entries, storage and application of J_P.**
+  - The stored endpoint entry is an alias index of the record's own frame. Translation between t−1 and t covers every
+    entry kind: analytic lights through the id maps of the frame-t slot (`prevToCur` forward, `curToPrev` inverse),
+    emissive triangles by `e − nA_from + nA_to` (triangles are static), the env to the target frame's env entry.
+  - `J_P = pmf_to(e_to)/pmf_from(e_from)` with the **realized** pmf of the translated entries. A missing target entry
+    or `pmf_to(e_to) ≤ 0` makes the shift **undefined** (both directions, the same predicate).
+  - J_P is kept apart from J_rc: the resampling weight and π use `J_p = J_rc·J_P`; the write-back stores
+    `jDen ← J_rc·jDen_src`. J_P never applies to ∅ records (BSDF ends only).
+  - Mode A has no J_M (case (d) with an analytic light is Mode B); a resized area light changes F through q = pmf/A,
+    not the Jacobian.
 
 **Write-back when a shifted sample is selected** (plan rule 4; gap-rc §7.4; enh-verify C4).
 ```
@@ -1484,6 +1519,26 @@ radiance valid under S_t, in its own pixel domain.
 `B(r) = 1/(1+c_p) − r/(r+c_p)`, which is −4.3% at r = 2 and c_p = 20. EvanLuo's swapped temporal
 MIS is also forbidden.
 
+**[M5 addition, restir-temporal-api.md]** **Pinned details of the temporal step** (restir-temporal-api.md §3.3, §3.6):
+- **q′ rule.** Rebuild x₁(q) from the current V-buffer ids, project it with the previous camera to the continuous
+  position s′, round stochastically `c₀ = ⌊s′ + ξ⌋`; accept the first tap c of {c₀, then the 8-ring around c₀ in a fixed
+  order rotated by the pick hash} with: previous V-buffer hit at c, same member, `dot(n^g, n^g′) ≥ 0.5` (both toward
+  their own camera), `|‖x₁ − o_{t−1}‖ − z′| ≤ 0.1·z′` (z′ = stored camera distance at c). No tap ⇒ no temporal candidate.
+- **No q′** (or no history): the canonical record is left **bitwise unchanged** (c = 1), not rewritten through the
+  formula (which would round W).
+- **A valid q′ whose record is empty, or whose shift is undefined, still counts:** c_p = min(20, c_prev), w̃_p = 0, and
+  π_p(X_c) is still evaluated when s = c. The partition of unity is over producibility sets, not over realized samples.
+- **Selection:** streaming RIS with the canonical first (counter 0) and the temporal candidate second (counter 1).
+- **In place:** the output is written into the canonical's own buffer at its own pixel (s = p after selection, s = c
+  after the inverse); the previous-frame buffer is read-only until the last temporal read of the frame (I1).
+- **Degenerate:** w̃_c + w̃_p = 0 ⇒ empty record with c = c_c + c_p; a non-finite W_Y ⇒ empty record, counted (must be 0).
+- **Variants.** Talbot-exact selects after the inverse evaluation (all valid-q′ pixels); "recompute" uses
+  π_p(Y_p) = lum F_{t−1}(T⁻¹Y_p)·|∂T⁻¹/∂y| instead of the stored route (unbiased with the exact E_{t−1}, consistent case
+  (i) of gap-temporal §3.5 otherwise); "robust" computes both, uses the stored route and asserts agreement (T6(b)).
+- The W-scale plant (`wScale`) multiplies the temporal W_Y as well as the spatial W.
+- **Write-back of Y_p:** all fields of X_p, then `F ← F_t(Y_p)`, `jDen ← J_rc·jDen`, NEE entry words and `endpointId`
+  renumbered to frame t, deep `rcRad` and the (b)/(c) cache (`rcRad`, `aux`) from the frame-t refresh, `W`, `c`.
+
 ---
 
 <a id="light-changes"></a>
@@ -1530,6 +1585,29 @@ reservoir gets its end term re-evaluated analytically, with no rays. That covers
   pmf stays bitwise stable otherwise.
 - **Never** replay RIS-NEE over per-frame light tiles.
 
+**[M5 addition, restir-temporal-api.md]** **Refresh responsibilities, change classes and the visibility rule** (restir-temporal-api.md §3.5):
+- **Two places evaluate end terms under the destination frame's state:** the shift itself (classes L, E, B1 incl. env
+  escapes, ∅ through replay, and the prefix-dependent factors of N1: f at x_k with the offset's V and ω1 with the
+  offset's p2), and the separate refresh pass (prefix-independent parts only): the deep suffix radiance
+  `β_s ⊙ N_s` or `β_s ⊙ ω2_s·L_s` (classes D-NEE, D-BSDF), the N1 end visibility V(x_k, Φ_s), the translated entry and
+  J_P, and the (b)/(c) cache values (Λ_s or L_s and p1_s at x_{d−1}) for the write-back. The refresh writes scratch
+  only and runs on every frame whose light, pmf or env state changed ("refresh scope per frame").
+- **Change classes** (CPU diff of the light records, stored per light): MOVED ⇔ a record word that enters the light
+  point or direction Φ differs (point/spot: position; sun: direction; rect/disk: position, axes, half sizes, normal);
+  RADIO ⇔ any other word differs (emission, spot cone/blend, spread, area, flags, the spot axis). Env: MOVED ⇔ rotation
+  words differ; RADIO ⇔ strength or tint differ.
+- **Visibility rule.** A shadow ray (N1 end, D-NEE end) is traced iff the endpoint's own light MOVED between t−1 and t
+  (env: rotated). Otherwise V = 1 exactly: every record the refresh serves has p̂ > 0 in its own frame (it was
+  selected), geometry is static, and an unmoved light keeps Φ(L, u, v).
+- **Deep refresh formulas** use the stored suffix cache and the path tree's own functions and grouping:
+  `x = scene_surface(sfx ids, −sfxDir)`, `V = sfxDir`; NEE end `rad = β_s·(ω1/q)·f_all·Λ` with ω1 from
+  `bsdf_query(m, V, ω_L, LOBE_NEE).p_marg`; BSDF end `rad = β_s·(ω2·L)`, ω2 = 1 after a delta end (`SFX_DELTA_END`), else
+  from p1 of the frame's pmf and the cached p2. With an unchanged state the result equals the stored `rcRad` to 1e-6.
+- **E2 (class zeroing, unbiased fallback):** on refresh frames, deep-class temporal samples are undefined (w̃_p = 0)
+  and deep canonicals get π_p := 0; every other class stays exact.
+- **Forbidden:** a per-light refresh mask (refreshing only samples whose own light changed). Any pmf change alters
+  1/q and ω1/ω2 of every light-terminated sample (plan-review R2; planted control N7).
+
 ---
 
 <a id="rr"></a>
@@ -1570,6 +1648,8 @@ Sources: plan §2 rule 13 and §1.9, gap-temporal §3.7, review R15.
 - **Production 8-bit c:** allowed only when c_max ≤ 255, saturating with `min(255, ·)`.
 - Any fractional or sample-dependent cap (the duplication map) is biased and off in every
   unbiasedness gate.
+- **[M5 addition, restir-temporal-api.md]** No q′ (or no history) keeps the canonical c = 1. An empty temporal output keeps c = c_c + c_p. c_prev is the
+  previous frame's final (post-spatial, uncapped) c; the cap is applied once, in the temporal step.
 
 ---
 
@@ -1847,3 +1927,26 @@ that implementers do not follow the superseded text.
 42. **[M4 addition, restir-api.md]** **Case (b)/(c) cached end terms.** PLAN §1.9 stores `rcRadiance` and `aux` for cases (b)/(c).
     M4 shifts re-evaluate these end terms at the copied x_{d−1} from the stored endpoint (bit-identical within a frame)
     and use the stored values only as a debug cross-check (restir-api.md D6).
+43. **[M5 addition, restir-temporal-api.md]** **Scope of the inverse refresh.** PLAN §3 step 3 refreshes "canonicals under S_{t−1}"; plan-review offers
+    "selected canonicals only". Resolution: the refresh pass runs over the canonicals whose π_p is needed (queue Q_i,
+    after selection); the values are exact either way, only the work differs.
+44. **[M5 addition, restir-temporal-api.md]** **Where the N1 end term is refreshed.** plan-review WGPU-2 puts N1 end terms in the shift. The prefix-dependent
+    factors stay in the shift; the prefix-independent visibility V(x_k, Φ_s) is traced by the refresh pass and handed to
+    the shift, so the shift needs no "moved" logic.
+45. **[M5 addition, restir-temporal-api.md]** **N4 needs RIS-NEE light tiles** (M6). M5 plants a synthetic fresh RIS re-draw over 8 alias candidates drawn with
+    frame-t random numbers (test only).
+46. **[M5 addition, restir-temporal-api.md]** **U8 plants 7, 8, 10** need Mode B or RIS-NEE tiles and move to M6; plant 5 is replaced by its temporal analogue
+    (spot axis of frame t−1).
+47. **[M5 addition, restir-temporal-api.md]** **Dynamic scene scripts.** The M3a ix-a…g packages store 7 test frames and model light removal as power 0;
+    gap-temporal §9.1 asks for dense sequences with true add/remove. M5 adds new `ixs_*` sequence packages; the M3a
+    packages stay as Stage-A regressions.
+48. **[M5 addition, restir-temporal-api.md]** **δ per rung.** Static temporal rungs 3.3–3.5 use the Stage-B δ (0.2% global, 1% per 32² tile); dynamic 3.6
+    uses the PLAN §7.3 dynamic δ (0.2% global, 2% per 64² tile, 3% per mask region).
+49. **[M5 addition, restir-temporal-api.md]** **Rung 3.5 "time-average"** is defined as the per-chain mean of frames 32…287 with chains as replicates (valid
+    because each frame is unbiased); it tests long-run convergence, while 3.3/3.4 test individual frames.
+50. **[M5 addition, restir-temporal-api.md]** **Motion vectors.** PLAN §3 step 1 lists motion vectors; the temporal step back-projects positions rebuilt from
+    ids with the previous camera, so no motion-vector texture is needed in M5; dual MVs move to M6.
+51. **[M5 addition, restir-temporal-api.md]** **Talbot and E2 as gating modes.** gap-temporal §9.1 requires every exact mode to pass; M5 gates Talbot and E2 on
+    two light-change sequences each and does not implement E3.
+52. **[M5 addition, restir-temporal-api.md]** **One light commit per frame.** The M3a app flips the light slot on every staged edit (env parameter edits
+    flip it again), so `prev` could be two frames old. M5 stages edits and commits once per rendered frame.

@@ -205,7 +205,8 @@ def aggregate_stack(stack: np.ndarray, channels: Sequence[str] = DEFAULT_CHANNEL
     return acc.finish()
 
 
-def replicates_from_sums(data: Mapping[str, np.ndarray], channels: Sequence[str] = DEFAULT_CHANNELS) -> Replicates:
+def replicates_from_sums(data: Mapping[str, np.ndarray], channels: Sequence[str] = DEFAULT_CHANNELS,
+                         tile_sizes: Iterable[int] = ()) -> Replicates:
     """Ensemble aggregates (the `ensembleStats` read-back; format in README) -> Replicates.
 
     Keys: tiles16/tiles32/tiles64 (R,Th,Tw,C) per-run tile SUMS; global (R,C) per-run image sums;
@@ -236,6 +237,18 @@ def replicates_from_sums(data: Mapping[str, np.ndarray], channels: Sequence[str]
     for s in TILE_SIZES:
         if f"tiles{s}" in data:
             tiles[s] = pick(data[f"tiles{s}"]) / tile_pixel_counts(h, w, s)[..., None]
+    # M5 (restir-temporal-api.md Changelog E-15): larger aggregates requested by the test (e.g. 128² dyn tiles enlarged by
+    # the unit cap) are exact block sums of the stored 64² tile sums
+    for s in sorted(set(tile_sizes) - set(tiles)):
+        if s % 64 == 0 and "tiles64" in data:
+            k = s // 64
+            t64 = np.asarray(data["tiles64"], dtype=np.float64)
+            r, th, tw = t64.shape[:3]
+            nth, ntw = -(-th // k), -(-tw // k)
+            pad = np.zeros((r, nth * k, ntw * k, t64.shape[3]))
+            pad[:, :th, :tw] = t64
+            sums = pad.reshape(r, nth, k, ntw, k, t64.shape[3]).sum(axis=(2, 4))
+            tiles[s] = pick(sums) / tile_pixel_counts(h, w, s)[..., None]
     glob = pick(data["global"]) / (h * w)
     masks = None
     names: tuple[str, ...] = ()

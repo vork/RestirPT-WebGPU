@@ -7,13 +7,18 @@
 //                                     ReSTIR view or the probe is active (debug off ⇒ nothing is encoded)
 //   RestirHud                         arena header (queues, RSC_* counters, SC histogram) → HUD lines, f_r
 // WGSL: shaders/debug/restir-views.wgsl (hooks), shaders/passes/restir/debug.wgsl (passes).
+// M5 (T-D; restir-temporal-api.md §2.11, Changelog D-1): temporal views 480–496 (T1 / T3 hooks) and 497 (boost mask,
+// rs_debug_views), the reservoir views' tap "after temporal", probe tags 73–79 (decodeRestirProbe → `temporal`), the
+// forward / inverse temporal paths of the inspector overlay (paths 23 / 31), and the temporal HUD lines (header words
+// 48–63, the Q_f / Q_i headers and the frame's RsTemporal flags).
 import type { DebugResources, DebugViewDef } from '../debug-views.ts';
 import type { ProbeRecord } from '../probe.ts';
 import type { RestirKernel } from './kernel.ts';
 import {
   ARENA_HDR_BYTES, EP_TYPE, PATH_CLASS_NAMES, RES_WORDS, RS_PROBE_TAG, RS_TECH_NAMES, RS_VIEW, RS_WGSL_CONSTS as K, RSC, SC_NAMES,
-  decodeReservoir, queueHdr, type ReservoirRecord, type RscName,
+  TS_CONSTS as TS, decodeReservoir, queueHdr, type ReservoirRecord, type RscName,
 } from './layout.ts';
+import type { RestirAdvance } from './frame-state.ts';
 import { restirCommonDefines } from './resources.ts';
 
 // ------------------------------------------------------------------------------------------------ views
@@ -28,6 +33,16 @@ function slotViews(base: number, key: string, label: string, def: Partial<DebugV
     id: base + s, key: `${key}[${s}]`, label: `${label} [slot ${s}]`, group: G_SHIFT, source: 'rs_debug_views', kind: 'scalar' as const, ...def,
   }));
 }
+
+/** M5 temporal view ids (restir-temporal-api.md §2.11; debug/restir-views.wgsl RSV_T_*, RSV_S_BOOST). */
+export const RS_VIEW_T = {
+  qvalid: 480, motion: 481, refreshFwd: 482, refreshInv: 483, fwdCode: 484, invCode: 485, logJ: 486, logJP: 487, pic: 488, pip: 489,
+  cprev: 490, cout: 491, sel: 492, phatRel: 493, robust: 494, wp: 495, lightsChanged: 496, boost: 497,
+} as const;
+/** M5 probe tags (§2.11; 79 = internal anchor ids, Changelog D-1). */
+export const RS_PROBE_TAG_T = { header: 73, forward: 74, inverse: 75, select: 76, refresh: 77, pick: 78, anchor: 79 } as const;
+const G_T = 'ReSTIR temporal';
+const T3 = 'rsdbg_temporal (T3 rs_t_select)';
 
 export const RESTIR_VIEWS: DebugViewDef[] = [
   { id: RS_VIEW.c, key: 'rs.c', label: 'c (confidence)', group: G_RES, source: 'rsdbg_reservoir', kind: 'scalar', range: [0.5, 64], log: true, colormap: 'turbo', tapped: true, description: TAP_NOTE },
@@ -54,16 +69,39 @@ export const RESTIR_VIEWS: DebugViewDef[] = [
   ...Array.from({ length: 6 }, (_, s): DebugViewDef => ({ id: RS_VIEW.misMj + s, key: `mis.mj[${s}]`, label: `m_j [slot ${s}]`, group: G_MIS, source: 'rsdbg_mis', kind: 'scalar', range: [0, 1] })),
   { id: RS_VIEW.misK, key: 'mis.k', label: 'k = |S_c|', group: G_MIS, source: 'rsdbg_mis', kind: 'code' },
   { id: RS_VIEW.misSel, key: 'mis.sel', label: 'selected (0 canonical, 1+s partner)', group: G_MIS, source: 'rsdbg_mis', kind: 'code' },
+  // ---- M5 temporal (§2.11): written only on frames whose temporal stage ran (ReSTIR modes with temporal on)
+  { id: RS_VIEW_T.qvalid, key: 't.qvalid', label: 'q′ validity (bg / centre / ring / disoccluded / no history)', group: G_T, source: T3, kind: 'code' },
+  { id: RS_VIEW_T.motion, key: 't.motion', label: 'motion s′ − q (px; grey = 0)', group: G_T, source: 'rsdbg_tpick (T1)', kind: 'vec3', range: [-4, 4] },
+  { id: RS_VIEW_T.refreshFwd, key: 't.refreshFwd', label: 'refresh of X_p (fwd): none / analytic / ray / undef / E2 / zero', group: G_T, source: T3, kind: 'code' },
+  { id: RS_VIEW_T.refreshInv, key: 't.refreshInv', label: 'refresh of X_c (inv, Q_i pixels)', group: G_T, source: T3, kind: 'code' },
+  { id: RS_VIEW_T.fwdCode, key: 't.fwdCode', label: 'forward shift outcome T(X_p)', group: G_T, source: T3, kind: 'code' },
+  { id: RS_VIEW_T.invCode, key: 't.invCode', label: 'inverse shift outcome T⁻¹(X_c)', group: G_T, source: T3, kind: 'code' },
+  { id: RS_VIEW_T.logJ, key: 't.logJ', label: 'log2 J_p = J_rc·J_P (forward)', group: G_T, source: T3, kind: 'scalar', range: [-4, 4], colormap: 'signed' },
+  { id: RS_VIEW_T.logJP, key: 't.logJP', label: 'log2 J_P (light pmf ratio)', group: G_T, source: T3, kind: 'scalar', range: [-2, 2], colormap: 'signed' },
+  { id: RS_VIEW_T.pic, key: 't.pic', label: 'π_c = p̂_t of the output sample', group: G_T, source: T3, kind: 'scalar', range: [1e-4, 10], log: true, colormap: 'turbo' },
+  { id: RS_VIEW_T.pip, key: 't.pip', label: 'π_p (stored for s = p, recomputed for s = c)', group: G_T, source: T3, kind: 'scalar', range: [1e-4, 10], log: true, colormap: 'turbo' },
+  { id: RS_VIEW_T.cprev, key: 't.cprev', label: 'c_prev (uncapped)', group: G_T, source: T3, kind: 'scalar', range: [0.5, 256], log: true, colormap: 'turbo' },
+  { id: RS_VIEW_T.cout, key: 't.cout', label: 'c_out = 1 + c_p (temporal output)', group: G_T, source: T3, kind: 'scalar', range: [0.5, 32], log: true, colormap: 'turbo' },
+  { id: RS_VIEW_T.sel, key: 't.sel', label: 'selection (kept / canonical / temporal / empty)', group: G_T, source: T3, kind: 'code' },
+  { id: RS_VIEW_T.phatRel, key: 't.phatRel', label: 'forward vs stored p̂: (lum F_t(Y_p) − lum F_p)/max', group: G_T, source: T3, kind: 'scalar', range: [-1, 1], colormap: 'signed' },
+  { id: RS_VIEW_T.robust, key: 't.robust', label: 'robust: (π_p recomputed − stored)/max', group: G_T, source: T3, kind: 'scalar', range: [-1e-3, 1e-3], colormap: 'signed' },
+  { id: RS_VIEW_T.wp, key: 't.wp', label: 'w̃_p / (w̃_c + w̃_p)', group: G_T, source: T3, kind: 'scalar', range: [0, 1] },
+  { id: RS_VIEW_T.lightsChanged, key: 't.lightsChanged', label: 'X_p light changed: moved | radiometric | undefined', group: G_T, source: T3, kind: 'code' },
+  { id: RS_VIEW_T.boost, key: 's.boost', label: 'accepted boost slots (bit s − slots)', group: G_SHIFT, source: 'rs_debug_views', kind: 'code' },
 ];
 
 export const isRestirView = (mode: number): boolean => mode >= 400 && mode < 500;
 export const isRestirShiftView = (mode: number): boolean => mode >= RS_VIEW.shiftCode && mode <= RS_VIEW_THR;
+/** Views written by rs_debug_views (shift views and the boost mask). */
+export const isRestirDebugPassView = (mode: number): boolean => isRestirShiftView(mode) || mode === RS_VIEW_T.boost;
+export const isRestirTemporalView = (mode: number): boolean => mode >= RS_VIEW_T.qvalid && mode <= RS_VIEW_T.boost;
 export const isRestirCodeView = (mode: number): boolean => RESTIR_VIEWS.some((v) => v.id === mode && v.kind === 'code');
 
 export const RESTIR_PROBE_TAGS: [number, string][] = [
   [RS_PROBE_TAG.plane, 'rs.plane'], [RS_PROBE_TAG.header, 'rs.reservoir'], [RS_PROBE_TAG.candidate, 'rs.candidate'],
   [RS_PROBE_TAG.vertex, 'rs.vertex'], [RS_PROBE_TAG.slot, 'rs.slotEvent'], [RS_PROBE_TAG.misPartner, 'rs.mis'],
   [RS_PROBE_TAG.misCanonical, 'rs.misCanon'], [71, 'rs.slotOut'], [72, 'rs.slotIn'],
+  [73, 't.header'], [74, 't.forward'], [75, 't.inverse'], [76, 't.select'], [77, 't.refresh'], [78, 't.pick'], [79, 't.anchor'],
 ];
 
 // ------------------------------------------------------------------------------------------------ code legends
@@ -71,6 +109,10 @@ export const RESTIR_PROBE_TAGS: [number, string][] = [
 const LT_NAMES: Record<number, string> = Object.fromEntries(Object.entries(EP_TYPE).map(([k, v]) => [v, k]));
 export const LOBE_NAMES = ['D', 'S', 'G_R', 'G_T', 'NEE', 'NONE', '?', '?'] as const;
 export const RCT_NAMES = ['none', 'D', 'R', 'F', 'I', 'guard'] as const;
+export const QVALID_NAMES = ['background', 'centre tap', 'ring tap', 'no q′ (disoccluded)', 'no history (reset)'] as const;
+export const REFRESH_CLASS_NAMES = ['not refreshed', 'analytic (no ray)', 'ray traced', 'undefined', 'E2 zeroed', 'zero'] as const;
+export const TSEL_NAMES = ['canonical kept (no q′)', 'canonical selected', 'temporal selected', 'empty'] as const;
+const LCHG_BITS = ['moved', 'radiometric', 'undefined'] as const;
 
 /** Human-readable meaning of a code value of view `id` (legend, inspector). */
 export function codeName(id: number, code: number): string {
@@ -87,6 +129,12 @@ export function codeName(id: number, code: number): string {
   if (id >= RS_VIEW.shiftTerm && id < RS_VIEW.shiftTerm + 6) return `${RCT_NAMES[code & 0xF] ?? code & 0xF}${code >> 4 ? ` pair ${code >> 4}` : ''}`;
   if (id === RS_VIEW.replayMask || id === RS_VIEW.acceptMask) return code.toString(2).padStart(6, '0').split('').reverse().join('') + ' (slot 0 first)';
   if (id === RS_VIEW.misSel) return code === 0 ? 'canonical' : `partner slot ${code - 1}`;
+  if (id === RS_VIEW_T.qvalid) return QVALID_NAMES[code] ?? String(code);
+  if (id === RS_VIEW_T.refreshFwd || id === RS_VIEW_T.refreshInv) return REFRESH_CLASS_NAMES[code] ?? String(code);
+  if (id === RS_VIEW_T.fwdCode || id === RS_VIEW_T.invCode) return SC_NAMES[code] ?? String(code);
+  if (id === RS_VIEW_T.sel) return TSEL_NAMES[code] ?? String(code);
+  if (id === RS_VIEW_T.lightsChanged) return code === 0 ? 'unchanged' : LCHG_BITS.filter((_, b) => code & (1 << b)).join(' + ');
+  if (id === RS_VIEW_T.boost) return code.toString(2).padStart(3, '0').split('').reverse().join('') + ' (boost slot 0 first)';
   return String(code);
 }
 
@@ -97,6 +145,11 @@ export function legendCodes(id: number): number[] | undefined {
   if (id === RS_VIEW.class) return [0, 1, 2, 3, 4, 5, 6];
   if (id >= RS_VIEW.shiftCode && id < RS_VIEW.shiftCode + 6) return SC_NAMES.map((_, i) => i);
   if (id === RS_VIEW.d || id === RS_VIEW.k) return Array.from({ length: 10 }, (_, i) => i);
+  if (id === RS_VIEW_T.qvalid) return [0, 1, 2, 3, 4];
+  if (id === RS_VIEW_T.refreshFwd || id === RS_VIEW_T.refreshInv) return [0, 1, 2, 3, 4, 5];
+  if (id === RS_VIEW_T.fwdCode || id === RS_VIEW_T.invCode) return SC_NAMES.map((_, i) => i);
+  if (id === RS_VIEW_T.sel) return [0, 1, 2, 3];
+  if (id === RS_VIEW_T.lightsChanged || id === RS_VIEW_T.boost) return [0, 1, 2, 3, 4, 5, 6, 7];
   return undefined;
 }
 
@@ -146,7 +199,23 @@ export interface RsProbeMis {
   canonical?: { k: number; sel: number; mc: number; sumM: number; lumRel: number; wc: number };
   partners: { s: number; m: number; w: number }[];
 }
+/** M5 temporal probe records of the probe pixel (tags 73–78). */
+export interface RsProbeTemporal {
+  ai?: number; qPrime?: number; cPrev?: number; flags?: number; flagNames: string[];
+  forward?: { code: SlotCode; Jp: number; JP: number; lumF: number };
+  inverse?: { code: SlotCode; Jinv: number; lumFPrev: number; piP: number };
+  select?: { wc: number; wp: number; piC: number; sel: number; selName: string; phase: number };
+  refresh: { dir: 'fwd' | 'inv'; fromPass: boolean; status: number; statusNames: string[]; lumRad: number; aux: number; entryTo: number }[];
+  pick?: { sp: [number, number]; tap: number; valid: boolean };
+}
+const TS_FLAG_NAMES = Object.entries(TS).filter(([k]) => k.startsWith('TS_')).map(([k, v]) => [k.slice(3), v] as const);
+const SXS_NAMES = Object.entries(TS).filter(([k]) => k.startsWith('SXS_')).map(([k, v]) => [k.slice(4), v] as const);
+export const tsFlagNames = (f: number): string[] => TS_FLAG_NAMES.filter(([, v]) => f & v).map(([k]) => k);
+export const sxsNames = (f: number): string[] => SXS_NAMES.filter(([, v]) => f & v).map(([k]) => k);
+
 export interface RestirProbeDecoded {
+  /** M5: the temporal records (undefined when no temporal stage ran for the probe pixel). */
+  temporal?: RsProbeTemporal;
   reservoirs: RsProbeReservoir[];
   candidates: RsProbeCandidate[];
   vertices: RsProbeVertex[];
@@ -159,13 +228,33 @@ export interface RestirProbeDecoded {
 
 const u32Of = (r: ProbeRecord, i: number) => r.bits[i] >>> 0;
 
-/** Decode the ReSTIR probe records of one frame (tags 64–72; other tags are ignored). Records must be in seq order. */
+/** Decode the ReSTIR probe records of one frame (tags 64–79; other tags are ignored). Records must be in seq order. */
 export function decodeRestirProbe(records: readonly ProbeRecord[]): RestirProbeDecoded {
   const out: RestirProbeDecoded = { reservoirs: [], candidates: [], vertices: [], paths: new Map(), slotEvents: [], slots: [], mis: { partners: [] } };
   const T = RS_PROBE_TAG;
+  const TT = RS_PROBE_TAG_T;
+  const tmp = (): RsProbeTemporal => (out.temporal ??= { flagNames: [], refresh: [] });
   for (let i = 0; i < records.length; i++) {
     const r = records[i];
     switch (r.tag) {
+      case TT.header: {
+        const t = tmp(), q = u32Of(r, 1), f = u32Of(r, 3);
+        t.ai = u32Of(r, 0); t.qPrime = q === 0xFFFFFFFF ? undefined : q; t.cPrev = r.value[2]; t.flags = f; t.flagNames = tsFlagNames(f);
+        break;
+      }
+      case TT.forward: tmp().forward = { code: decodeSlotCode(u32Of(r, 0)), Jp: r.value[1], JP: r.value[2], lumF: r.value[3] }; break;
+      case TT.inverse: tmp().inverse = { code: decodeSlotCode(u32Of(r, 0)), Jinv: r.value[1], lumFPrev: r.value[2], piP: r.value[3] }; break;
+      case TT.select: {
+        const c = u32Of(r, 3);
+        tmp().select = { wc: r.value[0], wp: r.value[1], piC: r.value[2], sel: c & 0xFF, selName: TSEL_NAMES[c & 0xFF] ?? String(c & 0xFF), phase: (c >>> 8) & 0xFF };
+        break;
+      }
+      case TT.refresh: {
+        const st = u32Of(r, 0);
+        tmp().refresh.push({ dir: (st >>> 16) & 1 ? 'inv' : 'fwd', fromPass: ((st >>> 17) & 1) === 1, status: st & 0xFFFF, statusNames: sxsNames(st & 0xFFFF), lumRad: r.value[1], aux: r.value[2], entryTo: u32Of(r, 3) });
+        break;
+      }
+      case TT.pick: tmp().pick = { sp: [r.value[0], r.value[1]], tap: u32Of(r, 2), valid: u32Of(r, 3) !== 0 }; break;
       case T.header: {
         const words = new Uint32Array(RES_WORDS);
         let n = 0;
@@ -221,9 +310,16 @@ export function decodeRestirProbe(records: readonly ProbeRecord[]): RestirProbeD
   return out;
 }
 
-/** Path colour of the inspector overlay: base tree white, p→partner slots warm, partner→p slots cool. */
+/** Temporal overlay paths (M5): forward T(X_p) into the probe pixel, inverse into q′ at t−1 (from the previous camera). */
+export const PATH_T_FWD = 23;
+export const PATH_T_INV = 31;
+
+/** Path colour of the inspector overlay: base tree white, p→partner slots warm, partner→p slots cool; temporal forward
+ *  magenta, temporal inverse lime. */
 export function pathColour(path: number): [number, number, number, number] {
   if (path === 0) return [1, 1, 1, 1];
+  if (path === PATH_T_FWD) return [1, 0.2, 1, 1];
+  if (path === PATH_T_INV) return [0.6, 1, 0.1, 1];
   const incoming = path >= 24 || (path >= 8 && path < 16);
   const s = path >= 24 ? path - 24 : path >= 16 ? path - 16 : path >= 8 ? path - 8 : path - 1;
   const warm: [number, number, number][] = [[1, 0.35, 0.2], [1, 0.7, 0.1], [0.95, 0.9, 0.2], [1, 0.4, 0.7], [0.9, 0.55, 0.3], [0.8, 0.3, 0.3]];
@@ -237,7 +333,9 @@ export function pathColour(path: number): [number, number, number, number] {
  * to the probe reservoir's d), every p→partner shift (anchor y₁ of the partner (path 16+s), then the base path from
  * x_k on; k = ∅: y₁ only; the replayed prefix y₂…y_{k−1} of k > 2 is not recorded and drawn as the straight y₁→x_k)
  * and every partner→p shift (the probe's y₁, the partner's x_k and surface endpoint (path 24+s)). Paths recorded by
- * rsdbg_vertex for 1+s / 8+s are drawn as recorded.
+ * rsdbg_vertex for 1+s / 8+s are drawn as recorded. M5: path 23 = the temporal forward shift T(X_p) into the probe pixel
+ * (camera, y₁, X_p's x_k and surface endpoint), path 31 = the inverse shift into q′ at t−1 (previous camera, y₁′,
+ * x_k, surface endpoint).
  */
 export function shiftedPolylines(d: RestirProbeDecoded, cam: [number, number, number]): { path: number; pts: [number, number, number][]; ok: boolean }[] {
   const out: { path: number; pts: [number, number, number][]; ok: boolean }[] = [];
@@ -246,6 +344,13 @@ export function shiftedPolylines(d: RestirProbeDecoded, cam: [number, number, nu
   if (base.length) out.push({ path: 0, pts: [cam, ...base.map((v) => v.pos)], ok: true });
   for (const [path, vs] of d.paths) {
     if (path === 0 || !vs.length) continue;
+    if (path === PATH_T_FWD) { out.push({ path, pts: [cam, ...vs.map((v) => v.pos)], ok: d.temporal?.forward?.code.sc === K.SC_OK && d.temporal.forward.Jp > 0 }); continue; }
+    if (path === PATH_T_INV) {
+      // b = 0 is the previous camera (recorded by rs_debug_views); without it the current camera stands in.
+      const pts = vs[0].b === 0 ? vs.map((v) => v.pos) : [cam, ...vs.map((v) => v.pos)];
+      out.push({ path, pts, ok: d.temporal?.inverse?.code.sc === K.SC_OK && d.temporal.inverse.Jinv > 0 });
+      continue;
+    }
     if (path < 16) { out.push({ path, pts: [cam, ...vs.map((v) => v.pos)], ok: true }); continue; }
     const s = path >= 24 ? path - 24 : path - 16;
     const slot = d.slots.find((x) => x.s === s);
@@ -285,12 +390,14 @@ export class RestirDebugPass {
         { binding: 2, visibility: c, texture: { sampleType: 'uint' } },
         { binding: 3, visibility: c, texture: { sampleType: 'unfilterable-float' } },
         { binding: 4, visibility: c, texture: { sampleType: 'sint', viewDimension: '2d-array' } },
+        { binding: 5, visibility: c, texture: { sampleType: 'uint' } },
       ],
     });
     const layout = kernel.device.createPipelineLayout({ label: 'rs-debug', bindGroupLayouts: [kernel.layouts.g0, kernel.layouts.g1Scene, g2, kernel.layouts.g3] });
     const defines = {
       ...restirCommonDefines(kernel.scene.defines(1), true),
       RS_ARENA_BINDING: '1u', RS_ARENA_RW: false, RS_VBUF_BINDING: '2u', RS_GEO_BINDING: '3u', RS_PAIRTEX_BINDING: '4u',
+      RS_VBUF_PREV_BINDING: '5u',
     };
     const [views, fill] = await Promise.all([
       kernel.compile('passes/restir/debug.wgsl', 'rs_debug_views', defines, layout, 'rs_debug_views'),
@@ -299,21 +406,24 @@ export class RestirDebugPass {
     return new RestirDebugPass(kernel, debug, views, fill, g2);
   }
 
-  /** G2 with the reservoir buffer the last spatial round read (res[(rounds − 1) % 2], the slots' source paths). */
+  /** G2 with the reservoir buffer the last spatial round read (res[(w + rounds − 1) % 2], the slots' source paths;
+   *  w = kernel.resBase(), M5 TD2), the current-parity G-buffer and the previous V-buffer (M5 §2.6). */
   private group(rounds: number): GPUBindGroup {
     const r = this.kernel.resources;
     if (this.g2Key !== r) { this.g2.clear(); this.g2Key = r; }
-    const src = rounds > 0 ? (rounds - 1) % 2 : 0;
-    let g = this.g2.get(src);
+    const src = (this.kernel.resBase() + Math.max(rounds - 1, 0)) % 2;
+    const key = src + 2 * r.parity;
+    let g = this.g2.get(key);
     if (!g) {
       g = this.kernel.device.createBindGroup({
         label: `rs-debug-g2-${src}`, layout: this.layout,
         entries: [
           { binding: 0, resource: { buffer: r.res[src] } }, { binding: 1, resource: { buffer: r.arena } },
           { binding: 2, resource: r.views.vbuf }, { binding: 3, resource: r.views.geo }, { binding: 4, resource: r.views.pair },
+          { binding: 5, resource: r.views.vbufPrev },
         ],
       });
-      this.g2.set(src, g);
+      this.g2.set(key, g);
     }
     return g;
   }
@@ -333,7 +443,7 @@ export class RestirDebugPass {
    *  (kernel.lastRounds), `t` = the frame's seed index for sequential kernels (interactive kernels use frame.seedIndex). */
   encodeViews(enc: GPUCommandEncoder, o: { rounds: number; t?: number }): void {
     const s = this.debug.settings;
-    if (!isRestirShiftView(s.mode) && !s.probeEnabled) return;
+    if (!isRestirDebugPassView(s.mode) && !s.probeEnabled) return;
     const a = this.kernel.resources.alloc;
     this.kernel.encodePass(enc, HOST_PASS, this.views, this.group(o.rounds), { t: o.t ?? 0, round: o.rounds, rowBase: 0, rowEnd: a.atlasH }, this.work());
   }
@@ -341,7 +451,13 @@ export class RestirDebugPass {
 
 // ------------------------------------------------------------------------------------------------ HUD readback
 
-export interface RestirHudFrame { queues: { counter: number; n: number; capacity: number; overflow: number }[]; rsc: Record<RscName, number>; codes: number[]; fr: number }
+export interface RestirHudFrame {
+  queues: { counter: number; n: number; capacity: number; overflow: number }[]; rsc: Record<RscName, number>; codes: number[]; fr: number;
+  /** M5: the frame's temporal state (undefined: no temporal stage ran in that frame). */
+  temporal?: RestirHudTemporal;
+}
+/** Temporal state of one HUD frame (RsTemporal of the frame, restir-temporal-api.md §2.7). */
+export interface RestirHudTemporal { flags: number; histFrames: number; reasons: string[] }
 
 export function parseArenaHeader(raw: Uint32Array): RestirHudFrame {
   const queues = [0, 1, 2, 3].map((q) => { const h = queueHdr(q); return { counter: raw[h.counter], n: raw[h.n], capacity: raw[h.capacity], overflow: raw[h.overflow] }; });
@@ -350,17 +466,40 @@ export function parseArenaHeader(raw: Uint32Array): RestirHudFrame {
   return { queues, rsc, codes, fr: rsc.accepted > 0 ? rsc.queued / rsc.accepted : 0 };
 }
 
-type HudSlot = { buf: GPUBuffer; state: 'free' | 'copied' | 'mapping' };
+const TF_NAMES = Object.entries(K).filter(([k]) => k.startsWith('TF_')).map(([k, v]) => [k.slice(3), v as number] as const);
+/** Names of the set RsTemporal.flags bits (TF_*). */
+export const tfFlagNames = (f: number): string[] => TF_NAMES.filter(([, v]) => f & v).map(([k]) => k);
+
+/** Temporal HUD lines of one frame (restir-temporal-api.md §2.11 "HUD"). */
+export function temporalHudLines(f: RestirHudFrame): string[] {
+  const t = f.temporal;
+  if (!t) return [];
+  const r = f.rsc, q1 = f.queues[K.RS_Q_FWD], q2 = f.queues[K.RS_Q_INV];
+  const pix = r.tQvalid + r.tDisocc;
+  const pct = (a: number, b: number) => (b > 0 ? `${(100 * a / b).toFixed(1)}%` : '-');
+  return [
+    `ReSTIR temporal: hist ${t.histFrames} frames${t.flags & K.TF_HIST_VALID ? '' : ` RESET (${t.reasons.join(', ') || 'reset'})`}  TF ${tfFlagNames(t.flags).join('|') || '-'}`,
+    `ReSTIR temporal: q′ valid ${r.tQvalid}  disocc ${r.tDisocc} (${pct(r.tDisocc, pix)})  P(s=p) ${pct(r.tSelP, r.tQvalid)}  fwd replay ${pct(r.tFwdQueued, r.tQvalid)}`
+      + `  Q_f ${q1.n}/${q1.capacity}${q1.overflow ? ' OVERFLOW' : ''}  Q_i ${q2.n}/${q2.capacity}${q2.overflow ? ' OVERFLOW' : ''}  fwd OK ${r.tFwdOk}  inv OK ${r.tInvOk}/${r.tInvQueued}  empty ${r.tEmptyOut}`,
+    `ReSTIR refresh: records ${r.tRefreshRecs}  rays ${r.tRefreshRays}  light-undef ${r.tLightUndef}  class-change ${r.tClassUndef}  E2 zeroed ${r.tE2Zeroed}  robust mismatch ${r.tRobustMismatch}`,
+  ];
+}
+
+type HudSlot = { buf: GPUBuffer; state: 'free' | 'copied' | 'mapping'; temporal?: RestirHudTemporal };
 
 /**
- * Per-frame arena header readback (queue occupancy of the last round, RSC_* counters, SC histogram, f_r). The counter
- * words 16–63 are cleared at the start of every frame (interactive kernels only; batch runs read them with
- * RestirKernel.readCounters). `totals` accumulates the error counters since the last reset.
+ * Per-frame arena header readback (queue occupancy of the last round, RSC_* counters, SC histogram, f_r; M5: the
+ * temporal counters 48–63, Q_f / Q_i and the frame's RsTemporal flags). The counter words 16–63 are cleared at the
+ * start of every frame (interactive kernels only; batch runs read them with RestirKernel.readCounters). `totals`
+ * accumulates the error counters since the last reset.
  */
 export class RestirHud {
   private readonly ring: HudSlot[] = [];
   latest: RestirHudFrame | undefined;
-  readonly totals = { candNonFinite: 0, shiftNonFinite: 0, wNonFinite: 0, pendingLeft: 0, slotMismatch: 0, bvhOverflow: 0, bvhItercap: 0, queueOverflow: 0, frames: 0 };
+  readonly totals = {
+    candNonFinite: 0, shiftNonFinite: 0, wNonFinite: 0, pendingLeft: 0, slotMismatch: 0, bvhOverflow: 0, bvhItercap: 0, queueOverflow: 0,
+    tNonFinite: 0, tPendingLeft: 0, tQueueOverflow: 0, frames: 0, temporalFrames: 0, tQvalid: 0, tFwdOk: 0, tSelP: 0,
+  };
 
   constructor(private readonly device: GPUDevice) {}
 
@@ -371,8 +510,9 @@ export class RestirHud {
     enc.clearBuffer(arena, 64, ARENA_HDR_BYTES - 64);
   }
 
-  /** Copy the header after the frame's ReSTIR passes; maps copies of earlier (already submitted) frames. */
-  encodeEnd(enc: GPUCommandEncoder, arena: GPUBuffer): void {
+  /** Copy the header after the frame's ReSTIR passes; maps copies of earlier (already submitted) frames. `adv` = the
+   *  frame's RestirAdvance when its temporal stage ran. */
+  encodeEnd(enc: GPUCommandEncoder, arena: GPUBuffer, adv?: Pick<RestirAdvance, 'flags' | 'reasons'> & { temporal: { histFrames: number } }): void {
     for (const s of this.ring) if (s.state === 'copied') this.map(s);
     let s = this.ring.find((x) => x.state === 'free');
     if (!s && this.ring.length < 4) {
@@ -382,24 +522,40 @@ export class RestirHud {
     if (!s) return;
     enc.copyBufferToBuffer(arena, 0, s.buf, 0, ARENA_HDR_BYTES);
     s.state = 'copied';
+    s.temporal = adv ? { flags: adv.flags, histFrames: adv.temporal.histFrames, reasons: [...adv.reasons] } : undefined;
   }
 
   private map(s: HudSlot): void {
     s.state = 'mapping';
+    const temporal = s.temporal;
     s.buf.mapAsync(GPUMapMode.READ).then(() => {
       const raw = new Uint32Array(s.buf.getMappedRange().slice(0));
       s.buf.unmap();
       s.state = 'free';
       const f = parseArenaHeader(raw);
+      f.temporal = temporal;
       this.latest = f;
       const t = this.totals;
       t.candNonFinite += f.rsc.candNonFinite; t.shiftNonFinite += f.rsc.shiftNonFinite; t.wNonFinite += f.rsc.wNonFinite;
       t.pendingLeft += f.rsc.pendingLeft; t.slotMismatch += f.rsc.slotMismatch; t.bvhOverflow += f.rsc.bvhOverflow; t.bvhItercap += f.rsc.bvhItercap;
       t.queueOverflow += f.queues[0].overflow; t.frames++;
+      if (temporal) {
+        t.temporalFrames++;
+        t.tNonFinite += f.rsc.tNonFinite; t.tPendingLeft += f.rsc.tPendingLeft;
+        t.tQueueOverflow += f.queues[K.RS_Q_FWD].overflow + f.queues[K.RS_Q_INV].overflow;
+        t.tQvalid += f.rsc.tQvalid; t.tFwdOk += f.rsc.tFwdOk; t.tSelP += f.rsc.tSelP;
+      }
     }).catch(() => { s.state = 'free'; });
   }
 
-  /** HUD lines (queue occupancy and f_r of the last frame read back, SC histogram, error counters since reset). */
+  /** Error counters since the last reset (M4 + M5 temporal). */
+  errorCount(): number {
+    const t = this.totals;
+    return t.candNonFinite + t.shiftNonFinite + t.wNonFinite + t.pendingLeft + t.slotMismatch + t.bvhOverflow + t.bvhItercap + t.queueOverflow
+      + t.tNonFinite + t.tPendingLeft + t.tQueueOverflow;
+  }
+
+  /** HUD lines (queue occupancy and f_r of the last frame read back, SC histogram, temporal state, error counters). */
   lines(): string[] {
     const f = this.latest;
     if (!f) return ['ReSTIR counters: waiting for readback'];
@@ -407,11 +563,13 @@ export class RestirHud {
     const hist = f.codes.map((n, sc) => [sc, n] as const).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).slice(0, 6)
       .map(([sc, n]) => `${SC_NAMES[sc]} ${n}`).join('  ');
     const t = this.totals;
-    const errs = t.candNonFinite + t.shiftNonFinite + t.wNonFinite + t.pendingLeft + t.slotMismatch + t.bvhOverflow + t.bvhItercap + t.queueOverflow;
+    const errs = this.errorCount();
     return [
       `ReSTIR f_r ${f.fr.toFixed(3)}  accepted ${f.rsc.accepted}  queued ${f.rsc.queued}  q0 ${q.n}/${q.capacity} (last round)${q.overflow ? ' OVERFLOW' : ''}  shifted-selected ${f.rsc.selectedShifted}`,
       `ReSTIR SC ${hist || '(no slots)'}`,
-      `ReSTIR errors ${errs}${errs ? ' !' : ''} (cand/shift/W non-finite ${t.candNonFinite}/${t.shiftNonFinite}/${t.wNonFinite}, pending ${t.pendingLeft}, mismatch ${t.slotMismatch}, BVH ${t.bvhOverflow}/${t.bvhItercap}, q overflow ${t.queueOverflow}; ${t.frames} frames)`,
+      ...temporalHudLines(f),
+      `ReSTIR errors ${errs}${errs ? ' !' : ''} (cand/shift/W non-finite ${t.candNonFinite}/${t.shiftNonFinite}/${t.wNonFinite}, pending ${t.pendingLeft}, mismatch ${t.slotMismatch}, BVH ${t.bvhOverflow}/${t.bvhItercap}, q overflow ${t.queueOverflow}`
+        + `; temporal non-finite ${t.tNonFinite}, pending ${t.tPendingLeft}, Q_f/Q_i overflow ${t.tQueueOverflow}; ${t.frames} frames, ${t.temporalFrames} temporal)`,
     ];
   }
 

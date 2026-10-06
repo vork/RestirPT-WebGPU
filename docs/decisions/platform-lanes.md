@@ -106,3 +106,11 @@ sun map. Texel-centre lookups (no interpolation) are exact. The filter evidently
 
 **Rule.** Validation mode keeps the env texture rgba32float (`env-gpu.ts` `ENV_COMPACT_IN_VALIDATION = false`); only
 interactive mode uses the smallest exact format (data-formats.md §B9, E-3). Re-run ENV-F before changing that.
+
+**M5 update (restir-temporal-api.md C-10).** The env lookup no longer uses the hardware filter: `env.wgsl envTexel` is an
+explicit f32 bilinear over four `textureLoad`s (exact texel values in every format). ENV-U7b (env.gpu.test.ts, Chrome
+154 / Metal): `envRadiance` on studio_small_09 1k with the smallest exact format (rgb9e5ufloat) is bit-identical to
+rgba32float at 2·10⁵ random uv incl. the seam and pole rows (0 mismatches), and ≤ 1.2·10⁻⁷ from an f64 bilinear at the
+f32 texel coordinate. The Q4 precision loss therefore no longer applies to the renderer; the compact formats could be
+allowed in validation mode too (ENV-F keeps measuring the hardware filter only). `ENV_COMPACT_IN_VALIDATION` is left
+false pending a coordinator decision (memory only; no correctness reason remains).

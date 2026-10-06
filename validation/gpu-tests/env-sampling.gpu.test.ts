@@ -302,7 +302,7 @@ describe('env importance sampling on the GPU (M3c)', () => {
           const fc = e.fD[0] + e.fS[0];
           if (!(fc > 0)) continue;
           const [uu, vv] = envUV(d, env.rotationZ);
-          const L = envLookup(env, uu, vv, 8);
+          const L = envLookup(env, uu, vv);
           for (let k = 0; k < 3; k++) acc[k] += w * (e.fD[k] + e.fS[k]) * L[k];
         }
       }

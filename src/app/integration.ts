@@ -4,6 +4,10 @@
 // Env load mode follows the renderer's texture path (validation: exact texels, lossless codecs, negatives rejected;
 // interactive: clamps/downsamples) unless IntegrationOptions.envMode pins it. Dev builds add "Export for Cycles"
 // (scene package → validation/out/export-<id>/ through the harness upload middleware).
+// M5 (T-D; restir-temporal-api.md §2.10, TD19–TD20, Changelog D-2): light / env-parameter edits and timeline playback
+// restart only the progressive accumulation (app.resetHistory); the ReSTIR temporal history survives them (refresh +
+// q′). The temporal history resets on config changes (config hash in the kernel), scene load / resize (new allocation),
+// env map swaps (RestirKernel.setEnvironment) and the explicit controls (FrameContext.resetTemporal).
 import type { GpuContext } from '../core/gpu/device.ts';
 import { registerProbeTag } from '../core/render/probe.ts';
 import { EXTRA_VIEWS, PRIMARY_PROBE_TAGS, Renderer } from '../core/render/renderer.ts';
@@ -76,8 +80,11 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
 
   const renderFrame: AppHooks['renderFrame'] = (encoder, ctx) => {
     if (lightsDirty && lightStore && renderer?.setLights(lightStore.list())) lightsDirty = false;
-    renderer?.encode(encoder, { advanced: ctx.advanced, debugMode: ctx.debug.mode, debugGroup: ctx.targets.debug.bindGroup }, () => ctx.timestamps('primary'), () => ctx.timestamps('pt'), () => ctx.timestamps('restir'));
+    renderer?.encode(encoder, { advanced: ctx.advanced, debugMode: ctx.debug.mode, debugGroup: ctx.targets.debug.bindGroup, resetTemporal: ctx.resetTemporal },
+      () => ctx.timestamps('primary'), () => ctx.timestamps('pt'), () => ctx.timestamps('restir'));
   };
+  /** ReSTIR with temporal reuse is on: paused frames re-display the last frame (TD20). */
+  const restirTemporal = () => !!renderer && renderer.options.renderMode === 'restir' && !!renderer.restir?.settings.temporal;
 
   const adoptScene = async (app: App, scene: SceneData, origin: [number, number, number]) => {
     const r = await ensure(app);
@@ -92,7 +99,8 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
       lightUnsub?.();
       lightStore = store;
       lightsDirty = true;
-      // Any light change restarts the PT accumulation (M5 replaces this by the temporal light-change handling).
+      // Any light change restarts the progressive accumulation (PT and ReSTIR display); the ReSTIR temporal history is
+      // kept (M5: the kernel stages the edit, commits once per frame and refreshes the affected records).
       lightUnsub = store.onChange(() => { lightsDirty = true; app.resetHistory(); });
       if (g.warnings.length) app.loading.warn(...g.warnings);
       // Scene-scaled default ranges for the distance views (the registry entries are the live defaults).
@@ -164,7 +172,10 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
       }
       app.resetHistory();
     },
-    onResetHistory: () => { renderer?.restirHud?.resetTotals(); },
+    // With temporal reuse the HUD error totals restart only on temporal resets (renderer.ts); light / env animation
+    // restarts the accumulation every frame and must not hide errors.
+    onResetHistory: () => { if (!restirTemporal()) renderer?.restirHud?.resetTotals(); },
+    holdsFrameWhenPaused: () => restirTemporal(),
     hudLines: (app) => {
       const lines = renderer?.hudLines() ?? [];
       restirUi.panel?.refresh();

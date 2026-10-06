@@ -127,7 +127,7 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
   // ---- 2. replay -------------------------------------------------------------------------------------------------------
   if (k > 2u || k == 0u) {
 #if RS_REPLAY
-    let rp = replay_prefix(src.seed, yPrev, yPrevPrim, camPos, thr, k, d, rf_tech(f));
+    let rp = replay_prefix(src.seed, yPrev, yPrevPrim, camPos, thr, k, d, rf_tech(f), 0u);   // M5: fs = RS_FS_CUR
     if (rs_slot_code_sc(rp.code) != SC_OK) { var o: ShiftOut; o.code = rp.code; return o; }
     if (cs == SH_NONE) { return shift_finish(rp.F, 1.0, 1.0, true); }
     yPrev = rp.yLast;

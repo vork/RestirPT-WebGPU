@@ -17,6 +17,14 @@
 // ReSTIR-unbiased, ReSTIR-2022-criteria, Offline; 'initial' = rung 3.1 without spatial reuse). The ReSTIR debug views
 // (400–499), the probe inspector records and the arena HUD come from render/restir/debug.ts; they encode work only while
 // a ReSTIR view or the probe is active. Mode A only (D1): another light mode falls back to the PT with a HUD note.
+// M5 (T-D; restir-temporal-api.md TD19–TD21, §2.10, §3.7, Changelog D-2): restirMode adds ReSTIR-interactive
+// (interactive preset: temporal, RR, boost 3) next to ReSTIR-unbiased (the `full` preset: temporal, RR off, no boost);
+// options.temporal switches temporal reuse for every mode. With temporal on, every ADVANCED frame calls
+// RestirKernel.advanceInteractive once (the one light commit of the frame, env record, config hash, history reset on
+// `resetTemporal`), then encodes the frame; a paused frame (advanced = false) encodes no ReSTIR pass (TD20: the
+// history must never be consumed twice) and only re-displays the last ReSTIR frame (RestirFramePass.encodeHold).
+// Light / env-parameter edits and camera motion never reset the temporal history (they are handled by the refresh
+// and q′); a config change resets through the config hash, a scene / map swap / resize through the kernel.
 import { composeWgsl, createCheckedShaderModule } from '../gpu/wgsl-composer.ts';
 import { shaderSources } from '../shaders/index.ts';
 import type { EnvironmentData, SceneData } from '../scene/types.ts';
@@ -34,20 +42,24 @@ import type { LightsUpdate } from './lights-gpu.ts';
 import { PtFramePass } from './pt-kernel.ts';
 import type { LightMode } from './lights-gpu.ts';
 import type { TexturePathMode } from './textures-gpu.ts';
-import { RestirKernel, type RestirFramePass } from './restir/kernel.ts';
+import { RestirKernel, type RestirAdvance, type RestirFramePass } from './restir/kernel.ts';
 import { RESTIR_PRESETS, type RestirSettings } from './restir/presets.ts';
 import { RestirDebugPass, RestirHud } from './restir/debug.ts';
 
-/** App ReSTIR modes (PLAN §3): ReSTIR-unbiased (interactive preset), ReSTIR-2022-criteria, Offline, rung 3.1 initial only. */
-export type RestirAppMode = 'unbiased' | 'criteria2022' | 'offline' | 'initial';
+/** App ReSTIR modes (PLAN §3, restir-temporal-api.md §3.7): ReSTIR-interactive (interactive preset: temporal, RR, boost
+ *  3), ReSTIR-unbiased (the `full` preset: temporal, RR off, no boost), ReSTIR-2022-criteria (interactive preset with the
+ *  2022 criteria), Offline, initial only (no spatial reuse: rung 3.1, or rung 3.3 with temporal on). */
+export type RestirAppMode = 'interactive' | 'unbiased' | 'criteria2022' | 'offline' | 'initial';
 export const RESTIR_APP_MODES: Record<RestirAppMode, string> = {
+  interactive: 'ReSTIR-interactive (S 1, 1 round × 3 + boost 3, R 30, RR)',
   unbiased: 'ReSTIR-unbiased (S 1, 1 round × 3, R 30)', criteria2022: 'ReSTIR-2022-criteria', offline: 'Offline (S 32, 3 rounds × 6, R 10)',
-  initial: 'initial only (rung 3.1)',
+  initial: 'initial only (rung 3.1 / 3.3)',
 };
-/** Settings of an app ReSTIR mode (maxBounces from the renderer options). */
-export function restirAppSettings(mode: RestirAppMode, maxBounces: number): Partial<RestirSettings> {
-  const base = mode === 'offline' ? RESTIR_PRESETS.offline : mode === 'initial' ? { ...RESTIR_PRESETS.interactive, rounds: 0 } : RESTIR_PRESETS.interactive;
-  return { ...base, criteria: mode === 'criteria2022' ? '2022' : 'enhanced', maxBounces };
+/** Settings of an app ReSTIR mode (maxBounces and temporal from the renderer options). */
+export function restirAppSettings(mode: RestirAppMode, maxBounces: number, temporal = true): Partial<RestirSettings> {
+  const base = mode === 'offline' ? RESTIR_PRESETS.offline : mode === 'unbiased' ? RESTIR_PRESETS.full
+    : mode === 'initial' ? { ...RESTIR_PRESETS.interactive, rounds: 0 } : RESTIR_PRESETS.interactive;
+  return { ...base, criteria: mode === 'criteria2022' ? '2022' : 'enhanced', maxBounces, temporal };
 }
 
 export const GBUF_TEXEL_BYTES = 80;
@@ -81,6 +93,8 @@ export interface RendererOptions {
   renderMode: 'pt' | 'albedo' | 'restir';
   /** renderMode 'restir': the settings preset (PLAN §3 modes). */
   restirMode: RestirAppMode;
+  /** renderMode 'restir': temporal reuse (M5; every mode). */
+  temporal: boolean;
   /** PT: Cycles max_bounces N. */
   maxBounces: number;
   /** PT: Russian roulette (unbiased; off by default, plan §2 rule 11). */
@@ -114,7 +128,13 @@ export interface RendererContext {
   debug?: DebugResources;
 }
 
-interface RestirState { pass: RestirFramePass; dbg?: RestirDebugPass; hud: RestirHud }
+interface RestirState {
+  pass: RestirFramePass; dbg?: RestirDebugPass; hud: RestirHud;
+  /** The RestirAdvance of the last advanced temporal frame (HUD, smoke). */
+  lastAdvance?: RestirAdvance;
+  /** Temporal frames encoded / paused frames held since the pass was created (smoke: TD20). */
+  temporalFrames: number; heldFrames: number;
+}
 
 interface SceneState {
   gpu: SceneGpu;
@@ -147,7 +167,7 @@ export class Renderer {
   /** Defaults are the validation path: exact textures and Woop watertight intersection (Möller–Trumbore leaks through
    *  the shared diagonal of a quad; plan §1.3). The interactive app opts into MT explicitly (src/app/integration.ts). */
   readonly options: RendererOptions = {
-    textureMode: 'validation', watertight: true, accumulate: true, thrTau: THR_TAU, renderMode: 'albedo', restirMode: 'unbiased', maxBounces: 3, rr: false,
+    textureMode: 'validation', watertight: true, accumulate: true, thrTau: THR_TAU, renderMode: 'albedo', restirMode: 'interactive', temporal: true, maxBounces: 3, rr: false,
     lightMode: 'A', envNee: true, envImportanceCap: ENV_IMPORTANCE_CAP_INTERACTIVE,
   };
   env!: EnvGpuResources;
@@ -235,7 +255,7 @@ export class Renderer {
     if (this.state?.pt && this.state.pt.lights.lightMode !== this.options.lightMode) this.state.pt.lights.setLightMode(this.options.lightMode);
     const rs = this.state?.rs;
     if (rs) {
-      rs.pass.setSettings(restirAppSettings(this.options.restirMode, this.options.maxBounces));
+      rs.pass.setSettings(restirAppSettings(this.options.restirMode, this.options.maxBounces, this.options.temporal));
       await rs.pass.prepare();
     }
     if (!this.sceneData) return;
@@ -292,7 +312,7 @@ export class Renderer {
       try {
         const debug = this.ctx.debug;
         const pass = await RestirKernel.interactive(this.device, state.gpu, this.env, colorFormat, {
-          settings: restirAppSettings(this.options.restirMode, this.options.maxBounces), lightMode: 'A', debug,
+          settings: restirAppSettings(this.options.restirMode, this.options.maxBounces, this.options.temporal), lightMode: 'A', debug,
           env: { nee: this.options.envNee, importanceCap: this.options.envImportanceCap },
           features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures,
         });
@@ -301,7 +321,7 @@ export class Renderer {
         const tg = this.targets;
         if (tg) pass.setTargets({ width: tg.t.width, height: tg.t.height, color: tg.t.color, frameUniforms: tg.t.frameUniforms });
         destroyRestir(state.rs);
-        state.rs = { pass, dbg, hud: new RestirHud(this.device) };
+        state.rs = { pass, dbg, hud: new RestirHud(this.device), temporalFrames: 0, heldFrames: 0 };
         this.restirError = undefined;
         return state.rs;
       } catch (e) {
@@ -317,6 +337,11 @@ export class Renderer {
   /** The interactive ReSTIR pass (undefined until renderMode 'restir' compiled it). */
   get restir(): RestirFramePass | undefined { return this.state?.rs?.pass; }
   get restirHud(): RestirHud | undefined { return this.state?.rs?.hud; }
+  /** M5: the last advanced temporal frame's RestirAdvance and the temporal / held frame counts (HUD, app smoke). */
+  get restirTemporal(): { lastAdvance?: RestirAdvance; temporalFrames: number; heldFrames: number } | undefined {
+    const rs = this.state?.rs;
+    return rs ? { lastAdvance: rs.lastAdvance, temporalFrames: rs.temporalFrames, heldFrames: rs.heldFrames } : undefined;
+  }
   /** Compile ReSTIR now (e.g. before switching the mode in a test). */
   async prepareRestir(): Promise<RestirFramePass | undefined> {
     const s = this.state;
@@ -484,7 +509,11 @@ export class Renderer {
    */
   encode(
     encoder: GPUCommandEncoder,
-    frame: { advanced: boolean; debugMode: number; debugGroup: GPUBindGroup; /** skip the PT pass (primary timing) */ noPt?: boolean },
+    frame: {
+      advanced: boolean; debugMode: number; debugGroup: GPUBindGroup; /** skip the PT pass (primary timing) */ noPt?: boolean;
+      /** M5: reset the ReSTIR temporal history this frame (explicit reset, freeze seed / frame / history; TD19, TD20). */
+      resetTemporal?: boolean;
+    },
     timestamps?: () => GPUComputePassTimestampWrites | undefined,
     ptTimestamps?: () => GPUComputePassTimestampWrites | undefined,
     rsTimestamps?: () => GPUComputePassTimestampWrites | undefined,
@@ -518,7 +547,7 @@ export class Renderer {
     let restirDone = false;
     if (this.options.renderMode === 'restir' && !frame.noPt && !isBvhStatsView(frame.debugMode) && this.options.lightMode === 'A') {
       if (!s.rs) void this.compileRestir(s, tg.t.colorFormat);
-      else restirDone = this.encodeRestir(encoder, s.rs, frame.advanced, rsTimestamps);
+      else restirDone = this.encodeRestir(encoder, s.rs, frame.advanced, !!frame.resetTemporal, tg.t.frameUniforms, rsTimestamps);
     }
     if ((this.options.renderMode === 'pt' || (this.options.renderMode === 'restir' && !restirDone)) && s.pt && !frame.noPt && !isBvhStatsView(frame.debugMode)) {
       s.pt.encode(encoder, { advanced: frame.advanced, accumulate: this.options.accumulate }, ptTimestamps?.());
@@ -530,17 +559,34 @@ export class Renderer {
     return true;
   }
 
-  /** ReSTIR frame: counters clear + code-view fill, the kernel's passes, shift views, arena header copy (one encoder). */
-  private encodeRestir(encoder: GPUCommandEncoder, rs: RestirState, advanced: boolean, ts?: () => GPUComputePassTimestampWrites | undefined): boolean {
+  /**
+   * ReSTIR frame: counters clear + code-view fill, (M5: advanceInteractive), the kernel's passes, shift views, arena
+   * header copy (one encoder). M5 temporal: a paused frame only re-displays the last frame (TD20); `resetTemporal`
+   * resets the history (and the HUD error totals).
+   */
+  private encodeRestir(encoder: GPUCommandEncoder, rs: RestirState, advanced: boolean, resetTemporal: boolean, frameUniforms: GPUBuffer,
+    ts?: () => GPUComputePassTimestampWrites | undefined): boolean {
     const k = rs.pass.kernel;
     let arena: GPUBuffer;
     try { arena = k.resources.arena; } catch { return false; }
+    const temporal = !!k.settings.temporal;
+    if (temporal && !advanced) {
+      if (!rs.pass.encodeHold(encoder, { accumulate: this.options.accumulate })) return false;
+      rs.heldFrames++;
+      return true;
+    }
+    let adv: RestirAdvance | undefined;
+    if (temporal) {
+      adv = k.advanceInteractive(frameUniforms, { reset: resetTemporal });
+      if (resetTemporal) rs.hud.resetTotals();
+    }
     rs.hud.encodeBegin(encoder, arena);
     rs.dbg?.encodeBegin(encoder);
     const ok = rs.pass.encode(encoder, { advanced, accumulate: this.options.accumulate }, ts?.());
     if (!ok) return false;
     rs.dbg?.encodeViews(encoder, { rounds: k.lastRounds });
-    rs.hud.encodeEnd(encoder, k.resources.arena);
+    rs.hud.encodeEnd(encoder, k.resources.arena, adv);
+    if (adv) { rs.lastAdvance = adv; rs.temporalFrames++; }
     return true;
   }
 
@@ -611,7 +657,8 @@ export class Renderer {
       else if (!rs) out.push(this.restirError ?? 'ReSTIR: compiling (PT shown)');
       else {
         const st = rs.pass.settings;
-        out.push(`ReSTIR ${this.options.restirMode}: S ${st.trees}  rounds ${st.rounds} × ${st.slots} slots  R ${st.diskRadius}  ${st.criteria}${st.rr ? ' RR' : ''}  max_bounces ${st.maxBounces}`);
+        out.push(`ReSTIR ${this.options.restirMode}: S ${st.trees}  rounds ${st.rounds} × ${st.slots}${st.temporal && st.boostSlots ? ` + boost ${st.boostSlots}` : ''} slots  R ${st.diskRadius}  ${st.criteria}${st.rr ? ' RR' : ''}  max_bounces ${st.maxBounces}`
+          + `  temporal ${st.temporal ? `on (c_cap ${st.cCap}, ${st.temporalMis}${st.refresh === 'e2' ? ', E2' : ''}; ${rs.temporalFrames} frames, ${rs.heldFrames} held)` : 'off'}`);
         out.push(...rs.hud.lines());
       }
     }
