@@ -18,6 +18,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, w
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withGpuLockSync } from './gpu-lock.ts';
+import { denoiserT16Problems } from './t16.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const PY = path.join(ROOT, 'validation/.venv/bin/python');
@@ -265,9 +266,11 @@ function ourRun(s: G2, run: string, seed: number, dir: string, add: (n: string, 
   const runs = s.frames ? s.frames.map((f) => `${run}-f${f}`) : [run];
   const dirs = runs.map((x) => fileRun(x, path.join(dir, 'pt')));
   const ms = dirs.reduce((t, d) => t + (existsSync(path.join(ROOT, d, 'meta.json')) ? readJson(path.join(d, 'meta.json')).timings.totalMs : 0), 0);
-  const ok = r.code === 0 && dirs.every((d) => existsSync(path.join(ROOT, d, 'meta.json')));
+  // T16 (M5.5, denoiser.md §11): no denoiser in any validation readback
+  const t16 = dirs.flatMap((d) => (existsSync(path.join(ROOT, d, 'meta.json')) ? denoiserT16Problems(readJson(path.join(d, 'meta.json')), d, true) : []));
+  const ok = r.code === 0 && dirs.every((d) => existsSync(path.join(ROOT, d, 'meta.json'))) && t16.length === 0;
   add(`${label} ${s.pkg} (${s.ourSpp} spp × ${s.B}${s.frames ? ` × ${s.frames.length} frames` : ''})`, ok, r.seconds, { dirs, gpu_total_ms: Math.round(ms) },
-    ok ? `${(ms / 1000).toFixed(1)} s in the page` : `exit ${r.code} ${r.out.slice(-300)}`);
+    ok ? `${(ms / 1000).toFixed(1)} s in the page` : `exit ${r.code} ${t16.join('; ')} ${r.out.slice(-300)}`);
   return ok ? { dirs, ms } : undefined;
 }
 

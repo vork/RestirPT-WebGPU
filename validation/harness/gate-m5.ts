@@ -37,6 +37,7 @@ import { fileURLToPath } from 'node:url';
 import { decodePFM, encodePFM } from '../../src/core/io/pfm.ts';
 import { readNpz } from '../../src/core/render/restir/npz.ts';
 import { withGpuLockSync } from './gpu-lock.ts';
+import { denoiserT16Problems } from './t16.ts';
 import {
   LOCK_CHUNK_S, NUM_EPS, chunkBatches, gpuSuiteHolds, codeHashes as m4CodeHashes, mergeChunkMetas, niceCeil, sizeScene, sizingTarget, t16Problems, tsClosure,
   type PilotSide,
@@ -411,6 +412,7 @@ export function t16ChainProblems(cm: Record<string, any>, pt: Record<string, any
   if (o.plant && !(t.plantsNamed?.length > 0)) p.push('plant run without a named plant');
   if (t.internalScale !== 1) p.push(`internal scale ${t.internalScale}`);
   if (t.denoiser !== 'none' || t.upscaler !== 'none') p.push('denoiser/upscaler active');
+  p.push(...denoiserT16Problems(pt, 'PT reference', false));   // M5.5: our PT side too (pre-M5.5 caches carry no record)
   if (!/^linear /.test(t.readback ?? '')) p.push('readback is not the linear radiance');
   if (t.jitterMode !== 'iid-per-run' || pt.config?.jitter !== 'iid-per-run') p.push('jitter is not iid-per-run on both sides');
   if (t.maxBounces !== pt.config?.maxBounces) p.push(`maxBounces ${t.maxBounces} != PT ${pt.config?.maxBounces}`);

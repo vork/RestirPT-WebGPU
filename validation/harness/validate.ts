@@ -27,7 +27,11 @@
 //     per-frame ensembles + drift / failing-tile statistics), the temporal plants with predicted signs, A/A, the U8 ladder.
 //     `--part core|static` runs one of the two required parts (plan > 14 h, Q3); --only / --pilot-only / --write-budget /
 //     --prerender-ptrefs as in M4.
-//   npm run validate -- --milestone M0|M1|M2|M3a|M3b|M3c|M4|M5 [--only ...] [--pilot-only] [--write-budget] [--part core|static]
+// M5.5: validation/harness/gate-m55.ts (docs/decisions/denoiser.md §11) — Gate 0 (CPU + Chrome denoiser suites, M5.5 app
+//     smoke), FLIP of the denoised vs the raw 1-frame ReSTIR-interactive output against 65 536-spp PT references on (i),
+//     (v), (vii), ix-d (ratio ≥ 2), recovery after the ix-e steps (≤ 8 frames), 960×540 timing (≤ 3 ms), T16.
+//     `--only gate0,flip,recovery,timing`; `--prerender-ptrefs` renders (caches) the PT references only.
+//   npm run validate -- --milestone M0|M1|M2|M3a|M3b|M3c|M4|M5|M5.5 [--only ...] [--pilot-only] [--write-budget] [--part core|static]
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -38,6 +42,7 @@ import { milestoneM3b } from './gate-m3b.ts';
 import { milestoneM3c } from './gate-m3c.ts';
 import { milestoneM4 } from './gate-m4.ts';
 import { milestoneM5 } from './gate-m5.ts';
+import { milestoneM55 } from './gate-m55.ts';
 import { withGpuLockSync } from './gpu-lock.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -383,6 +388,7 @@ const gates: Record<string, () => void> = {
   M5: () => milestoneM5(record, { only: args.only ? new Set(args.only.split(',')) : undefined, pilotOnly: args['pilot-only'], writeBudget: args['write-budget'],
     prerenderPtRefs: args['prerender-ptrefs'], part: args.part === 'core' || args.part === 'static' ? args.part : undefined, reuseChains: args['reuse-chains'], plants: args.plants ? new Set(args.plants.split(',')) : undefined,
     plantSeedOffset: args['plant-seed-offset'] ? Number(args['plant-seed-offset']) : undefined }),
+  'M5.5': () => milestoneM55(record, { only: args.only ? new Set(args.only.split(',')) : undefined, prerenderPtRefs: args['prerender-ptrefs'] }),
 };
 const gate = gates[args.milestone!.toUpperCase()];
 if (!gate) {

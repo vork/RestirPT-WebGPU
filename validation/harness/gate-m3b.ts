@@ -23,6 +23,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, w
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { withGpuLockSync } from './gpu-lock.ts';
+import { denoiserT16Problems } from './t16.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const PY = path.join(ROOT, 'validation/.venv/bin/python');
@@ -236,9 +237,11 @@ function ourRun(s: G2B, run: string, seed: number, dir: string, add: Add, extra:
   const r = sh('npx', ['tsx', 'validation/harness/run-batches.ts', '--package', `validation/scenes/${s.pkg}`, '--kernel', 'pt', '--spp', String(s.ourSpp),
     '--batches', String(s.B), '--seed', String(seed), '--run', run, ...extra], (l) => /^(FAIL)\s|errors:|Error/.test(l));
   const d = fileRun(run, path.join(dir, 'pt'));
-  const ok = r.code === 0 && existsSync(path.join(ROOT, d, 'meta.json'));
-  const ms = ok ? readJson(path.join(d, 'meta.json')).timings.totalMs : 0;
-  add(`${label} ${s.pkg} (${s.ourSpp} spp × ${s.B})`, ok, r.seconds, { dir: d, gpu_total_ms: Math.round(ms) }, ok ? `${(ms / 1000).toFixed(1)} s in the page` : `exit ${r.code} ${r.out.slice(-300)}`);
+  const has = r.code === 0 && existsSync(path.join(ROOT, d, 'meta.json'));
+  const t16 = has ? denoiserT16Problems(readJson(path.join(d, 'meta.json')), d, true) : [];   // T16 (M5.5, denoiser.md §11)
+  const ok = has && t16.length === 0;
+  const ms = has ? readJson(path.join(d, 'meta.json')).timings.totalMs : 0;
+  add(`${label} ${s.pkg} (${s.ourSpp} spp × ${s.B})`, ok, r.seconds, { dir: d, gpu_total_ms: Math.round(ms) }, ok ? `${(ms / 1000).toFixed(1)} s in the page` : `exit ${r.code} ${t16.join('; ')} ${r.out.slice(-300)}`);
   return ok ? d : undefined;
 }
 

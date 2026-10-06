@@ -37,6 +37,11 @@ compare.py --calibrate --ref REF_DIR --test test.json --out OUT_DIR [--splits 20
 
 # ... plus a RENDERED plant (e.g. Cycles light power x1.0075) on seeds disjoint from REF_DIR
 compare.py --calibrate --ref REF_DIR --planted PLANT_DIR --test test.json --out OUT_DIR [--plant-name NAME]
+
+# M5.5 denoiser (docs/decisions/denoiser.md §11; gate-m55.ts): LDR / HDR FLIP of raw and denoised images vs a PT reference
+denoise_eval.py flip --ref REF/mean.pfm --pairs raw_f16.pfm:dn_f16.pfm,... --out flip.json [--png DIR]
+# frames until the denoised regional mean recovers 95 % of each ix-e step (tiles.bin of several seeds; step masks from PT refs)
+denoise_eval.py recovery --runs DIR,DIR --steps 32,56,80 --hold 24 --refs BEFORE.pfm:AFTER.pfm,... --names a,b,c --out rec.json
 ```
 
 ### Input directory layouts

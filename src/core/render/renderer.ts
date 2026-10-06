@@ -25,6 +25,11 @@
 // history must never be consumed twice) and only re-displays the last ReSTIR frame (RestirFramePass.encodeHold).
 // Light / env-parameter edits and camera motion never reset the temporal history (they are handled by the refresh
 // and q′); a config change resets through the config hash, a scene / map swap / resize through the kernel.
+// M5.5 (docs/decisions/denoiser.md): the A-SVGF-lite denoiser runs after the ReSTIR finalize (input rsFrame / rsL1, the
+// ReSTIR temporal gradient from tState) or after the PT (its 1-spp sample: the PT's accumulation is off meanwhile) and
+// overwrites the colour target (PLAN §3 step 7: accumulate | denoise). Default on in ReSTIR-interactive, off elsewhere,
+// forced off in ReSTIR-unbiased (DN4); the toggle is remembered per mode. A held (paused) frame re-encodes the last
+// denoiser plan (DN9); afterSubmit() runs the HUD timing in a separate submit (Q3).
 import { composeWgsl, createCheckedShaderModule } from '../gpu/wgsl-composer.ts';
 import { shaderSources } from '../shaders/index.ts';
 import type { EnvironmentData, SceneData } from '../scene/types.ts';
@@ -45,6 +50,9 @@ import type { TexturePathMode } from './textures-gpu.ts';
 import { RestirKernel, type RestirAdvance, type RestirFramePass } from './restir/kernel.ts';
 import { RESTIR_PRESETS, type RestirSettings } from './restir/presets.ts';
 import { RestirDebugPass, RestirHud } from './restir/debug.ts';
+import { Denoiser, type DenoiseFrame } from './denoise/denoiser.ts';
+import { denoiseModeKey, denoiserAllowed, denoiserDefault, type DenoiserSettings } from './denoise/layout.ts';
+import { arenaWords, RS_WGSL_CONSTS } from './restir/layout.ts';
 
 /** App ReSTIR modes (PLAN §3, restir-temporal-api.md §3.7): ReSTIR-interactive (interactive preset: temporal, RR, boost
  *  3), ReSTIR-unbiased (the `full` preset: temporal, RR off, no boost), ReSTIR-2022-criteria (interactive preset with the
@@ -106,6 +114,8 @@ export interface RendererOptions {
   envNee: boolean;
   /** Env importance resolution cap (W_m ≤ cap; plan §1.4b: 2048 interactively, 4096 in validation). */
   envImportanceCap: number;
+  /** M5.5: the denoiser toggle of the current mode (denoiser.md §8; remembered per mode in denoiseByMode). */
+  denoise: boolean;
 }
 
 export interface RendererTargets {
@@ -168,8 +178,20 @@ export class Renderer {
    *  the shared diagonal of a quad; plan §1.3). The interactive app opts into MT explicitly (src/app/integration.ts). */
   readonly options: RendererOptions = {
     textureMode: 'validation', watertight: true, accumulate: true, thrTau: THR_TAU, renderMode: 'albedo', restirMode: 'interactive', temporal: true, maxBounces: 3, rr: false,
-    lightMode: 'A', envNee: true, envImportanceCap: ENV_IMPORTANCE_CAP_INTERACTIVE,
+    lightMode: 'A', envNee: true, envImportanceCap: ENV_IMPORTANCE_CAP_INTERACTIVE, denoise: false,
   };
+  /** M5.5: denoiser toggle per mode (denoiseModeKey); a mode without an entry starts at denoiserDefault. */
+  readonly denoiseByMode: Record<string, boolean> = {};
+  /** M5.5: the denoiser (compiled on first use) and its last compile error. */
+  denoiser: Denoiser | undefined;
+  denoiserError: string | undefined;
+  private denoiserPending: Promise<Denoiser | undefined> | undefined;
+  private denoiseModeKey = '';
+  /** The denoiser ran in the last encoded frame. */
+  denoisedLastFrame = false;
+  private advancedFrames = 0;
+  /** RestirAdvance of the frame being encoded (undefined: no temporal advance this frame). */
+  private frameAdv: RestirAdvance | undefined;
   env!: EnvGpuResources;
   sceneData: SceneData | undefined;
   origin: [number, number, number] = [0, 0, 0];
@@ -513,6 +535,9 @@ export class Renderer {
       advanced: boolean; debugMode: number; debugGroup: GPUBindGroup; /** skip the PT pass (primary timing) */ noPt?: boolean;
       /** M5: reset the ReSTIR temporal history this frame (explicit reset, freeze seed / frame / history; TD19, TD20). */
       resetTemporal?: boolean;
+      /** M5.5: the progressive accumulation restarts this frame (FrameContext.resetHistory): resets the denoiser history in
+       *  modes without a ReSTIR temporal gradient (PT, temporal off; denoiser.md §6). */
+      resetHistory?: boolean;
     },
     timestamps?: () => GPUComputePassTimestampWrites | undefined,
     ptTimestamps?: () => GPUComputePassTimestampWrites | undefined,
@@ -545,13 +570,23 @@ export class Renderer {
     pass.end();
     // PT beauty after the primary pass (same jitter/seed; overwrites the placeholder colour). Skipped for BVH-stat views.
     let restirDone = false;
+    this.frameAdv = undefined;
     if (this.options.renderMode === 'restir' && !frame.noPt && !isBvhStatsView(frame.debugMode) && this.options.lightMode === 'A') {
       if (!s.rs) void this.compileRestir(s, tg.t.colorFormat);
       else restirDone = this.encodeRestir(encoder, s.rs, frame.advanced, !!frame.resetTemporal, tg.t.frameUniforms, rsTimestamps);
     }
+    let ptDone = false;
+    const dn = this.denoiseWanted() && !frame.noPt && !isBvhStatsView(frame.debugMode);
     if ((this.options.renderMode === 'pt' || (this.options.renderMode === 'restir' && !restirDone)) && s.pt && !frame.noPt && !isBvhStatsView(frame.debugMode)) {
-      s.pt.encode(encoder, { advanced: frame.advanced, accumulate: this.options.accumulate }, ptTimestamps?.());
+      // M5.5: the denoiser needs the PT's 1-spp frame sample (accumulate | denoise, PLAN §3 step 7)
+      s.pt.encode(encoder, { advanced: frame.advanced, accumulate: this.options.accumulate && !(dn && this.options.renderMode === 'pt' && this.denoiser) }, ptTimestamps?.());
+      ptDone = true;
     }
+    this.denoisedLastFrame = false;
+    if (dn && (restirDone || (ptDone && this.options.renderMode === 'pt'))) {
+      this.denoisedLastFrame = this.encodeDenoiser(encoder, s, tg, frame, restirDone ? 'restir' : 'pt');
+    }
+    if (frame.advanced) this.advancedFrames++;
     if (isEnvDebugView(frame.debugMode) && s.pt) {
       if (!s.envDebug) void this.compileEnvDebug(s);
       else s.envDebug.encode(encoder, { mode: frame.debugMode, env: this.env, lights: s.pt.lights, frameUniforms: tg.t.frameUniforms, width: tg.t.width, height: tg.t.height, debugGroup: frame.debugGroup, reset: false });
@@ -587,7 +622,106 @@ export class Renderer {
     rs.dbg?.encodeViews(encoder, { rounds: k.lastRounds });
     rs.hud.encodeEnd(encoder, k.resources.arena, adv);
     if (adv) { rs.lastAdvance = adv; rs.temporalFrames++; }
+    this.frameAdv = adv;
     return true;
+  }
+
+  // ---- M5.5 denoiser (docs/decisions/denoiser.md) -------------------------------------------------------------------
+
+  /** Follow mode switches: each mode keeps its own toggle (default on in ReSTIR-interactive only). */
+  private syncDenoiseMode(): void {
+    const o = this.options;
+    const key = denoiseModeKey(o.renderMode, o.restirMode);
+    if (key === this.denoiseModeKey) return;
+    this.denoiseModeKey = key;
+    o.denoise = this.denoiseByMode[key] ?? denoiserDefault(o.renderMode, o.restirMode);
+  }
+  /** The denoiser may run in the current mode (never in ReSTIR-unbiased: DN4). */
+  get denoiseAllowed(): boolean { return denoiserAllowed(this.options.renderMode, this.options.restirMode); }
+  /** Toggle the denoiser of the current mode (remembered per mode). */
+  setDenoise(on: boolean): void {
+    this.syncDenoiseMode();
+    this.options.denoise = on;
+    this.denoiseByMode[this.denoiseModeKey] = on;
+  }
+  /** The toggle of the current mode is on and the mode allows the denoiser. */
+  denoiseWanted(): boolean {
+    this.syncDenoiseMode();
+    return this.options.denoise && this.denoiseAllowed;
+  }
+  /** Denoiser settings (iterations, α_min, gradient ramp, edge stops); applied on the next frame. */
+  setDenoiserSettings(s: Partial<DenoiserSettings>): void {
+    Object.assign(this.pendingDenoiserSettings, s);
+    this.denoiser?.setSettings(this.pendingDenoiserSettings);
+  }
+  readonly pendingDenoiserSettings: Partial<DenoiserSettings> = {};
+
+  private compileDenoiser(colorFormat: GPUTextureFormat): Promise<Denoiser | undefined> {
+    if (this.denoiserPending) return this.denoiserPending;
+    const p = (async () => {
+      try {
+        const d = await Denoiser.create(this.device, { debugLayout: this.ctx.debugLayout, colorFormat, features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures });
+        d.setSettings(this.pendingDenoiserSettings);
+        this.denoiser?.destroy();
+        this.denoiser = d;
+        this.denoiserError = undefined;
+        return d;
+      } catch (e) {
+        this.denoiserError = `denoiser: ${e instanceof Error ? e.message : String(e)}`;
+        console.error(e);
+        return undefined;
+      } finally {
+        this.denoiserPending = undefined;
+      }
+    })();
+    this.denoiserPending = p;
+    return p;
+  }
+
+  /** Compile the denoiser now (tests, harness). */
+  async prepareDenoiser(): Promise<Denoiser | undefined> {
+    const tg = this.targets;
+    if (!tg) return undefined;
+    if (this.denoiser?.colorFormat === tg.t.colorFormat) return this.denoiser;
+    return this.compileDenoiser(tg.t.colorFormat);
+  }
+
+  private encodeDenoiser(enc: GPUCommandEncoder, s: SceneState, tg: TargetState,
+    frame: { advanced: boolean; debugGroup: GPUBindGroup; resetTemporal?: boolean; resetHistory?: boolean }, kind: 'restir' | 'pt'): boolean {
+    const d = this.denoiser;
+    if (!d || d.colorFormat !== tg.t.colorFormat) { void this.compileDenoiser(tg.t.colorFormat); return false; }
+    d.resize(tg.t.width, tg.t.height);
+    const f: DenoiseFrame = {
+      kind, advanced: frame.advanced, reset: !!frame.resetHistory, frameUniforms: tg.t.frameUniforms, gbuf: tg.gbuf, colour: tg.t.color, debugGroup: frame.debugGroup,
+    };
+    if (kind === 'restir') {
+      const k = s.rs!.pass.kernel;
+      const res = k.resources;
+      const adv = this.frameAdv;
+      const temporal = !!k.settings.temporal && !!res.alloc.temporal;
+      const fl = adv?.flags ?? 0;
+      f.radiance = res.frameTex;
+      f.l1 = res.l1;
+      f.restir = {
+        arena: res.arena, resW: res.res[k.resBase()], resFinal: res.res[k.finalResIndex()],
+        tsBase: RS_WGSL_CONSTS.RS_ARENA_HDR_WORDS + arenaWords(res.pixels, res.alloc.slots).tState,
+        gradient: !!adv && adv.histValid && temporal && k.settings.temporalMis === 'contribution',
+        lightingChanged: (fl & RS_WGSL_CONSTS.TF_LIGHTS_SAME) === 0 || (fl & RS_WGSL_CONSTS.TF_ENV_SAME) === 0,
+        inverse: k.lastRounds <= 1,
+      };
+      // ReSTIR with temporal reuse: the denoiser history resets with the ReSTIR history (config, scene, resize, env map,
+      // explicit reset, freeze); light / env edits are the gradient's job (denoiser.md §6).
+      if (temporal) f.reset = (!!adv && !adv.histValid) || !!frame.resetTemporal;
+    }
+    return d.encode(enc, f);
+  }
+
+  /** M5.5: call right after the frame's queue.submit: every 30th advanced frame the HUD timing re-runs the frame's
+   *  denoiser passes in a separate submit with timestamp writes (DN9, Q3). */
+  afterSubmit(): void {
+    const d = this.denoiser;
+    if (!d || !this.denoisedLastFrame || this.advancedFrames % 30 !== 0) return;
+    void d.time(1);
   }
 
   private compileEnvDebug(s: SceneState): Promise<EnvDebugPass | undefined> {
@@ -662,15 +796,32 @@ export class Renderer {
         out.push(...rs.hud.lines());
       }
     }
+    out.push(this.denoiserHudLine());
     if (this.loading) out.push('renderer: uploading / compiling ...');
     if (this.lastError) out.push(`renderer error: ${this.lastError.split('\n')[0]}`);
     return out;
+  }
+
+  /** HUD line of the denoiser (state, settings, GPU ms of the separate timing submits). */
+  denoiserHudLine(): string {
+    if (!this.denoiseAllowed) return `denoiser: off (not available in ${this.options.renderMode === 'restir' ? `ReSTIR-${this.options.restirMode}` : this.options.renderMode})`;
+    if (!this.denoiseWanted()) return 'denoiser: off';
+    const d = this.denoiser;
+    if (!d) return this.denoiserError ?? 'denoiser: compiling ...';
+    const st = d.settings;
+    const t = d.timingAverage();
+    const fl = d.flags;
+    const grad = d.kind === 'restir' ? ((fl & 32) ? `gradient ${(fl & 2) ? 'on (lights / env changed)' : 'gated (static lighting)'}` : 'gradient n/a') : 'no gradient (PT)';
+    return `denoiser A-SVGF-lite: ${st.iterations} iters, α_min ${st.alphaMin}, resolve ${st.resolve ? 'on' : 'off'}, ${grad}, ${d.framesSinceReset} frames since reset`
+      + (t ? `  GPU ${t.totalMs.toFixed(3)} ms (${t.passes.map((p) => `${p.name.replace('dn_', '')} ${p.ms.toFixed(2)}`).join(', ')})` : '');
   }
 
   destroy(): void {
     this.state?.pt?.destroy();
     this.state?.envDebug?.destroy();
     destroyRestir(this.state?.rs);
+    this.denoiser?.destroy();
+    this.denoiser = undefined;
     this.state?.gpu.destroy();
     if (this.targets) { this.targets.gbuf.destroy(); this.targets.accum.destroy(); this.targets.vbuf.destroy(); }
     destroyEnvResources(this.env);

@@ -13,7 +13,9 @@ import { registerProbeTag } from '../core/render/probe.ts';
 import { EXTRA_VIEWS, PRIMARY_PROBE_TAGS, Renderer } from '../core/render/renderer.ts';
 import { ENV_DEBUG_VIEWS } from '../core/render/env-debug.ts';
 import { RESTIR_PROBE_TAGS, RESTIR_VIEWS } from '../core/render/restir/debug.ts';
+import { DENOISER_VIEWS } from '../core/render/denoise/layout.ts';
 import { addRestirPanel, type RestirPanelHandle } from './ui/panels/restir-panel.ts';
+import { addDenoiserPanel, type DenoiserPanelHandle } from './ui/panels/denoiser-panel.ts';
 import { RestirInspector } from './ui/panels/restir-inspector.ts';
 import { DBG } from '../core/render/debug-views.ts';
 import { boundsDiagonal } from '../core/render/frame-uniforms.ts';
@@ -35,7 +37,7 @@ export interface Integration {
   /** Resolves when the first real scene (or env-only empty scene) has been uploaded and compiled. */
   sceneReady: Promise<void>;
   /** M4 (WP-D): the ReSTIR panel and pixel inspector (available once the renderer exists). */
-  restirUi(): { panel?: RestirPanelHandle; inspector?: RestirInspector };
+  restirUi(): { panel?: RestirPanelHandle; inspector?: RestirInspector; denoiser?: DenoiserPanelHandle };
   /** Dev: export the current scene/camera/env as a scene package to validation/out/export-<id>/ (returns the dir). */
   exportForCycles(app: App, cfg?: Partial<ExportConfig>): Promise<string | undefined>;
 }
@@ -58,12 +60,12 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
   let lightStore: LightStore | undefined;
   let lightUnsub: (() => void) | undefined;
   let lightsDirty = false;
-  const restirUi: { panel?: RestirPanelHandle; inspector?: RestirInspector } = {};
+  const restirUi: { panel?: RestirPanelHandle; inspector?: RestirInspector; denoiser?: DenoiserPanelHandle } = {};
 
   const ensure = (app: App): Promise<Renderer> => {
     rendererP ??= (async () => {
       for (const [tag, name] of [...PRIMARY_PROBE_TAGS, ...RESTIR_PROBE_TAGS]) registerProbeTag(tag, name);
-      for (const v of [...EXTRA_VIEWS, ...ENV_DEBUG_VIEWS, ...RESTIR_VIEWS]) if (!app.debug.registry.get(v.id)) app.registerDebugView(v);
+      for (const v of [...EXTRA_VIEWS, ...ENV_DEBUG_VIEWS, ...RESTIR_VIEWS, ...DENOISER_VIEWS]) if (!app.debug.registry.get(v.id)) app.registerDebugView(v);
       app.render.jitter = 'iid'; // plan §1.2: i.i.d. per-run/per-frame jitter; the panel offers R2 and pixel centre
       const r = await Renderer.create({ device: gpu.device, debugLayout: app.debug.layout, debug: app.debug, features: gpu.features, wgslLanguageFeatures: gpu.wgslLanguageFeatures },
         { watertight: false, renderMode: 'pt' }); // interactive default: MT (the panel toggles Woop; validation paths default to Woop); PT beauty (M3a)
@@ -72,6 +74,7 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
       addRendererPanel(app, r);
       restirUi.inspector = new RestirInspector(app);
       restirUi.panel = addRestirPanel(app, r, restirUi.inspector, 4);
+      restirUi.denoiser = addDenoiserPanel(app, r, 5);
       app.panel?.refresh();
       return r;
     })();
@@ -80,7 +83,7 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
 
   const renderFrame: AppHooks['renderFrame'] = (encoder, ctx) => {
     if (lightsDirty && lightStore && renderer?.setLights(lightStore.list())) lightsDirty = false;
-    renderer?.encode(encoder, { advanced: ctx.advanced, debugMode: ctx.debug.mode, debugGroup: ctx.targets.debug.bindGroup, resetTemporal: ctx.resetTemporal },
+    renderer?.encode(encoder, { advanced: ctx.advanced, debugMode: ctx.debug.mode, debugGroup: ctx.targets.debug.bindGroup, resetTemporal: ctx.resetTemporal, resetHistory: ctx.resetHistory },
       () => ctx.timestamps('primary'), () => ctx.timestamps('pt'), () => ctx.timestamps('restir'));
   };
   /** ReSTIR with temporal reuse is on: paused frames re-display the last frame (TD20). */
@@ -175,10 +178,14 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
     // With temporal reuse the HUD error totals restart only on temporal resets (renderer.ts); light / env animation
     // restarts the accumulation every frame and must not hide errors.
     onResetHistory: () => { if (!restirTemporal()) renderer?.restirHud?.resetTotals(); },
-    holdsFrameWhenPaused: () => restirTemporal(),
+    // M5.5: a held frame re-runs the denoiser plan (identical output), so the AOV of a denoiser view holds as well (PT
+    // too: its held sample is identical).
+    holdsFrameWhenPaused: () => restirTemporal() || !!renderer?.denoisedLastFrame,
+    afterSubmit: () => renderer?.afterSubmit(),
     hudLines: (app) => {
       const lines = renderer?.hudLines() ?? [];
       restirUi.panel?.refresh();
+      restirUi.denoiser?.refresh();
       const env = renderer?.env;
       if (env) {
         const l = lines.find((x) => x.startsWith('env NEE'));
