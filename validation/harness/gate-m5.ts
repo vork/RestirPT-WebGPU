@@ -1260,7 +1260,7 @@ function runUnit(u: UnitPlan, ptPlans: Map<string, PtPlan>, dir: string, runId: 
     const sum = rep ? summarize(rep) : undefined;
     const ok = !!rep && (rep.status === 'pass' || rep.status === 'pass_on_rerun') && t16.length === 0;
     const res = { unit, kind: u.kind, scene: u.pkg, rung: u.rung, variant: u.variant, frame: f, ok, ...(sum ?? { status: 'error' }), R: u.R, pt: `${ptPlans.get(`${u.pkg}:${f === 'avg' || u.kind !== 'dyn' ? 'base' : f.slice(1)}`)?.spp}x${B_PT}`, tile: u.tile,
-      aggregate_enlarged: u.tile !== (u.stage === 'B' ? 32 : 64), cap: u.cap, notes: u.notes, t16, chain_minutes: run.meta ? r4(run.meta.timings.totalMs / 60000) : undefined, report: path.join(cout, 'report.json'), ...(rerun ? { rerun } : {}) };
+      aggregate_enlarged: u.tile !== (u.stage === 'B' ? 32 : 64), cap: u.cap, notes: u.notes, t16, chain_minutes: run.meta ? r4(run.meta.timings.totalMs / 60000) : undefined, report: path.join(cout, 'report.json'), pt_dir: ref.dir, ...(rerun ? { rerun } : {}) };
     out.push(res);
     add(`${u.kind === 'dyn' ? 'dyn' : 'Stage B'} ${unit} (rung ${u.rung}${u.variant && u.variant !== 'base' ? ` ${u.variant}` : ''})`, ok, (performance.now() - t0) / 1000, res,
       sum ? `${sum.status}: Δ_Y ${pct(sum.global_rel_Y as number, 4)} (MDB ${pct(sum.mdb_global_Y as number, 3)}), worst tile ${pct(sum.worst_tile_rel_Y as number, 2)}, mult ${sum.multiplier_needed}${t16.length ? `; T16: ${t16.slice(0, 3).join('; ')}` : ''}` : `compare failed${t16.length ? `; T16: ${t16.slice(0, 3).join('; ')}` : ''}`);

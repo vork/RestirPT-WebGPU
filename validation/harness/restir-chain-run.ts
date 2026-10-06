@@ -67,7 +67,7 @@ export interface RenderRestirChainsOptions {
 export interface RenderRestirChainsReport { ok: boolean; run: string; files: string[]; meta: Record<string, unknown>; errors: string[] }
 
 /** Temporal plants are validation-only and never part of an unbiased unit. */
-export const UNBIASED_CHAIN_PRESETS: readonly RestirPresetName[] = ['temporal', 'full', 'initial', 'initial-rr', 'offline', 'criteria2022', 'offline-m6', 'full-m6'];
+export const UNBIASED_CHAIN_PRESETS: readonly RestirPresetName[] = ['temporal', 'full', 'initial', 'initial-rr', 'offline', 'criteria2022', 'offline-m6', 'full-m6', 'interactive'];
 
 /** Upload in ≤ 8 MB parts `<name>.part###` (run-batches.ts concatenates them): Playwright receives every request body
  *  through its CDP pipe as a JSON string, and a single upload above ~80 MB exceeds V8's 512 M-character string limit in

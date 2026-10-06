@@ -471,7 +471,8 @@ describe('T3-2 / T4-t: production round trips T⁻¹(T(X_p)) with forced s = p (
       reportT32(c.name, x, pairs);
       if (c.scene === 'rare' && T32_MIN_BIN > 0) for (const b of x.r.bins) expect(b.rtOk, b.name).toBeGreaterThanOrEqual(T32_MIN_BIN);
       if (c.scene === 'modeb' && T32_MIN_BIN > 0) {
-        for (const b of x.r.bins.filter((bb) => /ana/.test(bb.name))) if (b.trials) expect(b.rtOk, b.name).toBeGreaterThanOrEqual(T32_MIN_BIN / 10);
+        // restir-m6-api.md §4 T3-2/M6: every crossing bin (d-ana, c-ana, ∅-ana per k class) and the deep bins ≥ T32_MIN_BIN
+        for (const b of x.r.bins.filter((bb) => /ana|deep/.test(bb.name))) if (b.trials) expect(b.rtOk, b.name).toBeGreaterThanOrEqual(T32_MIN_BIN);
       }
       for (const r of x.frames) expect([r.counters.rsc.tNonFinite, r.counters.rsc.tPendingLeft], `t=${r.t}`).toEqual([0, 0]);
       if (c.lights || c.env) expect(x.refreshFrames).toBe(pairs);
@@ -873,6 +874,19 @@ describe('U8 plant activity (gate finding 2026-10-01): where U8-3 and U8-2t can 
     const all = allLightsScene();
     const allL = [await plantChain(all, 3, pw(all), {}), await plantChain(all, 3, pw(all), { tPlant: { u8StaleAux: true } })];
     console.log(`[U8-2t] rect-only ${JSON.stringify(rect)} emissive + env ${JSON.stringify(allL)}`);
+    expect(rect[1].res).toBe(rect[0].res);
+    expect(allL[1].res).not.toBe(allL[0].res);
+  });
+  // M6 revisit (restir-m6-api.md §5.3, E-22): RIS-NEE lives only at x₁ (M(B) = 32 at B = 1); aux is consumed by cases
+  // (b)/(c) whose x_{d−1} has index ≥ 2, so the tiles do not change where the plant can act.
+  it('U8-2t with RIS-NEE on (M6 revisit): still inert with only analytic lights, active with emissive triangles / env NEE', async () => {
+    const box = bitFixtureScene('c0e');
+    const pw = (s: SceneData) => (t: number) => animatedLights(s.lights, t, s.lights.map((l) => ({ id: l.id, power: (u: number) => (u % 2 ? 1.5 : 1) })));
+    const ris = { risNee: true, risM: 32 } as const;
+    const rect = [await plantChain(box, 3, pw(box), ris), await plantChain(box, 3, pw(box), { ...ris, tPlant: { u8StaleAux: true } })];
+    const all = allLightsScene();
+    const allL = [await plantChain(all, 3, pw(all), ris), await plantChain(all, 3, pw(all), { ...ris, tPlant: { u8StaleAux: true } })];
+    console.log(`[U8-2t RIS] rect-only ${JSON.stringify(rect)} emissive + env ${JSON.stringify(allL)}`);
     expect(rect[1].res).toBe(rect[0].res);
     expect(allL[1].res).not.toBe(allL[0].res);
   });

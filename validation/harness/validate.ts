@@ -31,7 +31,11 @@
 //     smoke), FLIP of the denoised vs the raw 1-frame ReSTIR-interactive output against 65 536-spp PT references on (i),
 //     (v), (vii), ix-d (ratio ≥ 2), recovery after the ix-e steps (≤ 8 frames), 960×540 timing (≤ 3 ms), T16.
 //     `--only gate0,flip,recovery,timing`; `--prerender-ptrefs` renders (caches) the PT references only.
-//   npm run validate -- --milestone M0|M1|M2|M3a|M3b|M3c|M4|M5|M5.5 [--only ...] [--pilot-only] [--write-budget] [--part core|static]
+// M6: validation/harness/gate-m6.ts (restir-m6-api.md §4–§5) — `--part core|r37|r39|r310|r311|gate5|plants` (default:
+//     all parts): Gate 0 (M6 suites, T3-M6 variants, M4/M5 regressions, make-m6 determinism, M6 app smoke), rungs 3.7 /
+//     3.9 / 3.10 / 3.11, Gate 5 (duplication-map bias ≤ 3.25 %), the M6 plants with predicted signs, A/A + W × 1.003.
+//     `--only id|pkg,…`, `--pilot-only` (pilots + sizing), `--plant-seed-offset 700` (revised predictions, fresh seeds).
+//   npm run validate -- --milestone M0|M1|M2|M3a|M3b|M3c|M4|M5|M5.5|M6 [--only ...] [--pilot-only] [--write-budget] [--part ...]
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -43,6 +47,7 @@ import { milestoneM3c } from './gate-m3c.ts';
 import { milestoneM4 } from './gate-m4.ts';
 import { milestoneM5 } from './gate-m5.ts';
 import { milestoneM55 } from './gate-m55.ts';
+import { milestoneM6, PARTS as M6_PARTS, type Part as M6Part } from './gate-m6.ts';
 import { withGpuLockSync } from './gpu-lock.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -389,6 +394,8 @@ const gates: Record<string, () => void> = {
     prerenderPtRefs: args['prerender-ptrefs'], part: args.part === 'core' || args.part === 'static' ? args.part : undefined, reuseChains: args['reuse-chains'], plants: args.plants ? new Set(args.plants.split(',')) : undefined,
     plantSeedOffset: args['plant-seed-offset'] ? Number(args['plant-seed-offset']) : undefined }),
   'M5.5': () => milestoneM55(record, { only: args.only ? new Set(args.only.split(',')) : undefined, prerenderPtRefs: args['prerender-ptrefs'] }),
+  M6: () => milestoneM6(record, { part: M6_PARTS.includes(args.part as M6Part) ? args.part as M6Part : undefined, only: args.only ? new Set(args.only.split(',')) : undefined,
+    pilotOnly: args['pilot-only'], plantSeedOffset: args['plant-seed-offset'] ? Number(args['plant-seed-offset']) : undefined }),
 };
 const gate = gates[args.milestone!.toUpperCase()];
 if (!gate) {
