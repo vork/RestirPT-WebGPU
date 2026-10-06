@@ -57,8 +57,15 @@ export { storageBuffer };
 // ------------------------------------------------------------------------------------------------ T3 round-trip kernel
 
 /** Case bins of the T3 statistics (restir-api.md §6.1 T3-4 list), × 2 for k = 2 (∅: d = 2) vs k > 2 (∅: d > 2). */
-export const T3_CASES = ['a-delta', 'a-area', 'a-tri', 'a-sun', 'f-env', 'b', 'b-env', 'c-tri', 'c-env', 'd', 'e', 'deep-nee', 'deep-bsdf', 'none-tri', 'none-env'] as const;
+export const T3_CASES = ['a-delta', 'a-area', 'a-tri', 'a-sun', 'f-env', 'b', 'b-env', 'c-tri', 'c-env', 'd', 'e', 'deep-nee', 'deep-bsdf', 'none-tri', 'none-env',
+  // M6 (restir-m6-api.md §4 T3-M6): Mode-B analytic crossings (deep crossings count in deep-bsdf); bins 30–35 use the
+  // skip bits 16–19 of RsDispatch.flags (passId holds bins 0–31)
+  'none-ana', 'd-ana', 'c-ana'] as const;
 export const T3_NBINS = T3_CASES.length * 2;
+/** M6 extra counters after the class table: per category (ℓ_{k−1} = G_R, ℓ_k = G_R, side flip at x_k, rc segment crossing a
+ *  cutout card) {trials, rtOk, logic} (restir-m6-api.md §1.5, §4). */
+export const T3_X_CATS = ['grKm1', 'grK', 'sideFlip', 'alphaCard'] as const;
+export const T3_X_WORDS = 3 * T3_X_CATS.length;
 export const T3_BIN_NAMES = T3_CASES.flatMap((c) => [`${c}/k2`, `${c}/k>2`]);
 /** Per-bin stats words. */
 export const T3S = {
@@ -129,13 +136,27 @@ fn dense_initial(@builtin(global_invocation_id) gid: vec3u) {
 /** Dual (T3-D) trace records: word 0 of the buffer = count; record r at 4 + r·T3_DUAL_WORDS (layout: decodeDualRecord). */
 export const T3_DUAL_WORDS = 80;
 export const T3_DUAL_CAP = 131072;
-export const T3_WGSL = `
+/** An axis-aligned-in-its-frame card (alpha fixture): centre, unit axes u / v with half sizes, unit normal. */
+export interface T3Card { c: [number, number, number]; u: [number, number, number]; v: [number, number, number]; hu: number; hv: number }
+const v4 = (a: number[], w: number) => `vec4f(${a.map((x) => x.toFixed(7)).join(', ')}, ${w.toFixed(7)})`;
+function cardsWgsl(cards: T3Card[]): string {
+  const n = cards.length;
+  const items = cards.flatMap((k) => {
+    const nrmv = [k.u[1] * k.v[2] - k.u[2] * k.v[1], k.u[2] * k.v[0] - k.u[0] * k.v[2], k.u[0] * k.v[1] - k.u[1] * k.v[0]];
+    return [v4(k.c, k.hu), v4(k.u, k.hv), v4(nrmv, 0)];
+  });
+  if (!items.length) items.push(v4([0, 0, 0], 0));
+  return `const T3_NCARDS: u32 = ${n}u;\nconst T3_CARDS = array<vec4f, ${items.length}>(${items.join(', ')});`;
+}
+
+export const T3_WGSL_BODY = (cards: T3Card[] = []) => `
 #include "restir/shift.wgsl"
 ${DENSE_LATTICE_WGSL}
 @group(2) @binding(0) var<storage, read_write> dump: array<u32>;
 @group(2) @binding(1) var<storage, read_write> stats: array<atomic<u32>>;
 @group(2) @binding(2) var<storage, read_write> viol: array<atomic<u32>>;
 
+${cardsWgsl(cards)}
 const NB: u32 = ${T3_NBINS}u;
 const SW: u32 = ${T3S.words}u;
 const CH0: u32 = ${T3_NBINS * T3S.words + T3_HIST_BINS}u;
@@ -198,10 +219,38 @@ fn rs_trace_escape(dir: vec3f) {
 var<private> trDist: f32;
 var<private> trEdgeK: f32;
 fn rs_trace_recon(cosY: f32, cosK: f32, dist: f32, edgeK: f32) { trCos = min(cosY, cosK); trDist = dist; trEdgeK = edgeK; }
+// M6 hooks (Mode-B crossing point for the dual; glass side and alpha-card segment counters, RS_M6_TRACE)
+fn rs_trace_cross(n: vec3f, z: vec3f) {
+  if (trSlot != 0u) {
+    dw(16u, bitcast<u32>(n.x)); dw(17u, bitcast<u32>(n.y)); dw(18u, bitcast<u32>(n.z));
+    dw(19u, bitcast<u32>(z.x)); dw(20u, bitcast<u32>(z.y)); dw(21u, bitcast<u32>(z.z)); dw(22u, 2u);
+  }
+}
+var<private> trSide: u32;
+var<private> trSeg: bool;
+fn rs_trace_side(back: bool) { trSide = select(1u, 2u, back); }
+fn t3_seg_card(a: vec3f, b: vec3f) -> bool {
+  for (var i = 0u; i < T3_NCARDS; i++) {
+    let c = T3_CARDS[3u * i]; let u = T3_CARDS[3u * i + 1u]; let n = T3_CARDS[3u * i + 2u].xyz;
+    let da = dot(a - c.xyz, n); let db = dot(b - c.xyz, n);
+    if (da * db >= 0.0) { continue; }
+    let pnt = a + (b - a) * (da / (da - db));
+    let v = cross(n, u.xyz);
+    if (abs(dot(pnt - c.xyz, u.xyz)) <= c.w && abs(dot(pnt - c.xyz, v)) <= u.w) { return true; }
+  }
+  return false;
+}
+fn rs_trace_seg(a: vec3f, b: vec3f, valid: bool) { trSeg = valid && t3_seg_card(a, b); }
+const X0: u32 = CL0 + 2u * ${T3_CLASS_SLOTS}u;
+fn stX(mask: u32, w: u32) { for (var c = 0u; c < ${T3_X_CATS.length}u; c++) { if (((mask >> c) & 1u) != 0u) { atomicAdd(&stats[X0 + 3u * c + w], 1u); } } }
 
 fn t3_case(f: u32) -> u32 {
   let d = rf_d(f); let k = rf_k(f); let tech = rf_tech(f); let ep = rf_ep(f);
   var c = 12u;
+  if (tech == RS_TECH_BSDF_ANALYTIC) {
+    if (k == 0u) { c = 15u; } else if (k == d) { c = 16u; } else if (k + 1u == d) { c = 17u; }
+    return 2u * c + select(0u, 1u, select(k > 2u, d > 2u, k == 0u));
+  }
   if (k == 0u) { c = select(13u, 14u, tech == RS_TECH_BSDF_ENV); }
   else if (tech == RS_TECH_NEE && k == d) {
     if (ep == LT_POINT || ep == LT_SPOT) { c = 0u; } else if (ep == LT_RECT || ep == LT_DISK) { c = 1u; }
@@ -267,7 +316,8 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
   src.end = vec3u(dump[base + 20u], dump[base + 21u], dump[base + 22u]);
   let f = src.flags;
   let bin = t3_case(f);
-  if (((rsDispatch.passId >> bin) & 1u) != 0u) { return; }     // bins already at their target (skip mask)
+  let skipBit = select((rsDispatch.passId >> (bin & 31u)) & 1u, (rsDispatch.flags >> (16u + (bin & 15u))) & 1u, bin >= 32u);
+  if (skipBit != 0u) { return; }                             // bins already at their target (skip mask)
 #if T3_DENSE
   latIdx = atomicLoad(&dual[${DENSE_OFF - 2}u]) + ai;
   let p = vec2u(0u);
@@ -327,6 +377,10 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
   var Fc = vec3f(0.0);
   var s = src;
   var dst = dq;
+  var side0 = 0u;
+  var xmask = 0u;
+  if (rf_lkm1(f) == 2u) { xmask |= 1u; }
+  if (rf_lk(f) == 2u) { xmask |= 2u; }
   for (var ps = 0u; ps < nPass; ps++) {
     for (var b = 0u; b < 8u; b++) { trPrim[b] = 0xFFFFFFFEu; trLobe[b] = 0xFFu; trEdge[b] = 1.0; }
     trCos = 1.0; trDist = 0.0; trEdgeK = 1.0;
@@ -336,8 +390,10 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
       let r = atomicAdd(&dual[0], 1u);
       if (r < ${T3_DUAL_CAP}u) { trSlot = 4u + r * DW; }
     }
+    trSide = 0u; trSeg = false;
     let o = shift_hybrid(s, dst);
     let oc = o.code;                                   // captured right after the call, before any branch on ps
+    if (ps == 0u) { side0 = trSide; if (trSeg) { xmask |= 8u; } }
     let oJ = o.J;
     let sc = rs_slot_code_sc(oc);
     if (mode == 2u) {                                  // T5 census values: side A J·h(F_q(ȳ)), side B h(F_p(x̄))
@@ -414,6 +470,8 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
       if (!undefined_sc(sc)) { st(bin, ${T3S.invDefined}u); }
     }
     if (last) {
+      if (mode == 1u && side0 != 0u && trSide != 0u && side0 != trSide) { xmask |= 4u; }
+      stX(xmask, 0u);
       // PLATFORM: the branch on the uniform-per-thread loop counter must have run exactly once per pass, ps == 0 once
       if (nThen != 1u || nThen + nElse != ps + 1u || c0 == 0xFFFFFFFFu) {
         stg(${T3_CHAIN.platform}u);
@@ -429,6 +487,7 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
         let fp = (isPair && abs(m) < 1.52587890625e-5) || (sig != 0u && edge < 1e-6);
         if (fp) { st(bin, ${T3S.fp}u); } else {
           st(bin, ${T3S.logic}u);
+          stX(xmask, 2u);
           stEp(ep, 2u);
           t3_viol(select(${T3V.invUndefined}u, ${T3V.selfUndefined}u, selfM), bin, trial, c0, o.code, sig, edge, J0, o.J, f, ai, q.y * W + q.x, m);
         }
@@ -436,16 +495,19 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
       }
       if (sc != SC_OK) {
         st(bin, ${T3S.visZero}u);
+        stX(xmask, 2u);
         // diagnostics: J0 slot ← |cos| of the reconnection segment (min over both ends), edge ← bary edge distance of x_k,
         // fr ← segment length
         t3_viol(select(${T3V.invZero}u, ${T3V.selfZero}u, selfM), bin, trial, c0, o.code, sig, trEdgeK, trCos, o.J, f, ai, q.y * W + q.x, trDist);
         return;
       }
       st(bin, ${T3S.rtOk}u);
+      stX(xmask, 1u);
       stEp(ep, 1u);
       if (sig != 0u) {
         if (edge < 1e-6) { st(bin, ${T3S.sigFp}u); } else {
           st(bin, ${T3S.sigLogic}u);
+          stX(xmask, 2u);
           t3_viol(select(${T3V.sig}u, ${T3V.selfSig}u, selfM), bin, trial, c0, o.code, sig, edge, J0, o.J, f, ai, q.y * W + q.x, 0.0);
         }
       }
@@ -460,6 +522,7 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
         let gz = trCos;
         // F is one function of the stored vertices (D3 / Changelog B-2): no tolerance beyond 1e-4 (gz: diagnostic)
         st(bin, ${T3S.fViol}u);
+        stX(xmask, 2u);
         t3_viol(select(${T3V.F}u, ${T3V.selfF}u, selfM), bin, trial, c0, o.code, sig, gz, J0, o.J, f, ai, q.y * W + q.x, fr);
       }
       var jBad = false;
@@ -467,6 +530,7 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
       else { jBad = !(abs(log(J0 * o.J)) < 1e-4); }
       if (jBad) {
         st(bin, ${T3S.jViol}u);
+        stX(xmask, 2u);
         t3_viol(select(${T3V.J}u, ${T3V.selfJ}u, selfM), bin, trial, c0, o.code, sig, edge, J0, o.J, f, ai, q.y * W + q.x, 0.0);
       }
       return;
@@ -479,6 +543,8 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
   }
 }
 `;
+/** The T3 kernel without cards (M4 fixtures). */
+export const T3_WGSL = T3_WGSL_BODY();
 
 export interface T3Stats { bins: Record<string, Record<string, number>>; fwdCodes: Record<string, number[]>; invCodes: Record<string, number[]>; hist: number[]; chain: Record<string, number>; ep: { fwdOk: number; rtOk: number; logic: number }[]; classes: { key: number; count: number }[] }
 export function decodeT3Stats(w: Uint32Array): T3Stats {
@@ -499,4 +565,8 @@ export function decodeT3Stats(w: Uint32Array): T3Stats {
   for (let i = 0; i < T3_CLASS_SLOTS; i++) if (w[cl0 + 2 * i]) classes.push({ key: w[cl0 + 2 * i], count: w[cl0 + 2 * i + 1] });
   return { bins, fwdCodes, invCodes, hist: Array.from(w.subarray(h0, h0 + T3_HIST_BINS)), chain, ep, classes };
 }
-export const T3_STATS_WORDS = T3_NBINS * T3S.words + T3_HIST_BINS + 8 + 8 * T3_EP_WORDS + 2 * T3_CLASS_SLOTS;
+export const T3_STATS_WORDS = T3_NBINS * T3S.words + T3_HIST_BINS + 8 + 8 * T3_EP_WORDS + 2 * T3_CLASS_SLOTS + T3_X_WORDS;
+export function decodeT3Extra(w: Uint32Array): Record<string, { trials: number; rtOk: number; logic: number }> {
+  const x0 = T3_NBINS * T3S.words + T3_HIST_BINS + 8 + 8 * T3_EP_WORDS + 2 * T3_CLASS_SLOTS;
+  return Object.fromEntries(T3_X_CATS.map((c, i) => [c, { trials: w[x0 + 3 * i], rtOk: w[x0 + 3 * i + 1], logic: w[x0 + 3 * i + 2] }]));
+}

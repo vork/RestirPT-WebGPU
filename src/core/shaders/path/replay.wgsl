@@ -99,7 +99,12 @@ fn replay_prefix(seed: vec2u, y1: SurfaceHit, y1Prim: u32, camPos: vec3f, thr: f
         let rX = light_load(slotX, eX);
         if (rX.kind == LT_RECT || rX.kind == LT_DISK) {
           let ch = cross_ray(rX, cur.pos, wOut, select(FLT_MAX, length(nxt.pos - cur.pos), isHit));
-          if (ch.hit) { hitX = true; crossZ = cross_point(rX, ch.xy); crossN = rX.normal; Lq = normalize(crossZ - cur.pos); }
+          if (ch.hit) {
+            hitX = true; crossZ = cross_point(rX, ch.xy); crossN = rX.normal; Lq = normalize(crossZ - cur.pos);
+#if RS_SHIFT_TRACE
+            rs_trace_cross(crossN, crossZ);
+#endif
+          }
         }
       }
       if (!hitX) { r.code = rs_slot_code(SC_O0_TECH, RCT_NONE, d, 0.0); return r; }

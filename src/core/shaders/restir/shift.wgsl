@@ -209,6 +209,9 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
     xk.ng = rX.normal;
     xkPrim = LIGHT_NONE;
     wP = normalize(xk.pos - yPrev.pos);
+#if RS_SHIFT_TRACE
+    rs_trace_cross(rX.normal, xk.pos);
+#endif
   }
 #endif
   // NEE end term and its visibility data, reduced to a few registers inside the iteration that evaluates the light
@@ -413,6 +416,11 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
       F = Tp * (fY / pY) * (fK / pK) * src.rcRad;
     }
   }
+#if RS_SHIFT_TRACE && RS_M6_TRACE
+  // M6 T3 counters (tests only): side of x_k seen from y_{k−1} (glass side flips) and the reconnection segment (alpha cards)
+  rs_trace_side(xk.backfacing && xkPrim != BVH_MISS);
+  rs_trace_seg(yPrev.pos, select(xk.pos, visPos, cs == SH_FORCED), cs != SH_ENV && !(cs == SH_FORCED && visInf));
+#endif
   return shift_finish_vis(F, J, jNum, cs, yPrev, yPrevPrim, xk, xkPrim, wP, visPos, visN, visPrim, visInf, src.endOcc);
 }
 
