@@ -1268,3 +1268,167 @@ describe('N1-mixed mechanism (C-11): canonicals on a just-added light are undefi
     expect(out.on['inv:OK'] ?? 0).toBeGreaterThan(10);
   });
 });
+
+// ------------------------------------------------------------------------------------------------ env plants on ixs_h (C-12)
+
+describe('env plants on ixs_h_envrot (C-12): env-gamma-t decomposition by path class, env-no-rot-vis affected share', () => {
+  it('final-reservoir F·W by (class, technique, endpoint) in the left tiles and globally, plant off vs on; refresh changes under env-no-rot-vis', async () => {
+    const { fetchScenePackage, resolvePackageFrame } = await import('../../src/core/scene/scene-package.ts');
+    const { decodeReservoir } = await import('../../src/core/render/restir/layout.ts');
+    const pkg = await fetchScenePackage('/validation/out/m5/scenes/ixs_h_envrot_256/');
+    const W = 128, E = 16, BATCHES = 40, TEST = 10;
+    const f0 = resolvePackageFrame(pkg, 0);
+    const cam = { camToWorld: Array.from(f0.camera.camToWorld), yfov: f0.camera.yfov };
+    const left = (x: number, y: number) => x < W / 4 && y >= W / 4 && y < (3 * W) / 4;   // 64² tiles [1,0], [2,0] at 256²
+    const PRESET = (globalThis as { __RF_PRESET?: 'full' | 'temporal' }).__RF_PRESET ?? (import.meta.env?.VITE_RF_PRESET as 'full' | 'temporal' | undefined) ?? 'full';
+    const run = async (tPlant: RestirSettings['tPlant']) => {
+      const rig = await restirRig({ ...pkg.scene, env: f0.env!.map }, W, W, { preset: PRESET, members: E, settings: { maxBounces: 3, tPlant }, seed: 9301, cam, env: { nee: true } });
+      const k = rig.kernel, device = rig.g.device;
+      const acc: Record<string, { left: number[]; all: number[] }> = {};
+      let affected = { n: 0, w: 0, wTot: 0 };
+      for (let b = 0; b < BATCHES; b++) {
+        k.setView({ camera: cam, width: W, height: W, runSeed: 9301 + 1000 * b, members: E, memberBase: 0 });
+        await k.prepare();
+        for (let t = 0; t <= TEST; t++) {
+          const f = resolvePackageFrame(pkg, t);
+          k.advance({ t, camera: cam, lights: f.lights, env: f.env ? { params: f.env.params, mapId: f.env.mapId } : undefined });
+          k.beginSubmit();
+          const enc = device.createCommandEncoder();
+          for (const u of k.frameUnits(t, { accum: rig.accum, counters: rig.counters })) u.encode(enc);
+          device.queue.submit([enc.finish()]);
+          await device.queue.onSubmittedWorkDone();
+          if (t === TEST - 1 && b < 4) {
+            // env-no-rot-vis share: the history entering frame TEST refreshed PREV → CUR with and without the plant
+            const rec = await k.readReservoirs('final');
+            const n = rec.length / RES_WORDS;
+            const r: Recs = { rec, ai: new Uint32Array(n).map((_, i) => i), n };
+            const fNext = resolvePackageFrame(pkg, t + 1);
+            k.advance({ t: t + 1, camera: cam, lights: fNext.lights, env: fNext.env ? { params: fNext.env.params, mapId: fNext.env.mapId } : undefined });
+            const keep = k.settings.tPlant;
+            k.setSettings({ tPlant: {} });
+            const ex = await runRefresh(k, r, K.RS_FS_PREV, K.RS_FS_CUR);
+            k.setSettings({ tPlant: { envNoRotVis: true } });
+            const pl = await runRefresh(k, r, K.RS_FS_PREV, K.RS_FS_CUR);
+            k.setSettings({ tPlant: keep });
+            const fw = new Float32Array(rec.buffer);
+            for (let i = 0; i < n; i++) {
+              const w = Math.abs(fw[i * RES_WORDS + RW.W]) * (0.2126 * fw[i * RES_WORDS + RW.F] + 0.7152 * fw[i * RES_WORDS + RW.F + 1] + 0.0722 * fw[i * RES_WORDS + RW.F + 2]);
+              if (!(w > 0) || !Number.isFinite(w)) continue;
+              affected.wTot += w;
+              if (ex.subarray(8 * i, 8 * i + 8).some((x, j) => x !== pl[8 * i + j])) { affected.n++; affected.w += w; }
+            }
+            t++;   // frame TEST was advanced above: build its units now
+            k.beginSubmit();
+            const enc2 = device.createCommandEncoder();
+            for (const u of k.frameUnits(t, { accum: rig.accum, counters: rig.counters })) u.encode(enc2);
+            device.queue.submit([enc2.finish()]);
+            await device.queue.onSubmittedWorkDone();
+          }
+          if (t === TEST) {
+            const rec = await k.readReservoirs('final');
+            const a = k.resources.alloc;
+            for (let ai = 0; ai < a.atlasW * a.atlasH; ai++) {
+              const r = decodeReservoir(rec, ai);
+              if (r.d === 0) continue;
+              const x = (ai % a.atlasW) % W, y = Math.floor(ai / a.atlasW) % W;
+              const key = `${PATH_CLASS_NAMES[pathClass(r)]}/${['NEE', 'TRI', 'ANA', 'ENV'][r.tech]}`;
+              const v = r.W * (0.2126 * r.F[0] + 0.7152 * r.F[1] + 0.0722 * r.F[2]);
+              if (!Number.isFinite(v)) continue;
+              const e = (acc[key] ??= { left: [], all: [] });
+              const m = Math.floor(ai / a.atlasW / W) * a.memberCols + Math.floor((ai % a.atlasW) / W) + b * E;
+              e.all[m] = (e.all[m] ?? 0) + v;
+              if (left(x, y)) e.left[m] = (e.left[m] ?? 0) + v;
+            }
+          }
+        }
+      }
+      rig.destroy();
+      return { acc, affected };
+    };
+    const off = await run({}), on = await run({ envGammaT: true });
+    const chains = E * BATCHES;
+    const stat = (arr: number[]) => { const xs = Array.from({ length: chains }, (_, i) => arr[i] ?? 0); const m = xs.reduce((p, q) => p + q, 0) / chains; const v = xs.reduce((p, q) => p + (q - m) ** 2, 0) / (chains - 1) / chains; return { m, v }; };
+    const rows: string[] = [];
+    let totL = 0, totA = 0;
+    for (const key of Object.keys(off.acc)) { totL += stat(off.acc[key].left).m; totA += stat(off.acc[key].all).m; }
+    for (const key of [...new Set([...Object.keys(off.acc), ...Object.keys(on.acc)])].sort()) {
+      const z = (reg: 'left' | 'all') => { const a = stat(on.acc[key]?.[reg] ?? []), b = stat(off.acc[key]?.[reg] ?? []); return { d: a.m - b.m, z: (a.m - b.m) / Math.sqrt(a.v + b.v + 1e-30), share: b.m }; };
+      const L = z('left'), A = z('all');
+      rows.push(`${key.padEnd(10)} left share ${(L.share / totL * 100).toFixed(2)}% Δ ${(L.d / totL * 100).toFixed(3)}% (z ${L.z.toFixed(1)}) | all share ${(A.share / totA * 100).toFixed(2)}% Δ ${(A.d / totA * 100).toFixed(3)}% (z ${A.z.toFixed(1)})`);
+    }
+    console.log(`[env-gamma-t ixs_h f${TEST} ${PRESET}] (Δ relative to the region's total reservoir estimate)\n${rows.join('\n')}`);
+    console.log(`[env-no-rot-vis ixs_h f${TEST}] history records whose refresh changes under the plant: ${off.affected.n}, energy share ${(off.affected.w / off.affected.wTot * 100).toFixed(3)}%`);
+    expect(totA).toBeGreaterThan(0);
+    // C-12: the left-tile brightening of env-gamma-t is direct env NEE (class L), with or without the spatial round
+    const zOf = (key: string, reg: 'left' | 'all') => { const a = stat(on.acc[key]?.[reg] ?? []), b = stat(off.acc[key]?.[reg] ?? []); return (a.m - b.m) / Math.sqrt(a.v + b.v + 1e-30); };
+    expect(zOf('L/NEE', 'left')).toBeGreaterThan(3);
+    expect(zOf('L/NEE', 'all')).toBeLessThan(-3);
+  });
+});
+
+describe('env-gamma-t on ixs_h (C-12): π_p(X_c) of the same canonicals, exact vs plant, left tiles vs elsewhere', () => {
+  it('re-runs the inverse refresh + T4 of one frame with TP_ENV_GAMMA_T and compares piRecomp per pixel', async () => {
+    const { fetchScenePackage, resolvePackageFrame } = await import('../../src/core/scene/scene-package.ts');
+    const { decodeTStateLocal, decodeReservoir } = await import('../../src/core/render/restir/layout.ts');
+    const pkg = await fetchScenePackage('/validation/out/m5/scenes/ixs_h_envrot_256/');
+    const W = 128, E = 16, BATCHES = 6, TEST = 10;
+    const f0 = resolvePackageFrame(pkg, 0);
+    const cam = { camToWorld: Array.from(f0.camera.camToWorld), yfov: f0.camera.yfov };
+    const rig = await restirRig({ ...pkg.scene, env: f0.env!.map }, W, W, { preset: 'temporal', members: E, settings: { maxBounces: 3 }, seed: 9401, cam, env: { nee: true } });
+    const k = rig.kernel, device = rig.g.device;
+    type Bin = { n: number; lower: number; higher: number; lost: number; created: number; wEx: number; wPl: number; logSum: number };
+    const nb = (): Bin => ({ n: 0, lower: 0, higher: 0, lost: 0, created: 0, wEx: 0, wPl: 0, logSum: 0 });
+    const bins: Record<string, Bin> = {};
+    for (let b = 0; b < BATCHES; b++) {
+      k.setSettings({ tPlant: {} });
+      k.setView({ camera: cam, width: W, height: W, runSeed: 9401 + 1000 * b, members: E, memberBase: 0 });
+      await k.prepare();
+      for (let t = 0; t <= TEST; t++) {
+        const f = resolvePackageFrame(pkg, t);
+        k.advance({ t, camera: cam, lights: f.lights, env: f.env ? { params: f.env.params, mapId: f.env.mapId } : undefined });
+        const units = k.frameUnits(t, { accum: rig.accum, counters: rig.counters });
+        k.beginSubmit();
+        const enc = device.createCommandEncoder();
+        const stop = t === TEST ? units.findIndex((u) => u.label.startsWith('rs_t_select_b')) : units.length;
+        for (const u of units.slice(0, stop)) u.encode(enc);
+        device.queue.submit([enc.finish()]);
+        await device.queue.onSubmittedWorkDone();
+        if (t !== TEST) continue;
+        const a = k.resources.alloc, P = a.atlasW * a.atlasH, NS = a.slots;
+        const ex = await k.readTemporalState();
+        k.setSettings({ tPlant: { envGammaT: true } });
+        k.beginSubmit();
+        const enc2 = device.createCommandEncoder();
+        for (const u of units.filter((x) => x.label.startsWith('rs_refresh_inv') || x.label.startsWith('rs_t_inverse'))) u.encode(enc2);
+        device.queue.submit([enc2.finish()]);
+        await device.queue.onSubmittedWorkDone();
+        const pl = await k.readTemporalState();
+        const res = await k.readReservoirs(k.resBase() as 0 | 1);
+        for (let ai = 0; ai < P; ai++) {
+          const se = decodeTStateLocal(ex, P, NS, ai), sp = decodeTStateLocal(pl, P, NS, ai);
+          if (!(se.flags & S.TS_INV_QUEUED) || !(se.flags & S.TS_SEL_C)) continue;
+          const r = decodeReservoir(res, ai);
+          const x = (ai % a.atlasW) % W, y = Math.floor(ai / a.atlasW) % W;
+          const region = x < W / 4 && y >= W / 4 && y < (3 * W) / 4 ? 'left' : 'other';
+          const key = `${region}:${PATH_CLASS_NAMES[pathClass(r)]}/${['NEE', 'TRI', 'ANA', 'ENV'][r.tech]}`;
+          const bn = (bins[key] ??= nb());
+          const pe = se.piRecomp, pp = sp.piRecomp;
+          bn.n++; bn.wEx += pe; bn.wPl += pp;
+          if (pe > 0 && pp === 0) bn.lost++;
+          else if (pe === 0 && pp > 0) bn.created++;
+          else if (pe > 0 && pp > 0) { if (pp < pe * (1 - 1e-4)) bn.lower++; else if (pp > pe * (1 + 1e-4)) bn.higher++; bn.logSum += Math.log(pp / pe); }
+        }
+      }
+    }
+    rig.destroy();
+    const rows = Object.entries(bins).filter(([, v]) => v.n > 50).sort().map(([kk, v]) =>
+      `${kk.padEnd(16)} n ${v.n} lower ${(v.lower / v.n * 100).toFixed(1)}% higher ${(v.higher / v.n * 100).toFixed(1)}% lost ${(v.lost / v.n * 100).toFixed(2)}% created ${(v.created / v.n * 100).toFixed(2)}% Σπ plant/exact ${(v.wPl / v.wEx).toFixed(4)}`);
+    console.log(`[env-gamma-t π_p(X_c) ixs_h f${TEST}]\n${rows.join('\n')}`);
+    // C-12: direct env NEE canonicals (L/NEE) lose inverse support in the left tiles (advancing shadow edge: the
+    // frame-t rotation occludes, from the previous jittered hit, a direction that was visible at t−1) and gain it
+    // elsewhere (retreating edges, escapes onto the patch)
+    const L = bins['left:L/NEE'], O = bins['other:L/NEE'];
+    expect(L.lost).toBeGreaterThan(10 * Math.max(L.created, 1));
+    expect(O.created).toBeGreaterThan(5 * O.lost);
+  });
+});

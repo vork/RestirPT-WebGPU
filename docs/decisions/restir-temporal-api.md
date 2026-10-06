@@ -987,8 +987,8 @@ with one-sided z ≥ 3; for "only" predictions no region/tile shows the opposite
 | N5 | `TP_N5_PIXEL_CENTRE` | ixs_d0_jitter 32; ixs_d_camera 16 | Δ > 0 in `M_sil` / `M_edge` (B-12: the inverse loses support, ĉ_c over-weighted) |
 | N6 | `TP_N6_CUR_CAM` | ixs_d_glossy 16, 32 | detected; sign not predicted (reported) |
 | N7 | `TP_N7_PER_LIGHT` | ixs_e_addremove 14, 15 | Δ < 0 in `M_light:B` (pmf_B drops, stale 1/q) |
-| skip rotation refresh | `TP_ENV_NO_ROT_VIS` | ixs_h_envrot 10, 25 | Δ > 0 in `M_down`, Δ < 0 in `M_up` (C-11, revised after measurement; `M_edge` mixes both) |
-| E_{t−1} with γ_t | `TP_ENV_GAMMA_T` | ixs_h_envrot 10, 25 | Δ < 0 in `M_new`, `M_up` and `M_down` (B-12: darkening only) |
+| skip rotation refresh | `TP_ENV_NO_ROT_VIS` | ixs_h_envrot 10, 25 | detected; sign resolution-limited (C-12: expected `M_down` +, `M_up` −, below 3·SE of the unit; not revised to match) |
+| E_{t−1} with γ_t | `TP_ENV_GAMMA_T` | ixs_h_envrot 10, 25 | Δ < 0 globally, in `M_new`, `M_up` and `M_down`; not "darkening only": Δ > 0 where shadow edges advance over env-lit surfaces (C-12, revised after measurement) |
 | omit J_P on env | `TP_NO_JP_ENV` | ixs_i_envradio 16, 17 | Δ < 0 in the env-dominant region (C-11, revised after measurement: no Δ > 0 in `M_light:R`) |
 | c_p + 1 | `TP_CP_PLUS1` | m5s_cornell_i 3.4, t = 24 | Δ < 0 globally |
 | W × 1.003 | synthetic (compare.py) | A/A run of m5s_cornell_i 3.4 | detected ≥ 9/10 |
@@ -1396,6 +1396,33 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   - Plant code checked against its description: N4 (forward only, 8 alias candidates, RIS ∝ lum(f·Λ)/q, single-sample
     value, ray traced), NO_JP_ENV (env entries only, both directions), ENV_NO_ROT_VIS (env NEE N1 / D-NEE, no ray, VIS
     set), N3 (C-5 / C-8) — no further implementation change.
+
+- **C-12 env-gamma-t and env-no-rot-vis after the fresh-seed plant runs (m5-gate-20261002-051049)** (affects T-E
+  plant rows; T-B informational, B-12's env-gamma-t "darkening only"; §6.5 rows revised after measurement). Plant
+  code unchanged (both act only through `lf_env(PREV)` / the refresh, as described).
+  - **env-gamma-t is not darkening-only (revised after measurement).** Targeted GPU tests on ixs_h at 128² (16 × 40
+    chains, frame 10; `restir-refresh.gpu.test.ts` "env plants on ixs_h"): the left-tile brightening is class L env
+    NEE (direct env light, 97 % of the region's estimate): +0.98 % of the region (z 12.4) with the spatial round,
+    +0.60 % (z 9.2) without it, while L/NEE darkens globally (−8.3 %, z −56). Re-running the inverse refresh + T4 of
+    the same frame with the plant on the same canonicals (π_p(X_c) exact vs plant, s = c pixels): in the left tiles
+    1.72 % of the L/NEE canonicals LOSE support (exact π_p > 0, plant 0) and 0.01 % gain it; elsewhere 0.87 % lose and
+    7.96 % gain (escapes, E/ENV: Σπ plant/exact 5.6). Mechanism: the inverse is evaluated at the previous jittered
+    hit y_{t−1} ≠ x_t with the frame-t rotation; where a shadow edge ADVANCES over env-lit surface (the left penumbra
+    of the sphere's shadow at 10 and 25), a cell direction visible from y at γ_{t−1} is occluded from y at γ_t: support
+    loss, ĉ_c over-weighted (B-12: Δ > 0); where edges retreat or escapes swing onto the patch, support is created
+    (Δ < 0, dominant globally). The prediction keeps every sign that held twice (global −9.7 % / −15.3 %, `M_up`
+    −61 % / −64 %, `M_down` −25 % / −20 %) and drops the "only" clause: brightening tiles along advancing env-shadow
+    edges are expected, not a failure.
+  - **env-no-rot-vis: detected, sign resolution-limited (not revised to match).** The plant acts only on indirect env
+    NEE ends (N1 / D-NEE; class L env ends are traced by the shift). Measured on ixs_h (frame 9 → 10 history records
+    refreshed with and without the plant): 3.5–3.6 % of the history's F·W energy changes under the plant each frame.
+    The toy of C-11 gives ±1.2× the affected share per direction (occluded → +, revealed → −), i.e. up to ~4 % one-sided,
+    but the occluding and revealing flips of indirect paths are not separated by `M_down` / `M_up` (those masks follow
+    the direct light): the gate's global Δ is +0.06 % ± 0.02 % / +0.03 % ± 0.03 %, so the two directions cancel to
+    ~2 % of the one-sided size, and the regional residues are +0.22 % / +0.20 % in `M_down` (SE 0.11 % / 0.13 %; the
+    predicted sign at both frames, z 2.1 / 1.6) and +0.11 % / −0.20 % in `M_up` (SE 0.09 % / 0.10 %). A z ≥ 3 at these
+    sizes needs |Δ| ≥ 0.33–0.38 %, i.e. ≈ 2.5–3.5× the 4384 chains of the unit. The gate row becomes detection only,
+    marked resolution-limited; the expected signs (`M_down` +, `M_up` −) stay documented.
 
 ### T-D amendments (debug views, interactive integration, boost)
 
