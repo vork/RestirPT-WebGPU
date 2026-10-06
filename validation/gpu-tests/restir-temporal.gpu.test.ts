@@ -25,6 +25,7 @@ import { recentrePositions } from '../../src/core/render/scene-gpu.ts';
 import { T32Harness, animatedLights, hashU32, movedCamera, readU32, recLumF, runChain, temporalSnapshot, type ChainFrame, type FrameResult, type T32Result, type TemporalSnapshot } from './restir-temporal-fixtures.ts';
 import type { SceneData } from '../../src/core/scene/types.ts';
 import { loadHdri, synthEnvData } from './env-fixtures.ts';
+import { t3M6Scene } from '../scenes/m6-fixtures.ts';
 import { T3_ENV_ID, t3Scene } from '../scenes/make-m4.ts';
 import { tmisContribW, tmisTalbotMc, tmisTalbotMp } from '../../tests/restir/tmis-ref.ts';
 
@@ -385,7 +386,7 @@ const T32_RARE_PAIRS = Number(import.meta.env?.VITE_T32_RARE_PAIRS ?? T32_PAIRS)
 const T32_RARE_RES = Number(import.meta.env?.VITE_T32_RARE_RES ?? T32_RES);
 const T32_MIN_BIN = Number(import.meta.env?.VITE_T32_MIN_BIN ?? 0);
 
-interface T32Case { name: string; scene: 'all' | 'rare'; cam: (base: CameraState, t: number) => CameraState; jitter?: JitterMode; lights?: LightScript; env?: EnvScript; lightClass?: 'zero' | 'positive' }
+interface T32Case { name: string; scene: 'all' | 'rare' | 'modeb'; cam: (base: CameraState, t: number) => CameraState; jitter?: JitterMode; lights?: LightScript; env?: EnvScript; lightClass?: 'zero' | 'positive' }
 const moved = (base: CameraState, dx: number, dy: number, dz: number, yaw = 0, yfov?: number): CameraState => {
   const m = Array.from(base.camToWorld as ArrayLike<number>);
   const cs = Math.cos(yaw), sn = Math.sin(yaw);
@@ -409,19 +410,28 @@ const T32_CASES_LIST: T32Case[] = [
   { name: 'add / remove', scene: 'all', cam: (c, t) => moved(c, 0.02 * t, 0, 0), lights: (b, t) => (t % 2 ? withLight(b, 4, () => undefined) : withLight(b, 1, () => undefined)), lightClass: 'positive' },
   { name: 'env rotation + strength', scene: 'all', cam: (c, t) => moved(c, 0.02 * t, 0, 0), env: (t) => ({ rotationZ: 0.05 * t, strength: t % 2 ? 1.5 : 1, tint: [1, 1, 1] }), lightClass: 'zero' },
   { name: 'rare bins: add / remove + intensity', scene: 'rare', cam: (c, t) => moved(c, 0.02 * t, 0, 0), lights: (b: LightData[], t: number) => (t % 2 ? b.slice(1) : b.map((l) => ({ ...l, power: l.power * 1.5 }))), lightClass: 'positive' },
+  // M6 (restir-m6-api.md MD8, R16): Mode-B temporal on t3_modeb_rare_256 (crossing entries renumbered, refresh of deep /
+  // B1 crossing ends with a ray iff the light moved, (d-ana) points carried rigidly, ∅ crossings replayed under t−1)
+  { name: 'Mode B: camera translate', scene: 'modeb', cam: (c, t) => moved(c, 0.03 * t, 0, 0.01 * t), lightClass: 'zero' },
+  { name: 'Mode B: moving + rotating crossing lights', scene: 'modeb', cam: (c, t) => moved(c, 0.02 * t, 0, 0), lights: (b, t) => animatedLights(withLight(b, 6, (l) => ({ ...l, matrix: lightMatrixToward([Math.sin(0.06 * t), -0.1, Math.cos(0.06 * t)], [0.05 + 0.01 * t, 0.95, -0.55]) })), t, [{ id: 7, dp: [0.02, 0, -0.01] }, { id: 8, dp: [0, 0.01, 0.01] }]), lightClass: 'zero' },
+  { name: 'Mode B: add / remove + intensity (crossing lights)', scene: 'modeb', cam: (c, t) => moved(c, 0.02 * t, 0, 0), lights: (b: LightData[], t: number) => (t % 2 ? b.filter((l) => l.id !== 7) : b.map((l) => (l.id === 6 ? { ...l, power: l.power * 1.5 } : l))), lightClass: 'positive' },
   { name: 'rare bins: moving lights + env', scene: 'rare', cam: (c, t) => moved(c, 0.02 * t, 0, 0), lights: (b: LightData[], t: number) => b.map((l) => animatedLights([l], t, [{ id: l.id, dp: [0.02, 0, 0.01], power: (u) => (u % 3 ? 1 : 1.5) }])[0]), env: (t) => ({ rotationZ: 0.03 * t, strength: 1, tint: [1, 1, 1] }), lightClass: 'zero' },
 ];
 
-async function t32Scene(which: 'all' | 'rare'): Promise<{ scene: SceneData; cam: CameraState; maxBounces: number }> {
+async function t32Scene(which: 'all' | 'rare' | 'modeb'): Promise<{ scene: SceneData; cam: CameraState; maxBounces: number }> {
   if (which === 'all') return { scene: allLightsScene(), cam: boxCamera(), maxBounces: 4 };
   const env = (await loadHdri(`${T3_ENV_ID}_1k.hdr`)) ?? synthEnvData(256, 128);
+  if (which === 'modeb') {
+    const m = t3M6Scene('t3_modeb_rare_256', env);
+    return { scene: m.scene, cam: { camToWorld: m.camera.matrix, yfov: m.camera.yfov }, maxBounces: m.maxBounces };
+  }
   const t = t3Scene('t3_rare_256', env);
   return { scene: t.scene, cam: { camToWorld: t.camera.matrix, yfov: t.camera.yfov }, maxBounces: t.maxBounces };
 }
 
 export async function runT32(c: T32Case, pairs = T32_PAIRS, W = T32_RES): Promise<{ r: T32Result; ms: number; lightClass: number; refreshFrames: number; frames: FrameResult[] }> {
   const s = await t32Scene(c.scene);
-  const rig = await restirRig(s.scene, W, W, { preset: 'temporal', settings: { maxBounces: s.maxBounces, temporalCheck: 'robust' }, jitterMode: c.jitter ?? JITTER_IID, cam: { camToWorld: Array.from(s.cam.camToWorld as ArrayLike<number>), yfov: s.cam.yfov }, seed: 3201, extraSources: tselectTraceSource() });
+  const rig = await restirRig(s.scene, W, W, { preset: 'temporal', settings: { maxBounces: s.maxBounces, temporalCheck: 'robust' }, jitterMode: c.jitter ?? JITTER_IID, cam: { camToWorld: Array.from(s.cam.camToWorld as ArrayLike<number>), yfov: s.cam.yfov }, seed: 3201, extraSources: tselectTraceSource(), lightMode: c.scene === 'modeb' ? 'B' : 'A' });
   const h = await T32Harness.create(rig.kernel);
   const frames: ChainFrame[] = [];
   for (let i = 0; i < 2 * pairs; i++) {
@@ -455,10 +465,14 @@ function reportT32(tag: string, x: Awaited<ReturnType<typeof runT32>>, pairs: nu
 describe('T3-2 / T4-t: production round trips T⁻¹(T(X_p)) with forced s = p (robust mode), camera and light / env changes', () => {
   for (const c of T32_CASES_LIST) {
     it(c.name, async () => {
-      const pairs = c.scene === 'rare' ? T32_RARE_PAIRS : T32_PAIRS;
-      const x = await runT32(c, pairs, c.scene === 'rare' ? T32_RARE_RES : T32_RES);
+      const rare = c.scene !== 'all';
+      const pairs = rare ? T32_RARE_PAIRS : T32_PAIRS;
+      const x = await runT32(c, pairs, rare ? T32_RARE_RES : T32_RES);
       reportT32(c.name, x, pairs);
       if (c.scene === 'rare' && T32_MIN_BIN > 0) for (const b of x.r.bins) expect(b.rtOk, b.name).toBeGreaterThanOrEqual(T32_MIN_BIN);
+      if (c.scene === 'modeb' && T32_MIN_BIN > 0) {
+        for (const b of x.r.bins.filter((bb) => /ana/.test(bb.name))) if (b.trials) expect(b.rtOk, b.name).toBeGreaterThanOrEqual(T32_MIN_BIN / 10);
+      }
       for (const r of x.frames) expect([r.counters.rsc.tNonFinite, r.counters.rsc.tPendingLeft], `t=${r.t}`).toEqual([0, 0]);
       if (c.lights || c.env) expect(x.refreshFrames).toBe(pairs);
       if (c.lightClass === 'zero') expect(x.lightClass).toBe(0);

@@ -199,7 +199,7 @@ fn pt_cross_candidates(ai: u32, px: vec2u, key: vec2u, seed: vec2u, s: u32, B: u
       let sfxFlags = SFX_BSDF_END | SFX_CROSS | select(SFX_ESCAPE, 0u, isHit) | select(0u, SFX_VALID, k != 0u && k <= B)
         | select(0u, SFX_DELTA_END, isDelta && (rsParams.flags & RSF_TEMPORAL) != 0u);
       pt_emit(ai, sel, di, w, F, seed, flags, rc, jDen, rcWi, aux, rcRad, wBefore, endW, hist, curIds, sfxFlags, wc,
-              sfxT, select(vec3f(1.0), betaPostB, k != 0u && k + 1u <= B), pm, *nCand, counter, margin, li);
+              sfxT, select(vec3f(1.0), betaPostB * fac, k != 0u && k + 1u <= B), pm, *nCand, counter, margin, li);
       *nCand += 1u;
     }
     rsdbg_candidate(px, B + 1u, RS_TECH_BSDF_ANALYTIC, k, w, luminance(F), counter, sel);

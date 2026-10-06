@@ -106,7 +106,8 @@ export function hashU32(u: Uint32Array): string {
 // ------------------------------------------------------------------------------------------------ T3-2 GPU harness
 
 /** Case letters of the M4 T3 bins (restir-shift.gpu.test.ts t3_case) × {k = 2, k > 2} (∅: d = 2, d > 2). */
-export const T32_CASES = ['a-delta', 'a-area', 'a-tri', 'a-sun', 'f-env', 'b', 'b-env', 'c-tri', 'c-env', 'd', 'e', 'deep-nee', 'deep-bsdf', '∅-tri', '∅-env'] as const;
+export const T32_CASES = ['a-delta', 'a-area', 'a-tri', 'a-sun', 'f-env', 'b', 'b-env', 'c-tri', 'c-env', 'd', 'e', 'deep-nee', 'deep-bsdf', '∅-tri', '∅-env',
+  '∅-ana', 'd-ana', 'c-ana'] as const;   // M6 Mode-B crossings (restir-m6-api.md MD8; deep crossings count in deep-bsdf)
 export const T32_BINS = T32_CASES.length * 2;
 const BW = 40;                       // words per bin: 0 trials 1 fwdOk 2 rtOk 3 cand 4 fp(margin) 5 fBad 6 jBad 7 noInv 8..23 fwd SC 24..39 inv SC
 const CAND0 = 2048, CAND_CAP = 4096, CW = 13;   // candidates: [ai, frame, bin, invCode, fwdJ, invJ, bits(eF), bits(eJ), minEdge bits, recheckCode, done, kind, X_p flags]
@@ -120,6 +121,10 @@ const T32_CHECK_WGSL = `
 fn t32_case(f: u32) -> u32 {
   let d = f & 0xFu; let k = (f >> 4u) & 0xFu; let tech = (f >> 8u) & 3u; let ep = (f >> 10u) & 7u;
   var c = 12u;
+  if (tech == RS_TECH_BSDF_ANALYTIC) {
+    if (k == 0u) { c = 15u; } else if (k == d) { c = 16u; } else if (k + 1u == d) { c = 17u; }
+    return 2u * c + select(0u, 1u, select(k > 2u, d > 2u, k == 0u));
+  }
   if (k == 0u) { c = select(13u, 14u, tech == RS_TECH_BSDF_ENV); }
   else if (tech == RS_TECH_NEE && k == d) {
     if (ep == 1u || ep == 2u) { c = 0u; } else if (ep == 3u || ep == 4u) { c = 1u; } else if (ep == 0u) { c = 2u; } else if (ep == 5u) { c = 3u; } else { c = 4u; }
@@ -186,6 +191,7 @@ fn rs_trace_pair(j: u32, ok: bool, margin: f32, term: u32) { }
 fn rs_trace_light(dir: vec3f, pos: vec3f, inf: bool) { }
 fn rs_trace_escape(dir: vec3f) { }
 fn rs_trace_recon(cosY: f32, cosK: f32, dist: f32, edgeK: f32) { }
+fn rs_trace_cross(n: vec3f, z: vec3f) { }
 #include "restir/tshift.wgsl"
 @group(2) @binding(6) var<storage, read_write> st: array<atomic<u32>>;
 @compute @workgroup_size(64) fn recheck(@builtin(global_invocation_id) gid: vec3u) {

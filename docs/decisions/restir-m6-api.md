@@ -97,7 +97,8 @@ for each rect / disk light i with a front-facing crossing at t ∈ (0, tMax), in
    deep    rcRad = betaPostB ⊙ fac ⊙ ω2 L_e
    end words (RC_TAG_CROSS | i, xy); endpointId = i; endpointType = LT_RECT / LT_DISK
    suffix: sfx = x_B ids, sfxDir = ω_c, sfxT = continuation hit t (FLT_MAX on escape), flags BSDF_END | CROSS | valid
-           | escape?, betaS = betaPostB (k ≤ B−1) else 1, sfxP2 = p_marg(ω_c)
+           | escape?, betaS = betaPostB ⊙ fac (k ≤ B−1; the x_{d−1} factor included, as for triangle / env ends) else 1,
+           sfxP2 = p_marg(ω_c)
    stream: w = lum(F)·rrInv (·W_NEE never: a BSDF ending), counter (s<<20)|(B<<12)|(2 + i)
 ```
 End term `cross_end(x, ω, entry, slot)`: the ray `(x, ω)` re-intersected with light `entry` of `slot`
