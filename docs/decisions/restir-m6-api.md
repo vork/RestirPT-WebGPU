@@ -56,7 +56,7 @@ delta[a] = d;  delta[b] = −d                       (explicit negation: |d| ≤
 - Transform, partner, acceptance, reciprocity, slot layout: unchanged (§2.8 of restir-api). `RestirParams.pairTexSize`
   = the layer sizes of the active maps.
 - Settings: `pairing: 'gauss'`, `pairSigma: 16`. Sizes `GAUSS_PAIR_SIZES = [254, 230, 210, 246, 238, 222]`.
-- Debug views (PLAN §6 M6): view 480 + s `pair.offset[s]` (vec3: hue = atan2(dy, dx), value = |d|/(3σ)), 486
+- Debug views (PLAN §6 M6): view 471 + s `pair.offset[s]` (vec3: hue = atan2(dy, dx), value = |d|/(3σ)), 477
   `pair.recip` (code: 0 = partner(partner(p)) = p and A symmetric, 1 = no partner / off-tile, 2 = broken (never)).
 
 ### 1.2 Russian roulette
@@ -117,7 +117,7 @@ scene (rung 3.10).
 
 ### 1.6 Duplication map, dual MVs
 
-MD10, MD11. The duplication-map count also feeds view 487 `dup.count` and 488 `dup.cap` (written by `rs_debug_views`
+MD10, MD11. The duplication-map count also feeds view 478 `dup.count` and 479 `dup.cap` (written by `rs_debug_views`
 from the arena region).
 
 ---
@@ -197,7 +197,7 @@ frame t: rs_primary → [rs_light_tiles (RIS)] → rs_initial × chunks → temp
 | U-M5-BITS | restir-m6.gpu.test.ts | temporal chains (static, light + camera + env motion, interactive-M5, Talbot): per-frame hashes = f5c23fd |
 | T14 | tests/restir/pairing-gauss.test.ts | n_σ(16) = 128, n_σ(0.814) = 1; every layer an involution on the torus (d(a+d) = −d), no unmatched texel, |d| ≤ 127; per-axis σ of the deltas within 3 % of σ; normality (KS of d_x/σ vs N(0,1)) < 0.02; after all 8 dihedral codes × random offsets on 960×540 / 1024²: partner(partner(p)) = p |
 | T3-3/M6 | restir-spatial (extended) | with the Gaussian maps: A(p,q) = A(q,p) bitwise, acceptedness equal on both sides, RSC_SLOT_MISMATCH = 0, partner(partner(p)) = p |
-| U-PAIR-VIEW | restir-m6 | views 480–486 write the expected hue / length / reciprocity codes at known pixels |
+| U-PAIR-VIEW | restir-debug | views 471–477 write the expected hue / length / reciprocity codes at known pixels |
 | U4-tiles | restir-m6 | χ² of tile entries vs the realized pmf (per member and pooled), ≥ 10⁶ draws; tiles differ across members and frames; identical across chunkings |
 | U3-RIS | restir-m6 | mixed point + spot + rect + tri + sun + env scene, 64²: E[F·W] of the initial NEE d = 2 candidates (RIS M ∈ {1, 4, 32}) equals the PT's direct light (z ≤ 4); the mixed-measure UCW plant (U8-8) fails |
 | U1-M | restir-m6 | ω1 (NEE-time, M = 32) + ω2 (hit-time, BSDF_TRI / BSDF_ENV / crossing, M = 32) = 1 to 1e-6 on random configurations; delta / Mode-A analytic ω1 = 1 exactly |
@@ -215,7 +215,7 @@ frame t: rs_primary → [rs_light_tiles (RIS)] → rs_initial × chunks → temp
 GPU suites of Gate 0: restir-m6, restir-shift (M6 variants, one lock hold per variant ≤ 24 min, E-16), restir-spatial,
 restir-temporal (M6 variant), restir-initial, restir-tframe (U-M4-BITS), restir-debug, restir-refresh, M3 regressions
 pt / bsdf / lights / env-sampling / glass / pt-glass; cpu lane; python tests; package determinism of `make-m6.ts`; the M6
-app smoke (views 480–488, Mode B default, interactive presets compile).
+app smoke (views 471–479, Mode B default, interactive presets compile).
 
 ---
 
@@ -301,3 +301,32 @@ pairing generator (MD3). §27: duplication-map realisation (MD10).
 ## Changelog
 
 (append-only; amendments made while implementing)
+
+- **M6-1 (deep crossing suffix throughput, bug found by T3-2/M6).** The deep `BSDF_ANALYTIC` candidate stored `betaS`
+  without the x_{d−1} factor; the Mode-B "moving + rotating crossing lights" round trips showed 17 746 deep-bsdf F
+  mismatches. Fixed: `betaS = betaPostB ⊙ fac` (§1.4 / MD6 text amended). LOGIC = 0 afterwards.
+- **M6-2 (inline budget, R2).** restir-api §4.5's per-pass inline budget is amended for the M6 variants: rs_initial with
+  RIS-NEE + Mode B has 4 `bsdf_query` call sites (path tree NEE, RIS candidates, BSDF continuation, crossing candidate);
+  replay 2, shift 1, t_forward / t_inverse 2 (tests/restir/layout.test.ts asserts the counts).
+- **M6-3 (U8-8 derivation corrected before the measurement).** §5.3 claimed r²/|cos θ_z| > 1 at every receiver of
+  u8_c0e_rect_b0; the light sits 0.5 m above the floor, so near it r²/cos < 1. The prediction is the sign of the
+  contribution-weighted mean of r²/cos over the image: f64 quadrature (tests/restir/plant-m6.test.ts) gives 1.264 ⇒
+  global **+26 %** (1541 of 8320 sampled pixels have a mean < 1). Prediction unchanged (+), derivation replaced; made
+  before any GPU run of the plant.
+- **M6-4 (U8-4 toy).** The pairwise-MIS toy on the package geometry with the production pairing maps and MIS twins
+  (plant-m6.test.ts; 3 rounds × 6 slots, R 10) gives M_foot **+2.6 %** and global +1.0 %. M_foot + is the gating
+  prediction; the global sign is reported (`detect`), as written in §5.3.
+- **M6-5 (U8-7 region).** The M_behind mask (PT with the lights occluding) is not built; U8-7 gates on the global sign
+  (−) only.
+- **M6-6 (cached M4 PT references).** The M4 PT references of the non-env scenes in validation/out/m4/ptrefs carry the
+  pre-M5 PT code hash (44d306…); the PT closure changed since (bf3620…), so the cache rule re-renders them once at seed
+  4001 (sizes re-frozen in validation/out/m4/ptsize); the env scenes were already at bf3620. MD2 holds from f5c23fd on
+  (the M6 work does not change the PT closure).
+- **M6-7 (chain PT seeds).** The chain units (3.7 temporal, 3.11 chains / dyn, Gate 5) run through gate-m5's machinery
+  (`runExternalChainUnits`) and keep its PT seeds 7001 / 107001 (cached M5 references on M5 packages; new packages
+  render 7001 into validation/out/m6) instead of MD17's 6001; the chain seeds are M6's (6002 / 106002 / 6012).
+- **M6-8 (T3-2/M6 bin rule).** The development test required ≥ 10⁵ round trips per crossing bin; Gate 0 now runs each
+  Mode-B case in its own hold at 24 000 pairs (256²) and requires every ana / deep bin ≥ 10⁶ (§4 as written).
+- **M6-9 (app).** The app's ReSTIR honours the light mode (A / A′ / B pipeline variants, `RestirKernel.setLightMode`),
+  the restir panel gains the four feature toggles over the mode's preset, the app modes `offline` / `unbiased` use
+  `offline-m6` / `full-m6`, and the HUD prints an M6 line (mode, pairing, RIS-NEE, dual MV, duplication map).

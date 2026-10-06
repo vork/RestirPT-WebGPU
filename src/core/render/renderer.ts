@@ -59,16 +59,19 @@ import { arenaWords, RS_WGSL_CONSTS } from './restir/layout.ts';
  *  2022 criteria), Offline, initial only (no spatial reuse: rung 3.1, or rung 3.3 with temporal on). */
 export type RestirAppMode = 'interactive' | 'unbiased' | 'criteria2022' | 'offline' | 'initial';
 export const RESTIR_APP_MODES: Record<RestirAppMode, string> = {
-  interactive: 'ReSTIR-interactive (S 1, 1 round × 3 + boost 3, R 30, RR)',
-  unbiased: 'ReSTIR-unbiased (S 1, 1 round × 3, R 30)', criteria2022: 'ReSTIR-2022-criteria', offline: 'Offline (S 32, 3 rounds × 6, R 10)',
+  interactive: 'ReSTIR-interactive (S 1, 1 round × 3 + boost 3, σ 16, RIS-NEE, dual MV, dup map, RR)',
+  unbiased: 'ReSTIR-unbiased (S 1, 1 round × 3, σ 16, RIS-NEE)', criteria2022: 'ReSTIR-2022-criteria', offline: 'Offline (S 32, 3 rounds × 6, σ 16, RIS-NEE)',
   initial: 'initial only (rung 3.1 / 3.3)',
 };
 /** Settings of an app ReSTIR mode (maxBounces and temporal from the renderer options). */
-export function restirAppSettings(mode: RestirAppMode, maxBounces: number, temporal = true): Partial<RestirSettings> {
-  const base = mode === 'offline' ? RESTIR_PRESETS.offline : mode === 'unbiased' ? RESTIR_PRESETS.full
+export function restirAppSettings(mode: RestirAppMode, maxBounces: number, temporal = true, features: Partial<RestirSettings> = {}): Partial<RestirSettings> {
+  const base = mode === 'offline' ? RESTIR_PRESETS['offline-m6'] : mode === 'unbiased' ? RESTIR_PRESETS['full-m6']
     : mode === 'initial' ? { ...RESTIR_PRESETS.interactive, rounds: 0 } : RESTIR_PRESETS.interactive;
-  return { ...base, criteria: mode === 'criteria2022' ? '2022' : 'enhanced', maxBounces, temporal };
+  return { ...base, criteria: mode === 'criteria2022' ? '2022' : 'enhanced', maxBounces, temporal, ...features };
 }
+
+/** M6 feature toggles of the app (restir-m6-api.md MD13): overrides of the mode's preset (empty = the preset's). */
+export type RestirFeatureOverrides = Partial<Pick<RestirSettings, 'pairing' | 'risNee' | 'dualMv' | 'dupmap'>>;
 
 export const GBUF_TEXEL_BYTES = 80;
 export const PRIMARY_PARAMS_SIZE = 16;
@@ -103,12 +106,15 @@ export interface RendererOptions {
   restirMode: RestirAppMode;
   /** renderMode 'restir': temporal reuse (M5; every mode). */
   temporal: boolean;
+  /** renderMode 'restir': M6 feature toggles over the mode's preset (σ 16 pairing, RIS-NEE, dual MVs, duplication map). */
+  restirFeatures: RestirFeatureOverrides;
   /** PT: Cycles max_bounces N. */
   maxBounces: number;
   /** PT: Russian roulette (unbiased; off by default, plan §2 rule 11). */
   rr: boolean;
-  /** PT: plan §1.4 light mode: 'A' NEE-only analytic lights (default until Gate 3.11), 'B' pass-through + MIS (area
-   *  lights visible in mirrors / through smooth glass), 'A′' pass-through after delta lobes only. */
+  /** PT and ReSTIR: plan §1.4 light mode: 'A' NEE-only analytic lights, 'B' pass-through + MIS (area lights visible in
+   *  mirrors / through smooth glass; the product default once Gate 3.11 passed, restir-m6-api.md MD9 / Q4), 'A′'
+   *  pass-through after delta lobes only. */
   lightMode: LightMode;
   /** Env NEE (M3c; ≡ Cycles world sampling_method AUTOMATIC). Off = BSDF-only env (NONE). */
   envNee: boolean;
@@ -177,7 +183,7 @@ export class Renderer {
   /** Defaults are the validation path: exact textures and Woop watertight intersection (Möller–Trumbore leaks through
    *  the shared diagonal of a quad; plan §1.3). The interactive app opts into MT explicitly (src/app/integration.ts). */
   readonly options: RendererOptions = {
-    textureMode: 'validation', watertight: true, accumulate: true, thrTau: THR_TAU, renderMode: 'albedo', restirMode: 'interactive', temporal: true, maxBounces: 3, rr: false,
+    textureMode: 'validation', watertight: true, accumulate: true, thrTau: THR_TAU, renderMode: 'albedo', restirMode: 'interactive', temporal: true, restirFeatures: {}, maxBounces: 3, rr: false,
     lightMode: 'A', envNee: true, envImportanceCap: ENV_IMPORTANCE_CAP_INTERACTIVE, denoise: false,
   };
   /** M5.5: denoiser toggle per mode (denoiseModeKey); a mode without an entry starts at denoiserDefault. */
@@ -277,7 +283,9 @@ export class Renderer {
     if (this.state?.pt && this.state.pt.lights.lightMode !== this.options.lightMode) this.state.pt.lights.setLightMode(this.options.lightMode);
     const rs = this.state?.rs;
     if (rs) {
-      rs.pass.setSettings(restirAppSettings(this.options.restirMode, this.options.maxBounces, this.options.temporal));
+      // M6: the light mode and the feature toggles are pipeline variants (MD1, MD9): recompiled lazily by prepare()
+      rs.pass.kernel.setLightMode(this.options.lightMode);
+      rs.pass.setSettings(this.restirSettings());
       await rs.pass.prepare();
     }
     if (!this.sceneData) return;
@@ -334,7 +342,7 @@ export class Renderer {
       try {
         const debug = this.ctx.debug;
         const pass = await RestirKernel.interactive(this.device, state.gpu, this.env, colorFormat, {
-          settings: restirAppSettings(this.options.restirMode, this.options.maxBounces, this.options.temporal), lightMode: 'A', debug,
+          settings: this.restirSettings(), lightMode: this.options.lightMode, debug,
           env: { nee: this.options.envNee, importanceCap: this.options.envImportanceCap },
           features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures,
         });
@@ -354,6 +362,11 @@ export class Renderer {
     })();
     state.rsPending = p;
     return p;
+  }
+
+  /** The ReSTIR settings of the current app options (mode preset ⊕ M6 feature toggles). */
+  restirSettings(): Partial<RestirSettings> {
+    return restirAppSettings(this.options.restirMode, this.options.maxBounces, this.options.temporal, this.options.restirFeatures);
   }
 
   /** The interactive ReSTIR pass (undefined until renderMode 'restir' compiled it). */
@@ -571,7 +584,7 @@ export class Renderer {
     // PT beauty after the primary pass (same jitter/seed; overwrites the placeholder colour). Skipped for BVH-stat views.
     let restirDone = false;
     this.frameAdv = undefined;
-    if (this.options.renderMode === 'restir' && !frame.noPt && !isBvhStatsView(frame.debugMode) && this.options.lightMode === 'A') {
+    if (this.options.renderMode === 'restir' && !frame.noPt && !isBvhStatsView(frame.debugMode)) {
       if (!s.rs) void this.compileRestir(s, tg.t.colorFormat);
       else restirDone = this.encodeRestir(encoder, s.rs, frame.advanced, !!frame.resetTemporal, tg.t.frameUniforms, rsTimestamps);
     }
@@ -787,12 +800,13 @@ export class Renderer {
     }
     if (this.options.renderMode === 'restir') {
       const rs = this.state?.rs;
-      if (this.options.lightMode !== 'A') out.push(`ReSTIR: Mode A only in M4 (light mode ${this.options.lightMode}); showing the PT`);
-      else if (!rs) out.push(this.restirError ?? 'ReSTIR: compiling (PT shown)');
+      if (!rs) out.push(this.restirError ?? 'ReSTIR: compiling (PT shown)');
       else {
         const st = rs.pass.settings;
         out.push(`ReSTIR ${this.options.restirMode}: S ${st.trees}  rounds ${st.rounds} × ${st.slots}${st.temporal && st.boostSlots ? ` + boost ${st.boostSlots}` : ''} slots  R ${st.diskRadius}  ${st.criteria}${st.rr ? ' RR' : ''}  max_bounces ${st.maxBounces}`
           + `  temporal ${st.temporal ? `on (c_cap ${st.cCap}, ${st.temporalMis}${st.refresh === 'e2' ? ', E2' : ''}; ${rs.temporalFrames} frames, ${rs.heldFrames} held)` : 'off'}`);
+        out.push(`  M6: Mode ${rs.pass.kernel.lightMode}  pairing ${st.pairing === 'gauss' ? `gauss σ ${st.pairSigma}` : `disk R ${st.diskRadius}`}  RIS-NEE ${st.risNee ? `M ${st.risM}` : 'off'}`
+          + `  dual MV ${st.dualMv ? 'on' : 'off'}  dup map ${st.dupmap && st.temporal ? 'on (biased)' : 'off'}`);
         out.push(...rs.hud.lines());
       }
     }

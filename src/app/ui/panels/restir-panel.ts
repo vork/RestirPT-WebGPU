@@ -6,7 +6,8 @@
 // temporal on/off switch, "reset temporal history" and "freeze history" (temporal reuse suspended: every frame resets),
 // the "after temporal" tap and the temporal views 480–497 with their legends; the arena box adds the temporal lines.
 import { RESTIR_VIEWS, cmapCode, codeName, legendCodes } from '../../../core/render/restir/debug.ts';
-import { RESTIR_APP_MODES, type Renderer, type RestirAppMode } from '../../../core/render/renderer.ts';
+import { RESTIR_APP_MODES, type Renderer, type RestirAppMode, type RestirFeatureOverrides } from '../../../core/render/renderer.ts';
+import { restirSettings } from '../../../core/render/restir/presets.ts';
 import type { App } from '../../app.ts';
 import type { TpFolder } from '../tweakpane.ts';
 import type { RestirInspector } from './restir-inspector.ts';
@@ -45,6 +46,16 @@ export function addRestirPanel(app: App, r: Renderer, inspector: RestirInspector
   f.addBinding(ui, 'temporal', { label: 'temporal reuse' }).on('change', q((e) => {
     void r.setOptions({ temporal: e.value }).then(() => app.resetHistory());
   }));
+  // M6 (restir-m6-api.md MD13): the Enhanced features as toggles over the mode's preset (pipeline variants: the first
+  // frame after a change recompiles; the config hash changes, so the history resets)
+  const feat = r.options.restirFeatures;
+  const eff = () => restirSettings(undefined, r.restirSettings());
+  const fx = { gauss: eff().pairing === 'gauss', ris: eff().risNee, dualMv: eff().dualMv, dupmap: eff().dupmap };
+  const setF = (o: RestirFeatureOverrides) => { Object.assign(feat, o); void r.setOptions({ restirFeatures: feat }).then(() => app.resetHistory()); };
+  f.addBinding(fx, 'gauss', { label: 'σ 16 pairing maps' }).on('change', q((e) => setF({ pairing: e.value ? 'gauss' : 'disk' })));
+  f.addBinding(fx, 'ris', { label: 'RIS-NEE light tiles' }).on('change', q((e) => setF({ risNee: e.value })));
+  f.addBinding(fx, 'dualMv', { label: 'dual motion vectors' }).on('change', q((e) => setF({ dualMv: e.value })));
+  f.addBinding(fx, 'dupmap', { label: 'duplication map (biased)' }).on('change', q((e) => setF({ dupmap: e.value })));
   f.addBinding(app.render, 'freezeHistory', { label: 'freeze history' });
   f.addButton({ title: 'Reset temporal history (Shift+R)' }).on('click', () => app.resetTemporalHistory());
   f.addBinding(app.debugSettings, 'tap', { label: 'stage tap', options: TAPS });
@@ -92,6 +103,7 @@ export function addRestirPanel(app: App, r: Renderer, inspector: RestirInspector
     try {
       ui.mode = r.options.restirMode;
       ui.temporal = r.options.temporal;
+      { const e = eff(); fx.gauss = e.pairing === 'gauss'; fx.ris = e.risNee; fx.dualMv = e.dualMv; fx.dupmap = e.dupmap; }
       ui.view = RESTIR_VIEWS.some((v) => v.id === app.debugSettings.mode) ? app.debugSettings.mode : 0;
       ui.stats = r.options.renderMode === 'restir' ? (r.restirHud?.lines().join('\n') ?? r.restirError ?? 'compiling ...') : 'ReSTIR off';
       updateLegend();
