@@ -407,9 +407,10 @@ async function cornellOpenScene(name: string, withRect: boolean, rect?: { matrix
 
 def('ixs_i_envradio_256', async () => {
   resetLightIds();
-  // the interior rect faces the back wall from 16 cm (left of the occluder box): that wall patch is rect-dominated
-  // (M_light:R) even at env strength 2, the env dominates the rest (M_light:env)
-  const { c, R, scene } = await cornellOpenScene('ixs_i_envradio_256', true, { matrix: lightToward([0, 0, -1], [-0.15, 0.12, -0.12]), power: 4 });
+  // the interior rect is the ceiling-height rect of (xiv), facing down (Changelog E-20: the E-13 placement 16 cm from the
+  // back wall made the scene heavy-tailed — rung 3.6 needed 2.8–15× its pilot-sized chains — and its M_light:R region
+  // lost its only prediction in C-11)
+  const { c, R, scene } = await cornellOpenScene('ixs_i_envradio_256', true);
   const L = R[0];
   await writeSequence('ixs_i_envradio_256', scene, {
     camera: cornellCam(c), T: 32, testFrames: [15, 16, 17, 24, 25, 30, 31],

@@ -1598,6 +1598,13 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   builder skipped `rs_refresh_inv` under the plant), so the T16 exception is removed: RSC_T_PENDING_LEFT must be 0 for
   every run. The N3, N4, env-no-rot-vis and no-jp-env rows of C-11 are revised after measurement and confirmed on fresh
   seeds (E-18); the N1 plants re-render on their normal seeds (unchanged predictions, fixed implementation).
+- **E-20 ixs_i interior rect reverted** (§6.2; E-13 partly withdrawn). E-13 moved the ixs_i rect to face the back wall
+  from 16 cm to create a rect-dominated region (M_light:R) for no-jp-env's "+" prediction. That made the scene
+  heavy-tailed: its 3.6 unit at the pilot-sized R 14 320 (128² tiles) failed TOST on every test frame with
+  `replicate_multiplier_needed` 2.8–15 (|Δ_Y| ≤ 0.21 %, MDB 0.22–0.50 %: under-powered, no significant Δ), the 4× PT
+  controls of no-jp-env / U8-2t passed only 2–5/10, and 64 pilot chains could not see the tail. C-11 dropped the
+  M_light:R prediction, so the rect is back at the (xiv) ceiling position (the first pilot sized that scene at R 528).
+  ixs_i@3.6, no-jp-env (fresh seeds) and U8-2t re-run on the regenerated package.
 - **B-7 T3-2 harness hook instead of `RS_TEMPORAL_TRACE`** (affects nobody). The composer has no `#define` and the kernel
   passes extra defines only to `rs_initial`, so the T3-2 / T4-t harness does not use a define: `t-select.wgsl` has
   `const TSEL_TRACE_FORCE_P: bool = false`, which the test flips to `true` through `instrumentation.extraSources` (every
