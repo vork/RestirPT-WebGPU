@@ -27,6 +27,12 @@
 #include "path/path-weight.wgsl"
 #include "restir/queue.wgsl"
 #include "debug/restir-views.wgsl"
+#if RS_RIS_NEE
+#include "restir/ris-nee.wgsl"
+#endif
+#if RS_MODE_B
+#include "restir/cross.wgsl"
+#endif
 
 #if RS_DUMP_CANDIDATES
 @group(2) @binding(4) var<storage, read_write> candDump: array<u32>;
@@ -75,6 +81,132 @@ fn pt_emit(ai: u32, sel: bool, di: u32, w: f32, F: vec3f, seed: vec2u, flags: u3
   }
 #endif
 }
+
+#if RS_MODE_B
+/// Shared prefix state of a tree at vertex x_B that a crossing candidate inherits (restir-m6-api.md MD6).
+struct PtTree { rc: u32, ids: vec3u, wi: vec3f, jDen: f32, L: vec2u, margin: f32, vis: bool }
+struct PtPrev { v: RcVertex, e: RcEvent, pJoint: f32, prim: u32 }
+#if RS_DUMP_CANDIDATES
+var<private> ptDumpCross: u32;                             // dump ordinal shared with pathtree_run's nDump (tree 0)
+#endif
+
+/// Mode-B / A′ crossing candidates of the BSDF ray of vertex x_B (MD6): every rect / disk light crossed front-facing by
+/// (x_B, wOut) before tMax is a light-ending candidate (d = B + 1, BSDF_ANALYTIC, entry) with its own direction ω_c to
+/// the stored crossing point, its own BSDF factor and event, its own k* (pair B re-tested with its event; terminal pair
+/// (x_B, z | LIGHT)) and the case fields of restir-m6-api.md §1.4. Streams into the tree's reservoir. Returns the number
+/// of crossings (the U8-7 plant stops the ray at the first one).
+fn pt_cross_candidates(ai: u32, px: vec2u, key: vec2u, seed: vec2u, s: u32, B: u32, cur: SurfaceHit, curPrim: u32, curIds: vec3u,
+                       curV: RcVertex, m: MatEval, V: vec3f, lobe: u32, isDelta: bool, sw: vec3f, wOut: vec3f, tMax: f32, sfxT: f32,
+                       isHit: bool, betaB: vec3f, betaPostB: vec3f, rrInv: f32, tree: PtTree, prev: PtPrev, thr: f32, hist: u32,
+                       wSum: ptr<function, f32>, nCand: ptr<function, u32>, bad: ptr<function, vec2u>) -> u32 {
+  if (!cross_enabled(isDelta)) { return 0u; }
+  let slot = lightsParams.cur;
+  var n = 0u;
+  for (var li = 0u; li < slot.nAnalytic; li++) {
+    let r = light_load(slot, li);
+    if (r.kind != LT_RECT && r.kind != LT_DISK) { continue; }
+    let ch = cross_ray(r, cur.pos, wOut, tMax);
+    if (!ch.hit) { continue; }
+    n++;
+    let z = cross_point(r, ch.xy);
+    let wc = normalize(z - cur.pos);
+    var fac = sw;                                          // delta lobe: the sampler's weight (D3 / B-2 rule)
+    var ec = rc_event_bsdf(m, lobe, isDelta, 0.0);
+    var pj = 1.0;
+    var pm = 0.0;
+    if (!isDelta) {
+      let qc = bsdf_query(m, V, wc, lobe);
+      fac = rs_path_weight(qc, sw, false);
+      ec = rc_event_bsdf(m, lobe, false, qc.p_marg);
+      pj = pt_jpdf(qc);
+      pm = qc.p_marg;
+      if (!rs_pos_finite(qc.p_joint)) { (*bad).y += 1u; }
+    }
+    // own k*: the tree's pairs j < B are shared; pair B with this candidate's event; then the terminal pair
+    var k = 0u;
+    var margin = 0.0;
+    var vis = true;
+    if (tree.rc != 0u && tree.rc < B) {
+      k = tree.rc; margin = tree.margin; vis = tree.vis;
+    } else {
+      var okB = false;
+      if (B >= 2u) {
+        let rb = rcPairTest(prev.v, prev.e, curV, ec, thr);
+        okB = rb.ok;
+        margin = rb.margin;
+      }
+      if (okB) {
+        k = B;
+        if (tree.rc == B) { vis = tree.vis; } else { vis = visible(prev.v.pos, prev.v.ng, prev.prim, cur.pos, cur.ng, curPrim); }
+      } else {
+        let rt = rcPairTest(curV, ec, RcVertex(z, r.normal, RCK_LIGHT, 0u), rc_event_none(), thr);
+        if (rt.ok) {
+          k = B + 1u;
+          margin = rt.margin;
+          vis = visible(cur.pos, cur.ng, curPrim, z, r.normal, LIGHT_NONE);
+        } else {
+          margin = 0.0;
+        }
+      }
+    }
+    // end term: (d-ana) the stored point z; every other case the re-intersection along ω_c (cross_end, shared with shifts)
+    var Le = area_radiance(r, -wc);
+    var p1 = analytic_area_p1(cur.pos, li, z);
+    if (k != B + 1u) {
+      let ce = cross_end(cur.pos, wc, li, slot);
+      Le = select(vec3f(0.0), ce.Le, ce.ok);
+      p1 = ce.p1;
+    }
+    var w2 = 1.0;
+    if (cross_mis(isDelta)) {
+#if RS_RIS_NEE
+      w2 = mis_w2(p1, rs_p2m(pm, B), B);
+#else
+      w2 = mis_w2(p1, pm, B);
+#endif
+    }
+    let F = betaB * fac * (w2 * Le);
+    var rc = vec3u(RC_NONE, 0u, 0u);
+    var rcWi = vec3f(0.0);
+    var jDen = 1.0;
+    var aux = 0.0;
+    var rcRad = vec3f(0.0);
+    var lkm1 = LOBE_NONE;
+    var lk = LOBE_NONE;
+    let endW = cross_words(li, ch.xy);
+    if (k == B + 1u) {                                     // (d-ana)
+      rc = endW; jDen = pj * rc_G(cur.pos, z, r.normal); lkm1 = ec.lobe | (ec.delta << 3u);
+    } else if (k == B) {                                   // (c-ana)
+      rc = curIds; rcWi = wc; jDen = prev.pJoint * rc_G(prev.v.pos, cur.pos, cur.ng) * pj; aux = p1; rcRad = Le;
+      lkm1 = prev.e.lobe | (prev.e.delta << 3u); lk = ec.lobe | (ec.delta << 3u);
+    } else if (k != 0u) {                                  // deep
+      rc = tree.ids; rcWi = tree.wi; jDen = tree.jDen; lkm1 = tree.L.x; lk = tree.L.y;
+      rcRad = betaPostB * fac * (w2 * Le);
+    }
+    let w = select(0.0, luminance(F) * rrInv, vis);
+    let counter = (s << 20u) | (B << 12u) | (2u + li);
+    let wBefore = *wSum;
+    var sel = false;
+    if (!rs_pos_finite(w)) {
+      if (!(w == 0.0)) { (*bad).x += 1u; }
+    } else {
+      sel = ris_update(wSum, w, rs_rand(key, RS_PASS_INITIAL, counter));
+      var di = 0xFFFFFFFFu;
+#if RS_DUMP_CANDIDATES
+      if (s == 0u && ptDumpCross < RS_DUMP_CAP) { di = ptDumpCross; ptDumpCross++; }
+#endif
+      let flags = rf_pack(B + 1u, k, RS_TECH_BSDF_ANALYTIC, r.kind, false, lkm1 & 7u, (lkm1 & 8u) != 0u, lk & 7u, (lk & 8u) != 0u, false);
+      let sfxFlags = SFX_BSDF_END | SFX_CROSS | select(SFX_ESCAPE, 0u, isHit) | select(0u, SFX_VALID, k != 0u && k <= B)
+        | select(0u, SFX_DELTA_END, isDelta && (rsParams.flags & RSF_TEMPORAL) != 0u);
+      pt_emit(ai, sel, di, w, F, seed, flags, rc, jDen, rcWi, aux, rcRad, wBefore, endW, hist, curIds, sfxFlags, wc,
+              sfxT, select(vec3f(1.0), betaPostB, k != 0u && k + 1u <= B), pm, *nCand, counter, margin, li);
+      *nCand += 1u;
+    }
+    rsdbg_candidate(px, B + 1u, RS_TECH_BSDF_ANALYTIC, k, w, luminance(F), counter, sel);
+  }
+  return n;
+}
+#endif
 
 fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk: bool, finalChunk: bool) {
   let ai = p.ai;
@@ -137,13 +269,42 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
       let curV = rc_vertex(cur, m);
       // ---- (1) NEE candidate, d = B + 1 (not at a delta-only vertex) ------------------------------------------------
       if ((m.flags & MATEVAL_HAS_NON_DELTA) != 0u) {
+#if RS_RIS_NEE
+        // M6 (restir-m6-api.md MD4): RIS over the pixel's light tile at x₁ replaces the single alias draw; W_NEE joins
+        // the source weight, M(1) = risM enters every MIS weight at B = 1 as p2/M (MD5)
+        var ep = nee_draw(lightsParams.cur, rs_path_hash(seed, B, SLOT_SEL), rs_path_hash(seed, B, SLOT_SEL2),
+                          vec3u(rs_path_hash(seed, B, SLOT_L0), rs_path_hash(seed, B, SLOT_L1), rs_path_hash(seed, B, SLOT_L2)));
+        var wNee = 1.0;
+        var tileMult = 0.0;
+        if (B == 1u) {
+          let rsel = ris_nee_select(p, key, seed, s, cur, curPrim, m, V);
+          ep = rsel.ep;
+          wNee = rsel.W;
+          tileMult = rsel.mult;
+        }
+        let ls = nee_eval(cur.pos, ep);
+        // PLANT U8-8 (validation only): the UCW in mixed measures, W^RIS·p1_σ instead of W^RIS·q (area / triangle picks)
+        if (B == 1u && rs_m6_flag(RSF_PLANT_U8_RIS_MIXED) && ls.valid && !ls.isDelta && ls.kind != LT_ENV && ls.q > 0.0) {
+          wNee *= ls.p1 / ls.q;
+        }
+#else
         let ep = nee_draw(lightsParams.cur, rs_path_hash(seed, B, SLOT_SEL), rs_path_hash(seed, B, SLOT_SEL2),
                           vec3u(rs_path_hash(seed, B, SLOT_L0), rs_path_hash(seed, B, SLOT_L1), rs_path_hash(seed, B, SLOT_L2)));
         let ls = nee_eval(cur.pos, ep);
+#endif
         // same-triangle skip (Cycles shade_surface.h:345-351), as the PT
         if (ls.valid && ls.prim != curPrim && any(ls.Lambda > vec3f(0.0))) {
           let qn = bsdf_query(m, V, ls.dir, LOBE_NEE);
+#if RS_RIS_NEE
+          var lsw = ls;
+          // PLANT U8-10 (validation only): ω1 with the tile-conditional frequency of the pick instead of pmf[L]
+          if (B == 1u && rs_m6_flag(RSF_PLANT_U8_TILE_PMF) && !ls.isDelta) {
+            lsw.p1 = ls.p1 * (tileMult / light_pmf(lightsParams.cur, ep.entry));
+          }
+          let w1 = nee_mis_w1(lsw, rs_p2m(qn.p_marg, B), B);
+#else
           let w1 = nee_mis_w1(ls, qn.p_marg, B);
+#endif
           let F = (w1 / ls.q) * (beta * qn.f_all * ls.Lambda);
           if (any(F > vec3f(0.0)) && nee_visible(cur, curPrim, ls)) {
             let km = kstar_nee(treeRc, B, prevV, prevE, curV, rc_event_nee(m, qn.p_marg), thr);
@@ -170,7 +331,11 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
 #if RS_TEST_NO_RC_VIS
             visOk = true;
 #endif
+#if RS_RIS_NEE
+            let w = select(0.0, luminance(F) * (rrInv * wNee), visOk);
+#else
             let w = select(0.0, luminance(F) * rrInv, visOk);
+#endif
             let counter = (s << 20u) | (B << 12u);
             let wBefore = wSum;
             var sel = false;
@@ -230,9 +395,30 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
         }
       }
       let wq = rs_path_weight(qb, bs.weight, bs.is_delta);   // D3 / Changelog B-2: the shift's own factor formula
+#if RS_MODE_B
+      // (4) Mode-B / A′ crossings (restir-m6-api.md MD6): candidates of the same d = B + 1 before the continuation's
+      // throughput update (their own factor at ω_c); RR at B already applied (rrInv covers tests 1 … B)
+      var crossBad = vec2u(0u);
+#if RS_DUMP_CANDIDATES
+      ptDumpCross = nDump;
+#endif
+      let nCross = pt_cross_candidates(ai, p.px, key, seed, s, B, cur, curPrim, curIds, curV, m, V, bs.lobe, bs.is_delta, bs.weight, wOut,
+        select(FLT_MAX, length(nxt.pos - cur.pos), isHit), select(FLT_MAX, h.t, isHit), isHit, beta, betaPost, rrInv,
+        PtTree(treeRc, treeIds, treeWi, treeJDen, treeL, treeMargin, treeVis), PtPrev(prevV, prevE, prevPJoint, prevPrim), thr,
+        hist, &wSum, &nCand, &crossBad);
+      nonFinite += crossBad.x;
+      jdenBad += crossBad.y;
+#if RS_DUMP_CANDIDATES
+      nDump = ptDumpCross;
+#endif
+#endif
       beta *= wq;
       if (treeRc != 0u && treeRc < B) { betaPost *= wq; }
       if (!any(beta > vec3f(0.0))) { break; }
+#if RS_MODE_B
+      // PLANT U8-7 (validation only): a crossed light stops the BSDF ray (no ending behind it, no continuation)
+      if (nCross != 0u && rs_m6_flag(RSF_PLANT_U8_CROSS_OCC)) { break; }
+#endif
       // (4) Mode-B crossings: RS_MODE_B = 0 in M4 (D1)
       // ---- (5) BSDF endings at x_{B+1}, d = B + 1 -------------------------------------------------------------------
       var endF = vec3f(0.0);
@@ -243,7 +429,11 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
       var endV = RcVertex(cur.pos + bs.L, vec3f(0.0), RCK_ENV, 0u);
       if (!isHit) {
         if (envPresent) {
+#if RS_RIS_NEE
+          endW2 = env_bsdf_mis_weight(bs.L, rs_p2m(qb.p_marg, B), B, bs.is_delta);
+#else
           endW2 = env_bsdf_mis_weight(bs.L, qb.p_marg, B, bs.is_delta);
+#endif
           endLe = envRadiance(envUV(bs.L, envParams.cg, envParams.sg));
           endF = endW2 * beta * endLe;
           endP1 = p1Env(bs.L);
@@ -253,7 +443,11 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
         endLe = tri_emission(h.primId, h.u, h.v);
         if (any(endLe > vec3f(0.0))) {
           endP1 = tri_light_p1(cur.pos, nxt.pos, nxt.ng, h.primId);
+#if RS_RIS_NEE
+          if (!bs.is_delta) { endW2 = mis_w2(endP1, rs_p2m(qb.p_marg, B), B); }
+#else
           if (!bs.is_delta) { endW2 = mis_w2(endP1, qb.p_marg, B); }
+#endif
           endF = endW2 * beta * endLe;
           endV = RcVertex(nxt.pos, nxt.ng, RCK_LIGHT, 0u);
           isEnd = true;

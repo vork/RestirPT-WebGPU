@@ -13,8 +13,8 @@
 // hints count every slot (a chunk sized by `slots` alone would leave boost items PENDING).
 import type { RestirKernel, RestirStage, WorkUnit } from './kernel.ts';
 import { RS_WGSL_CONSTS as K } from './layout.ts';
-import { uploadPairTex } from './pairing.ts';
-import { PAIR_TEX_SIZES, numSlotsOf } from './presets.ts';
+import { uploadGaussPairTex, uploadPairTex } from './pairing.ts';
+import { GAUSS_PAIR_SIZES, PAIR_TEX_SIZES, numSlotsOf } from './presets.ts';
 import type { RsPassName } from './resources.ts';
 
 export const SPATIAL_PASSES: readonly RsPassName[] = ['rs_pair_accept', 'rs_args', 'rs_spatial_replay', 'rs_spatial_shift', 'rs_spatial_resample'];
@@ -26,19 +26,22 @@ export function queueArgs(n: number): [number, number, number] {
 }
 
 export class SpatialStage implements RestirStage {
-  private readonly uploaded = new WeakMap<GPUTexture, number>();
+  private readonly uploaded = new WeakMap<GPUTexture, string>();
 
   async prepare(k: RestirKernel): Promise<void> {
     await Promise.all(SPATIAL_PASSES.map((n) => k.pipeline(n)));
   }
 
-  /** Make sure the kernel's pairing texture holds the maps of the current disk radius. */
+  /** Make sure the kernel's pairing texture holds the maps of the current settings: the M4 uniform-disk maps of radius
+   *  diskRadius, or the M6 Gaussian maps of std pairSigma (restir-m6-api.md MD3; same format, sizes in pairTexSize). */
   ensurePairTex(k: RestirKernel): void {
     const tex = k.resources.pairTex;
-    const R = k.settings.diskRadius;
-    if (this.uploaded.get(tex) === R) return;
-    uploadPairTex(k.device, tex, R, PAIR_TEX_SIZES);
-    this.uploaded.set(tex, R);
+    const s = k.settings;
+    const key = s.pairing === 'gauss' ? `g${s.pairSigma}` : `d${s.diskRadius}`;
+    if (this.uploaded.get(tex) === key) return;
+    if (s.pairing === 'gauss') uploadGaussPairTex(k.device, tex, s.pairSigma, GAUSS_PAIR_SIZES);
+    else uploadPairTex(k.device, tex, s.diskRadius, PAIR_TEX_SIZES);
+    this.uploaded.set(tex, key);
   }
 
   frameUnits(k: RestirKernel, t: number): WorkUnit[] {

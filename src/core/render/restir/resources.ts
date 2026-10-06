@@ -11,14 +11,16 @@ import { envDefines } from '../env-gpu.ts';
 import { LUT_RECORDS_BASE } from '../lights-gpu.ts';
 import { lutDefines } from '../luts/lut-layout.ts';
 import {
-  ARENA_HDR_BYTES, RES_BYTES, RESTIR_PARAMS_SIZE, RS_DISPATCH_RING, RS_DISPATCH_SIZE, RS_DISPATCH_STRIDE, arenaBytes, dumpBytes,
+  ARENA_HDR_BYTES, RES_BYTES, RESTIR_PARAMS_SIZE, RS_DISPATCH_RING, RS_DISPATCH_SIZE, RS_DISPATCH_STRIDE, arenaBytesM6, dumpBytes,
 } from './layout.ts';
 
 export type RsPassName =
   | 'rs_primary' | 'rs_initial' | 'rs_initial_dump' | 'rs_pair_accept' | 'rs_args' | 'rs_spatial_replay' | 'rs_spatial_shift'
   | 'rs_spatial_resample' | 'rs_finalize' | 'rs_finalize_frame' | 'rs_ensemble_stats'
   // M5 temporal / refresh passes (restir-temporal-api.md §4.2)
-  | 'rs_refresh_fwd' | 'rs_refresh_inv' | 'rs_t_classify' | 'rs_t_forward' | 'rs_t_select' | 'rs_t_inverse';
+  | 'rs_refresh_fwd' | 'rs_refresh_inv' | 'rs_t_classify' | 'rs_t_forward' | 'rs_t_select' | 'rs_t_inverse'
+  // M6 passes (restir-m6-api.md §3)
+  | 'rs_light_tiles' | 'rs_dupmap';
 
 type G2Kind =
   | { k: 'ro' } | { k: 'rw'; min?: number } | { k: 'st'; format: GPUTextureFormat } | { k: 'tex'; sampleType: GPUTextureSampleType; dim?: GPUTextureViewDimension }
@@ -142,6 +144,17 @@ export const RS_PASSES: Record<RsPassName, RsPassDef> = {
       RS_VBUF_PREV_BINDING: b(4), RS_GEO_PREV_BINDING: b(5), RS_REPLAY: 1,
     },
   },
+  // ---- M6 (restir-m6-api.md §3) ----
+  rs_light_tiles: {
+    file: 'passes/restir/light-tiles.wgsl', entry: 'rs_light_tiles', scene: false, debug: false,
+    g2: [RW],
+    defines: { RS_ARENA_BINDING: b(0), RS_ARENA_RW: true },
+  },
+  rs_dupmap: {
+    file: 'passes/restir/dupmap.wgsl', entry: 'rs_dupmap', scene: false, debug: false,
+    g2: [RO, RW],
+    defines: { RS_RES_IN_BINDING: b(0), RS_ARENA_BINDING: b(1), RS_ARENA_RW: true },
+  },
 };
 
 /** The M5 temporal / refresh passes (compile smoke, U-BIND-1). */
@@ -197,6 +210,8 @@ export const G0_BINDING = { frame: 0, env: 1, params: 4, lights: 5, records: 6, 
 export interface RestirAllocation {
   atlasW: number; atlasH: number; memberW: number; memberH: number; members: number; memberCols: number; slots: number; dump: boolean;
   temporal?: boolean;
+  /** M6 arena region (restir-m6-api.md §2.3): duplication counts (dupmap) and light tiles of `tileMembers` members (RIS). */
+  m6?: { dup: boolean; tileMembers: number };
 }
 
 export const ENS_LEVELS = [16, 32, 64] as const;
@@ -246,7 +261,7 @@ export class RestirResources {
     const S = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST;
     const buf = (label: string, size: number, usage = S) => device.createBuffer({ label, size: Math.max(16, Math.ceil(size / 16) * 16), usage });
     this.res = [buf('rs-resA', P * RES_BYTES), buf('rs-resB', P * RES_BYTES)];
-    this.arena = buf('rs-arena', arenaBytes(P, slots, !!alloc.temporal));
+    this.arena = buf('rs-arena', arenaBytesM6(P, slots, !!alloc.temporal, alloc.m6 ?? { dup: false, tileMembers: 0 }));
     this.args = buf('rs-args', 64, S | GPUBufferUsage.INDIRECT);
     const tex = (label: string, format: GPUTextureFormat, storage = true) => device.createTexture({
       label, size: [W, H], format,
@@ -343,6 +358,9 @@ export class RestirResources {
       case 'rs_t_inverse':
         this.needTemporal(name);
         return this.group(`${name}:${inIdx}${g}`, name, [rin, arena, v.vbuf, v.geo, v.vbufPrev, v.geoPrev]);
+      // ---- M6 (restir-m6-api.md §3): tiles write the arena only; the duplication map reads res[inIdx] = the final buffer
+      case 'rs_light_tiles': return this.group(name, name, [arena]);
+      case 'rs_dupmap': return this.group(`${name}:${inIdx}`, name, [rin, arena]);
     }
   }
 

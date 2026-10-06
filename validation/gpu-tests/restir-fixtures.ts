@@ -7,6 +7,7 @@ import { createEnvResources, destroyEnvResources, type EnvGpuResources } from '.
 import { computeRenderOrigin, JITTER_IID, type JitterMode } from '../../src/core/render/frame-uniforms.ts';
 import { PtKernel, type PtEnvOptions, type PtKernelOptions } from '../../src/core/render/pt-kernel.ts';
 import { SceneGpu } from '../../src/core/render/scene-gpu.ts';
+import type { LightMode } from '../../src/core/render/lights-gpu.ts';
 import { readBuffer } from '../../src/core/gpu/readback.ts';
 import { RestirKernel, type RestirCounters } from '../../src/core/render/restir/kernel.ts';
 import { restirSettings, type RestirPresetName, type RestirSettings } from '../../src/core/render/restir/presets.ts';
@@ -147,6 +148,8 @@ export interface RestirRigOptions {
   env?: PtEnvOptions;
   initialDefines?: Record<string, number | boolean | string>;
   extraSources?: Record<string, string>;
+  /** M6 (restir-m6-api.md MD9): light mode of the ReSTIR kernel (default A). */
+  lightMode?: LightMode;
 }
 
 export interface RestirRig {
@@ -162,6 +165,7 @@ export async function restirRig(scene: SceneData, W: number, H: number, o: Resti
   const kernel = await RestirKernel.create(g.device, g.gpu, g.env, {
     settings: restirSettings(o.preset ?? 'initial', o.settings), features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures,
     instrumentation: { dumpCandidates: o.dumpCandidates, initialDefines: o.initialDefines, extraSources: o.extraSources }, env: o.env,
+    lightMode: o.lightMode,
   });
   kernel.setView({ camera: o.cam ?? boxCamera(), width: W, height: H, runSeed: o.seed ?? 11, jitterMode: o.jitterMode ?? JITTER_IID, members: o.members, memberBase: o.memberBase });
   await kernel.prepare();

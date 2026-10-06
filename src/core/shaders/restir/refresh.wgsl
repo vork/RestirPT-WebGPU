@@ -28,6 +28,9 @@
 #include "restir/reservoir.wgsl"
 #include "restir/endpoint.wgsl"
 #include "restir/rc.wgsl"
+#if RS_MODE_B
+#include "restir/cross.wgsl"
+#endif
 
 // Path classes (math.md#reservoir-fields; layout.ts pathClass, restir-views.wgsl rsdbg_class)
 const RFC_L: u32 = 0u;  const RFC_N1: u32 = 1u;  const RFC_B1: u32 = 2u;  const RFC_E: u32 = 3u;
@@ -206,6 +209,57 @@ fn refresh_b1(ai: u32, tech: u32, fsTo: u32) -> RfOut {
   return o;
 }
 
+#if RS_MODE_B
+/// Class D-BSDF of an analytic crossing end (restir-m6-api.md MD8): β_s ⊙ ω2·L_e of the crossing re-intersected along
+/// ω_{d−1} from the cached x_{d−1} under frame fsTo; a shadow ray to the crossing point only when the light MOVED.
+fn refresh_deep_cross(ai: u32, d: u32, eTo: u32, fsTo: u32, moved: bool) -> RfOut {
+  var o: RfOut;
+  o.status = SXS_DEEP;
+  let sfx = resin_plane(ai, RP_SFX0);
+  let s2 = resin_plane(ai, RP_SFX2);
+  let dir = bitcast<vec3f>(resin_plane(ai, RP_SFX1).xyz);
+  let x = scene_surface(sfx.x, bitcast<f32>(sfx.y), bitcast<f32>(sfx.z), vec3f(0.0));
+  let slot = lf_slot(fsTo);
+  let ce = cross_end(x.pos, dir, eTo, slot);
+  let delta = sfx_delta_end(sfx.w);
+  var w2 = 1.0;
+  if (cross_mis(delta)) { w2 = mis_w2(ce.p1, bitcast<f32>(s2.w), d - 1u); }
+  var rad = select(vec3f(0.0), bitcast<vec3f>(s2.xyz) * w2 * ce.Le, ce.ok);
+  if (moved && any(rad > vec3f(0.0))) {
+    o.status |= SXS_RAY;
+    refresh_count(RSC_T_REFRESH_RAYS, 1u);
+    if (!visible(x.pos, x.ng, sfx.x, ce.z, light_load(slot, eTo).normal, LIGHT_NONE)) { rad = vec3f(0.0); }
+  }
+  o.rad = rad;
+  return o;
+}
+
+/// Class B1-ana: L_e and p1 of the crossing along rcWi from x_k under frame fsTo (write-back cache) and the end
+/// visibility (ray iff moved; unchanged otherwise, which is exact: same ray, same light, static geometry).
+fn refresh_b1_cross(ai: u32, eTo: u32, fsTo: u32, moved: bool) -> RfOut {
+  var o: RfOut;
+  o.status = SXS_B1;
+  let rc = resin_plane(ai, RP_RC).xyz;
+  let dir = bitcast<vec3f>(resin_plane(ai, RP_WI).xyz);
+  let x = scene_surface(rc.x, bitcast<f32>(rc.y), bitcast<f32>(rc.z), vec3f(0.0));
+  let slot = lf_slot(fsTo);
+  let ce = cross_end(x.pos, dir, eTo, slot);
+  o.rad = select(vec3f(0.0), ce.Le, ce.ok);
+  o.aux = ce.p1;
+  var vis = true;
+  if (moved) {
+    vis = false;
+    if (ce.ok && any(ce.Le > vec3f(0.0))) {
+      o.status |= SXS_RAY;
+      refresh_count(RSC_T_REFRESH_RAYS, 1u);
+      vis = visible(x.pos, x.ng, rc.x, ce.z, light_load(slot, eTo).normal, LIGHT_NONE);
+    }
+  }
+  if (vis) { o.status |= SXS_VIS; }
+  return o;
+}
+#endif
+
 fn refresh_record(ai: u32, fsFrom: u32, fsTo: u32) -> SfxRec {
   var r: SfxRec;
   r.rad = vec3f(0.0);
@@ -238,8 +292,19 @@ fn refresh_record(ai: u32, fsFrom: u32, fsTo: u32) -> SfxRec {
   } else if (tech == RS_TECH_BSDF_ENV) {
     bits = refresh_env_bits();
   } else if (tech == RS_TECH_BSDF_ANALYTIC) {
+#if RS_MODE_B
+    // M6 MD8: the crossed light translated like an analytic NEE entry (missing / zero pmf ⇒ undefined both ways); no J_P
+    let entry = end.x & RC_ENTRY_MASK;
+    let te = refresh_entry(entry, fsFrom, fsTo);
+    r.entryTo = te.eTo;
+    r.jp = 1.0;
+    if (te.undef) { r.status |= SXS_UNDEF; return r; }
+    eTo = te.eTo;
+    bits = lt_change_bits(select(entry, eTo, fsTo == RS_FS_CUR));
+#else
     r.status |= SXS_UNDEF;                                             // Mode-B crossings: not in M5 (D1)
     return r;
+#endif
   }
   let deep = cls == RFC_DNEE || cls == RFC_DBSDF;
   if (deep && rs_tmode(TM_E2)) { r.status |= SXS_UNDEF | SXS_E2; return r; }
@@ -264,8 +329,19 @@ fn refresh_record(ai: u32, fsFrom: u32, fsTo: u32) -> SfxRec {
       r.status |= o.status;
     }
     case RFC_DBSDF: {
+#if RS_MODE_B
+      if (tech == RS_TECH_BSDF_ANALYTIC) {
+        let o = refresh_deep_cross(ai, d, eTo, fsTo, moved);
+        r.rad = o.rad;
+        r.status |= o.status;
+      } else {
+        r.rad = refresh_deep_bsdf(ai, d, tech, fsTo);
+        r.status |= SXS_DEEP;
+      }
+#else
       r.rad = refresh_deep_bsdf(ai, d, tech, fsTo);
       r.status |= SXS_DEEP;
+#endif
     }
     case RFC_N1: {
       let o = refresh_n1(ai, eTo, end.yz, fsTo, moved);
@@ -274,7 +350,12 @@ fn refresh_record(ai: u32, fsFrom: u32, fsTo: u32) -> SfxRec {
       r.status |= o.status;
     }
     default: {
+#if RS_MODE_B
+      var o: RfOut;
+      if (tech == RS_TECH_BSDF_ANALYTIC) { o = refresh_b1_cross(ai, eTo, fsTo, moved); } else { o = refresh_b1(ai, tech, fsTo); }
+#else
       let o = refresh_b1(ai, tech, fsTo);
+#endif
       r.rad = o.rad;
       r.aux = o.aux;
       r.status |= o.status;

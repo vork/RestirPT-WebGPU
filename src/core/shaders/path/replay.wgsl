@@ -22,6 +22,14 @@
 #include "path/path-weight.wgsl"
 #include "restir/frame.wgsl"
 #include "lights/env-sample.wgsl"
+#if RS_RIS_NEE
+#include "restir/m6-types.wgsl"
+#endif
+#if RS_MODE_B
+#include "restir/cross.wgsl"
+/// Mode B (restir-m6-api.md MD7): alias entry of the crossed light of a BSDF_ANALYTIC source in ∅ mode (set by the shift).
+var<private> rsReplayCrossEntry: u32 = 0xFFFFFFFFu;
+#endif
 
 struct ReplayOut {
   code: u32,             // SC_OK | SC_O0_MISS | SC_O0_TECH | SC_O1 | SC_O3 (+ term, pair, margin packed as §2.6)
@@ -77,7 +85,29 @@ fn replay_prefix(seed: vec2u, y1: SurfaceHit, y1Prim: u32, camPos: vec3f, thr: f
       nxt = vertex_from_ids(h.primId, h.u, h.v, cur.pos);
       wOut = normalize(nxt.pos - cur.pos);              // D3: same-formula direction
     }
+#if RS_MODE_B
+    // ∅ of a crossing source: the SAME light must be crossed by the replayed continuation ray (else a different technique,
+    // SC_O0_TECH); the candidate's own direction ω_c to the crossing point replaces wOut for the event and the factor
+    var Lq = wOut;
+    var crossZ = vec3f(0.0);
+    var crossN = vec3f(0.0);
+    if (empty && last && tech == RS_TECH_BSDF_ANALYTIC) {
+      let slotX = lf_slot(fs);
+      let eX = rsReplayCrossEntry;
+      var hitX = false;
+      if (eX < slotX.nAnalytic && cross_enabled(bs.is_delta)) {
+        let rX = light_load(slotX, eX);
+        if (rX.kind == LT_RECT || rX.kind == LT_DISK) {
+          let ch = cross_ray(rX, cur.pos, wOut, select(FLT_MAX, length(nxt.pos - cur.pos), isHit));
+          if (ch.hit) { hitX = true; crossZ = cross_point(rX, ch.xy); crossN = rX.normal; Lq = normalize(crossZ - cur.pos); }
+        }
+      }
+      if (!hitX) { r.code = rs_slot_code(SC_O0_TECH, RCT_NONE, d, 0.0); return r; }
+    }
+    let qb = bsdf_query(m, V, Lq, bs.lobe);
+#else
     let qb = bsdf_query(m, V, wOut, bs.lobe);
+#endif
     let eB = rc_event_bsdf(m, bs.lobe, bs.is_delta, qb.p_marg);
     // shared pair b = (y_{b−1}, y_b | EV_BSDF at y_b): must fail (O1 in prefix mode, O3 in ∅ mode)
     if (b >= 2u) {
@@ -97,10 +127,26 @@ fn replay_prefix(seed: vec2u, y1: SurfaceHit, y1Prim: u32, camPos: vec3f, thr: f
       var Le = vec3f(0.0);
       var w2 = 1.0;
       var endV = RcVertex(cur.pos + bs.L, vec3f(0.0), RCK_ENV, 0u);
+#if RS_MODE_B
+      if (tech == RS_TECH_BSDF_ANALYTIC) {
+        let ce = cross_end(cur.pos, Lq, rsReplayCrossEntry, lf_slot(fs));
+        Le = select(vec3f(0.0), ce.Le, ce.ok);
+#if RS_RIS_NEE
+        if (cross_mis(bs.is_delta)) { w2 = mis_w2(ce.p1, rs_p2m(qb.p_marg, b), b); }
+#else
+        if (cross_mis(bs.is_delta)) { w2 = mis_w2(ce.p1, qb.p_marg, b); }
+#endif
+        endV = RcVertex(crossZ, crossN, RCK_LIGHT, 0u);
+      } else
+#endif
       if (tech == RS_TECH_BSDF_ENV) {
         let er = lf_env(fs);
         if (isHit || (er.flags & ENV_FLAG_PRESENT) == 0u) { r.code = rs_slot_code(SC_O0_TECH, RCT_NONE, d, 0.0); return r; }
+#if RS_RIS_NEE
+        w2 = env_bsdf_mis_weight_s(bs.L, rs_p2m(qb.p_marg, b), b, bs.is_delta, lf_slot(fs), er);
+#else
         w2 = env_bsdf_mis_weight_s(bs.L, qb.p_marg, b, bs.is_delta, lf_slot(fs), er);
+#endif
         Le = envRadiance_s(envUV(bs.L, er.cg, er.sg), er);
       } else {
         if (tech != RS_TECH_BSDF_TRI || !isHit || (nxt.triFlags & TRI_EMISSIVE) == 0u) {
@@ -108,7 +154,11 @@ fn replay_prefix(seed: vec2u, y1: SurfaceHit, y1Prim: u32, camPos: vec3f, thr: f
           return r;
         }
         Le = tri_emission(h.primId, h.u, h.v);
+#if RS_RIS_NEE
+        if (!bs.is_delta) { w2 = mis_w2(tri_light_p1_s(cur.pos, nxt.pos, nxt.ng, h.primId, lf_slot(fs)), rs_p2m(qb.p_marg, b), b); }
+#else
         if (!bs.is_delta) { w2 = mis_w2(tri_light_p1_s(cur.pos, nxt.pos, nxt.ng, h.primId, lf_slot(fs)), qb.p_marg, b); }
+#endif
         endV = RcVertex(nxt.pos, nxt.ng, RCK_LIGHT, 0u);
       }
       let pt = rcPairTest(curV, eB, endV, rc_event_none(), thr);

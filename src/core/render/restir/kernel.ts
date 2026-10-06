@@ -26,7 +26,8 @@ import {
   RES_BYTES, RESTIR_PARAMS_SIZE, RS_DISPATCH_RING, RS_DISPATCH_SIZE, RS_DISPATCH_STRIDE, RS_TEMPORAL_SIZE, RSC, RS_WGSL_CONSTS as K,
   ARENA_HDR_BYTES, arenaWords, nsAlloc, packRestirParams, packRsDispatch, packRsTemporal, queueHdr, type RscName, type RsDispatchCpu,
 } from './layout.ts';
-import { PAIR_TEX_SIZES, numSlotsOf, restirFlags, restirSettings, tModeOf, tPlantsOf, validateSettings, type RestirSettings } from './presets.ts';
+import { m6Defines, numSlotsOf, pairTexSizes, restirFlags, restirSettings, tModeOf, tPlantsOf, validateSettings, type RestirSettings } from './presets.ts';
+import { RS_M6_CONSTS as K6, arenaM6Base } from './layout.ts';
 import { G0_BINDING, RS_PASSES, RestirResources, createUniforms, g2LayoutEntries, restirCommonDefines, restirDefines, type RsPassName } from './resources.ts';
 import { SpatialStage } from './stage-spatial.ts';
 import { EnsembleStage } from './ensemble.ts';
@@ -132,14 +133,17 @@ export class RestirKernel {
   private readonly pipelines = new Map<string, Promise<GPUComputePipeline>>();
   private prepared = '';
 
+  /** Light mode (M6 MD9: A, B or A′; B / A′ compile the crossing variant RS_MODE_B). */
+  lightMode: LightMode;
+
   private constructor(readonly device: GPUDevice, readonly scene: SceneGpu, private env: EnvGpuResources, readonly o: RestirKernelOptions) {
-    if ((o.lightMode ?? 'A') !== 'A') throw new Error(`RestirKernel: light mode ${o.lightMode} not supported in M4 (Mode A only, restir-api.md D1)`);
+    this.lightMode = o.lightMode ?? 'A';
     this.settings = restirSettings(undefined, o.settings);
     this.envOptions = { ...o.env };
     this.frame = new FrameUniformBuffer(device);
     ({ params: this.params, ring: this.ring } = createUniforms(device));
     this.rsTemporal = device.createBuffer({ label: 'rs-temporal', size: RS_TEMPORAL_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
-    this.lights = new LightsGpu(device, scene.scene, scene.origin, recentrePositions(scene.scene.geometry.positions, scene.origin), { lightMode: 'A', label: 'rs-lights' });
+    this.lights = new LightsGpu(device, scene.scene, scene.origin, recentrePositions(scene.scene.geometry.positions, scene.origin), { lightMode: this.lightMode, label: 'rs-lights' });
     applyEnvLighting(this.lights, env, this.envOptions);
     const c = GPUShaderStage.COMPUTE;
     const empty = device.createBindGroupLayout({ label: 'rs-empty', entries: [] });
@@ -203,12 +207,18 @@ export class RestirKernel {
 
   /** Composer defines shared by every ReSTIR pipeline (+ the pass's own). */
   defines(name: RsPassName, extra: Defines = {}): Defines {
-    return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug, extra });
+    return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug, extra: { ...this.m6Defines(), ...extra } });
   }
+
+  /** M6 pipeline-variant defines of the current settings / light mode (restir-m6-api.md MD1). */
+  m6Defines(): Record<string, number> { return m6Defines(this.settings, this.lightMode); }
+  /** Cache key of the current pipeline variant. */
+  variantKey(): string { const d = this.m6Defines(); return `${d.RS_RIS_NEE}${d.RS_MODE_B}${d.RS_DUAL_MV}${d.RS_DUPMAP}${d.RS_PLANT_T2}`; }
 
   /** Compile (once) the pipeline of a standard pass; `extra` defines give test variants (their own cache key). */
   pipeline(name: RsPassName, extra: Defines = {}, colorFormat?: GPUTextureFormat): Promise<GPUComputePipeline> {
-    const key = `${name}:${JSON.stringify(extra)}:${colorFormat ?? ''}`;
+    const vk = this.variantKey();
+    const key = `${name}:${JSON.stringify(extra)}:${colorFormat ?? ''}:${vk}`;
     let p = this.pipelines.get(key);
     if (!p) {
       const d = RS_PASSES[name];
@@ -216,7 +226,7 @@ export class RestirKernel {
       const inst = (name === 'rs_initial' || name === 'rs_initial_dump') ? this.o.instrumentation?.initialDefines ?? {} : {};
       p = this.compile(d.file, d.entry, this.defines(name, { ...inst, ...extra, ...(colorFormat ? { COLOR_FORMAT: colorFormat } : {}) }),
         this.pipelineLayout(name, colorFormat), `${name}${std ? '' : ':' + JSON.stringify(extra)}`, this.o.instrumentation?.extraSources ?? {})
-        .then((pl) => { if (std) this.ready.set(`${name}:${colorFormat ?? ''}`, pl); return pl; });
+        .then((pl) => { if (std) this.ready.set(`${name}:${colorFormat ?? ''}:${vk}`, pl); return pl; });
       this.pipelines.set(key, p);
       p.catch(() => this.pipelines.delete(key));
     }
@@ -242,8 +252,15 @@ export class RestirKernel {
 
   /** Compile the stages the current settings / view need (spatial when rounds > 0, ensemble when E > 1). */
   async prepare(): Promise<void> {
-    const key = `${this.settings.rounds > 0}:${(this.view?.members ?? 1) > 1}:${this.settings.temporal}`;
+    const key = `${this.settings.rounds > 0}:${(this.view?.members ?? 1) > 1}:${this.settings.temporal}:${this.variantKey()}`;
     if (key === this.prepared) return;
+    // the frame passes of the current variant (cached; a variant change recompiles them, MD1)
+    const base: RsPassName[] = ['rs_primary', 'rs_initial', 'rs_finalize'];
+    if (this.o.instrumentation?.dumpCandidates) base.push('rs_initial_dump');
+    if (this.settings.risNee) base.push('rs_light_tiles');
+    if (this.settings.dupmap && this.settings.temporal) base.push('rs_dupmap');
+    await Promise.all(base.map((n) => this.pipeline(n)));
+    if (this.colorFormat) await this.pipeline('rs_finalize_frame', {}, this.colorFormat);
     if (this.settings.rounds > 0) await this.spatial.prepare?.(this);
     if ((this.view?.members ?? 1) > 1) await this.ensemble.prepare?.(this);
     if (this.settings.temporal) await this.temporal.prepare?.(this);
@@ -272,10 +289,21 @@ export class RestirKernel {
     return r;
   }
 
+  /** M6 (MD9): switch the light mode (A / B / A′). A new pipeline variant: `await prepare()` before the next frame; the
+   *  config hash changes, so the history resets. */
+  setLightMode(m: LightMode): void {
+    if (m === this.lightMode) return;
+    this.lightMode = m;
+    this.lights.setLightMode(m);
+    this.g0Key = '';
+    this.writeParams();
+  }
+
   setSettings(s: Partial<RestirSettings>): void {
     const next = { ...this.settings, ...s };
     validateSettings(next);
-    const realloc = numSlotsOf(next) !== numSlotsOf(this.settings) || next.temporal !== this.settings.temporal;
+    const realloc = numSlotsOf(next) !== numSlotsOf(this.settings) || next.temporal !== this.settings.temporal
+      || next.risNee !== this.settings.risNee || next.dupmap !== this.settings.dupmap;
     this.settings = next;
     this.lights.deferred = !!next.temporal;
     if (!next.temporal && this.lights.hasPending) this.lights.commit();
@@ -323,9 +351,10 @@ export class RestirKernel {
     const atlasW = memberCols * W, atlasH = Math.ceil(E / memberCols) * H;
     if (E * W * H > 2 ** 22) throw new Error(`RestirKernel: E·W·H = ${E * W * H} > 2^22 (restir-api.md D15)`);
     const temporal = !!this.settings.temporal;
+    const m6 = { dup: !!this.settings.dupmap && temporal, tileMembers: this.settings.risNee ? E : 0 };
     const a = {
       atlasW, atlasH, memberW: W, memberH: H, members: E, memberCols, slots: nsAlloc(numSlotsOf(this.settings), temporal),
-      dump: !!this.o.instrumentation?.dumpCandidates, temporal,
+      dump: !!this.o.instrumentation?.dumpCandidates, temporal, ...(m6.dup || m6.tileMembers > 0 ? { m6 } : {}),
     };
     const old = this.res;
     if (old && JSON.stringify(old.alloc) === JSON.stringify(a)) return;
@@ -348,12 +377,15 @@ export class RestirKernel {
     let flags = restirFlags(s);
     if (a.members > 1) flags |= K.RSF_ENSEMBLE;
     if (this.external) flags |= K.RSF_INTERACTIVE;
+    const m6On = !!a.m6;
+    const P = a.atlasW * a.atlasH;
     this.device.queue.writeBuffer(this.params, 0, packRestirParams({
       atlasSize: [a.atlasW, a.atlasH], memberSize: [a.memberW, a.memberH], memberCols: a.memberCols, memberCount: a.members,
       maxBounces: s.maxBounces, flags, numTrees: s.trees, numSlots: numSlotsOf(s), numRounds: s.rounds, rrMinBounces: s.rrMinBounces,
       tau: s.tau, alphaMin: s.alphaMin, wScale: s.plant?.wScale ?? 1, crit2022MinDist: Number.isFinite(minExtent) ? 0.02 * minExtent : 0,
-      pairTexSize: PAIR_TEX_SIZES, lightMode: 0, memberBase: this.view?.memberBase ?? 0,
+      pairTexSize: pairTexSizes(s), lightMode: this.lightMode === 'B' ? 2 : this.lightMode === 'A′' ? 1 : 0, memberBase: this.view?.memberBase ?? 0,
       boostSlots: s.temporal ? s.boostSlots : 0, tMode: tModeOf(s), cCap: s.cCap, tPlants: tPlantsOf(s),
+      m6Base: m6On ? arenaM6Base(P, a.slots, !!a.temporal) : 0, risM: s.risNee ? s.risM : 0,
     }));
   }
 
@@ -418,7 +450,7 @@ export class RestirKernel {
   }
   /** Defines of a custom pipeline (scene + env + lights + LUTs + the given pass bindings; DEBUG_NO_BINDINGS). */
   customDefines(extra: Defines, scene = true): Defines {
-    return { ...restirCommonDefines(scene ? this.scene.defines(SCENE_GROUP) : undefined, false), ...extra };
+    return { ...restirCommonDefines(scene ? this.scene.defines(SCENE_GROUP) : undefined, false), ...this.m6Defines(), ...extra };
   }
   /** Encode a custom pipeline with the kernel's G0 (+ one RsDispatch) and G1. */
   encodeCustom(enc: GPUCommandEncoder, pipeline: GPUComputePipeline, g2: GPUBindGroup, d: Partial<RsDispatchCpu>, work: [number, number], scene = true): void {
@@ -449,7 +481,7 @@ export class RestirKernel {
   private readonly ready = new Map<string, GPUComputePipeline>();
   /** Synchronous access to a compiled standard pipeline (after `await pipeline(name)`). */
   pipelineSync(name: RsPassName, colorFormat?: GPUTextureFormat): GPUComputePipeline {
-    const p = this.ready.get(`${name}:${colorFormat ?? ''}`);
+    const p = this.ready.get(`${name}:${colorFormat ?? ''}:${this.variantKey()}`);
     if (!p) throw new Error(`RestirKernel: pipeline ${name} not compiled (await kernel.pipeline('${name}'))`);
     return p;
   }
@@ -500,7 +532,7 @@ export class RestirKernel {
       envMapGen: this.envMapGen, envMapId,
       importanceKey: envImportanceKey({ cap: this.envOptions.importanceCap, floors: this.envOptions.floors, plantPdfFromTargets: this.envOptions.plant === 'pdfFromTargets' }),
       envNee: this.envOptions.nee !== false && this.env.present, settings: { restir: s, env: this.envOptions }, flags: restirFlags(s), tMode: tModeOf(s), tPlants: tPlantsOf(s),
-      jitterMode, misM: 1,
+      jitterMode, misM: s.risNee ? s.risM : 1,
     };
   }
 
@@ -541,6 +573,15 @@ export class RestirKernel {
         encode: (enc) => this.encodePass(enc, 'rs_primary', primary, res.g2('rs_primary'), { t, passId: K.RS_PASS_PRIMARY, rowBase: r0, rowEnd: r1 }, this.perPixelWorkgroups(r0, r1)),
       });
     }
+    // M6 (MD4): the frame's light tiles (per member) before the path trees
+    if (s.risNee) {
+      const lt = this.pipelineSync('rs_light_tiles');
+      units.push({
+        label: 'rs_light_tiles', costHint: a.members * K6.RS_TILES * K6.RS_TILE_SIZE / 64,
+        encode: (enc) => this.encodePass(enc, 'rs_light_tiles', lt, res.g2('rs_light_tiles'), { t, passId: K6.RS_PASS_LIGHT_TILES },
+          [K6.RS_TILE_SIZE / 64, K6.RS_TILES * a.members]),
+      });
+    }
     const dump = !!this.o.instrumentation?.dumpCandidates;
     const initName: RsPassName = dump ? 'rs_initial_dump' : 'rs_initial';
     const initial = this.pipelineSync(initName);
@@ -566,6 +607,16 @@ export class RestirKernel {
     this.lastRounds = rounds;
     this.lastFinal = this.finalResIndex();
     this.lastWasAdvanced = !!adv && s.temporal && !!a.temporal;
+    // M6 (MD10): the duplication counts of this frame's final reservoirs (read by the next frame's T1 at q′)
+    if (s.dupmap && s.temporal && a.temporal) {
+      const dm = this.pipelineSync('rs_dupmap');
+      const fin = this.lastFinal;
+      units.push({
+        label: 'rs_dupmap', costHint: a.atlasW * a.atlasH,
+        encode: (enc) => this.encodePass(enc, 'rs_dupmap', dm, res.g2('rs_dupmap', fin), { t, passId: K6.RS_PASS_DUPMAP },
+          [Math.ceil(a.atlasW / 16), Math.ceil(a.atlasH / 16)]),
+      });
+    }
     const interactive = !!out.interactive;
     const fname: RsPassName = interactive ? 'rs_finalize_frame' : 'rs_finalize';
     if (!out.accum || !out.counters) throw new Error('RestirKernel.frameUnits: out.accum and out.counters are required');

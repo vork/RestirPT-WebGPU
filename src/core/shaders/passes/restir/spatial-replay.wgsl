@@ -22,6 +22,9 @@ fn sr_item(i: u32) {
   let pr = pair_partner(p.local, p.member, rs_t(), rsDispatch.round, s);
   var o: ShiftOut;
   if (p.valid && pr.valid) {
+#if RS_PLANT_T2
+    rsT2SrcAi = ai;                                      // U8-4 plant: the source record of this shift
+#endif
     o = shift_hybrid(shift_src_load(ai), shift_dst_load(pair_atlas_px(p, pr.partner)));
   } else {
     o.code = rs_slot_code(SC_NOT_ACCEPTED, RCT_NONE, 0u, 0.0);

@@ -13,6 +13,10 @@
 #include "restir/tframe.wgsl"
 #include "restir/tmis.wgsl"
 #include "restir/shift.wgsl"
+#if RS_MODE_B
+/// Class B1-ana (k = d − 1, an analytic crossing end): the end visibility comes from the refresh (restir-m6-api.md MD8).
+fn tcls_b1x(f: u32) -> bool { let k = rf_k(f); return k != 0u && k + 1u == rf_d(f) && rf_tech(f) == RS_TECH_BSDF_ANALYTIC; }
+#endif
 
 struct TSrc { base: ShiftSrc, undefinedLight: bool, jp: f32, xpEntry: u32 }
 struct TShiftOut { F: vec3f, J: f32, jP: f32, code: u32 }   // F = F_dst(ȳ) (not F·J); J = J_rc·J_P; code §2.6 format
@@ -80,6 +84,14 @@ fn tsrc_load(ai: u32, fromBuf: u32, sfxDir: u32, fsTo: u32) -> TSrc {
   }
   if (tcls_deep(f)) { t.base.rcRad = r.rad; }              // N3 stale values come from the refresh (C-5, B-10)
   if (tcls_n1(f)) { t.base.endOcc = (r.status & SXS_VIS) == 0u; }
+#if RS_MODE_B
+  if (rf_tech(f) == RS_TECH_BSDF_ANALYTIC) {               // crossing entries in the numbering of the destination frame
+    let e = RC_TAG_CROSS | (r.entryTo & RC_ENTRY_MASK);
+    t.base.end.x = e;
+    if (rf_k(f) == rf_d(f)) { t.base.rc.x = e; }
+  }
+  if (tcls_b1x(f)) { t.base.endOcc = (r.status & SXS_VIS) == 0u; }
+#endif
   return t;
 }
 

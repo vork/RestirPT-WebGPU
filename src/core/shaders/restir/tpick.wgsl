@@ -73,6 +73,42 @@ fn temporal_pixel(p: RsPix, key: vec2u) -> TPick {
     r.tap = tap;
     return r;
   }
+#if RS_DUAL_MV
+  // M6 MD11 (dual motion vectors, interactive): every standard tap failed (disocclusion). The previous hit at the centre
+  // tap c₀ (the occluder at t−1) is projected with the CURRENT camera; its motion applied to this pixel gives the dual
+  // position, whose taps use the unchanged validity rule. G-buffers and the pick stream only (sample-independent).
+  if (c0.x >= 0 && c0.y >= 0 && c0.x < i32(W) && c0.y < i32(H)) {
+    let vo = rs_vbuf_prev(origin + vec2u(c0));
+    if (vo.x != 0xFFFFFFFFu) {
+      let yOcc = vertex_from_ids(vo.x, bitcast<f32>(vo.y), bitcast<f32>(vo.z), lf_cam_pos(RS_FS_PREV)).pos;
+      if (frame_view_depth(yOcc, frame.cam) >= 1e-12) {
+        let sOcc = frame_project(yOcc, frame.cam) - vec2f(0.5);
+        let spD = vec2f(p.local) - (sOcc - vec2f(c0));
+        let fd = floor(spD + xi);
+        if (fd.x >= -2.0 && fd.y >= -2.0 && fd.x <= lim.x && fd.y <= lim.y) {
+          let cd = vec2i(fd);
+          for (var tap = 0u; tap < 9u; tap++) {
+            var c = cd;
+            if (tap > 0u) { c = cd + tpick_ring(tap - 1u + rot); }
+            if (c.x < 0 || c.y < 0 || c.x >= i32(W) || c.y >= i32(H)) { continue; }
+            let apx = origin + vec2u(c);
+            let vp = rs_vbuf_prev(apx);
+            if (vp.x == 0xFFFFFFFFu) { continue; }
+            if (!(dot(ng, rs_geo_prev(apx).xyz) >= 0.5)) { continue; }
+            let zp = bitcast<f32>(vp.w);
+            if (!(abs(dist - zp) <= 0.1 * zp)) { continue; }
+            r.valid = true;
+            r.ai = apx.y * rsParams.atlasSize.x + apx.x;
+            r.local = vec2u(c);
+            r.tap = 10u + tap;
+            rs_count(29u, 1u);                                 // RSC_T_DUAL (m6-types.wgsl)
+            return r;
+          }
+        }
+      }
+    }
+  }
+#endif
   return r;
 }
 #endif

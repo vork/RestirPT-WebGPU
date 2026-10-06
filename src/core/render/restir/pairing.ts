@@ -10,8 +10,12 @@
 //   * pairTexData(R, sizes): the rg8sint 256 × 256 × 8 texture contents (texels outside W_s are 0).
 //   * pairTransform / pairPartner: h = pcg4d(runSeed ^ m·φ, t, (r << 8) | s, STREAM_PAIRING), dihedral code h.x & 7,
 //     offset (h.y % W_s, h.z % W_s); q = (M·p + o) mod W_s, partner = p + Mᵀ·d(q), valid iff d ≠ 0 and inside the tile.
-// The M6 σ = 16 Gaussian maps replace the layers without kernel changes (same format and transform).
-import { PAIR_TEX_SIZES } from './presets.ts';
+// The M6 σ = 16 Gaussian maps replace the layers without kernel changes (same format and transform):
+//   * generateGaussLayer(W, σ, layer) (restir-m6-api.md MD3, math.md#pairing-textures): link index L = (y·W + x) >> 1, n_σ
+//     shuffles of independent random permutations of every 2×2 block (odd passes: block grid offset by (1, 1) on the
+//     torus), then the two texels of each link are partners with d = wrap(b − a), d(b) = −d(a) (explicit negation).
+//   * nSigma(σ): the corrected Eq. 3 (enh-verify C1), 128 at σ = 16.
+import { PAIR_TEX_SIZES, GAUSS_PAIR_SIZES } from './presets.ts';
 import { RS_WGSL_CONSTS as K } from './layout.ts';
 
 export const PAIR_TEX_DIM = 256;
@@ -80,7 +84,8 @@ export function pairRng(layer: number, R: number, W: number): Pcg32 {
 // ------------------------------------------------------------------------------------------------ generator
 
 export interface PairLayer {
-  W: number; R: number; layer: number;
+  /** R: disk radius (M4 maps) or 0 for the Gaussian maps (then `sigma` is set). */
+  W: number; R: number; layer: number; sigma?: number;
   /** Partner deltas (dx, dy) per texel, index 2·(y·W + x). */
   delta: Int8Array;
   unmatched: number;
@@ -145,11 +150,103 @@ export function pairLayers(R: number, sizes: readonly number[] = PAIR_TEX_SIZES)
   return sizes.slice(0, PAIR_TEX_LAYERS).map((W, s) => (W > 0 ? pairLayer(W, R, s) : undefined));
 }
 
+// ------------------------------------------------------------------------------------------------ Gaussian maps (M6)
+
+/** Corrected shuffle count n_σ = ⌊σ²/2 + 1.46/σ − 1.76/σ² + 0.656/σ³ + 0.5⌋ (math.md#dupmap; 128 at σ = 16). */
+export function nSigma(sigma: number): number {
+  return Math.floor(sigma * sigma / 2 + 1.46 / sigma - 1.76 / (sigma * sigma) + 0.656 / (sigma * sigma * sigma) + 0.5);
+}
+
+/** The 24 permutations of 4 (index = the uniform draw). */
+const PERMS4: readonly (readonly [number, number, number, number])[] = (() => {
+  const out: [number, number, number, number][] = [];
+  for (let a = 0; a < 4; a++) for (let b = 0; b < 4; b++) for (let c = 0; c < 4; c++) for (let d = 0; d < 4; d++) {
+    if (a !== b && a !== c && a !== d && b !== c && b !== d && c !== d) out.push([a, b, c, d]);
+  }
+  return out;
+})();
+
+/** Generator stream of a Gaussian layer: state (0x7f4a7c15 ^ layer, ⌊16σ⌋ << 16 | W), sequence (0, STREAM_PAIRING + 256 + layer). */
+export function gaussPairRng(layer: number, sigma: number, W: number): Pcg32 {
+  return new Pcg32((0x7f4a7c15 ^ layer) >>> 0, ((Math.floor(16 * sigma) << 16) | W) >>> 0, 0, (K.STREAM_PAIRING + 256 + layer) >>> 0);
+}
+
+const wrapDelta = (v: number, W: number) => (v > W / 2 ? v - W : v < -W / 2 ? v + W : v);
+
+/** One W×W Gaussian reciprocal layer (MD3): every texel has a partner, |d| ≤ W/2 ≤ 127. W even, ≤ 254. */
+export function generateGaussLayer(W: number, sigma: number, layer: number): PairLayer {
+  if (!(W > 0 && W <= 254 && W % 2 === 0)) throw new Error(`pairing: W_s = ${W} must be even and ≤ 254`);
+  if (!(sigma >= 0.8 && sigma <= 40)) throw new Error(`pairing: σ = ${sigma} must be in [0.8, 40]`);
+  const rng = gaussPairRng(layer, sigma, W);
+  const N = W * W, H2 = W / 2;
+  const L = new Uint32Array(N);
+  for (let i = 0; i < N; i++) L[i] = i >>> 1;
+  const n = nSigma(sigma);
+  const idx = [0, 0, 0, 0], val = [0, 0, 0, 0];
+  for (let s = 0; s < n; s++) {
+    const o = s & 1;
+    for (let by = 0; by < H2; by++) {
+      const y0 = (2 * by + o) % W, y1 = (2 * by + 1 + o) % W;
+      for (let bx = 0; bx < H2; bx++) {
+        const x0 = (2 * bx + o) % W, x1 = (2 * bx + 1 + o) % W;
+        idx[0] = y0 * W + x0; idx[1] = y0 * W + x1; idx[2] = y1 * W + x0; idx[3] = y1 * W + x1;
+        const p = PERMS4[rng.bounded(24)];
+        for (let k = 0; k < 4; k++) val[k] = L[idx[k]];
+        for (let k = 0; k < 4; k++) L[idx[k]] = val[p[k]];
+      }
+    }
+  }
+  const first = new Int32Array(N / 2).fill(-1);
+  const delta = new Int8Array(2 * N);
+  let paired = 0;
+  for (let i = 0; i < N; i++) {
+    const l = L[i];
+    if (first[l] < 0) { first[l] = i; continue; }
+    const a = first[l], ax = a % W, ay = (a - ax) / W, bx = i % W, by = (i - bx) / W;
+    const dx = wrapDelta(bx - ax, W), dy = wrapDelta(by - ay, W);
+    delta[2 * a] = dx; delta[2 * a + 1] = dy;
+    delta[2 * i] = -dx; delta[2 * i + 1] = -dy;
+    paired += 2;
+  }
+  return { W, R: 0, sigma, layer, delta, unmatched: N - paired };
+}
+
+const gaussCache = new Map<string, PairLayer>();
+/** Cached generateGaussLayer. */
+export function gaussLayer(W: number, sigma: number, layer: number): PairLayer {
+  const key = `${W}:${sigma}:${layer}`;
+  let l = gaussCache.get(key);
+  if (!l) { l = generateGaussLayer(W, sigma, layer); gaussCache.set(key, l); }
+  return l;
+}
+
+/** Gaussian layers of the given logical sizes (0 = unused). */
+export function gaussLayers(sigma: number, sizes: readonly number[] = GAUSS_PAIR_SIZES): (PairLayer | undefined)[] {
+  return sizes.slice(0, PAIR_TEX_LAYERS).map((W, s) => (W > 0 ? gaussLayer(W, sigma, s) : undefined));
+}
+
+/** Per-axis standard deviations and the partner statistics of a layer (T14). */
+export function layerDeltaStats(l: PairLayer): { sx: number; sy: number; maxAbs: number; zero: number; n: number } {
+  let sxx = 0, syy = 0, maxAbs = 0, zero = 0, n = 0;
+  for (let i = 0; i < l.delta.length; i += 2) {
+    const dx = l.delta[i], dy = l.delta[i + 1];
+    if (dx === 0 && dy === 0) { zero++; continue; }
+    sxx += dx * dx; syy += dy * dy; n++;
+    maxAbs = Math.max(maxAbs, Math.abs(dx), Math.abs(dy));
+  }
+  return { sx: Math.sqrt(sxx / n), sy: Math.sqrt(syy / n), maxAbs, zero, n };
+}
+
 /** rg8sint texture contents (256 × 256 × 8, row 0 = texel y 0): layer s holds its W_s × W_s map, zeros elsewhere. */
 export function pairTexData(R: number, sizes: readonly number[] = PAIR_TEX_SIZES): Int8Array {
+  return layersTexData(pairLayers(R, sizes));
+}
+
+/** rg8sint texture contents of any layer list (M4 disk or M6 Gaussian). */
+export function layersTexData(layers: (PairLayer | undefined)[]): Int8Array {
   const D = PAIR_TEX_DIM;
   const out = new Int8Array(D * D * PAIR_TEX_LAYERS * 2);
-  pairLayers(R, sizes).forEach((l, s) => {
+  layers.forEach((l, s) => {
     if (!l) return;
     for (let y = 0; y < l.W; y++) {
       out.set(l.delta.subarray(2 * y * l.W, 2 * (y + 1) * l.W), 2 * (s * D * D + y * D));
@@ -160,7 +257,16 @@ export function pairTexData(R: number, sizes: readonly number[] = PAIR_TEX_SIZES
 
 /** Upload the maps of radius R into the kernel's pairing texture (256 × 256 × 8 rg8sint). */
 export function uploadPairTex(device: GPUDevice, tex: GPUTexture, R: number, sizes: readonly number[] = PAIR_TEX_SIZES): void {
-  const data = pairTexData(R, sizes);
+  uploadLayers(device, tex, pairLayers(R, sizes));
+}
+
+/** Upload the M6 Gaussian maps of std σ (sizes GAUSS_PAIR_SIZES unless given). */
+export function uploadGaussPairTex(device: GPUDevice, tex: GPUTexture, sigma: number, sizes: readonly number[] = GAUSS_PAIR_SIZES): void {
+  uploadLayers(device, tex, gaussLayers(sigma, sizes));
+}
+
+function uploadLayers(device: GPUDevice, tex: GPUTexture, layers: (PairLayer | undefined)[]): void {
+  const data = layersTexData(layers);
   const D = PAIR_TEX_DIM;
   device.queue.writeTexture({ texture: tex }, data.buffer as ArrayBuffer, { offset: data.byteOffset, bytesPerRow: D * 2, rowsPerImage: D }, [D, D, PAIR_TEX_LAYERS]);
 }

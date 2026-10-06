@@ -28,6 +28,9 @@ fn ss_pixel(p: RsPix) {
     // An accepted slot always has a valid partner (pair_accept wrote it); guard anyway.
     var o: ShiftOut;
     if (pr.valid) {
+#if RS_PLANT_T2
+      rsT2SrcAi = p.ai;                                  // U8-4 plant: the source record of this shift
+#endif
       o = shift_hybrid(shift_src_load(p.ai), shift_dst_load(pair_atlas_px(p, pr.partner)));
     } else {
       o.code = rs_slot_code(SC_NOT_ACCEPTED, RCT_NONE, 0u, 0.0);
