@@ -56,7 +56,7 @@ export interface DenoiserSettings {
 }
 
 export const DENOISER_DEFAULTS: Readonly<DenoiserSettings> = {
-  iterations: 5, alphaMin: 0.2, lambda0: 0.03, lambda1: 0.15, sigmaZ: 1, sigmaN: 128, sigmaL: 4, sigmaA: 0.05, varCorr: 3, resolve: true, nMaxT: 1024, guide: true, invRadius: 3, lumMinN: 4, lumPre: 1, nMax: 64, gradientOnCamera: false,
+  iterations: 4, alphaMin: 0.2, lambda0: 0.03, lambda1: 0.15, sigmaZ: 1, sigmaN: 128, sigmaL: 4, sigmaA: 0.05, varCorr: 3, resolve: true, nMaxT: 1024, guide: true, invRadius: 3, lumMinN: 4, lumPre: 1, nMax: 64, gradientOnCamera: false,
 };
 export const DN_MAX_ITERATIONS = 6;
 
