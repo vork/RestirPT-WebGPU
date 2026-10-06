@@ -40,6 +40,8 @@ export interface RenderDenoiseOptions {
   accumulate?: boolean;
   /** Slow camera motion: translate along the camera's right axis by `pan` metres per frame on frames [from, to). */
   pan?: { dx: number; from: number; to: number };
+  /** Debug AOV capture: upload view `id` of frame `frame` as aov_<id>_f<frame>.pfm (rgb = the AOV's xyz). */
+  debugViews?: { ids: number[]; frames: number[] };
   /** 'timing': warm-up frames, timing submits and re-runs per submit. */
   warmup?: number;
   timingSubmits?: number;
@@ -160,10 +162,11 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
         jitterMode: jm, jitter: o.jitter === 'r2' ? r2Jitter(i, o.seed >>> 0) : [0.5, 0.5], origin, exposure: 1, time: i / 24, dt: 1 / 24, sceneDiag,
       });
       prev = cam;
-      debug.update({ ...debug.settings, mode: 0 }, i);
+      const views = o.debugViews && o.debugViews.frames.includes(i) ? o.debugViews.ids : [];
+      debug.update({ ...debug.settings, mode: views[0] ?? 0 }, i);
       const enc = device.createCommandEncoder({ label: `dn-eval-${i}` });
       debug.beginFrame(enc);
-      const ok = r.encode(enc, { advanced: true, debugMode: 0, debugGroup: debug.bindGroup, resetTemporal: i === 0, resetHistory: i === 0 });
+      const ok = r.encode(enc, { advanced: true, debugMode: views[0] ?? 0, debugGroup: debug.bindGroup, resetTemporal: i === 0, resetHistory: i === 0 });
       if (!ok || r.denoisedLastFrame !== denoise) throw new Error(`frame ${i}: renderer not ready (encode ${ok}, denoised ${r.denoisedLastFrame}; ${r.restirError ?? ''} ${r.denoiserError ?? ''} ${r.lastError ?? ''})`);
       const d = r.denoiser;
       if (d && denoise) perFrame.push({ flags: d.flags, lambdaGate: (d.flags & 2) !== 0, reset: (d.flags & 1) !== 0 });
@@ -176,6 +179,26 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
         pass.setPipeline(tilePipe!); pass.setBindGroup(0, bg); pass.dispatchWorkgroups(Math.ceil(tilesX / 8), Math.ceil(tilesY / 8)); pass.end();
       }
       device.queue.submit([enc.finish()]);
+      for (let v = 0; v < views.length; v++) {
+        if (v > 0) {   // a held frame re-runs the same denoiser plan (DN9) with the next view active
+          debug.update({ ...debug.settings, mode: views[v] }, i);
+          const e2 = device.createCommandEncoder();
+          debug.beginFrame(e2);
+          r.encode(e2, { advanced: false, debugMode: views[v], debugGroup: debug.bindGroup });
+          device.queue.submit([e2.finish()]);
+        }
+        const L = 64 + 256 * 32;
+        const rb = device.createBuffer({ size: W * H * 16, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+        const e3 = device.createCommandEncoder();
+        e3.copyBufferToBuffer(debug.buffer, L, rb, 0, W * H * 16);
+        device.queue.submit([e3.finish()]);
+        await rb.mapAsync(GPUMapMode.READ);
+        const a = new Float32Array(rb.getMappedRange().slice(0)); rb.unmap(); rb.destroy();
+        const img = new Float32Array(W * H * 3);
+        for (let k = 0; k < W * H; k++) for (let c = 0; c < 3; c++) img[3 * k + c] = a[4 * k + c];
+        await uploadFile(o.run, `aov_${views[v]}_f${i}.pfm`, encodePFM({ width: W, height: H, channels: 3, data: img }));
+        files.push(`aov_${views[v]}_f${i}.pfm`);
+      }
       if (i === 1) {
         // the denoiser's albedo is the M1 G-buffer's: the same jittered primary hit as rs_primary (V-buffer ids equal)
         const a = await readTexture4(device, r.vbuffer!), b = await readTexture4(device, rs.vbuf);

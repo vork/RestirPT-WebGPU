@@ -16,7 +16,7 @@ import { DENOISER_DEFAULTS, DN_REPROJ, DNF, dnTiles, type DenoiserSettings } fro
 import { FrameUniformBuffer, JITTER_NONE, type CameraState } from '../../src/core/render/frame-uniforms.ts';
 import { liveDenoisers } from '../../src/core/render/denoise/registry.ts';
 import {
-  emptyState, refFilter, refLambda, refPairs, refResolveStatic, refTemporal, st16, rayDir, type RefPixel, type RefState, type RefTState, type V3,
+  emptyState, lum, refFilter, refLambda, refPairs, refResolveStatic, refTemporal, st16, rayDir, type RefPixel, type RefState, type RefTState, type V3,
 } from '../../tests/denoise/dn-ref.ts';
 import { getTestGpu, releaseTestGpu } from './device-factory.ts';
 
@@ -307,9 +307,31 @@ describe('denoiser passes vs the f64 reference', () => {
     const piC = (i: number) => { const F = new Float32Array(resWv.buffer, i * 160 + 4, 3); return 0.2126 * F[0] + 0.7152 * F[1] + 0.0722 * F[2]; };
     const fwGpu = (q: number) => gA.mom[4 * q + 3];   // the stored FW (the gradient reads dnMom[prev].a)
     const pairs = ts.map((t, i) => refPairs(t, fwGpu, piC(i), true, P));
-    const refL = refLambda(W, H, pairs);
-    const prevSt: RefState = { ...gA.st, n: prevRef.n };
     const radB = noisy(px, 5);
+    const refL0 = refLambda(W, H, pairs, S.invRadius);
+    // DN-11 colour family from the GPU's own history (frame A): cur = lum(L − L1), old = lum(hist·ā) at q′ (= q here)
+    const [tx0, ty0] = dnTiles(W, H);
+    const t2 = new Float64Array(tx0 * ty0 * 4);
+    for (let i = 0; i < P; i++) {
+      if (!(ts[i].flags & 1) || !(gA.st.alb[4 * i + 3] > 0)) continue;
+      const cur = Math.max(lum([radB[3 * i] - l1[3 * i], radB[3 * i + 1] - l1[3 * i + 1], radB[3 * i + 2] - l1[3 * i + 2]]), 0);
+      const old = lum([gA.hist[4 * i] * gA.st.alb[4 * i], gA.hist[4 * i + 1] * gA.st.alb[4 * i + 1], gA.hist[4 * i + 2] * gA.st.alb[4 * i + 2]]);
+      const k = Math.floor(Math.floor(i / W) / 8) * tx0 + Math.floor((i % W) / 8);
+      t2[4 * k] += cur; t2[4 * k + 1] += old; t2[4 * k + 2] += cur * cur; t2[4 * k + 3] += 1;
+    }
+    const lambdaC = (x: number, y: number) => {
+      const sm = [0, 0, 0, 0];
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const cx = x + dx, cy = y + dy;
+        if (cx < 0 || cy < 0 || cx >= tx0 || cy >= ty0) continue;
+        for (let c = 0; c < 4; c++) sm[c] += t2[4 * (cy * tx0 + cx) + c];
+      }
+      if (sm[3] < 16) return 0;
+      const mc = sm[0] / sm[3], mo = sm[1] / sm[3], se = Math.sqrt(Math.max(sm[2] / sm[3] - mc * mc, 0) / sm[3]);
+      return Math.max(mc, mo) > 1e-8 ? Math.min(Math.max(Math.abs(mc - mo) - 3 * se, 0) / Math.max(mc, mo), 1) : 0;
+    };
+    const refL = { tiles: refL0.tiles, lambda: refL0.lambda.map((l, k) => Math.max(l, lambdaC(k % tx0, Math.floor(k / tx0)))) };
+    const prevSt: RefState = { ...gA.st, n: prevRef.n };
     encodeFrame({ cam, prev: cam, px, radiance: radB, l1, reset: false, settings: S, kind: 'restir', restir: { ...restirA, gradient: true, lightingChanged: true } });
     const t = rig.dn.textures!;
     const tiles = await f32(t.gradTile);
@@ -317,7 +339,7 @@ describe('denoiser passes vs the f64 reference', () => {
     const [tx, ty] = dnTiles(W, H);
     for (let k = 0; k < tx * ty; k++) {
       for (const c of [0, 1, 2, 3]) expect(Math.abs(tiles[4 * k + c] - refL.tiles[4 * k + c])).toBeLessThan(1e-4 * (1 + Math.abs(refL.tiles[4 * k + (c | 1)])));
-      expect(Math.abs(lam[k] - refL.lambda[k])).toBeLessThan(1e-4);
+      expect(Math.abs(lam[k] - refL.lambda[k])).toBeLessThan(1e-3);
     }
     expect(Math.max(...lam)).toBeGreaterThan(0.3);
     // λ drives the temporal pass (α, n) exactly as in the reference

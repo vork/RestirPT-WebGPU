@@ -9,7 +9,7 @@
 #include "common/nan.wgsl"
 #include "debug/debug-common.wgsl"
 
-struct DnParams {          // 80 B
+struct DnParams {          // 96 B
   size: vec2u,             //  0  W, H (internal resolution)
   tiles: vec2u,            //  8  ⌈W/8⌉, ⌈H/8⌉
   flags: u32,              // 16  DNF_*
@@ -26,7 +26,10 @@ struct DnParams {          // 80 B
   varCorr: f32,            // 60  K of the variance of the integrated colour (Changelog DN-4; 0 = sample variance)
   nMaxT: f32,              // 64  history cap of the output resolve (Changelog DN-6)
   sinceChange: u32,        // 68  frames since the last lighting change (0 = this frame; the resolve's dynamic window)
-  pad1: u32, pad2: u32,
+  invRadius: u32,          // 72  tile radius of the inverse family's window (DN-10; forward: 1 = 3×3)
+  lumMinN: f32,            // 76  the luminance stop applies from this colour-history length on (DN-12; 0 = always)
+  lumPre: u32,             // 80  luminance-guide prefilter radius (DN-13: 0 = the tap's own value, 1 = 3×3, 2 = 5×5)
+  pad3: u32, pad4: u32, pad5: u32,
 }
 @group(0) @binding(1) var<uniform> dn: DnParams;
 
@@ -38,6 +41,7 @@ const DNF_INVERSE: u32 = 16u;      // inverse gradient pairs (res[w] still holds
 const DNF_GRADIENT: u32 = 32u;     // the gradient passes ran this frame (dnLambda holds this frame's λ)
 const DNF_LAMBDA_CAM: u32 = 64u;   // option gradientOnCamera: also use λ on camera-only frames
 const DNF_NO_RESOLVE: u32 = 128u;  // the output resolve is off (dn_resolve copies; Changelog DN-6)
+const DNF_GUIDE: u32 = 256u;       // à-trous luminance stop on the converged previous output (static ≥ 8 frames; DN-9)
 
 // Debug view ids (render/denoise/layout.ts DN_VIEW)
 const DNV_VARIANCE: u32 = 520u;

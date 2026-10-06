@@ -3,7 +3,7 @@
 // edge-stopping functions (depth, normal, luminance) and B3-spline weights. Iteration 0 feeds its output back as the
 // colour history (SVGF); the last iteration remodulates (a′·filtered + L1) into the colour target (background: the
 // input passes through).
-//   dn_variance  G1: 0 dnAtrous[0] · 1 dnMom[cur] · 2 dnGeo[cur] · 3 dnAtrous[1] (w)
+//   dn_variance  G1: 0 dnAtrous[0] · 1 dnMom[cur] · 2 dnGeo[cur] · 3 dnAtrous[1] (w) · 4 dnLumG (r32float, w: DN-13 guide)
 //   dn_atrous    G1: 0 dnAtrous[src] · 1 dnGeo[cur] · 2 DnIter · 3 dnAtrous[dst] (w) · 4 dnHist[cur] (w) · 5 dnOut (w)
 //                · 6 input · 7 dnL1[cur] (accumulated L1, DN-2) · 8 dnAlb[cur] (the accumulated demodulation factor ā, Changelog DN-1)
 #include "denoise/dn-common.wgsl"
@@ -38,6 +38,31 @@ fn dn_w_geo(zc: f32, zg: vec2f, nc: vec3f, zq: f32, nq: vec3f, d: vec2f) -> f32 
 @group(1) @binding(1) var momCur: texture_2d<f32>;
 @group(1) @binding(2) var geoCur: texture_2d<u32>;
 @group(1) @binding(3) var atrousOut: texture_storage_2d<rgba16float, write>;
+@group(1) @binding(4) var lumGOut: texture_storage_2d<r32float, write>;
+
+/// DN-13: the luminance guide of the à-trous stop: a binomial prefilter (radius dn.lumPre) of the integrated colour's
+/// luminance over geometrically compatible neighbours (weights independent of the noisy values).
+fn dn_lum_guide(p: vec2i, zc: f32, zg: vec2f, nc: vec3f) -> f32 {
+  let R = i32(dn.lumPre);
+  if (R == 0) { return luminance(textureLoad(atrousIn, p, 0).rgb); }
+  var s = 0.0;
+  var ws = 0.0;
+  for (var dy = -R; dy <= R; dy++) {
+    for (var dx = -R; dx <= R; dx++) {
+      let q = p + vec2i(dx, dy);
+      if (!dn_in_image(q)) { continue; }
+      let gq = textureLoad(geoCur, q, 0).xy;
+      let zq = dn_guide_dist(gq);
+      if (!(zq > 0.0)) { continue; }
+      let hb = select(select(0.25, 0.5, abs(dx) == 0), select(select(0.0625, 0.25, abs(dx) == 1), 0.375, dx == 0), R == 2)
+             * select(select(0.25, 0.5, abs(dy) == 0), select(select(0.0625, 0.25, abs(dy) == 1), 0.375, dy == 0), R == 2);
+      let w = hb * dn_w_geo(zc, zg, nc, zq, dn_guide_normal(gq), vec2f(f32(dx), f32(dy)));
+      s += w * luminance(textureLoad(atrousIn, q, 0).rgb);
+      ws += w;
+    }
+  }
+  return s / max(ws, 1e-12);
+}
 
 @compute @workgroup_size(8, 8, 1)
 fn dn_variance(@builtin(global_invocation_id) gid: vec3u) {
@@ -46,8 +71,9 @@ fn dn_variance(@builtin(global_invocation_id) gid: vec3u) {
   let c = textureLoad(atrousIn, p, 0);
   let gc = textureLoad(geoCur, p, 0).xy;
   let zc = dn_guide_dist(gc);
-  if (!(zc > 0.0)) { textureStore(atrousOut, p, c); return; }
+  if (!(zc > 0.0)) { textureStore(atrousOut, p, c); textureStore(lumGOut, p, vec4f(0.0)); return; }
   let n = textureLoad(momCur, p, 0).z;
+  textureStore(lumGOut, p, vec4f(dn_lum_guide(p, zc, dn_zgrad(geoCur, p, zc), dn_guide_normal(gc)), 0.0, 0.0, 0.0));
   var v = c.a;
   if (n < 4.0) {
     let nc = dn_guide_normal(gc);
@@ -88,7 +114,16 @@ const DNI_COPY: u32 = 4u;       // no filtering (0 iterations)
 @group(1) @binding(6) var inputTex: texture_2d<f32>;
 @group(1) @binding(7) var l1Tex: texture_2d<f32>;
 @group(1) @binding(8) var albTex: texture_2d<f32>;
+@group(1) @binding(9) var taaPrev: texture_2d<f32>;   // DN-9 guide: the previous resolved output
+@group(1) @binding(10) var momCur: texture_2d<f32>;   // DN-12: the colour-history length n
+@group(1) @binding(11) var lumG: texture_2d<f32>;     // DN-13: the prefiltered luminance guide
 
+
+/// Demodulated luminance of the previous resolved output at q (DN-9 guide): lum((T̄ − L̄1)/ā).
+fn dn_guide_lum(q: vec2i, a: vec3f) -> f32 {
+  let t = textureLoad(taaPrev, q, 0).rgb - textureLoad(l1Tex, q, 0).rgb;
+  return luminance(max(t, vec3f(0.0)) / max(a, vec3f(1e-3)));
+}
 
 /// 3×3 Gaussian of the variance around p (SVGF prefilter of the luminance edge stop).
 fn dn_var3(p: vec2i) -> f32 {
@@ -124,10 +159,18 @@ fn dn_atrous(@builtin(global_invocation_id) gid: vec3u) {
   if ((it.flags & DNI_COPY) == 0u) {
     let nc = dn_guide_normal(gc);
     let zg = dn_zgrad(geoCur, p, zc);
-    let lc = luminance(c.rgb);
     let ac = textureLoad(albTex, p, 0).rgb;
+    // DN-9: with a converged output (static camera and lighting, n_t ≥ 8 at both pixels) the luminance stop compares
+    // the demodulated previous output instead of this frame's noisy values: weights that depend on the noise being
+    // filtered pull the mean toward the mode of right-skewed Monte-Carlo noise (the residual darkening of DN-7).
+    let useGuide = dn_flag(DNF_GUIDE) && (frame.flags & FRAME_CAMERA_MOVED) == 0u && textureLoad(taaPrev, p, 0).a >= 8.0;
+    let pre = dn.lumPre > 0u && it.iter == 0u;   // DN-13: later levels filter already-smoothed values
+    let lc = select(select(luminance(c.rgb), textureLoad(lumG, p, 0).x, pre), dn_guide_lum(p, ac), useGuide);
     let invA = select(0.0, 1.0 / dn.sigmaA, dn.sigmaA > 0.0);
-    let phiL = dn.sigmaL * sqrt(max(dn_var3(p), 0.0)) + 1e-6;
+    // DN-12: no luminance stop on young histories (resets, disocclusions): with few, right-skewed samples, weights that
+    // depend on the noisy values pull the mean toward the mode (−25 % on a reset after an added spot light)
+    let lumStop = textureLoad(momCur, p, 0).z >= dn.lumMinN;
+    let phiL = select(1e30, dn.sigmaL * sqrt(max(dn_var3(p), 0.0)) + 1e-6, lumStop);
     let stp = i32(it.step);
     var b3 = array<f32, 5>(0.0625, 0.25, 0.375, 0.25, 0.0625);
     var sc = vec3f(0.0);
@@ -145,7 +188,9 @@ fn dn_atrous(@builtin(global_invocation_id) gid: vec3u) {
         if (!(zq > 0.0)) { continue; }
         let cq = textureLoad(atrousIn, q, 0);
         let da = textureLoad(albTex, q, 0).rgb - ac;
-        let wl = exp(-abs(lc - luminance(cq.rgb)) / phiL - (abs(da.x) + abs(da.y) + abs(da.z)) * (invA / 3.0));   // DN-5 albedo stop
+        var lq = select(luminance(cq.rgb), textureLoad(lumG, q, 0).x, pre);
+        if (useGuide && textureLoad(taaPrev, q, 0).a >= 8.0) { lq = dn_guide_lum(q, ac + da); }
+        let wl = exp(-abs(lc - lq) / phiL - (abs(da.x) + abs(da.y) + abs(da.z)) * (invA / 3.0));   // DN-5 albedo stop
         let w = h * dn_w_geo(zc, zg, nc, zq, dn_guide_normal(gq), vec2f(d)) * wl;
         sc += w * cq.rgb;
         sv += w * w * cq.a;

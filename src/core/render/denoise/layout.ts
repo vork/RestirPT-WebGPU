@@ -3,10 +3,10 @@
 // reads (restir/tframe.wgsl, restir/types.wgsl; checked against render/restir/layout.ts by tests/denoise).
 import type { DebugViewDef } from '../debug-views.ts';
 
-export const DN_PARAMS_SIZE = 80;
+export const DN_PARAMS_SIZE = 96;
 export const DN_ITER_SIZE = 16;
 /** DnParams.flags (dn-common.wgsl DNF_*). */
-export const DNF = { RESET: 1, LAMBDA: 2, HAS_L1: 4, FW: 8, INVERSE: 16, GRADIENT: 32, LAMBDA_CAM: 64, NO_RESOLVE: 128 } as const;
+export const DNF = { RESET: 1, LAMBDA: 2, HAS_L1: 4, FW: 8, INVERSE: 16, GRADIENT: 32, LAMBDA_CAM: 64, NO_RESOLVE: 128, GUIDE: 256 } as const;
 /** DnIter.flags (dn-filter.wgsl DNI_*). */
 export const DNI = { FEEDBACK: 1, FINAL: 2, COPY: 4 } as const;
 /** Reprojection outcome codes (view 526; dn-temporal.wgsl DN_REPROJ_*). */
@@ -40,6 +40,15 @@ export interface DenoiserSettings {
    *  the denoised frames, up to nMaxT; in motion / under lighting changes: ≤ 8 frames, variance-clipped). */
   resolve: boolean;
   nMaxT: number;
+  /** DN-12: the à-trous luminance stop applies from this colour-history length on (young histories: geometric and
+   *  albedo stops only, which are independent of the noisy values: mean-preserving). */
+  lumMinN: number;
+  /** DN-13: radius of the luminance-guide prefilter (0 = each tap's own value, as SVGF). */
+  lumPre: number;
+  /** DN-10: tile radius of the inverse gradient family's window (forward: 3×3 tiles). */
+  invRadius: number;
+  /** DN-9: the à-trous luminance stop uses the converged previous output once camera and lighting are static. */
+  guide: boolean;
   /** History length cap. */
   nMax: number;
   /** Also use λ on camera-only frames (view-dependent glossy changes; default off, denoiser.md §5). */
@@ -47,7 +56,7 @@ export interface DenoiserSettings {
 }
 
 export const DENOISER_DEFAULTS: Readonly<DenoiserSettings> = {
-  iterations: 5, alphaMin: 0.2, lambda0: 0.03, lambda1: 0.15, sigmaZ: 1, sigmaN: 128, sigmaL: 4, sigmaA: 0.05, varCorr: 3, resolve: true, nMaxT: 1024, nMax: 64, gradientOnCamera: false,
+  iterations: 5, alphaMin: 0.2, lambda0: 0.03, lambda1: 0.15, sigmaZ: 1, sigmaN: 128, sigmaL: 4, sigmaA: 0.05, varCorr: 3, resolve: true, nMaxT: 1024, guide: true, invRadius: 3, lumMinN: 4, lumPre: 1, nMax: 64, gradientOnCamera: false,
 };
 export const DN_MAX_ITERATIONS = 6;
 
@@ -67,7 +76,7 @@ export function packDnParams(o: DnParamsCpu, out = new ArrayBuffer(DN_PARAMS_SIZ
   u[4] = o.flags >>> 0;
   f[5] = o.settings.nMax; f[6] = o.settings.alphaMin; f[7] = o.settings.lambda0; f[8] = o.settings.lambda1;
   f[9] = o.settings.sigmaZ; f[10] = o.settings.sigmaN; f[11] = o.settings.sigmaL;
-  u[12] = o.tsBase >>> 0; u[13] = o.resPlanes >>> 0; f[14] = o.settings.sigmaA; f[15] = o.settings.varCorr; f[16] = o.settings.nMaxT; u[17] = Math.min(o.sinceChange ?? 0xffff, 0xffff);
+  u[12] = o.tsBase >>> 0; u[13] = o.resPlanes >>> 0; f[14] = o.settings.sigmaA; f[15] = o.settings.varCorr; f[16] = o.settings.nMaxT; u[17] = Math.min(o.sinceChange ?? 0xffff, 0xffff); u[18] = o.settings.invRadius; f[19] = o.settings.lumMinN; u[20] = o.settings.lumPre;
   return out;
 }
 

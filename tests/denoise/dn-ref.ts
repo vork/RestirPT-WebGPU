@@ -231,6 +231,31 @@ export function wGeo(s: DenoiserSettings, zc: number, zg: [number, number], nc: 
   return Math.exp(-Math.abs(zc - zq) / phi) * Math.max(dot(nc, nq), 0) ** s.sigmaN;
 }
 
+/** DN-13: the binomial prefilter (radius s.lumPre) of the luminance over geometrically compatible neighbours (r32float). */
+export function refLumGuide(s: DenoiserSettings, st: RefState, atrous0: Float64Array): Float64Array {
+  const { W, H } = st;
+  const g = new Float64Array(W * H);
+  const R = s.lumPre;
+  const k = R === 2 ? [0.0625, 0.25, 0.375, 0.25, 0.0625] : [0.25, 0.5, 0.25];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, zc = st.dist[i];
+    if (!(zc > 0)) continue;
+    if (R === 0) { g[i] = lum([atrous0[4 * i], atrous0[4 * i + 1], atrous0[4 * i + 2]]); continue; }
+    const zg = zgrad(st, x, y);
+    let s0 = 0, ws = 0;
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+      const qx = x + dx, qy = y + dy;
+      if (qx < 0 || qy < 0 || qx >= W || qy >= H) continue;
+      const j = qy * W + qx, zq = st.dist[j];
+      if (!(zq > 0)) continue;
+      const w = k[dx + R] * k[dy + R] * wGeo(s, zc, zg, st.n[i], zq, st.n[j], [dx, dy]);
+      s0 += w * lum([atrous0[4 * j], atrous0[4 * j + 1], atrous0[4 * j + 2]]); ws += w;
+    }
+    g[i] = s0 / Math.max(ws, 1e-12);
+  }
+  return g;
+}
+
 /** dn_variance: rgba (colour, variance) after the spatial estimate for n < 4. */
 export function refVariance(s: DenoiserSettings, st: RefState, atrous0: Float64Array): Float64Array {
   const { W, H } = st;
@@ -261,7 +286,8 @@ export function refVariance(s: DenoiserSettings, st: RefState, atrous0: Float64A
 }
 
 /** One dn_atrous iteration (step 0 = copy) on rgba (colour, variance); returns the stored rgba16float values. */
-export function refAtrous(s: DenoiserSettings, st: RefState, src: Float64Array, step: number): Float64Array {
+export function refAtrous(s: DenoiserSettings, st: RefState, src: Float64Array, step: number, lumG?: Float64Array): Float64Array {
+  const L = (j: number) => (lumG ? lumG[j] : lum([src[4 * j], src[4 * j + 1], src[4 * j + 2]]));   // DN-13 (iteration 0 only)
   const { W, H } = st;
   const out = new Float64Array(src.length);
   const b3 = [0.0625, 0.25, 0.375, 0.25, 0.0625];
@@ -271,7 +297,7 @@ export function refAtrous(s: DenoiserSettings, st: RefState, src: Float64Array, 
     let res = [src[4 * i], src[4 * i + 1], src[4 * i + 2], src[4 * i + 3]];
     if (step > 0) {
       const zg = zgrad(st, x, y);
-      const lc = lum(res);
+      const lc = L(i);
       const ac = [st.alb[4 * i], st.alb[4 * i + 1], st.alb[4 * i + 2]];
       const invA = s.sigmaA > 0 ? 1 / s.sigmaA : 0;
       let v3 = 0, w3 = 0;
@@ -281,7 +307,7 @@ export function refAtrous(s: DenoiserSettings, st: RefState, src: Float64Array, 
         const w = (dx ? 0.25 : 0.5) * (dy ? 0.25 : 0.5);
         v3 += w * src[4 * (qy * W + qx) + 3]; w3 += w;
       }
-      const phiL = s.sigmaL * Math.sqrt(Math.max(v3 / w3, 0)) + 1e-6;
+      const phiL = st.mom[4 * i + 2] >= s.lumMinN ? s.sigmaL * Math.sqrt(Math.max(v3 / w3, 0)) + 1e-6 : 1e30;   // DN-12
       let sc = [0, 0, 0], sv = 0, sw = 0;
       for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
         const h = b3[dx + 2] * b3[dy + 2];
@@ -292,7 +318,7 @@ export function refAtrous(s: DenoiserSettings, st: RefState, src: Float64Array, 
         if (!(zq > 0)) continue;
         const cq = [src[4 * j], src[4 * j + 1], src[4 * j + 2]];
         const da = [0, 1, 2].reduce((acc, k) => acc + Math.abs(st.alb[4 * j + k] - ac[k]), 0);
-        const wl = Math.exp(-Math.abs(lc - lum(cq)) / phiL - da * (invA / 3));   // DN-5
+        const wl = Math.exp(-Math.abs(lc - L(j)) / phiL - da * (invA / 3));   // DN-5
         const w = h * wGeo(s, zc, zg, st.n[i], zq, st.n[j], [dx * step, dy * step]) * wl;
         sc = sc.map((v, k) => v + w * cq[k]); sv += w * w * src[4 * j + 3]; sw += w;
       }
@@ -310,8 +336,9 @@ export function refFilter(s: DenoiserSettings, st: RefState, atrous0: Float64Arr
   let cur: Float64Array = variance;
   const levels: Float64Array[] = [];
   let feedback: Float64Array = new Float64Array(0);
-  for (const [, step, flags] of atrousPlan(s.iterations)) {
-    cur = refAtrous(s, st, cur, flags & DNI.COPY ? 0 : step);
+  const lumG = s.lumPre > 0 ? refLumGuide(s, st, atrous0) : undefined;
+  for (const [iter, step, flags] of atrousPlan(s.iterations)) {
+    cur = refAtrous(s, st, cur, flags & DNI.COPY ? 0 : step, iter === 0 ? lumG : undefined);
     levels.push(cur);
     if (flags & DNI.FEEDBACK) feedback = cur;
   }
@@ -350,7 +377,7 @@ export function refPairs(t: RefTState, fwPrev: (q: number) => number, piC: numbe
   return [df, mf, di, mi, bits];
 }
 /** Tile sums (8×8; Δ_f, M_f, Δ_i, M_i) and λ = max(|ΣΔ_f|/ΣM_f, |ΣΔ_i|/ΣM_i) of the 3×3-tile windows. */
-export function refLambda(W: number, H: number, pairs: number[][]): { tiles: Float64Array; lambda: Float64Array } {
+export function refLambda(W: number, H: number, pairs: number[][], invRadius = 1): { tiles: Float64Array; lambda: Float64Array } {
   const [tx, ty] = dnTiles(W, H);
   const tiles = new Float64Array(tx * ty * 4);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -360,10 +387,11 @@ export function refLambda(W: number, H: number, pairs: number[][]): { tiles: Flo
   const lambda = new Float64Array(tx * ty);
   for (let y = 0; y < ty; y++) for (let x = 0; x < tx; x++) {
     const sum = [0, 0, 0, 0];
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const R = Math.max(invRadius, 1);
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
       const cx = x + dx, cy = y + dy;
       if (cx < 0 || cy < 0 || cx >= tx || cy >= ty) continue;
-      for (let k = 0; k < 4; k++) sum[k] += tiles[4 * (cy * tx + cx) + k];
+      for (let k = 0; k < 4; k++) if (k >= 2 || (Math.abs(dx) <= 1 && Math.abs(dy) <= 1)) sum[k] += tiles[4 * (cy * tx + cx) + k];
     }
     const lf = sum[1] > 1e-8 ? Math.min(Math.abs(sum[0]) / sum[1], 1) : 0;
     const li = sum[3] > 1e-8 ? Math.min(Math.abs(sum[2]) / sum[3], 1) : 0;

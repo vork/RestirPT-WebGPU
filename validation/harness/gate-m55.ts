@@ -358,7 +358,7 @@ function gateBody(dir: string, add: Add, want: (k: string) => boolean): void {
   if (want('stability')) {
     const ev = Array.from({ length: STABILITY.frames[1] - STABILITY.frames[0] }, (_, i) => STABILITY.frames[0] + i).join(',');
     const base = ['--frames', '64', '--eval-frames', ev];
-    const variants: [string, string[]][] = [['dn-iid', []], ['dn-r2', ['--jitter', 'r2']], ['acc-iid', ['--no-denoise', '--accumulate']],
+    const variants: [string, string[]][] = [['dn-iid', []], ['dn-r2', ['--jitter', 'r2']], ['dn-none', ['--jitter', 'none']], ['acc-iid', ['--no-denoise', '--accumulate']],
       ['slow-dn-iid', ['--pan', STABILITY.pan]], ['slow-raw-iid', ['--no-denoise', '--pan', STABILITY.pan]]];
     const per = new Map<string, Map<string, DnJob>>();
     const jobs: DnJob[] = [];
@@ -376,7 +376,7 @@ function gateBody(dir: string, add: Add, want: (k: string) => boolean): void {
       const runs = (tags: string[]) => tags.map((t) => `${t}=${path.join(ROOT, m.get(t)!.dest)}`).join(',');
       const fr = `${STABILITY.frames[0]}:${STABILITY.frames[1]}`;
       const so = path.join(dir, `stability-${pkg}.json`), mo = path.join(dir, `stability-motion-${pkg}.json`);
-      sh(PY, ['validation/tools/denoise_eval.py', 'stability', '--ref', path.join(ROOT, ref.dir, 'mean.pfm'), '--runs', runs(['acc-iid', 'dn-iid', 'dn-r2']), '--frames', fr, '--out', path.join(ROOT, so)], () => true);
+      sh(PY, ['validation/tools/denoise_eval.py', 'stability', '--ref', path.join(ROOT, ref.dir, 'mean.pfm'), '--runs', runs(['acc-iid', 'dn-iid', 'dn-r2', 'dn-none']), '--frames', fr, '--flip', '--out', path.join(ROOT, so)], () => true);
       sh(PY, ['validation/tools/denoise_eval.py', 'stability', '--motion', '--ref', path.join(ROOT, ref.dir, 'mean.pfm'), '--runs', runs(['slow-raw-iid', 'slow-dn-iid']), '--frames', fr, '--out', path.join(ROOT, mo)], () => true);
       const S = tryJson(so)?.runs, M = tryJson(mo)?.runs;
       stab[pkg] = { static: S, motion: M };
@@ -388,6 +388,10 @@ function gateBody(dir: string, add: Add, want: (k: string) => boolean): void {
           r.edge_std <= acc.edge_std && r.edge_dt <= acc.edge_dt, 0, { denoised: r, progressiveMean: acc },
           `edge std ${r.edge_std.toFixed(4)} vs ${acc.edge_std.toFixed(4)}, Δ ${r.edge_dt.toFixed(4)} vs ${acc.edge_dt.toFixed(4)}; interior std ${r.interior_std.toFixed(4)} vs ${acc.interior_std.toFixed(4)}`);
       }
+      // the alternative to the resolve (pixel-centre primaries while denoising): stable, but aliased against the reference
+      const nj = S['dn-none'], ij = S['dn-iid'];
+      add(`edge stability ${pkg}: pixel-centre primaries vs jittered + resolve (reported, not gating)`, true, 0, { pixelCentre: nj, jitteredResolve: ij },
+        `edge std ${nj.edge_std.toFixed(4)} vs ${ij.edge_std.toFixed(4)}, LDR-FLIP at frame ${STABILITY.frames[1] - 1} ${nj.ldr_flip_last.toFixed(4)} vs ${ij.ldr_flip_last.toFixed(4)}`);
       const dn = M['slow-dn-iid'], raw = M['slow-raw-iid'];
       add(`edge stability ${pkg}, slow pan (0.5 mm/frame): denoised edge flicker |d2| ≤ the raw 1-frame output's`, dn.edge_d2 <= raw.edge_d2, 0, { denoised: dn, raw },
         `edge |d2| ${dn.edge_d2.toFixed(4)} vs raw ${raw.edge_d2.toFixed(4)} (×${(dn.edge_d2 / raw.edge_d2).toFixed(2)}); interior ${dn.interior_d2.toFixed(4)} vs ${raw.interior_d2.toFixed(4)}`);
