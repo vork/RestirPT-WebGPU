@@ -11,7 +11,7 @@ import { readNpz, writeNpz, type NpzArray } from '../../src/core/render/restir/n
 import { RESTIR_PRESETS } from '../../src/core/render/restir/presets.ts';
 import { SEEDS as M4_SEEDS } from '../../validation/harness/gate-m4.ts';
 import {
-  DYN_UNITS, E_MEMBERS, M5_AVG_SCENES, M5_DEFERRED_PLANTS, M5_PLANTS, M5_SEQUENCES, M5_STATIC, R_FLOOR, SEEDS, STATIC, UNIT_CAP_RAISED_S, UNIT_CAP_S, U8_SCENES,
+  DYN_UNITS, E_MEMBERS, M5_AVG_SCENES, M5_DEFERRED_PLANTS, M5_GATE0_PLANTS, M5_PLANTS, M5_SEQUENCES, M5_STATIC, R_FLOOR, SEEDS, STATIC, UNIT_CAP_RAISED_S, UNIT_CAP_S, U8_SCENES,
   aggFromImages, aggFromNpz, capDecision, chainChunks, globalOnly, nUnits, pkgDir, sizeGroup, t16ChainProblems, uVec,
 } from '../../validation/harness/gate-m5.ts';
 import { M5_PACKAGES } from '../../validation/scenes/make-m5.ts';
@@ -32,14 +32,15 @@ describe('unit lists (restir-temporal-api.md §6.2, §6.3, §6.5)', () => {
     }
   });
 
-  it('8 static scenes (TD28), 3 time-average scenes (Q9), 18 dynamic units (13 + Talbot/E2 x2 (Q11) + boost (Q7)), 20 plants (+ 4 deferred to M6), 6 U8 scenes', () => {
+  it('8 static scenes (TD28), 3 time-average scenes (Q9), 18 dynamic units (13 + Talbot/E2 x2 (Q11) + boost (Q7)), 19 plants (+ U8-2t in Gate 0, + 4 deferred to M6), 6 U8 scenes', () => {
     expect(M5_STATIC).toHaveLength(8);
     expect(M5_AVG_SCENES).toEqual(['m5s_cornell_i', 'm5s_glossy_v1', 'm5s_overcast_rect_b3']);
     expect(DYN_UNITS).toHaveLength(18);
     expect(DYN_UNITS.filter((u) => u.variant === 'base')).toHaveLength(13);
     expect(DYN_UNITS.filter((u) => u.variant !== 'base').map((u) => `${u.pkg}:${u.variant}`).sort()).toEqual([
       'ixs_b_area_256:e2', 'ixs_b_area_256:talbot', 'ixs_d_camera_256:boost', 'ixs_e_addremove_256:e2', 'ixs_e_addremove_256:talbot']);
-    expect(M5_PLANTS).toHaveLength(20);
+    expect(M5_PLANTS).toHaveLength(19);
+    expect(M5_GATE0_PLANTS.map((p) => p.id)).toEqual(['U8-2t']);
     expect(M5_DEFERRED_PLANTS.map((p) => p.id)).toEqual(['U8-4', 'U8-7', 'U8-8', 'U8-10']);
     expect(M5_PLANTS.some((p) => p.id === 'U8-4')).toBe(false);
     expect(U8_SCENES).toHaveLength(6);

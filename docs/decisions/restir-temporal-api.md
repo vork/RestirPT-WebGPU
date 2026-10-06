@@ -1613,6 +1613,16 @@ Amendments made while implementing this contract. Numbering is append-only (T-pr
   core run measured 90 ms/chain, so 32² exceeded the 30-min cap), not 4× the static-part sizing (32², R 27 760 at
   55 ms/chain): it passed (Δ_Y +0.003 %) and the synthetic W × 1.003 plant was detected 10/10 at the same power, which
   is what the A/A calibrates. The cap decision depends on measured timing; both sizings are recorded in validation.md.
+- **E-22 U8-2t moves from Gate 3 to Gate 0** (coordinator decision). The stale-aux plant (TP_U8_STALE_AUX) is active
+  only where an MIS weight uses p1 in the shift (emissive-triangle and env ends; B-12), and its bias is structurally
+  small: T-B's GPU activity test moves an emissive + env 8-frame mean by +0.006 % (1.04787 → 1.04794; reservoirs differ),
+  the gate measured +0.020 % / +0.022 % (z 1.0 / 1.1) on ixs_i at frames 16 / 17 (R 528, MDB 0.06–0.09 %) — 30× below
+  δ = 0.2 %, which is the scale Stage B promises to resolve. It is therefore not a Gate-3 control: the summary lists it as
+  "active, bias below δ (measured +0.006 % on emissive + env, below gate resolution) — verified by the Gate-0 activity
+  test", and Gate 0 runs `restir-temporal "U8 plant activity"` as a required step (reservoirs change with the plant on
+  emissive + env, bitwise identical with analytic lights only). The plan's U8 ladder intends per-feature detection at δ;
+  this flag's effect is structurally sub-δ in Mode A without light tiles — revisit in M6 when light tiles / RIS-NEE make
+  the aux path matter more.
 - **B-7 T3-2 harness hook instead of `RS_TEMPORAL_TRACE`** (affects nobody). The composer has no `#define` and the kernel
   passes extra defines only to `rs_initial`, so the T3-2 / T4-t harness does not use a define: `t-select.wgsl` has
   `const TSEL_TRACE_FORCE_P: bool = false`, which the test flips to `true` through `instrumentation.extraSources` (every

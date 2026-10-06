@@ -153,7 +153,7 @@ export interface PlantSpec {
 }
 const P = (id: string, name: string, pkg: string, rung: PlantSpec['rung'], args: string[], predict: Prediction[], o: Partial<PlantSpec> = {}): PlantSpec => ({ id, name, pkg, rung, args, predict, ...o });
 const pr = (frames: number[], region: string, sign: Prediction['sign']): Prediction[] => frames.map((frame) => ({ frame, region, sign }));
-/** §6.5 rendered plants (20; U8-4 deferred to M6, B-9). Regions: mask names of dyn_masks.py; `global` = the image mean. */
+/** §6.5 rendered plants (19; U8-4 deferred to M6, B-9; U8-2t a Gate-0 activity test, E-22). Regions: mask names of dyn_masks.py; `global` = the image mean. */
 export const M5_PLANTS: PlantSpec[] = [
   P('N1-mixed', 'N1 mixed E_{t-1} (TP_N1_MIXED)', 'ixs_e_addremove_256', '3.6', ['--tplant', 'n1Mixed'],
     [...pr([14, 15], 'M_light:A', '-'), ...pr([8], 'M_light:C', '-')], { dominance: { frames: [8, 14, 15], names: ['A', 'C'] } }),
@@ -176,7 +176,6 @@ export const M5_PLANTS: PlantSpec[] = [
     ['--u8-plant', 'u8NoPk'], pr([24], 'global', 'detect')),
   P('U8-6', 'U8-6 one-sided ignored (RSF_PLANT_U8_ONESIDED)', 'u8_c0e_rect_b1', '3.4', ['--u8-plant', 'u8OneSided'], pr([24], 'global', 'detect')),   // B-12: sign reported
   P('U8-9', 'U8-9 FAILED dropped from k (RSF_PLANT_U8_FAILED_K)', 'u8_c0e_rect_b1', '3.4', ['--u8-plant', 'u8FailedK'], pr([24], 'global', '+')),   // Δ > 0 (Changelog D-5)
-  P('U8-2t', 'U8-2t stale aux across frames (TP_U8_STALE_AUX)', 'ixs_i_envradio_256', '3.6', ['--tplant', 'u8StaleAux'], pr([16, 17], 'global', 'detect')),   // B-12: needs env MIS
   P('U8-5t', 'U8-5t spot profile of t-1 (TP_U8_SPOT_PREV_AXIS)', 'ixs_c_spot_b03_256', '3.6', ['--tplant', 'u8SpotPrevAxis'], pr([20], 'global', 'detect')),
 ];
 /** U8 plants deferred to M6 (Q6; B-9: U8-4 J = t_x²/t_y² needs x_{d−1} of case (a) in the shift source). Listed in the
@@ -186,6 +185,11 @@ export const M5_DEFERRED_PLANTS = [
   { id: 'U8-7', name: 'U8-7 (Mode B)', why: 'Q6: Mode B temporal is M6' },
   { id: 'U8-8', name: 'U8-8 (RIS-NEE tiles)', why: 'Q6: light tiles are M6' },
   { id: 'U8-10', name: 'U8-10 (RIS-NEE tiles)', why: 'Q6: light tiles are M6' },
+];
+/** Plants whose bias is structurally below δ: not Gate-3 controls; their activity is a required Gate-0 test (E-22). */
+export const M5_GATE0_PLANTS = [
+  { id: 'U8-2t', name: 'U8-2t stale aux across frames (TP_U8_STALE_AUX)', test: 'U8 plant activity',
+    status: 'active, bias below δ (measured +0.006 % on emissive + env, below gate resolution) — verified by the Gate-0 activity test' },
 ];
 export const AA_PKG = 'm5s_cornell_i';
 export const U8_SCENES = ['u8_c0c_point_b0', 'u8_c0c_point_b1', 'u8_c0d_spot_b0', 'u8_c0d_spot_b1', 'u8_c0e_rect_b0', 'u8_c0e_rect_b1'];
@@ -848,6 +852,12 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
           'validation/gpu-tests/restir-temporal.gpu.test.ts', '-t', c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')], (l) => /Tests |FAIL|✗|×|AssertionError|LOGIC|FP-BOUNDARY|PLATFORM|bin/.test(l), T32_RARE_ENV);
       });
     }
+    for (const g of M5_GATE0_PLANTS) {   // E-22: reservoirs change with the plant on emissive + env, bitwise identical with analytic lights only
+      withGpuLockSync(`gate-m5-${safe(g.id)}`, () => {
+        runStep(`${g.id} activity (Gate 0): ${g.test}`, 'npx', ['vitest', 'run', ...vitestConfigArgs(), '--project', 'chrome', '--reporter=verbose',
+          'validation/gpu-tests/restir-temporal.gpu.test.ts', '-t', g.test.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')], (l) => /Tests |FAIL|✗|×|U8-/.test(l));
+      });
+    }
     uTr1(dir, add);
     if (existsSync(path.join(ROOT, 'validation/harness/m5-app-smoke.ts'))) {
       runStep('M5 app smoke (interactive temporal, animated camera/lights/env, HUD, map swap reset, pause)', 'npx', ['tsx', 'validation/harness/m5-app-smoke.ts', '--run', `${runId}-app-smoke`], (l) => /^(PASS|FAIL)\s/.test(l));
@@ -935,6 +945,7 @@ export function milestoneM5(record: Rec, o: M5Options = {}): void {
       if (!o.plants || o.plants.has('aa')) results.push(...aaAndSynthetic(units, ptPlans, dir, runId, nU, add));
     }
   }
+  results.push(...M5_GATE0_PLANTS.map((p) => ({ unit: `plant-${p.id}`, kind: 'plant-gate0', status: p.status, ok: true, note: `${p.name}: not a Gate-3 control (E-22)` })));
   results.push(...M5_DEFERRED_PLANTS.map((p) => ({ unit: `plant-${p.id}`, kind: 'plant-deferred', status: 'deferred to M6', ok: true, note: `${p.name}: ${p.why}` })));
   results.push(...M5_REPORT_ONLY.map((pkg) => ({ unit: `${pkg}@3.3-3.5`, kind: 'report-only', status: 'not run', ok: true, note: 'reported, not gating (Q2); gated again by M8 validate --all' })));
 
