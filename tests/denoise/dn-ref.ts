@@ -298,7 +298,7 @@ export function refAtrous(s: DenoiserSettings, st: RefState, src: Float64Array, 
     if (step > 0) {
       const zg = zgrad(st, x, y);
       const lc = L(i);
-      const ac = [st.alb[4 * i], st.alb[4 * i + 1], st.alb[4 * i + 2]];
+      const ac = [st16(st.alb[4 * i]), st16(st.alb[4 * i + 1]), st16(st.alb[4 * i + 2])];   // DN-14: ā via dnTap (rgba16float)
       const invA = s.sigmaA > 0 ? 1 / s.sigmaA : 0;
       let v3 = 0, w3 = 0;
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
@@ -317,7 +317,7 @@ export function refAtrous(s: DenoiserSettings, st: RefState, src: Float64Array, 
         const j = qy * W + qx, zq = st.dist[j];
         if (!(zq > 0)) continue;
         const cq = [src[4 * j], src[4 * j + 1], src[4 * j + 2]];
-        const da = [0, 1, 2].reduce((acc, k) => acc + Math.abs(st.alb[4 * j + k] - ac[k]), 0);
+        const da = [0, 1, 2].reduce((acc, k) => acc + Math.abs(st16(st.alb[4 * j + k]) - ac[k]), 0);
         const wl = Math.exp(-Math.abs(lc - L(j)) / phiL - da * (invA / 3));   // DN-5
         const w = h * wGeo(s, zc, zg, st.n[i], zq, st.n[j], [dx * step, dy * step]) * wl;
         sc = sc.map((v, k) => v + w * cq[k]); sv += w * w * src[4 * j + 3]; sw += w;

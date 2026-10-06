@@ -51,9 +51,10 @@ every mode:
                                                                res[final] plane 0 (ReSTIR)
                                                                → dnAtrous[0] (colour, temporal variance), dnHist[cur] (integrated
                                                                  colour, overwritten by à-trous 0's output), dnMom[cur], dnGeo[cur]
-  dn_variance        8×8 wg                                    dnAtrous[0], dnMom[cur], dnGeo[cur] → dnAtrous[1] (n < 4: 7×7
-                                                               bilateral spatial variance; else copy), dnLumG (3×3 prefiltered
-                                                               luminance guide of à-trous 0, DN-13)
+  dn_variance        8×8 wg                                    dnAtrous[0], dnMom[cur], dnGeo[cur], dnAlb[cur], dnL1[cur], dnTaa[prev]
+                                                               → dnAtrous[1] (n < 4: 7×7 bilateral spatial variance; else copy),
+                                                               dnLumG (3×3 prefiltered luminance guide of à-trous 0, DN-13),
+                                                               dnTap (ā, DN-9 guide luminance: the per-tap data, DN-14)
   dn_atrous i        8×8 wg, i = 0 … N−1, step 2^i             dnAtrous[src], dnGeo[cur] → dnAtrous[dst]
                        i = 0 also writes dnHist[cur] (SVGF feedback of the first iteration)
                        i = N−1 remodulates: ā·filtered + L̄1 → dnOut (pass-through for background; Changelog DN-1/2/6)
@@ -82,13 +83,14 @@ with the same parity: identical inputs ⇒ identical outputs (DN9). The PT colou
 | `dnL1[2]` | rgba32float | 2 × 16 | 16.6 MB | accumulated L1 (Changelog DN-2) | a 1/n mean of emitter / env radiance seen directly: f32 as `dnAlb` (DN-7). |
 | `dnOut` | rgba16float | 8 | 4.1 MB | remodulated output of the last à-trous (DN-6) | display radiance, as `dnHist`. |
 | `dnTaa[2]` | rgba32float | 2 × 16 | 16.6 MB | resolved output history (rgb, n_t ≤ 1024) (DN-6) | a 1/n_t mean: f32 as `dnAlb` (DN-7). |
+| `dnTap` | rgba16float | 8 | 4.1 MB | per-tap data of the à-trous (DN-14): rgb = ā, a = DN-9 guide luminance or −1 | read by every tap of every iteration, so it is kept to 8 B: ā ∈ [0.02, 1.04] in fp16 is 2⁻¹² relative (≤ 2.5·10⁻⁴ absolute, 0.5 % of σ_a = 0.05); the guide luminance only enters a difference against σ_l·σ ≫ its fp16 step. The remodulation still reads the f32 `dnAlb`. |
 | `dnLumG` | r32float | 4 | 2.1 MB | prefiltered luminance guide of à-trous 0 (DN-13) | written and read within the frame; f32 because it feeds a difference against σ_l·σ. |
 | `dnGradTile` | rgba32float | 16 per tile | 130 KB | (ΣΔ_f, ΣM_f, ΣΔ_i, ΣM_i) over an 8×8 tile (DN-2) | Sums of up to 64 radiance-like values: f32 (tiny texture). |
 | `dnGradTile2` | rgba32float | 16 per tile | 130 KB | (Σcur, Σold, Σcur², N) colour family over an 8×8 tile (DN-11) | as `dnGradTile`. |
 | `dnLambda` | r32float | 4 per tile | 33 KB | λ of the 3×3-tile window | tiny. |
 | params | uniform 96 B | – | – | settings, flags, tile sizes, arena offsets | – |
 
-Total ≈ 90 MB at 540p (≈ 82 MB without the PT input copy; DN-7 made three 1/n accumulators rgba32float). The M1 G-buffer (80 B/px f32, `renderer.ts`) is read once
+Total ≈ 94 MB at 540p (≈ 86 MB without the PT input copy; DN-7 made three 1/n accumulators rgba32float). The M1 G-buffer (80 B/px f32, `renderer.ts`) is read once
 per pixel by `dn_temporal` (albedo, ns, pos, flags); data-formats.md P4 ("G-buffer 80 → 40 B in M5.5") is **not**
 done here **(own)**: the G-buffer layout is shared with the M1–M3 debug views and the primary pass, and the denoiser
 reads it once per pixel, so its cost to the denoiser is one 80-byte read; the à-trous iterations read only the compact
@@ -383,3 +385,11 @@ Writes `validation/out/m55-gate-<time>/summary.json` and `summary.md`. Never wri
   geometry. Later iterations filter already smoothed values and keep their own. Bias (frame mean of 16 / 32 / 48 / 63):
   (i) −0.05 → −0.02 %, (vii) −0.42 → −0.40 %, (v) −0.55 → −0.48 %, ix-d −0.24 → −0.10 %; FLIP and recovery frames unchanged
   (C added r at k = 8: 0.952 → 0.957). Cost: one 3×3 pass inside `dn_variance`.
+- **DN-14 (à-trous bandwidth; the full gate after DN-13 failed timing).** 960×540, N = 5: (i) 3.59 ms, (vii) 8.81 ms
+  (10-01: 1.72 / 2.74 ms). Each à-trous tap had come to read 68 B: colour 8, guide 8, ā 16 (rgba32float since DN-7),
+  and with the DN-9 guide active (the static timing scene) the previous output 16 and L̄1 16 to compute
+  lum((T̄ − L̄1)/ā) per tap and iteration, plus the DN-13 guide. `dn_variance` now writes the per-pixel tap data once
+  (`dnTap`, rgba16float: ā and the guide luminance, −1 where the guide does not apply), and the DN-13 texture is read
+  only in iteration 0: 24 B per tap again (28 B in iteration 0). Result: (i) 1.84 ms, (vii) 2.86 ms (à-trous
+  0.48 / 0.39 / 0.36 / 0.36 / 0.38 ms on (vii)); FLIP, bias and recovery identical to DN-13 to the printed digits. The
+  CPU reference rounds ā to fp16 in the albedo stop.

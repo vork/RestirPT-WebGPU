@@ -4,6 +4,7 @@
 // colour history (SVGF); the last iteration remodulates (a′·filtered + L1) into the colour target (background: the
 // input passes through).
 //   dn_variance  G1: 0 dnAtrous[0] · 1 dnMom[cur] · 2 dnGeo[cur] · 3 dnAtrous[1] (w) · 4 dnLumG (r32float, w: DN-13 guide)
+//                · 5 dnAlb[cur] · 6 dnL1[cur] · 7 dnTaa[prev] · 8 dnTap (rgba16float, w: per-tap data of the à-trous, DN-14)
 //   dn_atrous    G1: 0 dnAtrous[src] · 1 dnGeo[cur] · 2 DnIter · 3 dnAtrous[dst] (w) · 4 dnHist[cur] (w) · 5 dnOut (w)
 //                · 6 input · 7 dnL1[cur] (accumulated L1, DN-2) · 8 dnAlb[cur] (the accumulated demodulation factor ā, Changelog DN-1)
 #include "denoise/dn-common.wgsl"
@@ -39,6 +40,23 @@ fn dn_w_geo(zc: f32, zg: vec2f, nc: vec3f, zq: f32, nq: vec3f, d: vec2f) -> f32 
 @group(1) @binding(2) var geoCur: texture_2d<u32>;
 @group(1) @binding(3) var atrousOut: texture_storage_2d<rgba16float, write>;
 @group(1) @binding(4) var lumGOut: texture_storage_2d<r32float, write>;
+@group(1) @binding(5) var albCur: texture_2d<f32>;
+@group(1) @binding(6) var l1Cur: texture_2d<f32>;
+@group(1) @binding(7) var taaPrev: texture_2d<f32>;
+@group(1) @binding(8) var tapOut: texture_storage_2d<rgba16float, write>;
+
+/// DN-14: what every à-trous tap reads besides colour and geometry, written once per frame: rgb = ā (the albedo stop),
+/// a = the DN-9 luminance guide lum((T̄ − L̄1)/ā) of the converged previous output, or −1 where it does not apply
+/// (guide off, camera moved, n_t < 8).
+fn dn_tap(p: vec2i) -> vec4f {
+  let a = textureLoad(albCur, p, 0).rgb;
+  var g = -1.0;
+  let t = textureLoad(taaPrev, p, 0);
+  if (dn_flag(DNF_GUIDE) && (frame.flags & FRAME_CAMERA_MOVED) == 0u && t.a >= 8.0) {
+    g = dn_fp16(luminance(max(t.rgb - textureLoad(l1Cur, p, 0).rgb, vec3f(0.0)) / max(a, vec3f(1e-3))));
+  }
+  return vec4f(dn_fp16v(a), g);
+}
 
 /// DN-13: the luminance guide of the à-trous stop: a binomial prefilter (radius dn.lumPre) of the integrated colour's
 /// luminance over geometrically compatible neighbours (weights independent of the noisy values).
@@ -71,7 +89,8 @@ fn dn_variance(@builtin(global_invocation_id) gid: vec3u) {
   let c = textureLoad(atrousIn, p, 0);
   let gc = textureLoad(geoCur, p, 0).xy;
   let zc = dn_guide_dist(gc);
-  if (!(zc > 0.0)) { textureStore(atrousOut, p, c); textureStore(lumGOut, p, vec4f(0.0)); return; }
+  if (!(zc > 0.0)) { textureStore(atrousOut, p, c); textureStore(lumGOut, p, vec4f(0.0)); textureStore(tapOut, p, vec4f(0.0, 0.0, 0.0, -1.0)); return; }
+  textureStore(tapOut, p, dn_tap(p));
   let n = textureLoad(momCur, p, 0).z;
   textureStore(lumGOut, p, vec4f(dn_lum_guide(p, zc, dn_zgrad(geoCur, p, zc), dn_guide_normal(gc)), 0.0, 0.0, 0.0));
   var v = c.a;
@@ -114,16 +133,10 @@ const DNI_COPY: u32 = 4u;       // no filtering (0 iterations)
 @group(1) @binding(6) var inputTex: texture_2d<f32>;
 @group(1) @binding(7) var l1Tex: texture_2d<f32>;
 @group(1) @binding(8) var albTex: texture_2d<f32>;
-@group(1) @binding(9) var taaPrev: texture_2d<f32>;   // DN-9 guide: the previous resolved output
+@group(1) @binding(9) var tapTex: texture_2d<f32>;    // DN-14: (ā, DN-9 guide or −1) per pixel, from dn_variance
 @group(1) @binding(10) var momCur: texture_2d<f32>;   // DN-12: the colour-history length n
 @group(1) @binding(11) var lumG: texture_2d<f32>;     // DN-13: the prefiltered luminance guide
 
-
-/// Demodulated luminance of the previous resolved output at q (DN-9 guide): lum((T̄ − L̄1)/ā).
-fn dn_guide_lum(q: vec2i, a: vec3f) -> f32 {
-  let t = textureLoad(taaPrev, q, 0).rgb - textureLoad(l1Tex, q, 0).rgb;
-  return luminance(max(t, vec3f(0.0)) / max(a, vec3f(1e-3)));
-}
 
 /// 3×3 Gaussian of the variance around p (SVGF prefilter of the luminance edge stop).
 fn dn_var3(p: vec2i) -> f32 {
@@ -159,13 +172,15 @@ fn dn_atrous(@builtin(global_invocation_id) gid: vec3u) {
   if ((it.flags & DNI_COPY) == 0u) {
     let nc = dn_guide_normal(gc);
     let zg = dn_zgrad(geoCur, p, zc);
-    let ac = textureLoad(albTex, p, 0).rgb;
+    let tc = textureLoad(tapTex, p, 0);
+    let ac = tc.rgb;
     // DN-9: with a converged output (static camera and lighting, n_t ≥ 8 at both pixels) the luminance stop compares
     // the demodulated previous output instead of this frame's noisy values: weights that depend on the noise being
     // filtered pull the mean toward the mode of right-skewed Monte-Carlo noise (the residual darkening of DN-7).
-    let useGuide = dn_flag(DNF_GUIDE) && (frame.flags & FRAME_CAMERA_MOVED) == 0u && textureLoad(taaPrev, p, 0).a >= 8.0;
+    let useGuide = tc.a >= 0.0;
     let pre = dn.lumPre > 0u && it.iter == 0u;   // DN-13: later levels filter already-smoothed values
-    let lc = select(select(luminance(c.rgb), textureLoad(lumG, p, 0).x, pre), dn_guide_lum(p, ac), useGuide);
+    var lc = luminance(c.rgb);
+    if (useGuide) { lc = tc.a; } else if (pre) { lc = textureLoad(lumG, p, 0).x; }
     let invA = select(0.0, 1.0 / dn.sigmaA, dn.sigmaA > 0.0);
     // DN-12: no luminance stop on young histories (resets, disocclusions): with few, right-skewed samples, weights that
     // depend on the noisy values pull the mean toward the mode (−25 % on a reset after an added spot light)
@@ -187,9 +202,10 @@ fn dn_atrous(@builtin(global_invocation_id) gid: vec3u) {
         let zq = dn_guide_dist(gq);
         if (!(zq > 0.0)) { continue; }
         let cq = textureLoad(atrousIn, q, 0);
-        let da = textureLoad(albTex, q, 0).rgb - ac;
-        var lq = select(luminance(cq.rgb), textureLoad(lumG, q, 0).x, pre);
-        if (useGuide && textureLoad(taaPrev, q, 0).a >= 8.0) { lq = dn_guide_lum(q, ac + da); }
+        let tq = textureLoad(tapTex, q, 0);
+        let da = tq.rgb - ac;
+        var lq: f32;
+        if (useGuide && tq.a >= 0.0) { lq = tq.a; } else if (pre) { lq = textureLoad(lumG, q, 0).x; } else { lq = luminance(cq.rgb); }
         let wl = exp(-abs(lc - lq) / phiL - (abs(da.x) + abs(da.y) + abs(da.z)) * (invA / 3.0));   // DN-5 albedo stop
         let w = h * dn_w_geo(zc, zg, nc, zq, dn_guide_normal(gq), vec2f(d)) * wl;
         sc += w * cq.rgb;
