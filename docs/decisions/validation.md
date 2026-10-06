@@ -380,3 +380,19 @@ at 4× the core-part sizing of its unit: the core run measured 90 ms per chain, 
 55 ms per chain, gated the same unit at 32² tiles with R 27 760. The tile decision depends on measured timing. The A/A
 was kept as run: it passed (Δ_Y +0.003 %) and the synthetic W × 1.003 plant was detected 10/10 at the same power, which
 is what the A/A calibrates; mirroring the static sizing (111 k chains per seed, ≈ 3.4 h) was not spent.
+
+**Result (provisional, 2026-10-06; runs m5-gate-20261001-081949 core, -162035 static + re-runs, -203321 128²
+re-evaluation, -20261002-051049 / -074225 plants, the ixs_i re-runs after E-20).**
+- Gate 0 green: every M5 / M4 / M3 Chrome suite, cpu (435), python, make-m5 determinism, U-TR-1, M5 app smoke; T3-2 rare
+  bins (translate, add/remove + intensity, moving lights + env) 5.6–7.1·10⁸ trials each, LOGIC = FP = PLATFORM = 0.
+- Static: 77/77 (3.3/3.4 × 8 scenes × t ∈ {1, 24}, 3.5 × 3, U8 chains 24, U8 M4 rungs 18): |Δ_Y| ≤ 0.023 %, worst
+  tile ≤ 0.31 %.
+- Rung 3.6: 18/18 units (every test frame + drift / failing-tile statistics): |Δ_Y| ≤ 0.063 %, worst tile ≤ 0.39 %,
+  |drift z| ≤ 2.2; all counters 0.
+- Plants: 17 of 20 pass (U8-4 deferred to M6). Revised after measurement and confirmed on fresh seeds (E-18): N3, N4,
+  N5-d0, N5-d, U8-1, U8-6, U8-9, no-jp-env. Open: env-no-rot-vis and E_{t−1}-with-γ_t (predictions with T-C), U8-2t
+  (active — T-B's GPU test moves an emissive + env mean by +0.006 % — but below the gate's resolution on ixs_i:
+  +0.02 %, z 1.0, MDB 0.06–0.09 %).
+- A/A passes (Δ_Y +0.003 %); synthetic W × 1.003 detected 10/10, A/A re-splits ok.
+- Harness fixes found by the gate: 128² aggregates from npz (E-15), chunked npz uploads (E-17), escaped `-t` patterns
+  (E-17), the N1-mixed refresh (C-11), the ixs_i rect (E-20), PT samples per dispatch (E-21).
