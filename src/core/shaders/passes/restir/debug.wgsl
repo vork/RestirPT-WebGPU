@@ -24,6 +24,7 @@
 #include "restir/tframe.wgsl"
 #include "scene/scene-data.wgsl"
 #include "debug/restir-views.wgsl"
+#include "restir/m6-types.wgsl"
 
 @group(2) @binding(0) var<storage, read> dbgResSrc: array<vec4u>;
 
@@ -56,7 +57,7 @@ fn rsdbg_is_code_view(mode: u32) -> bool {
   return (mode >= 404u && mode <= 409u) || (mode >= RSV_SHIFT_CODE && mode < RSV_SHIFT_LOGJ)
     || (mode >= RSV_SHIFT_TERM && mode <= RSV_ACCEPT_MASK) || mode == RSV_MIS_K || mode == RSV_MIS_SEL
     || mode == RSV_T_QVALID || (mode >= RSV_T_RF_FWD && mode <= RSV_T_INVCODE) || mode == RSV_T_SEL || mode == RSV_T_LCHG
-    || mode == RSV_S_BOOST;
+    || mode == RSV_S_BOOST || mode == 477u;
 }
 
 @compute @workgroup_size(8, 8, 1)
@@ -96,10 +97,51 @@ fn rsdbg_temporal_anchors(p: RsPix) {
   }
 }
 
+// ---- M6 views (restir-m6-api.md §1.1, §1.6; PLAN §6 M6 "Enhanced"): 471–476 pairing offset of slot s (hue = angle,
+// value = length / (3σ) with σ = 16), 477 reciprocity (0 every partner reciprocal, 1 some slot without an on-tile partner,
+// 2 broken: never for an involution map), 478 duplication count of the 17×17 window, 479 the adaptive cap c_Cap.
+const RSV_PAIR_OFFSET: u32 = 471u;  const RSV_PAIR_RECIP: u32 = 477u;  const RSV_DUP_COUNT: u32 = 478u;  const RSV_DUP_CAP: u32 = 479u;
+
+fn rsdbg_hsv(h: f32, v: f32) -> vec3f {
+  let k = vec3f(5.0, 3.0, 1.0);
+  let p = abs(fract(vec3f(h) + k / 6.0) * 6.0 - 3.0);
+  return v * clamp(p - 1.0, vec3f(0.0), vec3f(1.0));
+}
+
+fn rsdbg_m6_views(p: RsPix) {
+  let rounds = rsDispatch.round;
+  let round = select(0u, rounds - 1u, rounds > 0u);
+  let t = rs_t();
+  let mode = dbg.mode;
+  if (mode >= RSV_PAIR_OFFSET && mode < RSV_PAIR_RECIP) {
+    let pr = pair_partner(p.local, p.member, t, round, mode - RSV_PAIR_OFFSET);
+    var c = vec3f(0.0);
+    if (pr.valid) {
+      let d = vec2f(pr.partner) - vec2f(p.local);
+      c = rsdbg_hsv(atan2(d.y, d.x) / (2.0 * PI) + 0.5, min(length(d) / 48.0, 1.0));
+    }
+    debug_write3(p.px, mode, c);
+  } else if (mode == RSV_PAIR_RECIP) {
+    var code = 0u;
+    for (var s = 0u; s < min(rsParams.numSlots, RS_MAX_SLOTS); s++) {
+      let pr = pair_partner(p.local, p.member, t, round, s);
+      if (!pr.valid) { code = max(code, 1u); continue; }
+      let back = pair_partner(pr.partner, p.member, t, round, s);
+      if (!back.valid || any(back.partner != p.local)) { code = 2u; }
+    }
+    debug_write_code(p.px, RSV_PAIR_RECIP, code);
+  } else if (rs_m6_flag(RSF_DUPMAP)) {
+    let n = f32(arena_word(rs_dup_base() + p.ai));
+    if (mode == RSV_DUP_COUNT) { debug_write1(p.px, RSV_DUP_COUNT, n); }
+    else { debug_write1(p.px, RSV_DUP_CAP, rsParams.cCap - (rsParams.cCap - 1.0) * pow(min(n / DUP_DENOM, 1.0), 0.1)); }
+  }
+}
+
 @compute @workgroup_size(8, 8, 1)
 fn rs_debug_views(@builtin(global_invocation_id) gid: vec3u) {
   let p = rs_pix(vec2u(gid.x, gid.y + rsDispatch.rowBase));
   if (!p.valid) { return; }
+  if (dbg.mode >= RSV_PAIR_OFFSET && dbg.mode <= RSV_DUP_CAP) { rsdbg_m6_views(p); return; }
   let probe = debug_is_probe(p.px);
   let boostView = dbg.mode == RSV_S_BOOST;
   let view = dbg.mode >= RSV_SHIFT_CODE && dbg.mode <= RSV_THR;
