@@ -62,7 +62,7 @@ every mode:
                                                                (temporal resolve of the output, Changelog DN-6)
 ```
 
-N = 0 is allowed (temporal accumulation only: `dn_variance` then writes the colour target). Default N = 5 (SVGF);
+N = 0 is allowed (temporal accumulation only: `dn_variance` then writes the colour target). Default N = 4 (Changelog DN-15; SVGF uses 5);
 the panel offers 0–6.
 
 A **held frame** (paused, TD20; `RestirFramePass.encodeHold` re-displays the last ReSTIR estimate) runs the same passes
@@ -83,14 +83,14 @@ with the same parity: identical inputs ⇒ identical outputs (DN9). The PT colou
 | `dnL1[2]` | rgba32float | 2 × 16 | 16.6 MB | accumulated L1 (Changelog DN-2) | a 1/n mean of emitter / env radiance seen directly: f32 as `dnAlb` (DN-7). |
 | `dnOut` | rgba16float | 8 | 4.1 MB | remodulated output of the last à-trous (DN-6) | display radiance, as `dnHist`. |
 | `dnTaa[2]` | rgba32float | 2 × 16 | 16.6 MB | resolved output history (rgb, n_t ≤ 1024) (DN-6) | a 1/n_t mean: f32 as `dnAlb` (DN-7). |
-| `dnTap` | rgba16float | 8 | 4.1 MB | per-tap data of the à-trous (DN-14): rgb = ā, a = DN-9 guide luminance or −1 | read by every tap of every iteration, so it is kept to 8 B: ā ∈ [0.02, 1.04] in fp16 is 2⁻¹² relative (≤ 2.5·10⁻⁴ absolute, 0.5 % of σ_a = 0.05); the guide luminance only enters a difference against σ_l·σ ≫ its fp16 step. The remodulation still reads the f32 `dnAlb`. |
+| `dnTap` | rgba32uint | 16 | 8.3 MB | everything an à-trous tap reads besides its colour (DN-14, DN-15): x, y = the `dnGeo` texel (f32 distance, oct 2×16 normal); z, w = binary16 (ā.r, ā.g), (ā.b, DN-9 guide luminance or −1) | read by every tap of every iteration: one fetch. ā ∈ [0.02, 1.04] in binary16 is 2⁻¹² relative (≤ 2.5·10⁻⁴ absolute, 0.5 % of σ_a = 0.05); the guide luminance only enters a difference against σ_l·σ ≫ its binary16 step. The remodulation still reads the f32 `dnAlb`. |
 | `dnLumG` | r32float | 4 | 2.1 MB | prefiltered luminance guide of à-trous 0 (DN-13) | written and read within the frame; f32 because it feeds a difference against σ_l·σ. |
 | `dnGradTile` | rgba32float | 16 per tile | 130 KB | (ΣΔ_f, ΣM_f, ΣΔ_i, ΣM_i) over an 8×8 tile (DN-2) | Sums of up to 64 radiance-like values: f32 (tiny texture). |
 | `dnGradTile2` | rgba32float | 16 per tile | 130 KB | (Σcur, Σold, Σcur², N) colour family over an 8×8 tile (DN-11) | as `dnGradTile`. |
 | `dnLambda` | r32float | 4 per tile | 33 KB | λ of the 3×3-tile window | tiny. |
 | params | uniform 96 B | – | – | settings, flags, tile sizes, arena offsets | – |
 
-Total ≈ 94 MB at 540p (≈ 86 MB without the PT input copy; DN-7 made three 1/n accumulators rgba32float). The M1 G-buffer (80 B/px f32, `renderer.ts`) is read once
+Total ≈ 98 MB at 540p (≈ 90 MB without the PT input copy; DN-7 made three 1/n accumulators rgba32float). The M1 G-buffer (80 B/px f32, `renderer.ts`) is read once
 per pixel by `dn_temporal` (albedo, ns, pos, flags); data-formats.md P4 ("G-buffer 80 → 40 B in M5.5") is **not**
 done here **(own)**: the G-buffer layout is shared with the M1–M3 debug views and the primary pass, and the denoiser
 reads it once per pixel, so its cost to the denoiser is one 80-byte read; the à-trous iterations read only the compact
@@ -256,7 +256,7 @@ the denoiser off.
    step + 23 (the denoiser's own converged levels, so its steady-state blur bias does not enter). Frames to recover =
    the smallest k (the step frame is k = 1) with |1 − r| ≤ 0.05 from frame step + k − 1 through step + 15.
    **Pass iff k ≤ 8 for every step.** The raw recovery and the steady-state difference to the PT reference are reported.
-4. **Timing**: 960×540, `cornell_i_512` and `vii_textured_512` re-rendered at 960×540, default settings (N = 5),
+4. **Timing**: 960×540, `cornell_i_512` and `vii_textured_512` re-rendered at 960×540, default settings (N = 4),
    ≥ 64 timing submits after 32 warm-up frames, M5 Pro, Chrome with `--enable-webgpu-developer-features`.
    **Pass iff the mean total ≤ 3 ms** on both.
 5. T16 on every PT reference used (`t16.denoiser === 'none'`).
@@ -393,3 +393,21 @@ Writes `validation/out/m55-gate-<time>/summary.json` and `summary.md`. Never wri
   only in iteration 0: 24 B per tap again (28 B in iteration 0). Result: (i) 1.84 ms, (vii) 2.86 ms (à-trous
   0.48 / 0.39 / 0.36 / 0.36 / 0.38 ms on (vii)); FLIP, bias and recovery identical to DN-13 to the printed digits. The
   CPU reference rounds ā to fp16 in the albedo stop.
+- **DN-15 (the full gate after DN-14: (vii) 3.16 ms; default N = 4).** (vii) fills the 960×540 frame; (i) leaves the
+  sides of the 16:9 frame as background, which the passes skip, hence its lower cost. Since 10-01 each à-trous
+  iteration on (vii) has cost about the same (0.36–0.52 ms; 5 iterations ≈ 2.1 ms). What grew is `dn_variance`
+  (0.04 → 0.18 ms: the DN-13 prefilter, 0.08 ms of it, and the tap texture), `dn_gradient` (+0.05 ms, DN-11) and
+  `dn_temporal`. Tried on the à-trous, none measurable beyond run-to-run noise (±0.05 ms):
+  - geometry and tap data merged into one rgba32uint fetch (`dnTap`, kept: one fetch per tap);
+  - a skip of the colour fetch for taps with a geometric weight < 10⁻⁶ (kept: exact to 10⁻⁵ of the sum; the CPU
+    reference mirrors it);
+  - all edge stops in one exp2 (log2 of the depth and normal weights, kept);
+  - the B3 weights without a dynamically indexed array.
+  The cost is per-tap bandwidth (≈ 24 B per tap from the texture caches), not ALU. The **default iteration count is now
+  4**, measured against 5 (4 seeds; the gate's settings):
+  - FLIP ratio: (i) 3.11 → 3.27, (vii) 2.25 → 2.31, (v) 2.93 → 2.97, ix-d 2.05 → 2.08 (3 iterations: 3.34, 2.36,
+    2.91, 2.08);
+  - recovery: C added 8 → 7 frames, A × 2 4 → 4, B removed 4 → 3 (the step-frame dip of DN-12 is 0.94 instead of
+    0.88).
+  With DN-4's history-aware variance, the fifth level (step 16, a 61-pixel footprint) mostly blurs a converged
+  signal. It also costs 0.36 ms on (vii). The panel still offers 0–6.

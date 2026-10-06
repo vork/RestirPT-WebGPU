@@ -316,10 +316,12 @@ export function refAtrous(s: DenoiserSettings, st: RefState, src: Float64Array, 
         if (qx < 0 || qy < 0 || qx >= W || qy >= H) continue;
         const j = qy * W + qx, zq = st.dist[j];
         if (!(zq > 0)) continue;
+        const wg = wGeo(s, zc, zg, st.n[i], zq, st.n[j], [dx * step, dy * step]);
+        if (wg < 1e-6) continue;   // DN-15
         const cq = [src[4 * j], src[4 * j + 1], src[4 * j + 2]];
         const da = [0, 1, 2].reduce((acc, k) => acc + Math.abs(st16(st.alb[4 * j + k]) - ac[k]), 0);
         const wl = Math.exp(-Math.abs(lc - L(j)) / phiL - da * (invA / 3));   // DN-5
-        const w = h * wGeo(s, zc, zg, st.n[i], zq, st.n[j], [dx * step, dy * step]) * wl;
+        const w = h * wg * wl;
         sc = sc.map((v, k) => v + w * cq[k]); sv += w * w * src[4 * j + 3]; sw += w;
       }
       res = [sc[0] / sw, sc[1] / sw, sc[2] / sw, sv / (sw * sw)];

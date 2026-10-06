@@ -123,11 +123,11 @@ export class Denoiser {
           { texture: tex() }, { storageTexture: st('rgba32float') }, { texture: tex() }, { storageTexture: st('rgba32float') }]),
       }),
       variance: device.createBindGroupLayout({ label: 'dn-variance', entries: entries([{ texture: tex() }, { texture: tex() }, { texture: tex('uint') }, { storageTexture: st('rgba16float') }, { storageTexture: st('r32float') },
-        { texture: tex() }, { texture: tex() }, { texture: tex() }, { storageTexture: st('rgba16float') }]) }),
+        { texture: tex() }, { texture: tex() }, { texture: tex() }, { storageTexture: st('rgba32uint') }]) }),
       atrous: device.createBindGroupLayout({
         label: `dn-atrous-${colorFormat}`,
         entries: entries([{ texture: tex() }, { texture: tex('uint') }, { buffer: { type: 'uniform', minBindingSize: DN_ITER_SIZE } }, { storageTexture: st('rgba16float') },
-          { storageTexture: st('rgba16float') }, { storageTexture: st('rgba16float') }, { texture: tex() }, { texture: tex() }, { texture: tex() }, { texture: tex() }, { texture: tex() }, { texture: tex() }]),
+          { storageTexture: st('rgba16float') }, { storageTexture: st('rgba16float') }, { texture: tex() }, { texture: tex() }, { texture: tex() }, { texture: tex() }, { texture: tex() }]),
       }),
       resolve: device.createBindGroupLayout({
         label: `dn-resolve-${colorFormat}`,
@@ -187,7 +187,7 @@ export class Denoiser {
     const pair = (label: string, format: GPUTextureFormat): [GPUTexture, GPUTexture] => [mk(`${label}0`, format), mk(`${label}1`, format)];
     const [tx, ty] = dnTiles(w, h);
     this.t = {
-      w, h, hist: pair('dn-hist', 'rgba16float'), mom: pair('dn-mom', 'rgba16float'), alb: pair('dn-alb', 'rgba32float'), l1: pair('dn-l1', 'rgba32float'), taa: pair('dn-taa', 'rgba32float'), out: mk('dn-out', 'rgba16float'), lumG: mk('dn-lumg', 'r32float'), tap: mk('dn-tap', 'rgba16float'), geo: pair('dn-geo', 'rg32uint'), atrous: pair('dn-atrous', 'rgba16float'),
+      w, h, hist: pair('dn-hist', 'rgba16float'), mom: pair('dn-mom', 'rgba16float'), alb: pair('dn-alb', 'rgba32float'), l1: pair('dn-l1', 'rgba32float'), taa: pair('dn-taa', 'rgba32float'), out: mk('dn-out', 'rgba16float'), lumG: mk('dn-lumg', 'r32float'), tap: mk('dn-tap', 'rgba32uint'), geo: pair('dn-geo', 'rg32uint'), atrous: pair('dn-atrous', 'rgba16float'),
       gradTile: mk('dn-grad-tile', 'rgba32float', [tx, ty]), gradTile2: mk('dn-grad-tile2', 'rgba32float', [tx, ty]), lambda: mk('dn-lambda', 'r32float', [tx, ty]),
     };
     this.groups.clear();
@@ -284,7 +284,7 @@ export class Denoiser {
       const src = (i + 1) % 2, dst = i % 2;   // dn_variance wrote atrous[1]: iteration 0 reads 1 and writes 0, …
       plan.push({ name: `dn_atrous${iter}`, pipeline: this.pipelines.get('dn_atrous')!, wg,
         g1: this.group(`atrous:${i}:${cur}:${oid(f.colour)}:${oid(radiance)}:${oid(l1)}`, this.layouts.atrous, [
-          v(t.atrous[src]), v(t.geo[cur]), { buffer: this.iterBufs[i] }, v(t.atrous[dst]), v(t.hist[cur]), v(t.out), v(radiance), v(t.l1[cur]), v(t.alb[cur]), v(t.tap), v(t.mom[cur]), v(t.lumG),
+          v(t.atrous[src]), v(t.tap), { buffer: this.iterBufs[i] }, v(t.atrous[dst]), v(t.hist[cur]), v(t.out), v(radiance), v(t.l1[cur]), v(t.alb[cur]), v(t.mom[cur]), v(t.lumG),
         ]) });
     });
     plan.push({ name: 'dn_resolve', pipeline: this.pipelines.get('dn_resolve')!, wg,
