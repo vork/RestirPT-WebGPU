@@ -409,3 +409,40 @@ pairing generator (MD3). §27: duplication-map realisation (MD10).
     flagged with dual MVs off. The diagnostic is `validation/gpu-tests/diag/dmv-f40.gpu.test.ts` (node-dawn, skipped
     unless `VITE_DMV_DIAG`; `VITE_DMV_OLD=1` / `VITE_DMV_CDUAL=c` patch the cap).
   - **Dual MVs off.** The composed WGSL is unchanged (U-WGSL-BITS).
+- **M6-12 (Gate 5 metric: the chain ensemble stores sums; run m6-gate-gate5-20261007-115614).**
+  - **Symptom.** All six Gate 5 verdicts failed with mean tile |bias| ≈ 25 000 %, global ≈ 6 560 000 % and noise floors
+    9–46 %, nearly identical across scenes, c_cap and frames, while compare.py on the same chains gave sane Stage-B
+    numbers (e.g. m5s_cornell_i cCap 5 Δ_Y +0.161 %).
+  - **Root cause.** `dup_bias.py` read `ensemble.npz` (restir-chain-run.ts) as per-chain MEANS, but the file holds
+    per-chain tile and image SUMS (`stats.replicates_from_sums`, README). Every 16² tile was 256× and the image 65 536×
+    the PT; the "noise floor" was the chain SE in sum units (256× too large) over the PT mean. Its unit test wrote means
+    into the npz, so the bug was never exercised.
+  - **Fix.** `dup_bias.py` now reads both sides with compare.py's loaders (`compare.discover` + `load_replicates`), so
+    any layout compare.py accepts works and the global Δ is compare.py's to 1e-15. Several `--ours` / `--ref`
+    directories (disjoint seed sets) are pooled. Bad input exits 2 instead of printing a number.
+  - **Regression test.** `validation/tools/tests/fixtures/gate5_real` is a 32² crop of the real run (32 chains of the
+    cornell cCap 5 ensemble.npz, 4 PT batch PFMs; `make_fixture.py` regenerates it). `test_dup_bias.py` asserts that
+    the global Δ and its SE equal compare.py's report on the fixture, that the tile means equal a hand reduction
+    (sums / 256), and that the synthetic set (now written in the writer's sum format) resolves a planted 5 %. The old
+    tool fails all three tests.
+  - **Harness.** `npm run validate -- --milestone M6 --part gate5 --reuse-run DIR` recomputes the Gate 5 verdicts from
+    an earlier gate5 run's summary.json, chains and PT references without rendering. The dupmap-ON Stage-B / dyn steps
+    are informational: the duplication map is biased by design, so they no longer fail the run. MD15 gates on
+    dup_bias.py and the OFF twins.
+  - **Recomputed Gate 5** (run m6-gate-gate5-20261007-154618, reusing m6-gate-gate5-20261007-115614; first chain set
+    and its PT reference; budget 3.25 %):
+
+    | scene, t | cCap | R | mean b̂_t | p90 b̂_t | global | 99 % bound | noise floor | twin (Stage B) | Gate 5 |
+    |---|---|---|---|---|---|---|---|---|---|
+    | m5s_cornell_i, 24 | 5 | 2608 | 0.36 % | 0.92 % | +0.161 % | 0.170 % | 0.055 % | pass (−0.0006 %) | pass |
+    | m5s_cornell_i, 24 | 20 | 8576 | 0.76 % | 1.95 % | +0.234 % | 0.241 % | 0.042 % | pass (+0.0004 %) | pass |
+    | m5s_glossy_v1, 24 | 5 | 8864 | 0.22 % | 0.72 % | −0.126 % | 0.135 % | 0.049 % | pass (+0.004 %) | pass |
+    | m5s_glossy_v1, 24 | 20 | 9648 | 0.75 % | 2.53 % | −0.124 % | 0.136 % | 0.056 % | pass (+0.009 %) | pass |
+    | ixs_d_camera_256, 64 | 5 | 256 | 0.26 % | 0.87 % | +0.065 % | 0.095 % | 0.20 % | pass (+0.009 %) | pass |
+    | ixs_d_camera_256, 64 | 20 | 496 | 0.89 % | 2.26 % | +0.262 % | 0.296 % | 0.21 % | pass (−0.001 %) | pass |
+
+    The confirmatory re-run chain sets (seeds 106002, PT 107001) agree: mean b̂_t within 0.03 % of the first set. Pooled
+    first + re-run gives 0.37 / 0.76 / 0.22 / 0.75 / 0.29 / 0.88 %. The twins on the same tool read 0.015–0.080 %, which is
+    the debiased statistic's residual at this noise. Over all 8 ixs_d_camera test frames the largest mean b̂_t is 1.06 %
+    (cCap 20, f40), the largest 99 % bound 0.39 % (cCap 20, f32). The noise floor is 0.04–0.21 % against the 1 % limit,
+    so the budget is resolved with ≥ 5× margin and no further chains are needed.
