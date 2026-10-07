@@ -7,8 +7,6 @@
 //   VITE_DMV_DIAG=1 VITE_DMV_OUT=/path/out.json VITE_DMV_SEED=840101 VITE_DMV_BATCHES=16 VITE_DMV_DUAL=1 \
 //   npx tsx validation/harness/with-gpu-lock.ts dmv-diag -- npx vitest run --project node-dawn validation/gpu-tests/diag/dmv-f40.gpu.test.ts
 import { describe, it } from 'vitest';
-import { readFileSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
 import { readBuffer } from '../../../src/core/gpu/readback.ts';
 import { createEnvResources } from '../../../src/core/render/env-gpu.ts';
 import { computeRenderOrigin, JITTER_IID } from '../../../src/core/render/frame-uniforms.ts';
@@ -24,12 +22,14 @@ import { shaderSources } from '../../../src/core/shaders/index.ts';
 
 const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env;
 const ON = !!env.VITE_DMV_DIAG;
-const ROOT = process.cwd();
 
 const TS_QVALID = 1, TS_DISOCC = 2, TS_SEL_P = 16, TS_SEL_C = 32, TS_EMPTY_OUT = 256, TS_BG = 16384, TS_DUAL_PICK = 65536;
 
 describe.skipIf(!ON)('diag: dual-MV variance at ix-d f40', () => {
   it('chains', async () => {
+    const { readFileSync, writeFileSync } = await import('node:fs');   // node-dawn lane only (dynamic: the chrome lane must load the file)
+    const path = (await import('node:path')).default;
+    const ROOT = process.cwd();
     // VITE_DMV_CDUAL=c: the dual-MV confidence cap DMV_C_CAP (tpick.wgsl) set to c; VITE_DMV_OLD=1: no cap (the
     // pre-DMV-1 estimator, c_p = min(cCap, c_prev) on dual picks too)
     const cdual = env.VITE_DMV_OLD ? 1e9 : env.VITE_DMV_CDUAL ? Number(env.VITE_DMV_CDUAL) : undefined;

@@ -29,7 +29,7 @@ plants · §6 risks · §7 open questions · appendix A · Changelog.
 | MD8 | **Mode-B temporal (R16).** The refresh translates `RC_TAG_CROSS` entries (TD7 maps; missing ⇒ undefined), evaluates D-BSDF crossing ends (`β_s ⊙ ω2 L_e` of `cross_end(x_{d−1}, sfxDir, entry)` under fs, a shadow ray only when the light MOVED) and B1-ana ends (`L_e`, `p1`, `SXS_VIS`, ray iff moved); `tsrc_load` renumbers `end.x` (and `rc.x` for k = d) and sets `endOcc` for B1-ana; the T3 write-back renumbers crossing entries and `endpointId`. The suffix cache of a crossing candidate stores `sfxDir = ω_c`, `sfxT` = the continuation's hit distance, flag `SFX_CROSS = 16`. | restir-temporal-api R16 ("Mode B temporal (crossing loop over lightsPrev)"); gap-temporal §5.5; TD7–TD10. |
 | MD9 | **Light mode in the kernel.** `RestirKernelOptions.lightMode` accepts 'A', 'B', 'A′' (D1 lifted); `RestirParams.lightMode` = 0 / 2 / 1; `RS_MODE_B = 1` for B and A′. `RestirKernel.setLightMode(m)` recompiles the variant and resets history (config hash). The app's default light mode becomes **B** (PLAN §1.4 "B (product default once Gate 3.11 passes)") in the commit after rung 3.11 passes. | PLAN §1.4, §5 M6 exit. |
 | MD10 | **Duplication map (biased).** `rs_dupmap` (after the frame's final reservoirs, 16×16 workgroups, a 32×32 shared tile of 64-bit seeds) writes per atlas pixel the count of pixels q ≠ p in the 17×17 window (same member, inside the tile) with `seed(q) == seed(p)`, both non-empty, into an arena region. The next frame's T1 (`RS_DUPMAP`) caps `c_p = min(c_Cap, c_prev)` with `c_Cap = cCap − (cCap − 1)·D^α`, `D = count(q′)/288`, α = 0.1 (math §27; f32, not truncated). Off in every unbiasedness unit (T16); on in the interactive preset (Enhanced: biased variant for real time). | PLAN §2 rule 13, §3 pass 6, §5 M6; enh §4; math §27. |
-| MD11 | **Dual motion vectors (interactive only, unbiased).** `RS_DUAL_MV`: when every tap of TD12 fails (disocclusion), the previous-frame hit at the standard reprojection c₀ (the occluder at t−1) is projected with the current camera to s; the dual position is `p − (s − c₀)` (the occluder's motion applied to the pixel), and its centre + ring taps are tested with the unchanged validity rule. G-buffer and pick stream only (PLAN rule 9: sample-independent ⇒ unbiased). Counter `RSC_T_DUAL = 29`. | TD22, enh §6.7 (Zeng et al. 2021). |
+| MD11 | **Dual motion vectors (interactive only, unbiased).** `RS_DUAL_MV`: when every tap of TD12 fails (disocclusion), the previous-frame hit at the standard reprojection c₀ (the occluder at t−1) is projected with the current camera to s; the dual position is `p − (s − c₀)` (the occluder's motion applied to the pixel), and its centre + ring taps are tested with the unchanged validity rule. G-buffer and pick stream only (PLAN rule 9: sample-independent ⇒ unbiased). Counter `RSC_T_DUAL = 29`. **Amended (M6-10, DMV-1):** a dual q′ carries `c_p = min(DMV_C_CAP = 1, c_prev)` instead of `min(cCap, c_prev)` (tState flag `TS_DUAL_PICK`). | TD22, enh §6.7 (Zeng et al. 2021); M6-10. |
 | MD12 | **Russian roulette.** Unchanged (D11): q_B = min(√max β, 1) at x_B, B > rrMinBounces, after NEE, before the continuation; NEE candidates carry 1/∏_{i ≤ d−2} q_i, BSDF endings (tri, env, **analytic crossings**) 1/∏_{i ≤ d−1} q_i; RIS-NEE multiplies `W_NEE`; replay / shifts / refresh never read `u_rr`. Verified by U-RR-M6 and toggled in rung 3.7. | PLAN rule 11, math §25. |
 | MD13 | **Presets.** New: `offline-m6` = offline + gauss σ 16 + RIS-NEE (the rung 3.9 / 3.10 / 3.11 configuration); `full-m6` = full + gauss σ 16 + RIS-NEE (chains). `interactive` gains gauss σ 16, RIS-NEE, dual MV and the duplication map (cCap stays 5, TD-I1). Validation presets of M4/M5 (`initial`, `initial-rr`, `offline`, `criteria2022`, `temporal`, `full`) are unchanged. | Coordinator rule (no M4/M5 default changes); PLAN §3 mode list. |
 | MD14 | **Rung 3.7 = one unbiased feature toggled per unit** on top of the M4/M5 rung it extends (sequential `offline` for spatial features, chains for temporal ones), reusing the cached PT references (same package, spp, B, seed 4001 / 7001). Glass (3.9), alpha (3.10) and Mode B (3.11) units run `offline-m6` (plus Mode-B chains), PT references new (seed 6001). | PLAN §7.1 ladder; restir-api D13 / §6.5. |
@@ -208,7 +208,7 @@ frame t: rs_primary → [rs_light_tiles (RIS)] → rs_initial × chunks → temp
 | T3-M6 | restir-shift (variants) | T3-0 / T3-1 / T4 / T3-D LOGIC = 0, FP-BOUNDARY ≤ 1e-5: `t3_cases_256` with RIS on (every bin ≥ 10⁶); `t3_modeb_256` (Mode B; new bins d-ana, c-ana, none-ana ≥ 10⁶, deep-bsdf incl. crossings); `t3_glass_256` gating (G_R at x_{k−1} / x_k and side-flip counters ≥ 10⁶); `t3_alpha_256` (rc segments crossing a cutout card ≥ 10⁶) |
 | T3-2/M6 | restir-temporal (variant) | Mode-B round trips under light motion (T3-2 harness, crossing entries renumbered): LOGIC = 0 on d-ana / c-ana / none-ana / deep bins ≥ 10⁶ |
 | U-DUP-1 | restir-m6 | GPU duplication counts ≡ an f64 CPU count on a synthetic seed image (member borders, empty, background); cap formula vs CPU |
-| U-DMV-1 | restir-m6 | dual MV: q′ is a function of the G-buffers + pick stream only (two runs with different reservoir contents give identical q′); disoccluded pixels behind a moving occluder get a valid q′ more often than without |
+| U-DMV-1 | restir-m6 | dual MV: q′ is a function of the G-buffers + pick stream only (two runs with different reservoir contents give identical q′); disoccluded pixels behind a moving occluder get a valid q′ more often than without; every dual pick carries `TS_DUAL_PICK` and c_p ≤ 1 (M6-10), no flag with dual MVs off |
 | U8-2t (Gate 0) | restir-temporal "U8 plant activity" | re-run with RIS on (E-22 revisit, §5.3) |
 | T16 / T15 | every run | §5.5 |
 
@@ -330,3 +330,46 @@ pairing generator (MD3). §27: duplication-map realisation (MD10).
 - **M6-9 (app).** The app's ReSTIR honours the light mode (A / A′ / B pipeline variants, `RestirKernel.setLightMode`),
   the restir panel gains the four feature toggles over the mode's preset, the app modes `offline` / `unbiased` use
   `offline-m6` / `full-m6`, and the HUD prints an M6 line (mode, pairing, RIS-NEE, dual MV, duplication map).
+- **M6-10 (DMV-1: confidence of a dual-MV q′; rung 3.7 `ixs_d_camera_256@3.7-dualmv-f40` failure, m6-gate-r37-20261006-210627).**
+  - **Symptom.** f40 failed `tost_masks` (M_disocc) and `tost_tiles` on all channels: run 1 M_disocc −0.90 %, re-run
+    (disjoint seeds) +1.85 %, multiplier 3.2 at R = 1808. Every other test frame passed.
+  - **Not a bias.** The q′ rule reads only the G-buffers, both cameras and the pick hash, and T4 evaluates π_p at the
+    stored q′ (same mapping). A powered run on fresh seeds (906002, R = 6000, same estimator) passed every TOST:
+    global Δ_Y +0.008 % (MDB 0.048 %), M_disocc +0.18 % ± 0.83 %, worst tile −0.17 %, multiplier 1. Only `chi2_red[R]`
+    failed (2.73 > 2.46), a heavy-tail symptom. Pooled over the three disjoint pre-fix seed sets (R = 9616): M_disocc
+    +0.29 % ± 0.68 %, global +0.014 % ± 0.011 %.
+  - **Cause: variance.** f40 ends ix-d's fastest segment (0.022 per frame, frames 24 → 40) at the camera's closest
+    approach. For 16 frames the camera moves left, so a strip left of the short box's silhouette (x ≈ 130–150,
+    y ≈ 140–240) is disoccluded every frame. Dual MVs give ~half of those pixels a q′ about 4–5 px away on the floor,
+    across the box's contact-shadow gradient. That history is converged elsewhere (c_prev ≥ 20) and was reused with
+    c_p = 20.
+  - **Mechanism.** The temporal candidate contributes its own estimate × c_p·r/(r + c_p) ≈ min(r, c_p), where
+    r = p̂_q(Y)·J/p̂_q′(X_p) (Talbot form; contribution MIS behaves alike). For a standard q′, r ≈ 1. For a dual q′,
+    r is broadly distributed, so outliers are amplified up to 20-fold. The amplified records then live on through
+    temporal and spatial reuse along the strip.
+  - **Measured (512 paired chains, f40).** The inverse shift of X_c is undefined for 9.7 % of dual picks (OCCLUDED
+    7.4 %, O2 1.8 %) versus 0.6 % of standard ones. Dual-picked pixels carry 67 % of the per-chain M_disocc variance.
+    The per-chain M_disocc median is 8 % below the reference, with a right tail up to 23× the mean in the gate
+    re-run.
+  - **What did not help.** Talbot MIS on dual picks only (per-pixel, unbiased) left the variance unchanged (sd 0.117
+    vs 0.121). The hand-over of contribution MIS is therefore not the driver; the confidence is.
+  - **Fix.** For a dual pick, `c_p = min(DMV_C_CAP = 1, c_prev)` (tpick.wgsl / t-classify.wgsl, `RS_DUAL_MV` only;
+    tState flag `TS_DUAL_PICK = 65536`). The cap is a constant applied by a G-buffer-only predicate, so the MIS
+    partition stays sample-independent (math.md §26 [M6 addition]).
+  - **Effect at f40** (per-chain relative sd, R-independent):
+    | | M_disocc | M_edge | global |
+    |---|---|---|---|
+    | before | 0.453 | 0.079 | 0.0089 |
+    | after | 0.062 | 0.025 | 0.0039 |
+    | M5 without dual MVs | 0.061 | 0.025 | 0.0038 |
+
+    The other frames are unchanged or lower and match M5 (f32 edge 0.028 → 0.023, f48 disocc 0.027 → 0.021).
+    Diagnostic with paired seeds (512 chains): per-chain M_disocc sd 0.121 → 0.023 (cap 4: 0.039; dual MVs off: 0.045,
+    one outlier chain).
+  - **After-fix powered run** (fresh seeds 916002, R = 6000, all 8 test frames, PT references as the gate): every frame
+    passes, multiplier 1. f40: Δ_Y +0.014 % (MDB 0.022 %), M_disocc +0.16 % ± 0.09 %, worst tile −0.01 %, chi2_red 0.80.
+    The other frames: |Δ_Y| ≤ 0.006 %, MDB ≤ 0.028 %.
+  - **Test changes.** U-DMV-1 now also asserts that every dual pick is flagged with c_p ≤ 1 and that no pixel is
+    flagged with dual MVs off. The diagnostic is `validation/gpu-tests/diag/dmv-f40.gpu.test.ts` (node-dawn, skipped
+    unless `VITE_DMV_DIAG`; `VITE_DMV_OLD=1` / `VITE_DMV_CDUAL=c` patch the cap).
+  - **Dual MVs off.** The composed WGSL is unchanged (U-WGSL-BITS).
