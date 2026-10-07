@@ -18,7 +18,8 @@
 //   gate5   MD15: chains of the interactive configuration (jitter iid, RR, σ 16, RIS, dual MV, boost 3) at cCap 5 and
 //           20 with the duplication map ON (dup_bias.py: mean noise-debiased 16² tile |bias| ≤ 3.25 %, 99 % upper bound
 //           of the global |bias| ≤ 3.25 %, noise floor ≤ 1 %) and its OFF twin (must pass Stage B / dyn) on
-//           m5s_cornell_i t = 24, m5s_glossy_v1 t = 24 and ixs_d_camera.
+//           m5s_cornell_i t = 24, m5s_glossy_v1 t = 24 and ixs_d_camera. The dupmap-ON Stage-B / dyn steps are informational
+//           (biased by design). `--reuse-run DIR` recomputes the verdicts from an earlier gate5 run (no rendering; M6-12).
 //   plants  U8-4 / U8-7 / U8-8 / U8-10 (§5.3) with the predictions derived BEFORE the measurement (tests/restir/plant-m6
 //           .test.ts): detected (plant_sign.py: half-size repeats ≥ 9/10 vs the 4× PT, PT A/A ≥ 9/10), the full comparison
 //           not `pass`, the predicted sign (one-sided z ≥ 3) on the predicted region; synthetic W × 1.003 + calibrate A/A
@@ -189,7 +190,7 @@ export function nUnits(): number {
 const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
 const r4 = (x: unknown) => (typeof x === 'number' ? Number(x.toPrecision(4)) : x);
 const pct = (x: number | undefined | null, d = 3) => (typeof x === 'number' ? `${(x * 100).toFixed(d)}%` : 'n/a');
-const tryJson = (p: string): Record<string, any> | undefined => { try { return JSON.parse(readFileSync(path.join(ROOT, p), 'utf8')); } catch { return undefined; } };
+const tryJson = (p: string): Record<string, any> | undefined => { try { return JSON.parse(readFileSync(path.resolve(ROOT, p), 'utf8')); } catch { return undefined; } };
 const safe = (s: string) => s.replace(/[^\w.@-]+/g, '_');
 type Add = (name: string, ok: boolean, seconds: number, data?: unknown, detail?: string) => void;
 type Rec = (name: string, ok: boolean, detail?: string) => void;
@@ -357,23 +358,26 @@ function chainUnits(units: ChainUnitM6[], dir: string, runId: string, nU: number
   return { results, sizing: r.sizing };
 }
 
-/** Gate 5 metric on the dupmap-ON chains (dup_bias.py) of each scene × c_cap at its frame. */
-function gate5Metrics(units: ChainUnitM6[], results: Record<string, any>[], dir: string, add: Add): Record<string, any>[] {
+/** Gate 5 metric on the dupmap-ON chains (dup_bias.py) of each scene × c_cap at its frame (the unit's first chain set and
+ *  its PT reference). Reports go to `dir`/gate5; chains and PT references are read from `src` (the run that rendered them,
+ *  `--reuse-run`), whose paths in `results` are relative to `src.root` (that run's worktree). */
+function gate5Metrics(units: ChainUnitM6[], results: Record<string, any>[], dir: string, add: Add, src: { root: string; dir: string } = { root: ROOT, dir }): Record<string, any>[] {
   const out: Record<string, any>[] = [];
   for (const u of units.filter((x) => x.gate5?.dupmap)) {
     const g = u.gate5!;
     const t0 = performance.now();
-    const chainDir = path.join(dir, 'chains', safe(u.id), `f${g.frame}`);
+    const chainDir = path.resolve(src.root, src.dir, 'chains', safe(u.id), `f${g.frame}`);
     const unitRes = results.find((x) => x.unit === `${u.id}-f${g.frame}`);
-    const ref: string | undefined = unitRes?.pt_dir;
+    const ref: string | undefined = unitRes?.pt_dir ? path.resolve(src.root, unitRes.pt_dir) : undefined;
     const twin = results.find((x) => x.unit === `${u.id.replace(/-dup$/, '-nodup')}-f${g.frame}`);
     const o = path.join(dir, 'gate5', safe(u.id));
-    const r = ref && existsSync(path.join(ROOT, chainDir, 'ensemble.npz')) ? sh(PY, ['validation/tools/dup_bias.py', '--ours', chainDir, '--ref', ref, '--out', o, '--budget', String(BUDGET_GATE5)], () => false) : undefined;
+    const r = ref && existsSync(path.join(chainDir, 'ensemble.npz')) ? sh(PY, ['validation/tools/dup_bias.py', '--ours', chainDir, '--ref', ref, '--out', o, '--budget', String(BUDGET_GATE5)], () => false) : undefined;
     const rep = tryJson(path.join(o, 'report.json'));
     const twinOk = !!twin?.ok;
     const ok = !!rep?.ok && twinOk && (unitRes?.t16?.length ?? 1) === 0;
     const res = { unit: `gate5-${g.scene}-cap${g.cCap}`, kind: 'gate5', part: 'gate5', scene: g.scene, cCap: g.cCap, frame: g.frame, ok, status: ok ? 'pass' : 'fail',
-      mean_tile_bias: r4(rep?.mean_tile_bias), global_rel: r4(rep?.global_rel), global_abs_upper99: r4(rep?.global_abs_upper99), noise_floor: r4(rep?.noise_floor),
+      mean_tile_bias: r4(rep?.mean_tile_bias), p90_tile_bias: r4(rep?.p90_tile_bias), global_rel: r4(rep?.global_rel), global_abs_upper99: r4(rep?.global_abs_upper99), noise_floor: r4(rep?.noise_floor),
+      chains: rep?.chains, chain_dir: chainDir, pt_dir: ref,
       twin: twin ? { status: twin.status, ok: twin.ok, global_rel_Y: twin.global_rel_Y } : 'missing', t16: unitRes?.t16, report: path.join(o, 'report.json'), budget: BUDGET_GATE5 };
     out.push(res);
     add(`Gate 5 ${g.scene} cCap ${g.cCap} t=${g.frame}: duplication-map bias <= ${pct(BUDGET_GATE5, 2)} (twin unbiased)`, ok, (performance.now() - t0) / 1000, res,
@@ -571,7 +575,25 @@ function ensurePackages(add: Add): void {
 
 /** restirSeedOffset (M6-10 verification): ReSTIR seeds of the sequential units + offset (first and confirmatory re-run), the
  *  PT references (seeds 6001 / 106001, cached by PT code hash) unchanged. */
-export interface M6Options { part?: Part; only?: Set<string>; pilotOnly?: boolean; plantSeedOffset?: number; restirSeedOffset?: number; writeBudget?: boolean }
+/** reuseRun (Changelog M6-12): with `--part gate5`, recompute the Gate 5 verdicts (dup_bias.py) from an earlier gate5 run
+ *  directory (its summary.json unit results, chains/ and the PT references they name) without rendering. */
+export interface M6Options { part?: Part; only?: Set<string>; pilotOnly?: boolean; plantSeedOffset?: number; restirSeedOffset?: number; writeBudget?: boolean; reuseRun?: string }
+
+/** Steps of the dupmap-ON chain units (Stage B / dyn vs the PT at δ 0.2 %): the duplication map is biased by design, so
+ *  these are reported but not gating; Gate 5 gates on dup_bias.py and the OFF twins (MD15, Changelog M6-12). */
+const GATE5_ON_STEP = /@G5-cap\d+-dup\b/;
+
+/** `--reuse-run DIR`: the gate5 chain-unit results of an earlier run and the root its relative paths resolve against. */
+function reuseGate5(runDir: string): { results: Record<string, any>[]; src: { root: string; dir: string } } {
+  const abs = path.resolve(ROOT, runDir);
+  const s = tryJson(path.join(abs, 'summary.json'));
+  if (!s?.units) throw new Error(`--reuse-run ${runDir}: no summary.json with units`);
+  const marker = `${path.sep}validation${path.sep}out${path.sep}`;
+  const i = abs.lastIndexOf(marker);
+  const root = i >= 0 ? abs.slice(0, i + 1) : ROOT;
+  const results = (s.units as Record<string, any>[]).filter((x) => x.kind === 'gate5-on' || x.kind === 'gate5-twin').map((x) => ({ ...x, reused_from: abs }));
+  return { results, src: { root, dir: abs } };
+}
 
 export function milestoneM6(record: Rec, o: M6Options = {}): void {
   const t0 = performance.now();
@@ -582,7 +604,8 @@ export function milestoneM6(record: Rec, o: M6Options = {}): void {
   const steps: { name: string; ok: boolean; seconds: number; data?: unknown; detail?: string }[] = [];
   const add: Add = (name, ok, seconds, data, detail) => {
     steps.push({ name, ok, seconds: Math.round(seconds * 10) / 10, data, detail });
-    record(name, ok, `${detail ? `${detail}, ` : ''}${seconds.toFixed(1)} s`);
+    const info = GATE5_ON_STEP.test(name);
+    record(name, ok || info, `${info ? `informational (duplication map ON; ${ok ? 'pass' : 'fail'} at the Stage-B δ), ` : ''}${detail ? `${detail}, ` : ''}${seconds.toFixed(1)} s`);
   };
   const runStep = (name: string, cmd: string, argv: string[], echo?: (l: string) => boolean, env?: Record<string, string>) => {
     console.log(`\n--- ${name}: ${env ? `${Object.entries(env).map(([k, v]) => `${k}=${v}`).join(' ')} ` : ''}${cmd} ${argv.join(' ')}`);
@@ -599,11 +622,18 @@ export function milestoneM6(record: Rec, o: M6Options = {}): void {
   const hashes = codeHashes();
   console.log(`M6 gate ${runId}: parts ${parts.join(',')}, n_units ${nU}, PT code ${hashes.pt.slice(0, 12)}, ReSTIR ${hashes.restir.slice(0, 12)}`);
   add('M6 gate tools (venv python)', existsSync(PY), 0, undefined, existsSync(PY) ? undefined : `missing ${PY}`);
-  ensurePackages(add);
   const results: Record<string, any>[] = [];
   const sizing: Record<string, unknown> = {};
+  if (o.reuseRun) {
+    if (parts.length !== 1 || parts[0] !== 'gate5') throw new Error('--reuse-run needs --part gate5');
+    const cu = CHAIN_UNITS.filter((x) => x.part === 'gate5' && sel(x.id, x.pkg));
+    const prev = reuseGate5(o.reuseRun);
+    const mine = prev.results.filter((x) => cu.some((u) => String(x.unit).startsWith(`${u.id}-`)));
+    add(`Gate 5 reuse: ${mine.length} chain-unit results of ${prev.src.dir} (no rendering)`, mine.length > 0, 0);
+    results.push(...mine, ...gate5Metrics(cu, mine, dir, add, prev.src));
+  } else ensurePackages(add);
   if (parts.includes('core') && !o.only && !o.pilotOnly) gate0(dir, runId, add, runStep);
-  for (const part of parts.filter((p) => p !== 'core')) {
+  for (const part of parts.filter((p) => p !== 'core' && !o.reuseRun)) {
     for (const u of SEQ_UNITS.filter((x) => x.part === part && sel(x.id, x.pkg))) results.push(seqUnit(u, dir, runId, nU, add, !!o.pilotOnly, o.restirSeedOffset ?? 0));
     const cu = CHAIN_UNITS.filter((x) => x.part === part && sel(x.id, x.pkg));
     if (cu.length) {
@@ -621,7 +651,8 @@ export function milestoneM6(record: Rec, o: M6Options = {}): void {
   const rows = budgetRows(results, sizing);
   writeFileSync(path.join(ROOT, dir, 'budget-m6.json'), `${JSON.stringify(rows, null, 1)}\n`);
   if (o.writeBudget && rows.length) mergeBudget(rows, runId, add);
-  const failed = steps.filter((x) => !x.ok).map((x) => x.name);
+  const informational = steps.filter((x) => GATE5_ON_STEP.test(x.name)).map((x) => x.name);
+  const failed = steps.filter((x) => !x.ok && !informational.includes(x.name)).map((x) => x.name);
   const kinds = ['seq', 'chain-static', 'chain-dyn', 'gate5', 'gate5-twin', 'plant', 'aa'];
   const perPart = Object.fromEntries(PARTS.filter((p) => p !== 'core').map((p) => {
     const u = results.filter((x) => x.part === p && x.kind !== 'gate5-on');
@@ -630,7 +661,7 @@ export function milestoneM6(record: Rec, o: M6Options = {}): void {
   const summary = {
     milestone: 'M6', gate: 'Gate 0 + rungs 3.7 / 3.9 / 3.10 / 3.11 + Gate 5 + M6 plants with predicted signs (restir-m6-api.md §4–§5)',
     run: runId, parts, created: new Date().toISOString(), ok: failed.length === 0, subset: o.only ? [...o.only] : undefined, pilotOnly: !!o.pilotOnly,
-    total_s: Math.round((performance.now() - t0) / 100) / 10, n_units: nU, code_hashes: hashes, per_part: perPart, kinds, failed, units: results, steps,
+    total_s: Math.round((performance.now() - t0) / 100) / 10, n_units: nU, code_hashes: hashes, per_part: perPart, kinds, failed, informational, ...(o.reuseRun ? { reused_run: path.resolve(ROOT, o.reuseRun) } : {}), units: results, steps,
   };
   writeFileSync(path.join(ROOT, dir, 'summary.json'), `${JSON.stringify(summary, null, 1)}\n`);
   writeFileSync(path.join(ROOT, dir, 'summary.md'), summaryMd(summary, results));
