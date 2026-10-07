@@ -3,8 +3,10 @@
 // reads (restir/tframe.wgsl, restir/types.wgsl; checked against render/restir/layout.ts by tests/denoise).
 import type { DebugViewDef } from '../debug-views.ts';
 
-export const DN_PARAMS_SIZE = 96;
+export const DN_PARAMS_SIZE = 112;
 export const DN_ITER_SIZE = 16;
+/** DnParams.taaFlags (dn-common.wgsl DNT_*; Changelog DN-16). */
+export const DNT = { DILATE: 1, CUBIC: 2 } as const;
 /** DnParams.flags (dn-common.wgsl DNF_*). */
 export const DNF = { RESET: 1, LAMBDA: 2, HAS_L1: 4, FW: 8, INVERSE: 16, GRADIENT: 32, LAMBDA_CAM: 64, NO_RESOLVE: 128, GUIDE: 256 } as const;
 /** DnIter.flags (dn-filter.wgsl DNI_*). */
@@ -53,10 +55,24 @@ export interface DenoiserSettings {
   nMax: number;
   /** Also use λ on camera-only frames (view-dependent glossy changes; default off, denoiser.md §5). */
   gradientOnCamera: boolean;
+  /** Changelog DN-16: history cap of the output resolve on static-camera frames within 8 frames of a lighting change
+   *  (variance-clipped; the gradient's λ′ still cuts it). */
+  taaLightMax: number;
+  /** Changelog DN-16: history cap of the output resolve while the camera moves (variance-clipped). */
+  taaCamMax: number;
+  /** Changelog DN-16: in motion, reproject with the motion vector of the closest hit in the 3×3 neighbourhood. */
+  taaDilate: boolean;
+  /** Changelog DN-16: in motion, fetch the output history with a Catmull-Rom (4×4) filter instead of bilinear. */
+  taaCubic: boolean;
+  /** Changelog DN-16: variance-clipping width γ (YCoCg μ ± γσ of the current 3×3) in the lighting window (static
+   *  camera) and in motion; 0 = no clipping. */
+  taaGammaLight: number;
+  taaGammaCam: number;
 }
 
 export const DENOISER_DEFAULTS: Readonly<DenoiserSettings> = {
   iterations: 4, alphaMin: 0.2, lambda0: 0.03, lambda1: 0.15, sigmaZ: 1, sigmaN: 128, sigmaL: 4, sigmaA: 0.05, varCorr: 3, resolve: true, nMaxT: 1024, guide: true, invRadius: 3, lumMinN: 4, lumPre: 1, nMax: 64, gradientOnCamera: false,
+  taaLightMax: 32, taaCamMax: 8, taaDilate: true, taaCubic: true, taaGammaLight: 4, taaGammaCam: 1,
 };
 export const DN_MAX_ITERATIONS = 6;
 
@@ -68,7 +84,7 @@ export interface DnParamsCpu {
 
 export const dnTiles = (w: number, h: number): [number, number] => [Math.ceil(w / 8), Math.ceil(h / 8)];
 
-/** Pack DnParams (64 B, dn-common.wgsl). */
+/** Pack DnParams (112 B, dn-common.wgsl). */
 export function packDnParams(o: DnParamsCpu, out = new ArrayBuffer(DN_PARAMS_SIZE)): ArrayBuffer {
   const u = new Uint32Array(out), f = new Float32Array(out);
   const [tx, ty] = dnTiles(o.width, o.height);
@@ -77,6 +93,8 @@ export function packDnParams(o: DnParamsCpu, out = new ArrayBuffer(DN_PARAMS_SIZ
   f[5] = o.settings.nMax; f[6] = o.settings.alphaMin; f[7] = o.settings.lambda0; f[8] = o.settings.lambda1;
   f[9] = o.settings.sigmaZ; f[10] = o.settings.sigmaN; f[11] = o.settings.sigmaL;
   u[12] = o.tsBase >>> 0; u[13] = o.resPlanes >>> 0; f[14] = o.settings.sigmaA; f[15] = o.settings.varCorr; f[16] = o.settings.nMaxT; u[17] = Math.min(o.sinceChange ?? 0xffff, 0xffff); u[18] = o.settings.invRadius; f[19] = o.settings.lumMinN; u[20] = o.settings.lumPre;
+  f[21] = o.settings.taaLightMax; f[22] = o.settings.taaCamMax; u[23] = (o.settings.taaDilate ? DNT.DILATE : 0) | (o.settings.taaCubic ? DNT.CUBIC : 0);
+  f[24] = o.settings.taaGammaLight; f[25] = o.settings.taaGammaCam;
   return out;
 }
 
