@@ -1059,6 +1059,32 @@ finalize:              W = Σw / lum(F_Y)     (tree M = 1);  c = 1;  W = 0 if Σ
   stored `rcWi` of a continuing x_k. Sampled bits are used only to trace the ray and as the escape direction of a
   `BSDF_ENV` ending. Base-path throughput factors may use the sampler's `weight` (a few-ulp difference in F is not a
   bias: F is a target and a fixed function of the path).
+- <a id="delta-incoming"></a>**[M6 addition, restir-m6-api.md M6-10]** **Incoming direction after a delta event.** The
+  one exception to the same-formula rule for V: if the event at x_b was sampled from a **delta** lobe, the incoming
+  direction of x_{b+1} is the **traced** direction, `V_{b+1} = −ω_b` (the sampled ω_b, as in the PT), in the path tree
+  and in replay (prefix and ∅ mode, hence in every spatial and temporal shift). Every other V stays position-derived.
+  - *Why the position-derived V is biased there.* The continuation ray starts at the offset origin
+    `o_b = x_b + δ·n` (Wächter–Binder, [visibility](#visibility); δ = 2⁻¹⁶ m for |p| < 1/32, else 256 ulp), so
+    `x_{b+1} = o_b + t·ω_b` and `normalize(x_{b+1} − x_b) = normalize(t·ω_b − δ·n)`: a deterministic tilt of order
+    `δ·sin θ / t` toward the normal of the side the ray leaves. Base path and replay share it, so every shift stays
+    consistent, but the integrand is that of a different path: the delta sampler at x_{b+1} picks its lobe with
+    `P_R(θ')`, θ' the tilted angle, and the sample weight `R/P_R` (or `T/(1−P_R)`) cancels only the tree's own pick. The
+    estimate of a smooth dielectric chain becomes `Π (1−F(θ'_j))…` instead of `Π (1−F(θ_j))…`, a bias
+    `≈ −(∂F/∂θ)·Δθ` per interface with **one sign** (inside a slab of thickness h the tilt always steepens the segment,
+    `tan θ' = tan θ_t·(1 − δ/h)`) and `∂F/∂θ → ∞` at the critical angle. C0h (h = 0.02 m, δ = 1.53e-5 m,
+    δ/h = 7.6e-4; a grazing camera ray refracts to just below θ_c = 41.8°): +0.11 % at 70°, +0.78 % at 80°, +4.0 % at
+    85° incidence (f64: `(1−F(θ'))/(1−F(θ))` at the bottom face), matching the rung-3.9 row profile (+3.6 % in the far
+    rows, ~+0.1 % mid-image; global +0.12 %). For a non-delta event the same tilt moves the evaluation point of a
+    smooth f/p by O(δ/t) only, and the position-derived V is what a shift recomputes at a reconnection vertex.
+  - *Consistency.* A vertex reached by a delta event is never an x_k (rule D fails at x_{k−1}), so no Jacobian and no
+    `rcWi` depend on its V. Where it is a prefix vertex (up to y_{k−1}, incl. the p̄ / joint pdf at y_{k−1} that enter
+    O1/O2 and jNum), base path and shift obtain V from the same replay code (`VLast`), and the ∅ integrand is the
+    replay's own: T∘T⁻¹ = id is unchanged, and the base integrand equals the PT's sample (U-RIS-1g). The stored
+    suffix-cache direction of an NEE end (ω_o at x_{d−1}) is the path tree's V, so the refresh inherits the rule.
+    Mode-B crossing tests keep the position-derived ray (their delta-event factor is the sampler's weight).
+  - *Remaining tilt.* A delta-only vertex reached through a **non-delta** event still sees the position-derived V
+    (tilt δ/t with t the distance between two surfaces, not a slab thickness); no gate scene shows it (rough-glass
+    units G3, G4, C0j pass at rung 3.9).
 - **[M4 addition, restir-api.md]** **Base NEE endpoint.** The NEE candidate stores its endpoint as the sampler's own light-local
   coordinates (alias entry, `u01(h_l0)`, `u01(h_l1)`; for emissive triangles these are the `(u₁, u₂)` of the
   area-uniform map; env `(i<<16)|j, h2`) and evaluates it with the same per-entry function as the PT, so every later

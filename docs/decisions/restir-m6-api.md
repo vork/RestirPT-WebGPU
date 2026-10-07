@@ -330,3 +330,26 @@ pairing generator (MD3). §27: duplication-map realisation (MD10).
 - **M6-9 (app).** The app's ReSTIR honours the light mode (A / A′ / B pipeline variants, `RestirKernel.setLightMode`),
   the restir panel gains the four feature toggles over the mode's preset, the app modes `offline` / `unbiased` use
   `offline-m6` / `full-m6`, and the HUD prints an M6 line (mode, pairing, RIS-NEE, dual MV, duplication map).
+- **M6-10 (glass bias at rung 3.9: incoming direction after a delta event; amends restir-api D3 / Changelog B-2, MD1).**
+  Rung 3.9 failed C0h (Δ_Y +0.120 %, MDB 0.015 %), G1 Glass node (+0.074 %) and G1 Principled (+0.052 %), all positive,
+  concentrated at grazing incidence (C0h rows near the far edge +3.6 %, mid-image +0.1 %), every other glass unit
+  passing (rough glass G3 / G4 / C0j, panes G5 / G5b, caustics G6, G7, G8). Bisection on C0h (12 frames × 16, seed
+  7701/7702, vs the cached PT 6001; global / rows 40–63): offline-m6 +0.107 % / +1.64 %; M4 `offline` +0.108 % / +1.62 %;
+  offline + σ 16 or + RIS-NEE identical; `rounds 0` (S = 32) +0.108 %; rung 3.1 `initial` (S = 1, no reuse) +0.120 % /
+  +1.70 %; N = 2 (only the T,T path) +3.97 % in the far rows vs the closed form; the PT matches the closed form
+  (|z| ≤ 1.6 per 16-row band). Hence not an M6 feature and not reuse: the path tree's own integrand differs from the
+  PT's. Root cause (math.md#delta-incoming): the tree and replay took the incoming direction of the vertex after a delta
+  event from positions (D3); the continuation ray starts at the Wächter–Binder offset origin, so inside a 0.02 m slab the
+  position-derived segment is steeper by δ/h = 7.6e-4 in tan θ, and the delta sampler at the bottom face picks T with
+  1 − F(θ') > 1 − F(θ) while the weight cancels only its own pick; near the critical angle ∂F/∂θ diverges (f64: +0.78 %
+  at 80°, +4.0 % at 85°). Fix: `V = select(−ω_pos, −ω_sampled, is_delta)` in `path/pathtree.wgsl` and `path/replay.wgsl`
+  (the PT's rule; no Jacobian, predicate or rcWi depends on such a V, and base and shift share the replay, so
+  T∘T⁻¹ = id is unchanged). Regression test **U-RIS-1g** (restir-initial.gpu.test.ts): production tree ≡ PT sample per
+  pixel on C0h and G1 Glass node (≥ 99.99 % within 1e-4, Σ within 1e-5); before the fix 99.875 % / 99.868 % (tree above
+  the PT on 261 / 342 pixels, below on 66 / 4), Σ +1.19e-3 / +1.03e-3; after the fix it passes. Consequences: the
+  composed WGSL of rs_initial(_dump), rs_spatial_replay / _shift and the temporal passes that include replay changes
+  (U-WGSL-BITS goldens re-recorded); results change only where a delta lobe is sampled (glass, roughness-0 mirrors and
+  specular), so U-M4-BITS / U-M5-BITS keep their goldens on the delta-free (i) cases and are re-recorded on the
+  fixture-box cases (the box has a roughness-0 mirror); the PT closure is untouched (MD2: every PT reference stays
+  valid). Gate harness: `--restir-seed-offset N` (ReSTIR seeds of the sequential units + N, PT references unchanged) for
+  the fresh-seed verification.

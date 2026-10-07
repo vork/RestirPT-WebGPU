@@ -75,14 +75,16 @@ describe('canary: a known-answer kernel on the temporal G0 layout', () => {
 
 // ------------------------------------------------------------------------------------------------ U-M4-BITS (P0 part)
 
-// Recorded on the pre-M5 build (main e251b43, Chrome 154 / Metal, 2026-09-30) with restir-tframe-bits.ts unchanged.
+// Recorded on the pre-M5 build (main e251b43, Chrome 154 / Metal, 2026-09-30) with restir-tframe-bits.ts unchanged. The xq
+// cases re-recorded for restir-m6-api.md Changelog M6-10 (incoming direction after a delta event: the fixture box has a
+// roughness-0 mirror; arena counters unchanged); the (i) cases (no delta lobe) are still the pre-M5 build's bits.
 const GOLDEN: Record<string, Record<string, string>> = {
   'i-3.1': { res0: '8aeadda4', res1: '113c9dc5', final: '8aeadda4', image: 'bc8e8f67', counters: '0,0,0,0', arena: '0,0,0,0,0' },
   'i-3.2': { res0: 'dd6406e5', res1: 'bdb2645b', final: 'dd6406e5', image: '4fd15bbf', counters: '0,0,0,0', arena: '111334,1283,23054,3732,0' },
   'i-interactive': { res0: '8aeadda4', res1: '95ea379d', final: '95ea379d', image: '7e1727f5', counters: '0,0,0,0', arena: '24276,265,5360,4943,0' },
-  'xq-3.1': { res0: '908a3e68', res1: '25249dc5', final: '908a3e68', image: 'efe76362', counters: '0,0,0,0', arena: '0,0,0,0,0' },
-  'xq-3.2': { res0: '5f25862a', res1: '92d06299', final: '92d06299', image: '1e0fb8ad', counters: '0,0,0,0', arena: '31792,3263,4787,535,0' },
-  'xq-interactive': { res0: 'daf2a634', res1: 'e9f010ff', final: 'e9f010ff', image: '1801361c', counters: '0,0,0,0', arena: '1660,121,383,1121,0' },
+  'xq-3.1': { res0: '6434d837', res1: '25249dc5', final: '6434d837', image: '9e1fc373', counters: '0,0,0,0', arena: '0,0,0,0,0' },
+  'xq-3.2': { res0: '94d5379f', res1: '7979188b', final: '7979188b', image: '6f989124', counters: '0,0,0,0', arena: '31792,3263,4787,535,0' },
+  'xq-interactive': { res0: '271fc83a', res1: '6d5d5853', final: '6d5d5853', image: 'b018cc2e', counters: '0,0,0,0', arena: '1660,121,383,1121,0' },
 };
 
 describe('U-M4-BITS: temporal off ≡ the pre-M5 build (reservoirs, final reservoirs, finalize output, counters)', () => {
