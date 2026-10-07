@@ -115,7 +115,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     if (B > k) { beta *= rs_path_weight(qb, bs.weight, bs.is_delta); }
     cur = nxt;
     curPrim = h.primId;
-    V = -wOut;
+    V = select(-wOut, -bs.L, bs.is_delta);   // the path tree's rule (math.md#delta-incoming, M6-10)
   }
   var st = 1u;
   let sfx = resin_plane(i, RP_SFX0);
