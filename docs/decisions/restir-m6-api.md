@@ -353,3 +353,16 @@ pairing generator (MD3). §27: duplication-map realisation (MD10).
   fixture-box cases (the box has a roughness-0 mirror); the PT closure is untouched (MD2: every PT reference stays
   valid). Gate harness: `--restir-seed-offset N` (ReSTIR seeds of the sequential units + N, PT references unchanged) for
   the fresh-seed verification.
+  *Verification (M6-10).* `npm run validate -- --milestone M6 --part r39 --restir-seed-offset 900` (ReSTIR seeds
+  6902 / 106902, cached PT references 6001; run m6-gate-r39-20261007-044151), 12 / 12 pass, no re-run needed:
+  C0h Δ_Y +0.0042 % (MDB 0.017 %, worst tile +0.19 %; was +0.120 %), G1 Glass node −0.0035 % (MDB 0.006 %; was
+  +0.074 %), G1 Principled −0.0016 % (MDB 0.007 %; was +0.052 %), and the previously passing C0i +0.0017 %, C0j −0.0002 %,
+  C0k −0.0023 %, G3 −0.0000 %, G4 +0.0026 %, G5b +0.0048 %, G6 (B) −0.0059 %, G6-neg −0.0017 %, G7 furnace −0.0001 %.
+  At 4× the gate size (48 frames × 16, seed 7801) C0h offline-m6 −0.001 % (z −0.3; far rows +0.019 % vs the closed form,
+  z 0.5), rung 3.1 +0.001 %, G1 Glass node −0.001 %. Gate 0 touched: U-RIS-1g (new), restir-initial 26/26, restir-spatial
+  18/18, restir-tframe 20/20 (U-M4-BITS: (i) unchanged, xq re-recorded), restir-m6 23/23 (U-M5-BITS re-recorded),
+  restir-temporal 53/53, restir-refresh 23/23, restir-debug 16/16, restir-shift T3 t3_cases_256 and t3_glass_256 at an
+  8-min budget (LOGIC 0, U-11 J 0 bad; t3_glass's ≥ 10⁶ grKm1 count needs the gate's 18 min), U-WGSL-BITS, cpu lane.
+  Test-side copies of the rule: the T3-D f64 dual (tests/restir/rc-dual.ts) and the refresh test's full re-trace. The
+  restir-initial frame-pass test failed on m6-enhanced before M6-10 (the interactive preset's M6 features vs an 'initial'
+  batch rig) and now pins M6_OFF.
