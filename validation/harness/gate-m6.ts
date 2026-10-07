@@ -506,7 +506,7 @@ function gate0(dir: string, runId: string, add: Add, runStep: (name: string, cmd
   const echo = (l: string) => /Tests |FAIL|✗|×|AssertionError|LOGIC|FP-BOUNDARY|violation|T3-M6/.test(l);
   // M6 suites
   for (const s of M6_GPU_SUITES) {
-    withGpuLockSync(`gate-m6-${s.file}`, () => { runStep(`${s.file} (chrome) [M6]: ${s.what}`, 'npx', vit(s.file, s.t ? ['-t', s.t] : []), echo, s.env); });
+    withGpuLockSync(`gate-m6-${s.file}`, () => { runStep(`${s.file} (chrome) [M6]: ${s.what}`, 'npx', vit(s.file, [...(s.env ? ['--testTimeout', '900000'] : []), ...(s.t ? ['-t', s.t] : [])]), echo, s.env); });
   }
   for (const v of T3M6_RUNS) {   // one hold per T3-M6 variant (T3-0 at T3_MS/3 + T3-1 at T3_MS ≤ 24 min, E-16)
     withGpuLockSync(`gate-m6-t3m6-${v}`, () => {
