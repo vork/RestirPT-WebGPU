@@ -9,8 +9,9 @@ import { RES_WORDS, RS_DUMP_CAP, RS_WGSL_CONSTS, RW, decodeReservoir, dumpCountW
 import { PtKernel } from '../../src/core/render/pt-kernel.ts';
 import { FRAME_RESET_HISTORY, FrameUniformBuffer, JITTER_IID } from '../../src/core/render/frame-uniforms.ts';
 import { RestirKernel } from '../../src/core/render/restir/kernel.ts';
-import { restirSettings } from '../../src/core/render/restir/presets.ts';
+import { M6_OFF, restirSettings } from '../../src/core/render/restir/presets.ts';
 import { RS_PASSES, type RsPassName } from '../../src/core/render/restir/resources.ts';
+import { fetchScenePackage } from '../../src/core/scene/scene-package.ts';
 import { getTestGpu, releaseTestGpu } from './device-factory.ts';
 import { material, quadScene } from './pt-fixtures.ts';
 import {
@@ -432,6 +433,61 @@ describe('U-RIS-1: streaming RIS over the path tree reproduces the PT sample (S 
   }
 });
 
+// U-RIS-1g (restir-m6-api.md Changelog M6-10; math.md#path-tree "Incoming direction after a delta event"): delta chains
+// through a THIN smooth slab (C0h / G1: h = 0.02 m; the Wächter–Binder float offset 1/65536 m is 7.6e-4·h) up to grazing
+// incidence, where the inner Fresnel factor sits next to the critical angle. With the production directions (D3) the
+// tree's integrand must equal the PT sample with the same seed per pixel. The pre-fix tree took the incoming direction of
+// the vertex after a delta event from positions, i.e. tilted by the offset origin: the lobe pick u ≥ F(θ') then flipped
+// on ≈ |F(θ) − F(θ')| of the samples (+4 % transmission at 85°): the M6 rung-3.9 C0h / G1 bias (+0.12 % / +0.07 %).
+describe('U-RIS-1g: path tree ≡ PT sample through a thin smooth slab (production directions, S = 1)', () => {
+  for (const pkgName of ['c0h_slab_transmission_256', 'g1_slab_furnace_glassnode_256']) {
+    it(`${pkgName} 256²: per pixel Σw = lum(L_PT − L1) (≥ 99.99 % within 1e-4, Σ within 1e-5)`, async () => {
+      const W = 256, H = 256, FR = 4;
+      const pkg = await fetchScenePackage(`/validation/scenes/${pkgName}/`);
+      const cam = { camToWorld: Array.from(pkg.camera.matrix), yfov: pkg.camera.yfov };
+      const maxBounces = pkg.render.maxBounces ?? 3;
+      const rig = await restirRig(pkg.scene, W, H, { settings: { maxBounces }, cam });
+      const { device } = rig.g;
+      const pt = await PtKernel.create(device, rig.g.gpu, rig.g.env, { features: rig.g.features, wgslLanguageFeatures: rig.g.wgslLanguageFeatures, maxBounces });
+      pt.setView({ camera: cam, width: W, height: H, runSeed: 11, jitterMode: JITTER_IID });
+      const acc = storageBuffer(device, W * H * 16), cnt = storageBuffer(device, 16);
+      let n = 0, nonzero = 0, agree = 0, above = 0, below = 0, sumA = 0, sumB = 0;
+      const worst: string[] = [];
+      for (let t = 0; t < FR; t++) {
+        const r = await rig.frames(1, t);
+        expect(r.counters).toEqual([0, 0, 0, 0]);
+        const rf = new Float32Array((await rig.kernel.readReservoirs(0)).buffer);
+        const L1 = new Float32Array((await readTexture4(device, rig.kernel.resources.l1)).buffer);
+        const enc = device.createCommandEncoder();
+        enc.clearBuffer(acc); enc.clearBuffer(cnt);
+        pt.encode(enc, { sampleBase: t, sampleCount: 1, rowBase: 0, rows: H }, acc, cnt);
+        device.queue.submit([enc.finish()]);
+        const Lpt = new Float32Array(await readBuffer(device, acc, W * H * 16));
+        for (let i = 0; i < W * H; i++) {
+          const ws = rf[i * RES_WORDS + RW.wSum];
+          const ref = lum(Lpt[4 * i] - L1[4 * i], Lpt[4 * i + 1] - L1[4 * i + 1], Lpt[4 * i + 2] - L1[4 * i + 2]);
+          const scale = Math.max(Math.abs(ref), 1e-5 * lum(L1[4 * i], L1[4 * i + 1], L1[4 * i + 2]), 1e-12);
+          const e = ws === ref ? 0 : Math.abs(ws - ref) / scale;
+          n++;
+          if (ref > 0) nonzero++;
+          sumA += ws; sumB += ref;
+          if (e <= 1e-4) agree++;
+          else {
+            if (ws > ref) above++; else below++;
+            if (worst.length < 6) worst.push(`t${t} px${i % W},${Math.floor(i / W)} Σw=${ws} ref=${ref}`);
+          }
+        }
+      }
+      const sumRel = Math.abs(sumA - sumB) / sumB;
+      console.log(`[U-RIS-1g ${pkgName}] n=${n} nonzero=${nonzero} within1e-4=${(100 * agree / n).toFixed(4)}% (tree above ${above}, below ${below}) Σ rel ${sumRel.toExponential(2)} ${worst.join(' | ')}`);
+      expect(nonzero).toBeGreaterThan(n / 2);
+      expect(agree / n).toBeGreaterThanOrEqual(0.9999);
+      expect(sumRel).toBeLessThanOrEqual(1e-5);
+      pt.destroy(); acc.destroy(); cnt.destroy(); rig.destroy();
+    });
+  }
+});
+
 // ------------------------------------------------------------------------------------------------ U-RIS-2 / U-RIS-3
 
 describe('U-RIS-2: offline S = 32 is independent of the tree chunking and row bands (bitwise)', () => {
@@ -712,7 +768,9 @@ describe('RestirFramePass (interactive, renderer mode restir): rung 3.1 settings
     const ref5 = (await batch.frames(1, t)).mean;
     const ref6 = (await batch.frames(1, t + 1)).mean;
     const g = batch.g, device = g.device;
-    const pass = await RestirKernel.interactive(device, g.gpu, g.env, 'rgba32float', { settings: { maxBounces: 3, rounds: 0, rr: false }, features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
+    // M6 (restir-m6-api.md MD13): the interactive preset gained RIS-NEE and the other M6 features; the batch reference is
+    // the M4 'initial' preset, so they are pinned off here (as in U-M4-BITS' interactive cases)
+    const pass = await RestirKernel.interactive(device, g.gpu, g.env, 'rgba32float', { settings: { maxBounces: 3, rounds: 0, rr: false, ...M6_OFF }, features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
     const color = device.createTexture({ size: [Wf, Hf], format: 'rgba32float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC });
     const fu = new FrameUniformBuffer(device);
     pass.setTargets({ width: Wf, height: Hf, color, frameUniforms: fu.buffer });

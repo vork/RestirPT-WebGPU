@@ -513,7 +513,10 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
       cur = nxt;
       curPrim = h.primId;
       curIds = vec3u(h.primId, bitcast<u32>(h.u), bitcast<u32>(h.v));
-      V = -wOut;
+      // M6-10 (math.md#path-tree "Incoming direction after a delta event"): after a delta event the incoming direction
+      // of x_{B+1} is the TRACED direction (the PT's), not the position-derived ω (D3): the delta sampler at x_{B+1}
+      // would otherwise see the offset origin's tilt (thin slabs near the critical angle: lobe probabilities biased)
+      V = select(-wOut, -bs.L, bs.is_delta);
     }
   }
 

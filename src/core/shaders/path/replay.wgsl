@@ -36,7 +36,7 @@ struct ReplayOut {
   margin: f32,
   yLast: SurfaceHit,     // prefix mode: y_{k−1};   ∅ mode: unused
   yLastPrim: u32,
-  VLast: vec3f,          // incoming direction at y_{k−1} (from positions)
+  VLast: vec3f,          // incoming direction at y_{k−1} (from positions; the traced one after a delta event, M6-10)
   Tp: vec3f,             // ∏ over replayed samples (prefix: y₁…y_{k−2}; ∅: y₁…y_{d−1}), RR-free
   preValid: bool,        // a pre-rc pair (y_{k−2}, y_{k−1}) exists (k−1 ≥ 2)
   preV: RcVertex, preE: RcEvent,   // y_{k−2} and its replayed event
@@ -181,7 +181,7 @@ fn replay_prefix(seed: vec2u, y1: SurfaceHit, y1Prim: u32, camPos: vec3f, thr: f
     prevE = eB;
     cur = nxt;
     curPrim = h.primId;
-    V = -wOut;
+    V = select(-wOut, -bs.L, bs.is_delta);               // M6-10: the traced direction after a delta event (path tree's rule)
   }
   r.Tp = Tp;
   r.yLast = cur;

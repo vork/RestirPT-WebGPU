@@ -287,7 +287,7 @@ function ptRefRun(pkg: string, ptFrom: 'm4' | 'm6', spp: number, B: number, seed
 
 // ------------------------------------------------------------------------------------------------ sequential units
 
-function seqUnit(u: SeqUnit, dir: string, runId: string, nU: number, add: Add, pilotOnly: boolean): Record<string, any> {
+function seqUnit(u: SeqUnit, dir: string, runId: string, nU: number, add: Add, pilotOnly: boolean, restirSeedOffset = 0): Record<string, any> {
   const t0 = performance.now();
   const base = { unit: u.id, kind: 'seq', part: u.part, rung: u.rung, scene: u.pkg, label: u.label, preset: u.preset, settings: u.settings ?? {}, lightMode: u.lightMode, tier: u.tier };
   const z = sizeUnit(u.pkg, u.preset, u.settings, u.pt, u.tier, add, u.id);
@@ -305,7 +305,7 @@ function seqUnit(u: SeqUnit, dir: string, runId: string, nU: number, add: Add, p
     return runBatches([...rsArgs(u.pkg, u.preset, u.settings), '--spp', String(z.frames), '--batches', String(z.B), '--seed', String(seed)],
       `${runId}-${sub}`.replace(/[^\w.-]+/g, '_').slice(0, 120), path.join(dir, 'restir', safe(sub)), { B: z.B, estSeconds: z.seconds * 1.2 });
   };
-  const first = run(SEEDS.restir, u.id);
+  const first = run(SEEDS.restir + restirSeedOffset, u.id);
   const test = writeTest(dir, u.id, nU, u.tier, z.tile);
   const out = path.join(dir, 'compare', safe(u.id));
   const t16 = first.meta ? t16M6(first.meta, ref.meta, { rounds, lightMode: u.lightMode, expect }) : ['ReSTIR run produced no meta.json'];
@@ -313,9 +313,9 @@ function seqUnit(u: SeqUnit, dir: string, runId: string, nU: number, add: Add, p
   if (first.dir && first.meta) { compare(first.dir, ref.dir, test, out); rep = tryJson(path.join(out, 'report.json')); }
   let rerun: Record<string, unknown> | undefined;
   if (rep?.status === 'rerun_required') {
-    console.log(`  ${u.id}: rerun_required (${rep.failed_checks.join(', ')}) -> confirmatory re-run on disjoint seeds (PT ${P.rerun}, ReSTIR ${SEEDS.restirRerun})`);
+    console.log(`  ${u.id}: rerun_required (${rep.failed_checks.join(', ')}) -> confirmatory re-run on disjoint seeds (PT ${P.rerun}, ReSTIR ${SEEDS.restirRerun + restirSeedOffset})`);
     const ref2 = ptRefRun(u.pkg, u.pt, z.ptSpp, z.B, P.rerun, 1.2 * z.ptSeconds, add);
-    const second = run(SEEDS.restirRerun, `${u.id}-rerun`);
+    const second = run(SEEDS.restirRerun + restirSeedOffset, `${u.id}-rerun`);
     if (ref2 && second.dir && second.meta) {
       t16.push(...t16M6(second.meta, ref2.meta, { rounds, lightMode: u.lightMode, expect }).map((x) => `re-run: ${x}`));
       compare(second.dir, ref2.dir, test, `${out}-rerun`, path.join(out, 'report.json'));
@@ -330,6 +330,7 @@ function seqUnit(u: SeqUnit, dir: string, runId: string, nU: number, add: Add, p
     ...base, ok, ...(sum ?? { status: 'error' }), sizing, pt: `${z.ptSpp}x${z.B}`, restir: `${z.frames}x${z.B}`, tile: z.tile, fr: r4(rm.fr),
     restir_minutes: first.meta ? r4(first.meta.timings.totalMs / 60000) : undefined, pt_cache_hit: ref.cacheHit, t16, report: path.join(out, 'report.json'),
     restir_dir: first.dir, pt_dir: ref.dir, ...(rerun ? { rerun } : {}),
+    ...(restirSeedOffset ? { restir_seeds: { first: SEEDS.restir + restirSeedOffset, rerun: SEEDS.restirRerun + restirSeedOffset, note: 'fresh ReSTIR seeds (--restir-seed-offset); PT references unchanged' } } : {}),
   };
   add(`Stage B ${u.id} (${u.label}; ${u.preset}${u.settings ? ` ${json(u.settings)}` : ''}, Mode ${u.lightMode})`, ok, (performance.now() - t0) / 1000, res,
     sum ? `${sum.status}: Δ_Y ${pct(sum.global_rel_Y as number, 4)} (MDB ${pct(sum.mdb_global_Y as number, 3)}), worst tile ${pct(sum.worst_tile_rel_Y as number, 2)} ${sum.worst_tile ?? ''}, mult ${sum.multiplier_needed}${sum.failed_checks?.length ? `, failed ${sum.failed_checks.join(' ')}` : ''}${t16.length ? `; T16: ${t16.join('; ')}` : ''}`
@@ -568,7 +569,9 @@ function ensurePackages(add: Add): void {
 
 // ------------------------------------------------------------------------------------------------ the gate
 
-export interface M6Options { part?: Part; only?: Set<string>; pilotOnly?: boolean; plantSeedOffset?: number; writeBudget?: boolean }
+/** restirSeedOffset (M6-10 verification): ReSTIR seeds of the sequential units + offset (first and confirmatory re-run), the
+ *  PT references (seeds 6001 / 106001, cached by PT code hash) unchanged. */
+export interface M6Options { part?: Part; only?: Set<string>; pilotOnly?: boolean; plantSeedOffset?: number; restirSeedOffset?: number; writeBudget?: boolean }
 
 export function milestoneM6(record: Rec, o: M6Options = {}): void {
   const t0 = performance.now();
@@ -601,7 +604,7 @@ export function milestoneM6(record: Rec, o: M6Options = {}): void {
   const sizing: Record<string, unknown> = {};
   if (parts.includes('core') && !o.only && !o.pilotOnly) gate0(dir, runId, add, runStep);
   for (const part of parts.filter((p) => p !== 'core')) {
-    for (const u of SEQ_UNITS.filter((x) => x.part === part && sel(x.id, x.pkg))) results.push(seqUnit(u, dir, runId, nU, add, !!o.pilotOnly));
+    for (const u of SEQ_UNITS.filter((x) => x.part === part && sel(x.id, x.pkg))) results.push(seqUnit(u, dir, runId, nU, add, !!o.pilotOnly, o.restirSeedOffset ?? 0));
     const cu = CHAIN_UNITS.filter((x) => x.part === part && sel(x.id, x.pkg));
     if (cu.length) {
       const r = chainUnits(cu, dir, runId, nU, add, !!o.pilotOnly);
