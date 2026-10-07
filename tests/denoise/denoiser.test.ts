@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
-  DENOISER_DEFAULTS, DENOISER_VIEWS, DN_PARAMS_SIZE, DN_TSTATE, DN_VIEW, DNF, DNI, atrousPlan, denoiseModeKey, denoiserAllowed, denoiserDefault, dnTiles, packDnParams,
+  DENOISER_DEFAULTS, DENOISER_VIEWS, DN_PARAMS_SIZE, DN_TSTATE, DN_VIEW, DNF, DNI, DNT, atrousPlan, denoiseModeKey, denoiserAllowed, denoiserDefault, dnTiles, packDnParams,
 } from '../../src/core/render/denoise/layout.ts';
 import { denoiserT16State, liveDenoisers, registerDenoiser, unregisterDenoiser } from '../../src/core/render/denoise/registry.ts';
 import { BUILTIN_VIEWS } from '../../src/core/render/debug-views.ts';
@@ -82,6 +82,8 @@ describe('uniforms and the à-trous plan', () => {
     expect([u[0], u[1], u[2], u[3], u[4]]).toEqual([961, 539, 121, 68, 9]);
     expect([f[5], f[6], f[9], f[10], f[11]]).toEqual([64, Math.fround(0.25), 1, 128, 4]);
     expect([u[12], u[13]]).toEqual([12345, 10]);
+    const b2 = packDnParams({ width: 8, height: 8, flags: 0, settings: { ...DENOISER_DEFAULTS, taaLightMax: 24, taaCamMax: 12, taaDilate: true, taaCubic: true }, tsBase: 0, resPlanes: 10 });
+    expect([new Float32Array(b2)[21], new Float32Array(b2)[22], new Uint32Array(b2)[23]]).toEqual([24, 12, DNT.DILATE | DNT.CUBIC]);   // DN-16
     expect(dnTiles(960, 540)).toEqual([120, 68]);
   });
   it('atrousPlan: steps 2^i, feedback on the first, final on the last; N = 0 is one copy pass', () => {

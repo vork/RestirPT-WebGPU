@@ -411,3 +411,54 @@ Writes `validation/out/m55-gate-<time>/summary.json` and `summary.md`. Never wri
     0.88).
   With DN-4's history-aware variance, the fifth level (step 16, a 61-pixel footprint) mostly blurs a converged
   signal. It also costs 0.36 ms on (vii). The panel still offers 0–6.
+- **DN-16 (resolve in the lighting window; user report "silhouette edges still highly noisy").** Edge study
+  (`validation/tools/edge_study.py`, runs of `run-denoise.ts` with the new `--light-anim` / `--dn-json` options; packages
+  derived from (x) `x_many_lights_512` in `validation/out/edge-aa/pkgs` by `validation/tools/edge_study_pkgs.py`: `xml_black`, a camera on which the blue box's
+  silhouette lies against the black background, the back wall and the floor; PT references 16 384 spp; display
+  luminance, frames 40–63; edge masks split by the material ids across the boundary). Static camera and static lights
+  converge as DN-6 intended (resolve n_t → 1024): edge std 0.0013 (box | background 0.0020), below the progressive mean's
+  0.0056. A light that changes on every frame, even by 10⁻³ of one light's power (λ ≈ 0.005 < λ₀, so nothing is cut),
+  keeps `sinceChange < 8`, and the window's n_t ≤ 8 with variance clipping γ = 1 left edge std 0.0074 (×5.7; box |
+  background 0.0108, box | wall 0.0038; i.i.d. jitter, the app's default: 0.0077 / 0.0151 / 0.0049) and interior std
+  0.0035 (×6). Cause, by ablation: mostly the clipping, then the cap. The 3×3 neighbourhood of the denoised output is
+  smooth, so μ ± σ is narrow and pulls the history to this frame's value (cap 8 → 32 with γ = 1: edge 0.0056; γ = 4:
+  0.0043; no clipping: 0.0038; no clipping and n_t ≤ 1024: 0.0035, interior 0.0008). Lag is the gradient's job: a spot
+  light moving 15 mm/frame (`xml_black_spot`, per-frame PT references) has edge / interior RMSE 0.0280 / 0.0120 before,
+  0.0266–0.0272 / 0.0114–0.0117 for any of these, i.e. no ghosting. The lighting window (static camera) now uses
+  n_t ≤ `taaLightMax` = 32 and γ = `taaGammaLight` = 4 (clipping kept as a safety net for changes the gradient detects
+  only partly; the camera-motion window keeps n_t ≤ 8, γ = 1, `taaCamMax`, `taaGammaCam`). Result (light varying every
+  frame): edge std R2 0.0074 → 0.0043 (box | background 0.0108 → 0.0060, box | wall 0.0038 → 0.0016), i.i.d. 0.0077 →
+  0.0042 (0.0151 → 0.0092, 0.0049 → 0.0022), interior 0.0035 → 0.0021; (i) Cornell 0.0052 → 0.0027 (interior 0.0021 →
+  0.0010, below the progressive mean's 0.0034 / 0.0023); moving spot edge |d2| 0.0032 → 0.0015, RMSE 0.0280 → 0.0269.
+  Recovery (ix-e): C added 7 → 1 frames, A × 2 4 → 4, B removed 3 → 2, A × 0.5 4 → 4. DnParams grows to 112 B
+  (taaLightMax, taaCamMax, taaFlags, taaGammaLight, taaGammaCam).
+  Not the cause (measured): (a) the app's state: with a static camera and static lights `sinceChange` grows without bound
+  (app probe `validation/harness/edge-app-probe.ts`, Cornell + an editor light: 81 … 96, flags 60), so the resolve
+  converges there; the app runs i.i.d. jitter (integration.ts), not R2. (b) ReSTIR at silhouettes (H3): c_out is 6 (the
+  cap 5 + 1) in the interior and on box | wall / box | floor pixels, but 2.8 on box | background pixels, 54 % at c = 1:
+  when the previous frame's jittered sample missed the box there is no previous reservoir, which is inherent to the
+  1-spp jitter (no change in src/core/shaders). The denoiser's colour history behaves the same way there (identity
+  reprojection needs a previous hit: n = 20 vs 64), but the displayed flicker ratio box | background : box | wall (2.8)
+  equals their luminance contrast ratio, i.e. the coverage coin flip dominates, not the shorter histories. (c) The
+  à-trous / λ: λ stays below λ₀ for the 10⁻³ change. (d) The bilinear upscale blit (H4) is a fixed linear filter: it
+  softens edges at 540p → a 2–3× larger canvas but cannot add temporal noise; the 'native' resolution or the
+  nearest-neighbour present filter show the internal pixels.
+- **DN-17 (resolve in motion: closest-hit motion vector and a Catmull-Rom history fetch).** With a moving camera the
+  resolve fetched its history with the motion vector of the pixel's own jittered hit and a bilinear filter. At a
+  silhouette the hit is the box in some frames and the wall or the background in others, whose motion differs by the
+  parallax, so the history came from the foreground or the background side at random; and every bilinear fetch blurs by
+  f(1 − f) px² per axis, which accumulates over the history (≈ 1.3 px at f = ½ and α = 1/8: the smeared edge). Now
+  (standard TAA, Karis 2014): the motion vector of the closest hit in the 3×3 neighbourhood (`taaDilate`, so a silhouette
+  pixel follows the foreground) and a Catmull-Rom fetch of the 4×4 texels around the reprojected centre (`taaCubic`;
+  edge texels clamped; bilinear where a bilinear tap falls outside the image), clipped as before. Pans of `xml_black` (`xml_black_pan4` / `_pan16`: 4 and
+  16 mm/frame ≈ 0.5 and 2 px/frame on the box; PT references at frames 40, 48, 56, 63, 8192 spp), edge RMSE R2 0.0392 →
+  0.0302 and 0.0506 → 0.0316, i.i.d. 0.0442 → 0.0330 and 0.0558 → 0.0368, edge |d2| −8 … −15 %; interior unchanged
+  (0.012). Each alone (4 mm/frame, R2): dilation 0.0344, Catmull-Rom 0.0401 (the dilation is what makes the history
+  coherent; the cubic fetch then keeps it sharp). Also tried: n_t ≤ 16 in motion (RMSE 0.0324 / 0.0357: more lag),
+  γ = 2 (no change), no clipping (0.0382 / 0.0737: ghosting). Cost (960×540, separate timing submits): dn_resolve on a
+  panning frame 0.224 → 0.227 ms (Cornell) and 0.253 → 0.242 ms ((vii)), i.e. within run-to-run noise (the extra
+  loads hit the cache that the 3×3 clipping neighbourhood already fills); static frames take the identity path and are
+  unchanged (0.032 / 0.044 ms). M5.5 gate with DN-16 + DN-17: FLIP ix-d (moving camera) ×2.13 → ×2.25, (i) ×3.30 →
+  ×3.27, (v) ×2.94 → ×2.90, (vii) ×2.32 → ×2.31; slow-pan edge |d2| (i) 0.0228 → 0.0132, (vii) 0.0033 → 0.0032; static
+  edge stability unchanged; timing (i) 1.61 ms, (vii) 2.51 ms. U-DN-7 (Chrome) checks the motion fetch against a CPU
+  Catmull-Rom with the dilated motion vector (γ = 0, n_t ≤ 2, so the fetched history is 2·T − out).

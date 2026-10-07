@@ -47,13 +47,14 @@ function scene(cam: CameraState): RefPixel[] {
   }
   return px;
 }
-/** GBufTexel array (80 B; passes/gbuffer.wgsl). */
-function gbufBytes(px: RefPixel[]): ArrayBuffer {
+/** GBufTexel array (80 B; passes/gbuffer.wgsl). `motion`: per-pixel motion vectors (GB_MOTION_VALID set). */
+function gbufBytes(px: RefPixel[], motion?: [number, number][]): ArrayBuffer {
   const b = new ArrayBuffer(P * 80), f = new Float32Array(b), u = new Uint32Array(b);
   px.forEach((p, i) => {
     const o = i * 20;
     f.set([0, 0, 1], o); f[o + 3] = 0; f.set(p.ns, o + 4); f[o + 7] = p.hit ? -p.pos[2] : 0;
     f.set(p.pos, o + 8); u[o + 11] = p.hit ? 0 : 0xffffffff; f.set(p.albedo, o + 12); u[o + 15] = p.hit ? GB_HIT : 0;
+    if (motion) { f.set(motion[i], o + 16); u[o + 15] |= 4; }   // GB_MOTION_VALID
   });
   return b;
 }
@@ -129,7 +130,7 @@ function expectMoments(gpu: ArrayLike<number>, ref: ArrayLike<number>, skipFw = 
 
 interface FrameIn {
   cam: CameraState; prev: CameraState; px: RefPixel[]; radiance: Float64Array; l1: Float64Array; reset: boolean;
-  settings: DenoiserSettings; kind: 'restir' | 'pt'; restir?: DenoiseFrame['restir']; advanced?: boolean;
+  settings: DenoiserSettings; kind: 'restir' | 'pt'; restir?: DenoiseFrame['restir']; advanced?: boolean; motion?: [number, number][];
 }
 let frameNo = 0;
 function encodeFrame(f: FrameIn, record?: GPUComputePassDescriptor[]): void {
@@ -138,7 +139,7 @@ function encodeFrame(f: FrameIn, record?: GPUComputePassDescriptor[]): void {
     jitter: [0.5, 0.5], origin: [0, 0, 0], exposure: 1, time: 0, dt: 0, sceneDiag: 10,
   });
   frameNo++;
-  rig.device.queue.writeBuffer(rig.gbuf, 0, gbufBytes(f.px));
+  rig.device.queue.writeBuffer(rig.gbuf, 0, gbufBytes(f.px, f.motion));
   writeTex(rig.radiance, f.radiance);
   writeTex(rig.l1, f.l1);
   rig.dn.setSettings(f.settings);
@@ -378,6 +379,52 @@ describe('denoiser passes vs the f64 reference', () => {
     }
     // every pixel (background too) accumulates: n_t = 8 + 4 after the 4 static frames
     for (let i = 0; i < P; i++) expect(prevTaa[4 * i + 3]).toBe(12);
+  });
+
+  it('U-DN-7 dn_resolve in motion: closest-hit (3×3) motion vector and Catmull-Rom history fetch (Changelog DN-17)', async () => {
+    // γ = 0 (no clipping) and n_t ≤ 2: the resolved value is ½(history + current), so the fetched history is 2·T − out.
+    const S: DenoiserSettings = { ...DENOISER_DEFAULTS, iterations: 1, taaCamMax: 2, taaGammaCam: 0, taaDilate: true, taaCubic: true };
+    const camA = camAt(0.02), camB = camAt(0.05);
+    const pxA = scene(camA), pxB = scene(camB);
+    const l1A = l1Of(pxA), l1B = l1Of(pxB);
+    encodeFrame({ cam: camA, prev: camA, px: pxA, radiance: noisy(pxA, 70), l1: l1A, reset: true, settings: S, kind: 'restir' });
+    const t = rig.dn.textures!;
+    const taaA = await f32(t.taa[rig.dn.parity]);
+    // plane (z = −2) and box face (z = −1.4) move differently; background by its own vector
+    const motion = pxB.map((p, i): [number, number] => (!p.hit ? [0.1, 0] : (i % W) >= 24 && (i % W) < 32 ? [1.7, -0.4] : [0.3, 0.2]));
+    encodeFrame({ cam: camB, prev: camA, px: pxB, radiance: noisy(pxB, 71), l1: l1B, reset: false, settings: S, kind: 'restir', motion });
+    const taaB = await f32(t.taa[rig.dn.parity]);
+    const out = await f16(t.out);
+    const camPos = [camB.camToWorld[12], camB.camToWorld[13], camB.camToWorld[14]];
+    const dist = pxB.map((p) => (p.hit ? Math.fround(Math.hypot(p.pos[0] - camPos[0], p.pos[1] - camPos[1], p.pos[2] - camPos[2])) : 0));
+    const at = (x: number, y: number, k: number) => taaA[4 * (Math.min(Math.max(y, 0), H - 1) * W + Math.min(Math.max(x, 0), W - 1)) + k];
+    const cr = (f: number): number[] => [f * (-0.5 + f * (1 - 0.5 * f)), 1 + f * f * (-2.5 + 1.5 * f), f * (0.5 + f * (2 - 1.5 * f)), f * f * (-0.5 + 0.5 * f)];
+    let checked = 0, dilated = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      let best = 1e30, mi = y * W + x;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const qx = x + dx, qy = y + dy;
+        if (qx < 0 || qy < 0 || qx >= W || qy >= H) continue;
+        const d = dist[qy * W + qx];
+        if (d > 0 && d < best) { best = d; mi = qy * W + qx; }
+      }
+      if (motion[mi] !== motion[y * W + x]) dilated++;
+      const sx = x + motion[mi][0], sy = y + motion[mi][1], bx = Math.floor(sx), by = Math.floor(sy), fx = sx - bx, fy = sy - by;
+      if (bx < 0 || by < 0 || bx + 1 >= W || by + 1 >= H) continue;   // the bilinear fallback at the border: not modelled
+      const wx = cr(fx), wy = cr(fy);
+      for (let k = 0; k < 3; k++) {
+        let h = 0;
+        for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) h += wx[i] * wy[j] * at(bx + i - 1, by + j - 1, k);
+        h = Math.max(h, 0);
+        const i4 = 4 * (y * W + x);
+        expect(taaB[i4 + 3]).toBe(2);
+        const got = 2 * taaB[i4 + k] - out[i4 + k];
+        expect(Math.abs(got - h), `pixel (${x}, ${y}) channel ${k}`).toBeLessThanOrEqual(2e-3 * (Math.abs(h) + Math.abs(out[i4 + k])) + 1e-5);
+      }
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(P / 2);
+    expect(dilated).toBeGreaterThan(20);   // the box's motion reaches the plane and background pixels next to it
   });
 
   it('U-DN-5 held frame and timing re-run are bit-identical; no timestamp writes in the frame', async () => {

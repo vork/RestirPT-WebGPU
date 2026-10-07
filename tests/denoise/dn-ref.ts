@@ -404,12 +404,12 @@ export function refLambda(W: number, H: number, pairs: number[][], invRadius = 1
 
 /** dn_resolve with a static camera and no lighting change in the last 8 frames (Changelog DN-6): every pixel (hit or
  *  background) α_t = 1/n_t, n_t ≤ nMaxT. `prev` = dnTaa[prev] (rgb, n_t), `out` = the remodulated output (fp16-stored).
- *  `dynamic`: the n_t ≤ 8 cap (the variance clipping is not modelled: tests use a smooth input there). */
+ *  `dynamic`: the n_t ≤ taaLightMax cap (the variance clipping is not modelled: tests use a smooth input there). */
 export function refResolveStatic(s: DenoiserSettings, out: ArrayLike<number>, prev: Float64Array, reset: boolean, P: number, dynamic = false): Float64Array {
   const res = new Float64Array(P * 4);
   for (let i = 0; i < P; i++) {
     const h = !reset ? prev.subarray(4 * i, 4 * i + 4) : new Float64Array(4);
-    const nMax = dynamic ? Math.min(s.nMaxT, 8) : s.nMaxT;
+    const nMax = dynamic ? Math.min(s.nMaxT, s.taaLightMax) : s.nMaxT;   // static camera: the lighting window's cap (DN-16)
     const nT = s.resolve ? Math.min(1 + h[3], Math.max(nMax, 1)) : 1;
     for (let k = 0; k < 3; k++) res[4 * i + k] = Math.fround(Math.max(h[3] > 0 && nT > 1 ? h[k] + (out[3 * i + k] - h[k]) / nT : out[3 * i + k], 0));   // f32 (DN-7)
     res[4 * i + 3] = nT;
