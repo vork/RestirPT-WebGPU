@@ -252,7 +252,7 @@ export class RestirKernel {
 
   /** Compile the stages the current settings / view need (spatial when rounds > 0, ensemble when E > 1). */
   async prepare(): Promise<void> {
-    const key = `${this.settings.rounds > 0}:${(this.view?.members ?? 1) > 1}:${this.settings.temporal}:${this.variantKey()}`;
+    const key = this.prepareKey();
     if (key === this.prepared) return;
     // the frame passes of the current variant (cached; a variant change recompiles them, MD1)
     const base: RsPassName[] = ['rs_primary', 'rs_initial', 'rs_finalize'];
@@ -264,8 +264,17 @@ export class RestirKernel {
     if (this.settings.rounds > 0) await this.spatial.prepare?.(this);
     if ((this.view?.members ?? 1) > 1) await this.ensemble.prepare?.(this);
     if (this.settings.temporal) await this.temporal.prepare?.(this);
-    this.prepared = key;
+    // a prepare() of an older variant that finishes after the settings changed again must not mark the new one ready
+    if (key === this.prepareKey()) this.prepared = key;
   }
+
+  /** Key of what prepare() compiles: the stages the settings / view need and the pipeline variant. */
+  prepareKey(): string {
+    return `${this.settings.rounds > 0}:${(this.view?.members ?? 1) > 1}:${this.settings.temporal}:${this.variantKey()}`;
+  }
+  /** Every pipeline the current settings, light mode and view need is compiled (prepare() finished for them). A frame
+   *  must not be encoded otherwise: setSettings() / setLightMode() switch the variant at once, the compile is async. */
+  isPrepared(): boolean { return this.prepared === this.prepareKey(); }
 
   // ---------------------------------------------------------------------------------------------- state
 
@@ -727,6 +736,8 @@ export class RestirFramePass {
   /** Settings changes that need a new stage (rounds 0 → > 0) require `await prepare()`. */
   setSettings(s: Partial<RestirSettings>): void { this.kernel.setSettings(s); }
   prepare(): Promise<void> { return this.kernel.prepare(); }
+  /** The current variant is compiled: encode() / encodeHold() may run (else `await prepare()` first). */
+  get ready(): boolean { return this.kernel.isPrepared(); }
 
   setTargets(t: RestirFrameTargets): void {
     const old = this.targets;

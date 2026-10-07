@@ -150,6 +150,10 @@ interface RestirState {
   lastAdvance?: RestirAdvance;
   /** Temporal frames encoded / paused frames held since the pass was created (smoke: TD20). */
   temporalFrames: number; heldFrames: number;
+  /** The compile of the current pipeline variant (light mode / M6 feature toggles / stages; never rejects). */
+  variant?: { key: string; p: Promise<void> };
+  /** restirError of the last failed variant compile (cleared when a later variant compiles). */
+  variantError?: string;
 }
 
 interface SceneState {
@@ -284,9 +288,10 @@ export class Renderer {
     const rs = this.state?.rs;
     if (rs) {
       // M6: the light mode and the feature toggles are pipeline variants (MD1, MD9): recompiled lazily by prepare()
+      // until it is compiled the frames show the PT beauty (encodeRestir), never a half-switched kernel
       rs.pass.kernel.setLightMode(this.options.lightMode);
       rs.pass.setSettings(this.restirSettings());
-      await rs.pass.prepare();
+      await this.prepareRestirVariant(rs);
     }
     if (!this.sceneData) return;
     if (texChanged || wtChanged) await this.setScene(this.sceneData, this.origin);
@@ -361,6 +366,24 @@ export class Renderer {
       }
     })();
     state.rsPending = p;
+    return p;
+  }
+
+  /** Compile the current pipeline variant of `rs` (once per variant; never throws: a failure goes to restirError and
+   *  the PT beauty stays, as for compileRestir). */
+  private prepareRestirVariant(rs: RestirState): Promise<void> {
+    const k = rs.pass.kernel;
+    if (k.isPrepared()) return Promise.resolve();
+    const key = k.prepareKey();
+    if (rs.variant?.key === key) return rs.variant.p;
+    const p = rs.pass.prepare().then(() => {
+      if (rs.variantError !== undefined && this.restirError === rs.variantError) this.restirError = undefined;
+      rs.variantError = undefined;
+    }, (e: unknown) => {
+      rs.variantError = this.restirError = `ReSTIR: ${e instanceof Error ? e.message : String(e)}`;
+      console.error(e);
+    });
+    rs.variant = { key, p };
     return p;
   }
 
@@ -615,6 +638,10 @@ export class Renderer {
   private encodeRestir(encoder: GPUCommandEncoder, rs: RestirState, advanced: boolean, resetTemporal: boolean, frameUniforms: GPUBuffer,
     ts?: () => GPUComputePassTimestampWrites | undefined): boolean {
     const k = rs.pass.kernel;
+    // A light-mode / feature toggle switches the kernel's pipeline variant at once and compiles it asynchronously
+    // (setOptions awaits it, but frames keep coming): until it is compiled the PT beauty is shown (before advancing the
+    // temporal state, so the history is not consumed by a frame that never ran).
+    if (!rs.pass.ready) { void this.prepareRestirVariant(rs); return false; }
     let arena: GPUBuffer;
     try { arena = k.resources.arena; } catch { return false; }
     const temporal = !!k.settings.temporal;
