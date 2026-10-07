@@ -109,6 +109,10 @@ export function hashU32(u: Uint32Array): string {
 export const T32_CASES = ['a-delta', 'a-area', 'a-tri', 'a-sun', 'f-env', 'b', 'b-env', 'c-tri', 'c-env', 'd', 'e', 'deep-nee', 'deep-bsdf', '∅-tri', '∅-env',
   '∅-ana', 'd-ana', 'c-ana'] as const;   // M6 Mode-B crossings (restir-m6-api.md MD8; deep crossings count in deep-bsdf)
 export const T32_BINS = T32_CASES.length * 2;
+/** The M6 crossing cases: candidates with technique BSDF_ANALYTIC exist only in the RS_MODE_B variant (light mode B / A′,
+ *  pathtree.wgsl pt_cross_candidates), so in light mode A these bins are structurally empty (Changelog M6-13). */
+export const T32_MODEB_CASES: readonly string[] = ['∅-ana', 'd-ana', 'c-ana'];
+export const t32ModeBBin = (binName: string): boolean => T32_MODEB_CASES.includes(binName.split('/')[0]);
 const BW = 40;                       // words per bin: 0 trials 1 fwdOk 2 rtOk 3 cand 4 fp(margin) 5 fBad 6 jBad 7 noInv 8..23 fwd SC 24..39 inv SC
 const CAND0 = 2048, CAND_CAP = 4096, CW = 13;   // candidates: [ai, frame, bin, invCode, fwdJ, invJ, bits(eF), bits(eJ), minEdge bits, recheckCode, done, kind, X_p flags]
 export const T32_STATS_WORDS = CAND0 + 1 + CAND_CAP * CW;

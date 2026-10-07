@@ -446,3 +446,25 @@ pairing generator (MD3). §27: duplication-map realisation (MD10).
     the debiased statistic's residual at this noise. Over all 8 ixs_d_camera test frames the largest mean b̂_t is 1.06 %
     (cCap 20, f40), the largest 99 % bound 0.39 % (cCap 20, f32). The noise floor is 0.04–0.21 % against the 1 % limit,
     so the budget is resolved with ≥ 5× margin and no further chains are needed.
+- **M6-13 (T3-2 rare bins "∅-ana/k2 empty": the M5 every-bin rule ran over the M6 crossing bins; m6-gate-core
+  20261007-172751).**
+  - **Symptom.** The three M5 regression cases `rare bins: translate`, `add / remove + intensity` and `moving lights +
+    env` (t3_rare_256, light mode A, 16 000 pairs at 256², `VITE_T32_MIN_BIN = 10⁶`) failed with
+    `∅-ana/k2: expected 0 to be greater than or equal to 1000000`. Every one of the 30 M5 bins was populated
+    (smallest rtOk 1.38e6, c-tri/k>2 in translate), LOGIC = 0 everywhere.
+  - **Root cause (test bookkeeping, not production).** d788c0c (Mode-B temporal T3-2 cases) appended the M6 crossing
+    cases `∅-ana`, `d-ana`, `c-ana` (technique BSDF_ANALYTIC, bins 30–35) to the shared T3-2 harness
+    (`T32_CASES`, restir-temporal-fixtures.ts). A BSDF_ANALYTIC candidate exists only in the RS_MODE_B variant
+    (`pt_cross_candidates`, pathtree.wgsl, under `#if RS_MODE_B`; light mode B / A′): in light mode A the BSDF ray's
+    analytic-light hit is not a technique (MD1), so these six bins are structurally empty. The rare-case assertion
+    "every bin ≥ T32_MIN_BIN" (B-9) iterated `x.r.bins`, which now includes them; ∅-ana/k2 is the first empty bin in
+    order. M6-10, M6-11 (TS_DUAL_PICK), RIS-NEE and the M6 defaults are not involved: the rig pins `lightMode: 'A'` and
+    the `temporal` preset, and the M5 bins' counts match M5's: the gate log's minimum bins are add / remove
+    a-delta/k>2 1 427 754 and moving lights + env c-tri/k>2 1 656 006, M5's B-11 measurement 1.43·10⁶ and 1.66·10⁶.
+  - **Fix.** `T32_MODEB_CASES` / `t32ModeBBin` (restir-temporal-fixtures.ts). Light-mode-A cases now assert the crossing
+    bins are EMPTY (trials = 0: a regression test that mode A never emits a crossing candidate) and apply the ≥ 10⁶ rule
+    to the 30 M5 bins. The Mode-B cases (t3_modeb_rare_256) are the M6 coverage of the ∅-ana class: their rule no
+    longer skips an empty bin (`if (b.trials)` removed; every ana / deep bin ≥ T32_MIN_BIN, and every crossing bin
+    rtOk > 0 at any size), so a crossing class that silently stopped occurring now fails instead of passing.
+  - **Effect on earlier results.** None. M5 (main) never had the bins; the M6 core gate's failure was this assertion
+    alone (the M5 bins in that log pass the M5 rule). No production code changed.
