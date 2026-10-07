@@ -68,7 +68,7 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
       for (const v of [...EXTRA_VIEWS, ...ENV_DEBUG_VIEWS, ...RESTIR_VIEWS, ...DENOISER_VIEWS]) if (!app.debug.registry.get(v.id)) app.registerDebugView(v);
       app.render.jitter = 'iid'; // plan §1.2: i.i.d. per-run/per-frame jitter; the panel offers R2 and pixel centre
       const r = await Renderer.create({ device: gpu.device, debugLayout: app.debug.layout, debug: app.debug, features: gpu.features, wgslLanguageFeatures: gpu.wgslLanguageFeatures },
-        { watertight: false, renderMode: 'pt' }); // interactive default: MT (the panel toggles Woop; validation paths default to Woop); PT beauty (M3a)
+        { watertight: false, renderMode: 'pt', lightMode: 'B' }); // interactive default: Mode B after rung 3.11 (restir-m6-api MD9); MT (the panel toggles Woop; validation paths default to Woop); PT beauty (M3a)
       renderer = r;
       if (app.targets) r.resize(app.targets);
       addRendererPanel(app, r);
