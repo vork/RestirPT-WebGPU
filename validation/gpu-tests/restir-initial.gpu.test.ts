@@ -9,7 +9,7 @@ import { RES_WORDS, RS_DUMP_CAP, RS_WGSL_CONSTS, RW, decodeReservoir, dumpCountW
 import { PtKernel } from '../../src/core/render/pt-kernel.ts';
 import { FRAME_RESET_HISTORY, FrameUniformBuffer, JITTER_IID } from '../../src/core/render/frame-uniforms.ts';
 import { RestirKernel } from '../../src/core/render/restir/kernel.ts';
-import { restirSettings } from '../../src/core/render/restir/presets.ts';
+import { M6_OFF, restirSettings } from '../../src/core/render/restir/presets.ts';
 import { RS_PASSES, type RsPassName } from '../../src/core/render/restir/resources.ts';
 import { fetchScenePackage } from '../../src/core/scene/scene-package.ts';
 import { getTestGpu, releaseTestGpu } from './device-factory.ts';
@@ -768,7 +768,9 @@ describe('RestirFramePass (interactive, renderer mode restir): rung 3.1 settings
     const ref5 = (await batch.frames(1, t)).mean;
     const ref6 = (await batch.frames(1, t + 1)).mean;
     const g = batch.g, device = g.device;
-    const pass = await RestirKernel.interactive(device, g.gpu, g.env, 'rgba32float', { settings: { maxBounces: 3, rounds: 0, rr: false }, features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
+    // M6 (restir-m6-api.md MD13): the interactive preset gained RIS-NEE and the other M6 features; the batch reference is
+    // the M4 'initial' preset, so they are pinned off here (as in U-M4-BITS' interactive cases)
+    const pass = await RestirKernel.interactive(device, g.gpu, g.env, 'rgba32float', { settings: { maxBounces: 3, rounds: 0, rr: false, ...M6_OFF }, features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
     const color = device.createTexture({ size: [Wf, Hf], format: 'rgba32float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC });
     const fu = new FrameUniformBuffer(device);
     pass.setTargets({ width: Wf, height: Hf, color, frameUniforms: fu.buffer });
