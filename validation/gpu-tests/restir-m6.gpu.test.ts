@@ -9,7 +9,7 @@ import type { SceneData } from '../../src/core/scene/types.ts';
 import type { RestirCounters } from '../../src/core/render/restir/kernel.ts';
 import type { LightMode } from '../../src/core/render/lights-gpu.ts';
 import { readBuffer } from '../../src/core/gpu/readback.ts';
-import { arenaM6Layout, RS_M6_CONSTS as K6 } from '../../src/core/render/restir/layout.ts';
+import { arenaM6Layout, RS_M6_CONSTS as K6, TS_CONSTS, TS_WORDS, TSW } from '../../src/core/render/restir/layout.ts';
 import { JITTER_NONE } from '../../src/core/render/frame-uniforms.ts';
 import { bitFixtureScene as bitScene } from './restir-fixtures.ts';
 import { synthEnvData } from './env-fixtures.ts';
@@ -293,7 +293,7 @@ describe('U10-B: crossings consume nothing: the path tree visits the same vertic
 });
 
 describe('U-DMV-1: dual motion vectors pick q′ from the G-buffers only (sample-independent) and find more history under motion', () => {
-  it('ixs-like camera pan over x_quads: q′ identical for two light powers; RSC_T_DUAL > 0; disoccluded fraction lower than without', async () => {
+  it('ixs-like camera pan over x_quads: q′ identical for two light powers; RSC_T_DUAL > 0; disoccluded fraction lower than without; dual picks flagged with c_p ≤ 1 (DMV-1)', async () => {
     const env = synthEnvData(64, 32);
     const run = async (dual: boolean, powerScale: number) => {
       const t3 = t3Scene('t3_cases_256', env);
@@ -303,7 +303,7 @@ describe('U-DMV-1: dual motion vectors pick q′ from the G-buffers only (sample
       const k = rig.kernel;
       await k.prepare();
       let qp: Uint32Array | undefined;
-      let dualN = 0, disocc = 0;
+      let dualN = 0, disocc = 0, flagged = 0, overCap = 0, flaggedOff = 0;
       for (let t = 0; t < 6; t++) {
         const cam = { camToWorld: [...t3.camera.matrix], yfov: t3.camera.yfov };
         cam.camToWorld[12] += 0.08 * t;
@@ -315,15 +315,25 @@ describe('U-DMV-1: dual motion vectors pick q′ from the G-buffers only (sample
         await rig.g.device.queue.onSubmittedWorkDone();
         const c = await k.readCounters(true);
         dualN += c.rsc.tDual; disocc += c.rsc.tDisocc;
-        if (t === 5) qp = (await k.readTemporalState()).filter((_, i) => i % 20 === 8);
+        const ts = await k.readTemporalState();
+        const tf = new Float32Array(ts.buffer, ts.byteOffset, ts.length);
+        const nP = k.resources.alloc.atlasW * k.resources.alloc.atlasH;
+        for (let i = 0; i < nP * TS_WORDS; i += TS_WORDS) {
+          if (!(ts[i + TSW.flags] & TS_CONSTS.TS_QVALID) || !(ts[i + TSW.flags] & TS_CONSTS.TS_DUAL_PICK)) continue;
+          if (dual) { flagged++; if (tf[i + TSW.cP] > 1) overCap++; } else flaggedOff++;
+        }
+        if (t === 5) qp = ts.filter((_, i) => i % 20 === 8);
       }
       rig.destroy();
-      return { qp: qp!, dualN, disocc };
+      return { qp: qp!, dualN, disocc, flagged, overCap, flaggedOff };
     };
     const a = await run(true, 1), b = await run(true, 1.7), off = await run(false, 1);
     let same = 0;
     for (let i = 0; i < a.qp.length; i++) if (a.qp[i] === b.qp[i]) same++;
-    console.log(`[U-DMV-1] q′ identical ${same}/${a.qp.length}; dual picks ${a.dualN}; disoccluded with dual ${a.disocc}, without ${off.disocc}`);
+    console.log(`[U-DMV-1] q′ identical ${same}/${a.qp.length}; dual picks ${a.dualN}; disoccluded with dual ${a.disocc}, without ${off.disocc}; TS_DUAL_PICK ${a.flagged} (c_p > 1: ${a.overCap}; dual off: ${off.flaggedOff})`);
+    expect(a.flagged).toBe(a.dualN);          // every dual pick (RSC_T_DUAL) is flagged in tState
+    expect(a.overCap).toBe(0);                // DMV-1: c_p = min(DMV_C_CAP = 1, c_prev) on dual picks
+    expect(off.flaggedOff).toBe(0);
     expect(same).toBe(a.qp.length);
     expect(a.dualN).toBeGreaterThan(0);
     expect(a.disocc).toBeLessThan(off.disocc);

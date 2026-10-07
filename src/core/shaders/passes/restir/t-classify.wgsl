@@ -36,9 +36,19 @@ fn rs_t_classify(@builtin(global_invocation_id) gid: vec3u) {
   let cP = min(rsParams.cCap, cPrev);
 #endif
   var flags = TS_QVALID | select(0u, TS_PICK_RING, pk.tap != 0u);
+#if RS_DUAL_MV
+  // MD11 amendment DMV-1: a dual-MV q′ carries c_p = min(DMV_C_CAP, c_prev) (its history belongs to another surface
+  // point; with c_p up to cCap its importance ratio p̂_q·J/p̂_q′ was amplified up to cCap-fold, the ix-d f40 tail)
+  let dual = pk.tap >= 10u;
+  if (dual) { flags |= TS_DUAL_PICK; }
+  ts_clear(p.ai, flags);
+  ts_store(p.ai, TSW_QPRIME, qP);
+  ts_storef(p.ai, TSW_CP, select(cP, min(cP, DMV_C_CAP), dual));
+#else
   ts_clear(p.ai, flags);
   ts_store(p.ai, TSW_QPRIME, qP);
   ts_storef(p.ai, TSW_CP, cP);
+#endif
   ts_storef(p.ai, TSW_CPREV, cPrev);
   rs_count(RSC_T_QVALID, 1u);
   let src = tsrc_load(qP, 0u, SFX_FWD, RS_FS_CUR);

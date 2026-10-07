@@ -303,6 +303,7 @@ export function unpackRsTemporal(u: Uint32Array): RsTemporalCpu {
 export const TS_CONSTS = {
   TS_QVALID: 1, TS_DISOCC: 2, TS_FWD_QUEUED: 4, TS_FWD_DONE: 8, TS_SEL_P: 16, TS_SEL_C: 32, TS_INV_QUEUED: 64, TS_INV_DONE: 128,
   TS_EMPTY_OUT: 256, TS_NO_HIST: 512, TS_PICK_RING: 1024, TS_ROBUST: 2048, TS_E2_ZERO: 4096, TS_FINAL: 8192, TS_BG: 16384,
+  TS_DUAL_PICK: 65536,   // RS_DUAL_MV variant only (q′ found by the dual MV; T3 resamples it with Talbot MIS, DMV-1)
   SXS_DONE: 1, SXS_UNDEF: 2, SXS_VIS: 4, SXS_RAY: 8, SXS_DEEP: 16, SXS_N1: 32, SXS_B1: 64, SXS_ZERO: 128, SXS_E2: 256, SXS_PLANT: 512,
   SFX_FWD: 0, SFX_INV: 1,
 } as const;
