@@ -40,6 +40,9 @@ export interface RenderDenoiseOptions {
   accumulate?: boolean;
   /** Slow camera motion: translate along the camera's right axis by `pan` metres per frame on frames [from, to). */
   pan?: { dx: number; from: number; to: number };
+  /** Animated light (edge study): light `index`'s power scaled by 1 + amp·sin(0.7·i) on every frame (amp 1e-3: a change
+   *  every frame that the change bits see, with a negligible image change), or `move` metres of sinusoidal x motion. */
+  lightAnim?: { index: number; amp: number; move?: number };
   /** Debug AOV capture: upload view `id` of frame `frame` as aov_<id>_f<frame>.pfm (rgb = the AOV's xyz). */
   debugViews?: { ids: number[]; frames: number[] };
   /** 'timing': warm-up frames, timing submits and re-runs per submit. */
@@ -155,7 +158,15 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
         const k = Math.min(Math.max(i, o.pan.from), o.pan.to) - o.pan.from;
         for (let a = 0; a < 3; a++) cam.camToWorld[12 + a] += k * o.pan.dx * cam.camToWorld[a];
       }
-      r.setLights(st.lights);
+      if (o.lightAnim) {
+        const la = o.lightAnim;
+        r.setLights(st.lights.map((l, k) => {
+          if (k !== la.index) return l;
+          const m = new Float32Array(l.matrix);
+          if (la.move) m[12] += la.move * Math.sin(0.09 * i);
+          return { ...l, power: l.power * (1 + la.amp * Math.sin(0.7 * i)), matrix: m };
+        }));
+      } else r.setLights(st.lights);
       if (st.env) r.setEnvParams(st.env.params);
       fu.write({
         camera: cam, prevCamera: prev ?? cam, width: W, height: H, frameIndex: i, seedIndex: i, runSeed: o.seed >>> 0, flags: 0,
@@ -270,7 +281,7 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
       kind: 'denoise-eval', mode: o.mode, run: o.run, package: o.package, packageSha256: hash.sha256, seed: o.seed, width: W, height: H, frames: total,
       pkgFrames: Array.from({ length: total }, (_, i) => pkgFrame(i)), evalFrames: o.evalFrames ?? [], tiles: o.mode === 'recovery' ? { tile: TILE, x: tilesX, y: tilesY, layout: 'f32 [frame][tile][dn, raw]' } : undefined,
       renderer: { renderMode: 'restir', restirMode: o.restirMode ?? 'interactive', settings: r.restir?.settings, textureMode: 'validation', intersector: 'woop-watertight', jitter: 'iid', accumulate: false },
-      denoiser: { on: denoise, settings: r.denoiser?.settings, perFrame }, jitter: o.jitter ?? 'iid', accumulate: !!o.accumulate, pan: o.pan, vbuf: { primIdMismatch: vbufMismatch, maxBaryDiff: vbufMaxBary }, timing, finalizeCounters: fin,
+      denoiser: { on: denoise, settings: r.denoiser?.settings, perFrame }, jitter: o.jitter ?? 'iid', accumulate: !!o.accumulate, pan: o.pan, lightAnim: o.lightAnim, vbuf: { primIdMismatch: vbufMismatch, maxBaryDiff: vbufMaxBary }, timing, finalizeCounters: fin,
       adapterInfo: { vendor: info.vendor, architecture: info.architecture, description: info.description }, chromeVersion: o.chromeVersion, userAgent: navigator.userAgent,
       files, ok: errors.length === 0, errors, timings: { totalMs: performance.now() - t0 }, createdAt: new Date().toISOString(),
     };
