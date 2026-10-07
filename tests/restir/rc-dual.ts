@@ -330,16 +330,33 @@ export function dualCheckRecord(s: DualScene, w: Uint32Array, o: number): DualRe
     const xk = (!empty && !forced && !envRc)
       ? (ana && k === d ? { pos: crossPos, ng: crossN, mat: Y[1]!.mat } : V(w[o + 6], bf(w[o + 7]), bf(w[o + 8])))
       : undefined;
-    const prevPos = (b: number): V3 => (b === 1 ? cam : Y[b - 1]!.pos);
+    // incoming direction V at y_b (math.md#delta-incoming, restir-m6-api.md M6-10): from positions (D3), except after a
+    // delta event at y_{b−1}, where it is the traced direction: the singular reflection of V at y_{b−1} (supported V1 / V2
+    // materials; a delta event of a glass model is not re-derived: undefined ⇒ the record is skipped)
+    const inDir = (b: number): V3 | undefined => {
+      if (b === 1) return nrm(sub(cam, Y[1]!.pos));
+      if ((lobes[b - 1] & 8) === 0) return nrm(sub(Y[b - 1]!.pos, Y[b]!.pos));
+      const x = Y[b - 1]!, Vp = inDir(b - 1);
+      if (!Vp || !dualLobes(x.mat, 1).supported) return undefined;
+      const n: V3 = dot(x.ng, Vp) < 0 ? neg(x.ng) : x.ng;
+      const c = dot(n, Vp);
+      return neg(nrm([2 * c * n[0] - Vp[0], 2 * c * n[1] - Vp[1], 2 * c * n[2] - Vp[2]]));
+    };
+    /** A point on the incoming ray of y_b (dualEvent takes V = normalize(from − x)). */
+    const prevPos = (b: number): V3 | undefined => {
+      const v = inDir(b);
+      return v ? [Y[b]!.pos[0] + v[0], Y[b]!.pos[1] + v[1], Y[b]!.pos[2] + v[2]] : undefined;
+    };
     const dirTo = (b: number): V3 | undefined => {
       if (ana && empty && b === d - 1) return nrm(sub(crossPos, Y[b]!.pos));   // ∅ crossing: the candidate's own ω_c
       return Y[b + 1] ? nrm(sub(Y[b + 1]!.pos, Y[b]!.pos)) : escape;
     };
-    const replayEvent = (b: number) => { const L = dirTo(b); return L ? dualEvent(Y[b]!, prevPos(b), L, lobes[b]) : undefined; };
+    const replayEvent = (b: number) => { const L = dirTo(b), from = prevPos(b); return L && from ? dualEvent(Y[b]!, from, L, lobes[b]) : undefined; };
     const yk1 = empty ? undefined : Y[yk1Idx];
     const reconnectEvent = () => {
       if (!yk1) return undefined;
       const from = prevPos(yk1Idx);
+      if (!from) return undefined;
       if (forced) return dualEvent(yk1, from, neeDir(yk1.pos), LOBE.NEE);
       const L = envRc ? rcWi : nrm(sub(xk!.pos, yk1.pos));
       return dualEvent(yk1, from, L, lkm1);
@@ -419,6 +436,7 @@ export function dualCheckRecord(s: DualScene, w: Uint32Array, o: number): DualRe
     };
     const Gf = (a: V3, b: V3, nb: V3) => { const dl = sub(a, b); const t2 = dot(dl, dl); return Math.abs(dot(nb, dl)) / (t2 * Math.sqrt(t2)); };
     const from = g.prevPos(yk1Idx);
+    if (!from) return undefined;
     if (envRc) return joint(yk1, from, rcWi, lkm1);
     const wP = nrm(sub(g.xk!.pos, yk1.pos));
     const pY = joint(yk1, from, wP, lkm1);
