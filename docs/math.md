@@ -1703,6 +1703,13 @@ Sources: plan §2 rule 13 and §1.9, gap-temporal §3.7, review R15.
   unbiasedness gate.
 - **[M5 addition, restir-temporal-api.md]** No q′ (or no history) keeps the canonical c = 1. An empty temporal output keeps c = c_c + c_p. c_prev is the
   previous frame's final (post-spatial, uncapped) c; the cap is applied once, in the temporal step.
+- **[M6 addition, restir-m6-api.md M6-11]** A q′ found by the dual motion vector carries `c_p = min(1, c_prev)`.
+  Unbiased: whether q′ is a dual pick is a function of the G-buffers and the pick stream only (rule 9), so the c's stay
+  sample-independent constants of the MIS partition. Why: c_p encodes how many samples the history is worth *for the
+  current target*; a dual source is another surface point, and with Talbot or contribution MIS its candidate's
+  contribution is its own estimate times ≈ min(r, c_p) with r = p̂_q(Y)·J/p̂_{q′}(X_p) the target ratio, which is ≈ 1
+  for a standard q′ but broadly distributed for a dual one (ix-d f40: 7× the per-chain standard deviation of the
+  disocclusion region at c_p = 20, see M6-11).
 
 ---
 

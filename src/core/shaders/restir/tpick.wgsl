@@ -14,6 +14,13 @@ struct TPick { valid: bool, ai: u32, local: vec2u, sp: vec2f, tap: u32 }   // ta
 
 fn tpick_none() -> TPick { return TPick(false, TS_QPRIME_NONE, vec2u(0u), vec2f(-1.0), 9u); }
 
+#if RS_DUAL_MV
+/// Confidence cap of a dual-MV q′ (restir-m6-api.md MD11 amendment DMV-1): c_p = min(DMV_C_CAP, c_prev). The dual source
+/// is another surface point than x₁ (its history was resampled for that point's target), so it counts as one sample,
+/// not as up to cCap. A constant applied by a G-buffer-only predicate: unbiased (any sample-independent c_p is).
+const DMV_C_CAP: f32 = 1.0;
+#endif
+
 /// Ring offset k (0…7): (1,0),(1,1),(0,1),(−1,1),(−1,0),(−1,−1),(0,−1),(1,−1).
 fn tpick_ring(k: u32) -> vec2i {
   switch (k & 7u) {
