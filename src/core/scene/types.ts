@@ -110,6 +110,9 @@ export interface LightData {
   visibleToCamera: boolean;
   /** Set when a file light was simplified (USD sphere radius → 0, distant angle → 0). */
   simplified?: string;
+  /** M7 E2E stock-import packages: 'asset' = made by the loader from the asset (Blender's stock importer makes its own),
+   *  'added' = added by the test (built from the package on both sides). Absent = an ordinary package light. */
+  origin?: 'asset' | 'added';
 }
 
 export interface CameraData {

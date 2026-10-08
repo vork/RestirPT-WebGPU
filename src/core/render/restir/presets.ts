@@ -21,6 +21,10 @@ export interface RestirSettings {
     /** M6 (restir-m6-api.md §5.3): U8-8 RIS UCW in mixed measures, U8-10 tile-conditional pmf in ω1, U8-7 crossed lights
      *  stop BSDF rays in the path tree (Mode B). U8-4 is u8T2 (J = t_x²/t_y², spatial shifts). */
     u8RisMixed?: boolean; u8TilePmf?: boolean; u8CrossOcc?: boolean;
+    /** M7 (m7-api.md §5.2): in every ReSTIR pass but the path tree, the MikkTSpace bitangent sign is ignored (B-NM-sign)
+     *  / the Normal Map strength is applied glTF-style (B-NM-strength); the shift's geometry term at x_k uses the shading
+     *  normal (B-SM-J). Pipeline variants (defines NM_PLANT, RS_PLANT_SMOOTH_J). */
+    m7NmSign?: boolean; m7NmStrength?: boolean; m7SmoothJ?: boolean;
   };
   // ---- M5 temporal (restir-temporal-api.md §3.8, TD1, TD14, TD21, TD23, TD24) ----
   /** Temporal reuse on (TD15: temporal before spatial). Off ⇒ every M4 output bitwise unchanged. */
@@ -181,7 +185,15 @@ export function m6Defines(s: RestirSettings, lightMode: 'A' | 'B' | 'A′' = 'A'
     RS_DUPMAP: s.dupmap && s.temporal ? 1 : 0,
     // U8-4 plant (restir-m6-api.md §5.3): validation-only variant, the spatial shifts know their source record
     RS_PLANT_T2: s.plant?.u8T2 ? 1 : 0,
+    // M7 plants (m7-api.md §5.2): validation-only variants (0 ⇒ the unplanted text)
+    RS_PLANT_SMOOTH_J: s.plant?.m7SmoothJ ? 1 : 0,
   };
+}
+
+/** M7 Normal Map plant define of a pass (m7-api.md §5.2): every ReSTIR pass but the path tree (rs_initial[_dump]). */
+export function m7NmPlantDefine(s: RestirSettings, pass: string): number {
+  if (pass === 'rs_initial' || pass === 'rs_initial_dump') return 0;
+  return s.plant?.m7NmSign ? 1 : s.plant?.m7NmStrength ? 2 : 0;
 }
 
 /** Logical layer sizes W_s of the pairing maps of the settings (RestirParams.pairTexSize). */

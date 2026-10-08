@@ -56,7 +56,8 @@ A **scene package** is the exact scene our renderer draws, exported so that Blen
   "lights": [ {                                  // LightData (types.ts); ids are stable
       "id": 0, "name": "key", "type": "point"|"spot"|"rect"|"disk"|"sun",
       "color": [r,g,b], "power": P, "exposure": 0, "matrix": [16 floats],
-      "spotSize": rad, "spotBlend": b, "sizeX": m, "sizeY": m, "spread": rad, "visibleToCamera": false
+      "spotSize": rad, "spotBlend": b, "sizeX": m, "sizeY": m, "spread": rad, "visibleToCamera": false,
+      "origin": "asset" | "added"               // M7 (optional): with "stock", only "added" lights are built by the bridge
   } ],
   "lightMode": "A" | "B",                        // A: per-light MIS off in Blender (plan §1.4)
   "camera": { "matrix": [16], "yfov": rad, "znear": 1e-4 },
@@ -67,6 +68,12 @@ A **scene package** is the exact scene our renderer draws, exported so that Blen
                                           // RGBA interleaved, rows TOP-DOWN (Blender: foreach_get rows are bottom-up → flip)
   "render": { "width": 512, "height": 512, "maxBounces": 3 },
   "cycles": { "use_light_tree": false },          // optional reference-setting override (only this key; cycles-deviations D6)
+  // M7 (m7-api.md §3.3 / §3.4), optional:
+  //   env.original = { "file": "<repo path>", "sha256": "<file hex>", "format": "hdr" | "exr" }   E2E-HDR: Blender loads
+  //                  this downloaded file itself (not env.exr) and records blender_equals_ours
+  //   "stock": { "importer": "gltf" | "usd", "file": "<repo path>", "sha256": "<hex>", "options": {...} }   E2E: the
+  //                  reference is Blender's own importer on that file; geometry / materials of the package are ignored
+  //   "tier": "tight" | "model-approximate", "notes": "...", "panels": {...}   informational (the gates read the tier)
   "frames": [                                    // optional: resolved per-frame states for animations
     { "frame": 0, "camera": { "matrix": [16], "yfov": rad }, "lights": { "<id>": { "matrix": [16], "power": P } },
       "env": { "rotationZ": rad, "strength": s } }
@@ -103,6 +110,15 @@ A **scene package** is the exact scene our renderer draws, exported so that Blen
 - The env EXR is written from the exact float32 texels our GPU samples. Blender asserts the image-pixel hash
   (ENV-U9, `math.md#env-mapping`).
 - Anything the bridge cannot represent exactly (e.g. KTX2 textures, BLEND alpha) is a hard error, not a warning.
+- **Tangents are never exported (M7).** Blender recomputes MikkTSpace on the package mesh (one object, corner normals,
+  the UV map); `readScenePackage` regenerates ours with the same semantics for packages with a normal-mapped material
+  (`tangents.ts`, m7-api.md N4). U-TAN-B compares the two per corner. Normal textures are Non-Color images feeding a
+  Normal Map node (tangent space, Strength = `normalTexture.scale`).
+- **Stock packages (M7 E2E).** With `"stock"`, `build_from_stock` imports the original asset with Blender's importer,
+  removes imported cameras (the package camera is used), keeps imported lights as the importer made them
+  (`stock_light_rows`: only the §7.5 sampling rows, the importer's values asserted) and builds the package lights with
+  `"origin": "added"` and the env. Our side's package is our loader's output on the same file (USD: Blender-compatible
+  mode).
 - **env.sampling** is the env-NEE switch on both sides: Blender `world.cycles.sampling_method` and our env alias entry
   (`NONE` = no env NEE, BSDF escapes with ω2 = 1; math.md#env-sampling).
 - **env.blenderWorld = "constant"** (M3c C0q only): env.exr must be one constant colour c. Blender builds a plain

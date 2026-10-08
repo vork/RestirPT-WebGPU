@@ -157,7 +157,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     out_dir.mkdir(parents=True)
 
     t_build = time.perf_counter()
-    built = bs.build_from_package(pkg)
+    built = bs.build_from_stock(pkg) if sj.get("stock") else bs.build_from_package(pkg)   # M7 E2E: Blender's stock importer
     t_build = time.perf_counter() - t_build
     scene = built["scene"]
     W, H = scene.render.resolution_x, scene.render.resolution_y

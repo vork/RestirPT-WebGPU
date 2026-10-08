@@ -12,6 +12,7 @@ import type { GpuContext } from '../core/gpu/device.ts';
 import { registerProbeTag } from '../core/render/probe.ts';
 import { EXTRA_VIEWS, PRIMARY_PROBE_TAGS, Renderer } from '../core/render/renderer.ts';
 import { ENV_DEBUG_VIEWS } from '../core/render/env-debug.ts';
+import { SHADING_DEBUG_VIEWS } from '../core/render/shading-debug.ts';
 import { RESTIR_PROBE_TAGS, RESTIR_VIEWS } from '../core/render/restir/debug.ts';
 import { DENOISER_VIEWS } from '../core/render/denoise/layout.ts';
 import { addRestirPanel, type RestirPanelHandle } from './ui/panels/restir-panel.ts';
@@ -65,7 +66,7 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
   const ensure = (app: App): Promise<Renderer> => {
     rendererP ??= (async () => {
       for (const [tag, name] of [...PRIMARY_PROBE_TAGS, ...RESTIR_PROBE_TAGS]) registerProbeTag(tag, name);
-      for (const v of [...EXTRA_VIEWS, ...ENV_DEBUG_VIEWS, ...RESTIR_VIEWS, ...DENOISER_VIEWS]) if (!app.debug.registry.get(v.id)) app.registerDebugView(v);
+      for (const v of [...EXTRA_VIEWS, ...ENV_DEBUG_VIEWS, ...SHADING_DEBUG_VIEWS, ...RESTIR_VIEWS, ...DENOISER_VIEWS]) if (!app.debug.registry.get(v.id)) app.registerDebugView(v);
       app.render.jitter = 'iid'; // plan §1.2: i.i.d. per-run/per-frame jitter; the panel offers R2 and pixel centre
       const r = await Renderer.create({ device: gpu.device, debugLayout: app.debug.layout, debug: app.debug, features: gpu.features, wgslLanguageFeatures: gpu.wgslLanguageFeatures },
         { watertight: false, renderMode: 'pt', lightMode: 'B' }); // interactive default: Mode B after rung 3.11 (restir-m6-api MD9); MT (the panel toggles Woop; validation paths default to Woop); PT beauty (M3a)

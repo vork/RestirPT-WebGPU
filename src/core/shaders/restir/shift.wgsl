@@ -320,6 +320,11 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
   // branch on jNum: the branch changed the Metal code of the default path (U-M4-BITS, restir-temporal-api.md B-8).
   let pKj = select(select(pK, pKm, marg), 1.0, (rsParams.flags & RSF_PLANT_U8_NO_PK) != 0u);
   var jNum = 1.0;
+#if RS_PLANT_SMOOTH_J
+  // PLANT B-SM-J (m7-api.md §5.2, validation only): the geometry term at the receiving x_k with the SHADING normal
+  let ngSaved = xk.ng;
+  xk.ng = xk.ns;
+#endif
   if (cs == SH_ENV) { jNum = pYj; }
 #if RS_MODE_B
   else if (cs == SH_EMIT || cs == SH_N1 || cs == SH_XEMIT) { jNum = pYj * rc_G(yPrev.pos, xk.pos, xk.ng); }
@@ -329,6 +334,9 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
   else if (cs != SH_FORCED) { jNum = pYj * rc_G(yPrev.pos, xk.pos, xk.ng) * pKj; }
   var J = 1.0;
   if (cs != SH_FORCED) { J = jNum / src.jDen; }
+#if RS_PLANT_SMOOTH_J
+  xk.ng = ngSaved;
+#endif
 #if RS_PLANT_T2
   // PLANT U8-4 (validation only, spatial shifts): J = t_x²/t_y² for a forced point / spot endpoint (Cycles' pseudo-pdf
   // t² used in a ratio; the correct light-vertex J is 1, gap-light §5.7)

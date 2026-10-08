@@ -20,6 +20,7 @@ import { RestirKernel } from '../../src/core/render/restir/kernel.ts';
 import { writeNpz } from '../../src/core/render/restir/npz.ts';
 import { RESTIR_PRESETS, restirSettings, type RestirPresetName, type RestirSettings } from '../../src/core/render/restir/presets.ts';
 import { SceneGpu } from '../../src/core/render/scene-gpu.ts';
+import { sceneHasNormalMaps } from '../../src/core/scene/tangents.ts';
 import { loadSource, stable } from './batch-run.ts';
 import { uploadFile } from './export-package.ts';
 
@@ -190,7 +191,8 @@ export async function renderRestirBatches(ctx: GpuContext, o: RenderRestirBatche
       ? 'batch b = run-global frames t in [b*F, (b+1)*F), member 0; frame key = pcg3d(runSeed, t, pixelIndex) (restir-api.md §5)'
       : 'row r = t*E + m: frame t, atlas member m; frame key = pcg3d(runSeed ^ m*0x9e3779b9, t, localIdx) (restir-api.md §5, §2.10)',
     image: E === 1 ? { format: 'PFM RGB float32', rowOrder: 'PFM bottom-to-top (decodes to row 0 = top)', value: 'batch mean radiance' } : { format: 'ensemble.npz (compare.py README)' },
-    scene: { ...src.source, triangles: src.scene.geometry.indices.length / 3, env: !!src.scene.env, origin },
+    // M7 T16 (m7-api.md §6): normal-mapped material(s) present ⇒ the arena carries tangents and NORMAL_MAP is compiled
+    scene: { ...src.source, triangles: src.scene.geometry.indices.length / 3, env: !!src.scene.env, origin, normalMaps: sceneHasNormalMaps(src.scene) },
     counters: T.counters, submits: T.submits,
     timings: { loadMs: tLoad - t0, setupMs: tSetup - tLoad, batchMs, totalMs: performance.now() - t0 },
     files, ok: errors.length === 0, errors,

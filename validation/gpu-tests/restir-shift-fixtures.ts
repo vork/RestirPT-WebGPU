@@ -64,7 +64,7 @@ export const T3_CASES = ['a-delta', 'a-area', 'a-tri', 'a-sun', 'f-env', 'b', 'b
 export const T3_NBINS = T3_CASES.length * 2;
 /** M6 extra counters after the class table: per category (ℓ_{k−1} = G_R, ℓ_k = G_R, side flip at x_k, rc segment crossing a
  *  cutout card) {trials, rtOk, logic} (restir-m6-api.md §1.5, §4). */
-export const T3_X_CATS = ['grKm1', 'grK', 'sideFlip', 'alphaCard'] as const;
+export const T3_X_CATS = ['grKm1', 'grK', 'sideFlip', 'alphaCard', 'nmRc', 'smoothRc'] as const;
 export const T3_X_WORDS = 3 * T3_X_CATS.length;
 export const T3_BIN_NAMES = T3_CASES.flatMap((c) => [`${c}/k2`, `${c}/k>2`]);
 /** Per-bin stats words. */
@@ -395,6 +395,12 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
   var xmask = 0u;
   if (rf_lkm1(f) == 2u) { xmask |= 1u; }
   if (rf_lk(f) == 2u) { xmask |= 2u; }
+  // M7: the reconnection vertex x_k is a surface vertex (a lobe leaves it) on a normal-mapped material / a smooth triangle
+  if (rf_k(f) != 0u && rf_lk(f) < LOBE_NONE && src.rc.x < arrayLength(&sceneTris)) {
+    let trk = sceneTris[src.rc.x];
+    if (tex_slot_valid(sceneMaterials[tri_material(trk)].texNormal)) { xmask |= 16u; }
+    if ((tri_flags(trk) & TRI_FLAT) == 0u) { xmask |= 32u; }
+  }
   for (var ps = 0u; ps < nPass; ps++) {
     for (var b = 0u; b < 8u; b++) { trPrim[b] = 0xFFFFFFFEu; trLobe[b] = 0xFFu; trEdge[b] = 1.0; }
     trCos = 1.0; trDist = 0.0; trEdgeK = 1.0;

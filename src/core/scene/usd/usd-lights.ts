@@ -9,6 +9,12 @@
 //              false, r = 0 or treatAsPoint: I = i·2^e ⇒ power = 4π·i
 //   Sphere+ShapingAPI → spot: spot_size = 2·coneAngle, spot_blend = coneSoftness, same I rule.
 //   Distant    E = i·2^e, ×4 for Blender-authored files (Blender exports intensity = energy/4); angle := 0.
+// M7 Blender-compatible mode (opts.blenderCompat; the E2E-USD gate, m7-api.md §3.4): Blender 5.2.2's wm.usd_import
+// conventions, measured on the hand files: a SphereLight (point / spot) becomes a Blender light of energy π·i with the
+// USD normalize flag as Light.normalize and the authored radius; with the §7.5 radius 0 (our r := 0 rule) Cycles renders
+// an un-normalised point / spot 4× brighter than a normalised one (measured: 0.2084 vs 0.0521), so the equivalent power is
+// (normalize ? 1 : 4)·π·i whatever the radius / treatAsPoint; every DistantLight ×4 (also for files Blender did not
+// write); rect / disk as above (Blender keeps normalize = false as its own Light.normalize).
 // Sizes and radii are in metres: authored size × the light's world scale × metersPerUnit (A = sizeX·sizeY for rect,
 // π/4·sizeX·sizeY for disk). Colour temperature (enableColorTemperature) multiplies the colour by Blender's blackbody
 // colour (Blender 5.1 Light.temperature_color, tests/scene/blender-blackbody.json): Blender's own USD importer
@@ -38,6 +44,8 @@ export interface UsdLightInput {
 export interface LightConvertOptions {
   /** Distant-light ×4 quirk: 'auto' = only for Blender-authored stages (root-layer doc "Blender v…"). */
   blenderAuthored: boolean;
+  /** M7: Blender 5.2 importer conventions for sphere lights (power π·i) and distant lights (×4). */
+  blenderCompat?: boolean;
 }
 
 /** Blender's blackbody colour (intern/cycles blackbody fit, rec709 = scene linear, clamped ≥ 0). */
@@ -133,7 +141,8 @@ export function convertUsdLight(l: UsdLightInput, world: Mat4, id: number, opts:
       if (Math.abs(sx - sy) > 1e-6 * sx || Math.abs(sx - sz) > 1e-6 * sx) warnings.push(`${tag}: non-uniform scale; radius uses the X scale`);
       const r = (l.radius ?? 0.5) * sx;
       const point = !!l.treatAsPoint || !(r > 0);
-      const power = l.normalize ? Math.PI * i : point ? 4 * Math.PI * i : 4 * Math.PI * Math.PI * r * r * i;
+      const power = opts.blenderCompat ? (l.normalize ? 1 : 4) * Math.PI * i
+        : l.normalize ? Math.PI * i : point ? 4 * Math.PI * i : 4 * Math.PI * Math.PI * r * r * i;
       const simplified = !point ? `sphere radius ${r.toPrecision(4)} m → point (r = 0, radiant intensity preserved)` : undefined;
       if (l.shaping) {
         const cone = Math.min(180, Math.max(1, 2 * l.shaping.coneAngle)) * Math.PI / 180;
@@ -147,7 +156,7 @@ export function convertUsdLight(l: UsdLightInput, world: Mat4, id: number, opts:
       return { light: pt, warnings };
     }
     case 'distant': {
-      const power = (opts.blenderAuthored ? 4 : 1) * i;
+      const power = (opts.blenderAuthored || opts.blenderCompat ? 4 : 1) * i;
       const sun: LightData = { ...base, type: 'sun', power };
       if ((l.angle ?? 0) > 0) sun.simplified = `sun angle ${l.angle}° → 0`;
       return { light: sun, warnings };

@@ -49,7 +49,7 @@ What landed, and where it deviates from the plan below:
   TRI_FLAT; `build_scene.py` accepts v1/v2 and re-checks the position lattice.
 - **P2.** `createEnvResources` uploads the smallest exact format (rgb9e5ufloat → rgba16float → rgba32float) in
   interactive mode; validation mode keeps rgba32float unless `ENV_COMPACT_IN_VALIDATION` (set from the ENV-F result).
-- Not done (by scope): P3–P5, the tangent GPU section (M7), Q-EQ.
+- Not done (by scope): P3–P5, Q-EQ. The tangent GPU section landed in M7 (m7-api.md §1.2: Q one u32 per vertex, oct 2 × 15 + present + sign bits; F32 4 words; only for scenes with a normal-mapped material).
 
 Verification (2026-09-30, Chrome 154 / Metal unless noted):
 - GPU decode determinism (`vertex-format.gpu.test.ts`): positions and UVs bit-identical to the CPU mirror on
@@ -142,7 +142,7 @@ Sponza = Khronos glTF Sponza as our loader produces it: 262,266 triangles, **786
 |---|---|---|---|---|---|---|---|---|
 | 1 | Vertex positions | both | `render/scene-gpu.ts` `packVertices`; `shaders/scene/scene-data.wgsl` `SceneVertex.p` | vec3f (recentred) | 12 | 9.44 MB | P21 global lattice, 8 B | P1 |
 | 2 | Shading normals | both | same (`SceneVertex.n`) | vec3f | 12 | 9.44 MB | oct 2×16 snorm, 4 B; `TRI_FLAT` → ng | P1 |
-| 3 | Tangents | both | `scene-gpu.ts` (`tangents` buffer, uploaded but **not bound** before M7) | vec4f | 16 | 12.59 MB | don't upload until M7; then oct 2×15 + sign, 4 B | P0 / M7 |
+| 3 | Tangents | both | `scene-gpu.ts` (`tangents` buffer, uploaded but **not bound** before M7) | vec4f | 16 | 12.59 MB | don't upload until M7; then oct 2×15 + sign, 4 B — **done in M7** (vertex-arena tangent section, normal-mapped scenes only) | P0 / M7 |
 | 4 | UV0 | both | `SceneVertex.uvx/uvy` | 2 × f32 | 8 | 6.29 MB | 2 × 16 per-material dyadic lattice, 4 B (+ wide fallback) | P1 |
 | 5 | COLOR_0 | both | `SceneVertex.color` (always present, 1 when absent) | vec4f | 16 | 12.59 MB (all 1s) | optional section; rgba8 (unorm8 source) or rgba16 exact products, 4/8 B | P1 |
 | – | **Vertex record total** | | `VERTEX_BYTES = 48` (+16 tangents) | | 64 | **50.36 MB** | **16 B (+4 tangent) × 192,493 re-welded = 3.08 / 3.85 MB** | P1 |

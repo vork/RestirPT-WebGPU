@@ -17,11 +17,14 @@
 //   overrides incl. `enabled` (true add/remove), radiometric / size fields, env `map` (id of an `envMaps[]` entry, extra
 //   env_<id>.exr files; 'env' = the base map) and env tint / visibility; top-level `sequence {fps, frameCount,
 //   testFrames, notes}`. resolvePackageFrame() turns a frame into the scene state of that frame.
+// - M7 (m7-api.md §1.2): tangents are not exported; a package with a normal-mapped material gets Blender-semantics
+//   MikkTSpace tangents on read (tangents.ts: whole mesh, corner normals as Blender sees them, oct-15 when quantized).
 import { encodeExr, flipRows } from '../io/exr.ts';
 import { decodePng, encodePng } from '../io/png.ts';
 import { sha256Hex } from '../io/zlib.ts';
 import { decodeExr } from './env/exr.ts';
 import { QuantizationError, assertQuantized, quantizeScene } from './quantize.ts';
+import { withSceneTangents } from './tangents.ts';
 import {
   TRI_ALPHA_MASK, TRI_EMISSIVE, TRI_FLAT, type CameraData, type EnvironmentData, type LightData, type MaterialData, type SceneData,
   type SceneGeometry, type SceneQuant, type TextureData, type TextureRef,
@@ -109,6 +112,8 @@ export interface LightJson {
   id: number; name: string; type: LightData['type']; color: V3; power: number; exposure: number; matrix: number[];
   spotSize?: number; spotBlend?: number; sizeX?: number; sizeY?: number; spread?: number; visibleToCamera: boolean;
   simplified?: string;
+  /** M7 E2E (scene-bridge.md "stock"): 'asset' | 'added'. */
+  origin?: 'asset' | 'added';
 }
 
 export interface EnvJson {
@@ -276,7 +281,7 @@ export async function exportScenePackage(scene: SceneData, opts: ExportScenePack
     const lj: LightJson = {
       id: l.id, name: l.name, type: l.type, color: [...l.color], power: l.power, exposure: l.exposure, matrix: arr(l.matrix),
       spotSize: l.spotSize, spotBlend: l.spotBlend, sizeX: l.sizeX, sizeY: l.type === 'disk' ? undefined : l.sizeY,
-      spread: area ? (l.spread ?? Math.PI) : undefined, visibleToCamera: l.visibleToCamera, simplified: l.simplified,
+      spread: area ? (l.spread ?? Math.PI) : undefined, visibleToCamera: l.visibleToCamera, simplified: l.simplified, origin: l.origin,
     };
     return stripUndefined(lj);
   });
@@ -455,7 +460,7 @@ export async function readScenePackage(input: PackageFiles): Promise<LoadedScene
   const lights: LightData[] = (json.lights ?? []).map((l) => stripUndefined({
     id: l.id, name: l.name ?? `light${l.id}`, type: l.type, color: [...(l.color ?? [1, 1, 1])] as V3, power: l.power, exposure: l.exposure ?? 0,
     matrix: new Float32Array(l.matrix), spotSize: l.spotSize, spotBlend: l.spotBlend, sizeX: l.sizeX, sizeY: l.sizeY,
-    spread: l.spread, visibleToCamera: l.visibleToCamera ?? false, simplified: l.simplified,
+    spread: l.spread, visibleToCamera: l.visibleToCamera ?? false, simplified: l.simplified, origin: l.origin,
   }));
   const camera = { name: 'package', matrix: new Float64Array(json.camera.matrix), yfov: json.camera.yfov, znear: json.camera.znear ?? 1e-4 };
   let env: EnvironmentData | undefined;
@@ -495,6 +500,10 @@ export async function readScenePackage(input: PackageFiles): Promise<LoadedScene
     }
     scene.quant = { ...q, uv: q.uv.map((l) => ({ ...l })) };
   }
+  // M7: Blender-semantics tangents for normal-mapped packages (a no-op for every other package)
+  const tg = await withSceneTangents(scene, { quantized: scene.quant?.mode === 'quantized', flatFaceNormals: json.flatShaded });
+  scene = tg.scene;
+  if (tg.stats?.zeroTangents) scene.warnings.push(`tangents: ${tg.stats.zeroTangents} corner(s) without a MikkTSpace tangent (normal map falls back to the unmapped normal there)`);
   const lightMode: LightMode = (json.lightMode as string) === "A'" ? 'A′' : json.lightMode;   // ASCII spelling accepted
   return {
     scene, camera, render: json.render, lightMode, flatShaded: json.flatShaded, frames: json.frames, json,

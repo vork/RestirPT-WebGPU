@@ -16,7 +16,9 @@
 //   emission  = emissiveFactor·emissiveStrength × sRGB⁻¹(emissiveTexture.rgb)
 // V1 (MAT_V1): Lambert albedo, glossy colour / roughness, mix from the V1 fields; emission as above.
 // Textures: validation lookup tex_sample() = bilinear at LOD 0, decoded after filtering (textures.wgsl).
-// Normal maps are M7 (TODO): ns is the interpolated shading normal of the hit.
+// Normal maps (M7, NORMAL_MAP; m7-api.md §1): hit.ns is the Cycles Normal Map node normal for materials with a normal
+// texture (scene_surface), hit.nsm the unmapped smooth / flat normal; both go to MatEval (ns = closure normal of every
+// lobe, nsm = the bump-shadowing reference normal, bsdf.wgsl bsdf_bump_ok).
 #include "scene/scene-data.wgsl"
 #include "material/bsdf.wgsl"
 
@@ -32,6 +34,9 @@ fn material_eval_record_ex(mat: MaterialGpu, uv: vec2f, color: vec4f, ns: vec3f,
   var m: MatEval;
   m.ns = ns;
   m.ng = ng;
+#if NORMAL_MAP
+  m.nsm = ns;                         // no normal map: the bump reference is the closure normal itself (test passes)
+#endif
   m.flags = select(0u, MATEVAL_BACKFACING, backfacing);
   if ((mat.flags & MAT_V1) != 0u) {
     m.model = BSDF_MODEL_V1;
@@ -66,5 +71,11 @@ fn material_eval_record_ex(mat: MaterialGpu, uv: vec2f, color: vec4f, ns: vec3f,
 
 /// MatEval at a hit (scene_surface()) for the view direction V (unit, toward the previous vertex).
 fn material_eval(hit: SurfaceHit, V: vec3f) -> MatEval {
+#if NORMAL_MAP
+  var m = material_eval_record_ex(sceneMaterials[hit.matId], hit.uv, hit.color, hit.ns, hit.ng, V, hit.backfacing);
+  m.nsm = hit.nsm;
+  return m;
+#else
   return material_eval_record_ex(sceneMaterials[hit.matId], hit.uv, hit.color, hit.ns, hit.ng, V, hit.backfacing);
+#endif
 }

@@ -13,6 +13,7 @@ import { SceneGpu } from '../../src/core/render/scene-gpu.ts';
 import { parseLightMode } from '../../src/core/render/lights-gpu.ts';
 import { loadScene as loadGltfScene } from '../../src/core/scene/load-scene.ts';
 import { BASE_ENV_MAP, resolvePackageFrame, fetchScenePackage } from '../../src/core/scene/scene-package.ts';
+import { sceneHasNormalMaps } from '../../src/core/scene/tangents.ts';
 import type { SceneData } from '../../src/core/scene/types.ts';
 import { isUsdName, loadUsd } from '../../src/core/scene/usd/load-usd.ts';
 import { packageSha256, uploadFile } from './export-package.ts';
@@ -202,6 +203,8 @@ export async function renderBatches(ctx: GpuContext, o: RenderBatchesOptions): P
     image: { format: 'PFM RGB float32', rowOrder: 'PFM bottom-to-top (decodes to row 0 = top)', value: 'batch mean radiance' },
     scene: {
       ...src.source, triangles: src.scene.geometry.indices.length / 3, env: !!src.scene.env, origin,
+      // M7 T16 (m7-api.md §6): normal-mapped material(s) present ⇒ the arena carries tangents and NORMAL_MAP is compiled
+      normalMaps: sceneHasNormalMaps(src.scene),
       ...(kernel instanceof EmissionKernel ? { cameraVisibleLights: kernel.cameraVisibleLights } : {}),
     },
     ...(ptInfo ? { pt: ptInfo } : {}),

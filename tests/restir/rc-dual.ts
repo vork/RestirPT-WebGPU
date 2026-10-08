@@ -209,16 +209,21 @@ export function pdfF64(m: DualMat, ngIn: V3, nsIn: V3, V: V3, L: V3): DualPdf {
 // ------------------------------------------------------------------------------------------------ T3-D: recorded shifts
 
 /** Geometry as the GPU sees it (recentred f32 positions), per-triangle material, materials in dual form. */
-export interface DualScene { positions: Float32Array; indices: Uint32Array; triMaterial: Uint32Array; materials: DualMat[]; tau: number; params: RcParams }
+export interface DualScene {
+  positions: Float32Array; indices: Uint32Array; triMaterial: Uint32Array; materials: DualMat[]; tau: number; params: RcParams;
+  /** M7 smooth shading: vertex normals + triFlags (TRI_FLAT = 8 ⇒ ns = ng); absent ⇒ flat everywhere (M4–M6 fixtures). */
+  normals?: Float32Array; triFlags?: Uint32Array;
+}
 
-export interface DualVertex { pos: V3; ng: V3; mat: DualMat }
+export interface DualVertex { pos: V3; ng: V3; mat: DualMat; ns?: V3 }
 
 const f32v = new Float32Array(1);
 const u32v = new Uint32Array(f32v.buffer);
 const bf = (u: number) => { u32v[0] = u; return f32v[0]; };
 const neg = (a: V3): V3 => [-a[0], -a[1], -a[2]];
 
-/** vertex_from_ids in f64 from the f32 vertex data (flat shading: ns = ng). */
+/** vertex_from_ids in f64 from the f32 vertex data (flat shading: ns = ng; M7: the interpolated vertex normal of a smooth
+ *  triangle, scene-data.wgsl scene_surface). */
 export function dualVertex(s: DualScene, prim: number, u: number, v: number): DualVertex {
   const i0 = s.indices[3 * prim], i1 = s.indices[3 * prim + 1], i2 = s.indices[3 * prim + 2];
   const P = (i: number): V3 => [s.positions[3 * i], s.positions[3 * i + 1], s.positions[3 * i + 2]];
@@ -227,13 +232,19 @@ export function dualVertex(s: DualScene, prim: number, u: number, v: number): Du
   const pos: V3 = [w * a[0] + u * b[0] + v * c[0], w * a[1] + u * b[1] + v * c[1], w * a[2] + u * b[2] + v * c[2]];
   const e1 = sub(b, a), e2 = sub(c, a);
   const ng = nrm([e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]]);
+  if (s.normals && s.triFlags && (s.triFlags[prim] & 8) === 0) {
+    const N = (i: number): V3 => [s.normals![3 * i], s.normals![3 * i + 1], s.normals![3 * i + 2]];
+    const na = N(i0), nb = N(i1), nc = N(i2);
+    const n: V3 = [w * na[0] + u * nb[0] + v * nc[0], w * na[1] + u * nb[1] + v * nc[1], w * na[2] + u * nb[2] + v * nc[2]];
+    if (Math.hypot(n[0], n[1], n[2]) > 1e-12) return { pos, ng, ns: nrm(n), mat: s.materials[s.triMaterial[prim]] };
+  }
   return { pos, ng, mat: s.materials[s.triMaterial[prim]] };
 }
 
 /** The event leaving vertex x (incoming from `from`, outgoing along L) with lobe code (lobe | delta << 3 | NEE). */
 function dualEvent(x: DualVertex, from: V3, L: V3, lobeCode: number): { e: RcEventD; v: RcVertexD; supported: boolean; cosL: number } {
   const V = nrm(sub(from, x.pos));
-  const pdf = pdfF64(x.mat, x.ng, x.ng, V, L);
+  const pdf = pdfF64(x.mat, x.ng, x.ns ?? x.ng, V, L);
   const lobe = lobeCode & 7, delta = (lobeCode & 8) !== 0;
   const alpha = delta ? 0 : lobeRoughnessF64(x.mat, lobe, pdf.lob);
   // |cos| of the event direction and of V with the geometric normal: the sampler supports (Ng·L > 0 / ≥ 0) and the
@@ -338,7 +349,8 @@ export function dualCheckRecord(s: DualScene, w: Uint32Array, o: number): DualRe
       if ((lobes[b - 1] & 8) === 0) return nrm(sub(Y[b - 1]!.pos, Y[b]!.pos));
       const x = Y[b - 1]!, Vp = inDir(b - 1);
       if (!Vp || !dualLobes(x.mat, 1).supported) return undefined;
-      const n: V3 = dot(x.ng, Vp) < 0 ? neg(x.ng) : x.ng;
+      const nsx = x.ns ?? x.ng;                                    // the singular reflection is about the shading normal
+      const n: V3 = dot(x.ng, Vp) < 0 ? neg(nsx) : nsx;
       const c = dot(n, Vp);
       return neg(nrm([2 * c * n[0] - Vp[0], 2 * c * n[1] - Vp[1], 2 * c * n[2] - Vp[2]]));
     };
@@ -430,7 +442,7 @@ export function dualCheckRecord(s: DualScene, w: Uint32Array, o: number): DualRe
     const yk1 = g.yk1;
     if (!yk1 || forced) return undefined;
     const joint = (x: DualVertex, from: V3, L: V3, lobe: number): number | undefined => {
-      const pd = pdfF64(x.mat, x.ng, x.ng, nrm(sub(from, x.pos)), L);
+      const pd = pdfF64(x.mat, x.ng, x.ns ?? x.ng, nrm(sub(from, x.pos)), L);
       if (!pd.supported) return undefined;
       return lobe === LOBE.D ? pd.pD : lobe === LOBE.S ? pd.pS : undefined;
     };

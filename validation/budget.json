@@ -3989,5 +3989,383 @@
       "ms_per_chain": 195.2,
       "cap": "ok"
     }
+  ],
+  "m7_method": "M7 sizing (gate-m7.ts): Stage A fixed Cycles 4096 spp x 16 seeds vs our PT 4096 spp x 16 (D4: references >= 4096 spp); Stage B as gate-m6 (PT pilot 128 spp x 16, ReSTIR pilot 8 / 128 frames x 16, PLAN §7.3 x1.25); chains by gate-m5 sizeGroup",
+  "m7_measured_at": "2026-10-08T10:07:40.952Z",
+  "m7_runs": [
+    "m7-gate-stageA-20261008-045417",
+    "m7-gate-e2e-20261008-051440",
+    "m7-gate-r38-20261008-054651",
+    "m7-gate-stageA-20261008-063001",
+    "m7-gate-r38-20261008-063257"
+  ],
+  "m7_entries": [
+    {
+      "unit": "m7_nm_flat_256",
+      "part": "stageA",
+      "kind": "stageA",
+      "tier": "tight",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "m7_smooth_256",
+      "part": "stageA",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "m7_nm_smooth_256",
+      "part": "stageA",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "m7_nm_smooth_B_256",
+      "part": "stageA",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "m7_nm_env_256",
+      "part": "stageA",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "m7_xivlite_hdr_256",
+      "part": "stageA",
+      "kind": "stageA",
+      "tier": "tight",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "m7_xivlite_exr_256",
+      "part": "stageA",
+      "kind": "stageA",
+      "tier": "tight",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_glb_cornell_point_spot_flat",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_glb_cornell_point_spot_normals",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_glb_metalrough_spheres_flat",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_glb_metalrough_spheres_normals",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_glb_texture_transform_flat",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_glb_texture_transform_normals",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_glb_normal_tangent_mirror_flat",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_glb_normal_tangent_mirror_normals",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_glb_alpha_mask_flat",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_glb_alpha_mask_normals",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_glb_emissive_strength_flat",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_glb_emissive_strength_normals",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_glb_transmission_flat",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_glb_transmission_normals",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_glb_ior_grid_flat",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_glb_ior_grid_normals",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_usd_cornell",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_usd_hand_yup",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_usd_hand_zup",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_usd_textured",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "e2e_usd_instancing",
+      "part": "e2e",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "m7_smooth_256@3.8-initial",
+      "part": "r38",
+      "rung": "3.8",
+      "scene": "m7_smooth_256",
+      "preset": "initial",
+      "light_mode": "A",
+      "B": 16,
+      "pt_spp": 1792,
+      "pt_min": 0.6041,
+      "frames_per_batch": 1280,
+      "restir_min": 0.7096,
+      "tile": 32,
+      "measured_restir_min": 0.708
+    },
+    {
+      "unit": "m7_nm_smooth_256@3.8-initial",
+      "part": "r38",
+      "rung": "3.8",
+      "scene": "m7_nm_smooth_256",
+      "preset": "initial",
+      "light_mode": "A",
+      "B": 16,
+      "pt_spp": 1536,
+      "pt_min": 0.5616,
+      "frames_per_batch": 1280,
+      "restir_min": 0.7766,
+      "tile": 32,
+      "measured_restir_min": 0.7784
+    },
+    {
+      "unit": "m7_smooth_256@3.8-offline",
+      "part": "r38",
+      "rung": "3.8",
+      "scene": "m7_smooth_256",
+      "preset": "offline-m6",
+      "light_mode": "A",
+      "B": 16,
+      "pt_spp": 1792,
+      "pt_min": 0.6041,
+      "frames_per_batch": 48,
+      "restir_min": 1.214,
+      "tile": 32,
+      "measured_restir_min": 1.221
+    },
+    {
+      "unit": "m7_nm_flat_256@3.8-offline",
+      "part": "r38",
+      "rung": "3.8",
+      "scene": "m7_nm_flat_256",
+      "preset": "offline-m6",
+      "light_mode": "A",
+      "B": 16,
+      "pt_spp": 640,
+      "pt_min": 0.132,
+      "frames_per_batch": 40,
+      "restir_min": 0.7459,
+      "tile": 32,
+      "measured_restir_min": 0.7534
+    },
+    {
+      "unit": "m7_nm_smooth_256@3.8-offline",
+      "part": "r38",
+      "rung": "3.8",
+      "scene": "m7_nm_smooth_256",
+      "preset": "offline-m6",
+      "light_mode": "A",
+      "B": 16,
+      "pt_spp": 1536,
+      "pt_min": 0.5616,
+      "frames_per_batch": 56,
+      "restir_min": 1.487,
+      "tile": 32,
+      "measured_restir_min": 1.496
+    },
+    {
+      "unit": "m7_nm_env_256@3.8-offline",
+      "part": "r38",
+      "rung": "3.8",
+      "scene": "m7_nm_env_256",
+      "preset": "offline-m6",
+      "light_mode": "A",
+      "B": 16,
+      "pt_spp": 256,
+      "pt_min": 0.05143,
+      "frames_per_batch": 14,
+      "restir_min": 0.292,
+      "tile": 32,
+      "measured_restir_min": 0.3046
+    },
+    {
+      "unit": "m7_nm_smooth_B_256@3.8-offline-B",
+      "part": "r38",
+      "rung": "3.8",
+      "scene": "m7_nm_smooth_B_256",
+      "preset": "offline-m6",
+      "light_mode": "B",
+      "B": 16,
+      "pt_spp": 1280,
+      "pt_min": 0.4732,
+      "frames_per_batch": 48,
+      "restir_min": 1.421,
+      "tile": 32,
+      "measured_restir_min": 1.512
+    },
+    {
+      "unit": "m7_nm_smooth_256@3.8-full-m6",
+      "part": "r38",
+      "kind": "chains",
+      "R": 2704,
+      "frames": 25,
+      "test_frames": [
+        1,
+        24
+      ],
+      "tile": 64,
+      "chain_min": 5.226,
+      "ms_per_chain": 116,
+      "cap": "ok"
+    },
+    {
+      "unit": "m7_smooth_lowpoly_256",
+      "part": "stageA",
+      "kind": "stageA",
+      "tier": "model-approximate",
+      "cycles": "4096x16",
+      "ours": "4096x16"
+    },
+    {
+      "unit": "m7_smooth_lowpoly_256@3.8-offline",
+      "part": "r38",
+      "rung": "3.8",
+      "scene": "m7_smooth_lowpoly_256",
+      "preset": "offline-m6",
+      "light_mode": "A",
+      "B": 16,
+      "pt_spp": 896,
+      "pt_min": 0.2418,
+      "frames_per_batch": 32,
+      "restir_min": 0.7034,
+      "tile": 32,
+      "measured_restir_min": 0.7139
+    }
   ]
 }

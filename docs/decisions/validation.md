@@ -571,3 +571,143 @@ duplication map, cCap 5. The silhouette resolve fixes of the denoiser (denoiser.
 - `validation/harness/denoise-run.ts` still rejects non-A light modes with "the interactive ReSTIR is Mode A only"
   (harness-only, stale since M6-9); the file headers of `src/core/render/renderer.ts` and `restir/kernel.ts` still say
   "Mode A only (D1)".
+
+# M7: normal maps, smooth shading in ReSTIR, USD completion, loader fidelity, E2E (m7-api.md §6, PLAN §5 M7, §7.1 rung 3.8, §7.2)
+
+`npm run validate -- --milestone M7 --part core|loader|stageA|e2e|r38|plants` runs `validation/harness/gate-m7.ts`:
+- **core (Gate 0).** Typecheck; cpu lane (U-M7-BITS: 390 composed pipelines = the b5b0f5d text for scenes without normal
+  maps; U-M7-ARENA: committed packages load and pack to the b5b0f5d bytes; tangents; plant-m7 predictions; gate config;
+  every earlier test); python tests; make-m7 / make-m7-e2e determinism; Chrome: `normal-map` (U-NM-1..3), T3-M7
+  (t3_smooth_256, t3_nm_256; LOGIC 0, every bin and the nmRc / smoothRc counters ≥ 10⁶), the M6 / M5 / M4 Gate-0 suites
+  and holds as regressions, the perf probe (recorded), the M7 app smoke.
+- **loader.** (viii-L) 7 USD files vs pxr, (vii-L) 9 glTF files vs Blender's stock importer, U-TAN-B on 5 packages.
+- **stageA.** (vii-N) and E2E-HDR: our PT vs Cycles 5.2.2, TOST δ 0.5 % global / 2 % per 32² tile, Cycles 4096 spp × 16
+  seeds (D4), ours 4096 × 16; flat normal maps and E2E-HDR tight, smooth scenes model-approximate (m7-api N6: TOST at
+  the same δ gates, the Δ = 0 rejection checks are reported); a PT A/A.
+- **e2e.** E2E-GLB (8 assets × FLAT / NORMALS) and E2E-USD (5 files), Stage A, model-approximate.
+- **r38.** Rung 3.8, Stage B (δ 0.2 % / 1 %), pilot-sized as gate-m6.
+- **plants.** Normal Map sign / strength in Stage A and Stage B, the shading-normal Jacobian plant, W × 1.003, ReSTIR A/A.
+
+**Runs** (under `validation/out/`; PT code 41af3209…, ReSTIR 38f4b9e7…): loader `m7-gate-loader-20261008-045402`,
+stageA `m7-gate-stageA-20261008-045417` (+ `-063001` for the low-poly scene), e2e `m7-gate-e2e-20261008-051440`
+(+ `-054935` / `-055349` for e2e_usd_instancing after M7-10, `-101235` after M7-12), r38 `m7-gate-r38-20261008-054651`
+(+ `-063257`), plants `m7-gate-plants-20261008-060715` (+ `-100741`: the revised B-SM-J), core
+`m7-gate-core-20261008-062943` (killed with the session at its M4 restir-shift step; every step before passed) and its
+re-run (see Gate 0). Code changes after the first E2E / Stage-A runs touched only `usd-scene.ts` / `usda-scan.ts`
+(USD meshes without normals, compat instances): the other 20 E2E packages and every make-m7 package are byte-identical
+before / after, so their units stand.
+
+**Loader (6/6).** (viii-L) 7/7 USD files (cornell, m7_textured, m7_instancing incl. 16 PointInstancer instances and
+bindings inside prototypes, the Y-up cm / Z-up m hand files, spike_hand, spike_blender): every draw's triangle count and
+bbox, PreviewSurface constants and texture bindings, lights and cameras equal pxr. (vii-L) 9/9 glTF files (incl. Sponza
+262 266 triangles / 69 textures and MetalRoughSpheres 1 040 213 triangles). U-TAN-B: 0 sign mismatches on every
+normal-mapped corner; max angle 2.9e-4° (m7_nm_flat), 3.6e-3° (m7_nm_smooth), 3.5e-3° (m7_nm_env), 6.6e-4°
+(NormalTangentMirror), 8.3e-5° (USD textured).
+
+**Stage A (vii-N, E2E-HDR).**
+
+| Unit | Tier | Δ_Y | MDB_Y | worst tile | Verdict |
+|---|---|---|---|---|---|
+| m7_nm_flat_256 | tight | +0.0006 % | 0.006 % | +0.03 % | pass |
+| m7_smooth_256 | model-approx. | −0.0005 % | 0.013 % | −0.11 % | pass (also tight) |
+| m7_smooth_lowpoly_256 | model-approx. | +0.0018 % | 0.008 % | −0.04 % | pass (also tight) |
+| m7_nm_smooth_256 | model-approx. | −0.0014 % | 0.008 % | +0.07 % | pass (also tight) |
+| m7_nm_smooth_B_256 (Mode B) | model-approx. | −0.0019 % | 0.007 % | +0.06 % | pass (also tight) |
+| m7_nm_env_256 (overcast) | model-approx. | −0.0047 % | 0.002 % | −0.04 % | pass (also tight) |
+| m7_xivlite_hdr_256 (original .hdr in Blender) | tight | +0.0021 % | 0.004 % | +0.03 % | pass |
+| m7_xivlite_exr_256 (original .exr in Blender) | tight | +0.0021 % | 0.004 % | +0.03 % | pass |
+| PT A/A (7301 vs 7302, m7_nm_flat) | tight | +0.0010 % | 0.006 % | −0.04 % | pass |
+
+No unit needed a re-run, every replicate multiplier is 1, and no smooth unit failed even an informational rejection
+check: the non-partition region (math §29) is below resolution in these scenes. E2E-HDR: the bridge recorded
+`original: true`, the format and `blender_equals_ours: true` (Blender's decode of the Poly Haven file equals ours texel
+for texel); the .hdr and .exr units give identical numbers.
+
+**E2E (Stage A, model-approximate; 21/21 after M7-10 / M7-12).**
+
+| Unit | Δ_Y | MDB_Y | worst tile | informational | Verdict |
+|---|---|---|---|---|---|
+| glb cornell_point_spot flat / normals | −0.0022 / −0.0010 % | 0.021 % | −0.28 % | – | pass / pass |
+| glb metalrough_spheres flat / normals | +0.072 / +0.074 % | 0.010 / 0.012 % | +0.51 / +0.52 % | 17 / 20 rejection checks | pass / pass |
+| glb texture_transform flat / normals | +0.0004 % | 0.002 % | +0.01 % | – | pass / pass |
+| glb normal_tangent_mirror flat / normals | −0.0005 / −0.0002 % | 0.001 % | −0.01 % | – | pass / pass |
+| glb alpha_mask flat / normals | −0.0014 / −0.0003 % | 0.004 % | −0.05 % | – | pass / pass |
+| glb emissive_strength flat / normals | +0.0006 / +0.0011 % | 0.003 % | +0.02 % | – | pass / pass |
+| glb transmission flat / normals | +0.0075 / +0.0081 % | 0.004 % | +0.09 % | 6 / 6 | pass / pass |
+| glb ior_grid flat / normals | +0.0009 / +0.0012 % | 0.002 % | +0.06 % | – | pass / pass |
+| usd cornell | +0.0004 % | 0.007 % | +0.07 % | – | pass |
+| usd hand_yup / hand_zup | +0.0007 / +0.0013 % | 0.015 % | −0.29 % | – | pass / pass |
+| usd textured | −0.0052 % | 0.005 % | −0.03 % | 3 (numeric_tiles) | pass |
+| usd instancing (first run; after M7-10) | −0.0019 %; −0.12 % | 0.003 % | +1.47 % Y, R / B > 2 %; −2.40 % | 19 | fail; fail (re-runs confirmed) |
+| usd instancing after M7-12 | +0.0004 % | 0.003 % | +0.02 % | – | pass (first run) |
+
+- MetalRoughSpheres: a +0.07 % systematic (TOST passes; Šidák / χ² / mean-t / KS reject Δ = 0) confined to the sphere
+  columns 3–4 under the small Mode-A rect light (sphere roughness down to 0): the D3 situation (near-specular lobes and
+  Mode-A analytic NEE; heavy-tailed replicates). Identical at 1024 and 4096 Cycles spp (not D4). Reported, not hidden.
+- TransmissionTest: +0.008 % (tiles at the glass), below the TOST δ by a factor 60; informational only.
+- e2e_usd_instancing (PointInstancer pyramids / gems without authored normals, non-uniform instance scales) failed
+  twice before passing: (1) LightUSD synthesises normals for meshes without authored ones (M7-10: Blender's automatic
+  corner-angle-weighted normals instead, decided from the scan); (2) Cycles interpolates an instanced mesh's normals in
+  object space (M7-12: compat mode keeps unnormalised `M^-T·n` for instance draws). The decisive diagnostic: Cycles
+  rendering our package agreed with our renderer to 0.02 % per tile while Blender's stock import did not; transforms,
+  per-vertex normals and materials were dumped equal on both Blender scenes, and realising the instances changed
+  nothing. Flat shading (+0.92 %, tiles +14 %) and normals-as-directions (tiles +4 %) were measured and rejected.
+  The final run used the gate seeds unchanged (no seed was re-drawn).
+
+**Rung 3.8 (Stage B; 10/10 pass, no re-run; multiplier 1 except the low-poly unit, 1.028).**
+
+| Unit | PT | ReSTIR | Δ_Y | MDB_Y | worst tile |
+|---|---|---|---|---|---|
+| m7_smooth_256 initial | 1792 × 16 | 1280 fr × 16 | −0.0081 % | 0.020 % | −0.15 % |
+| m7_nm_smooth_256 initial | 1536 × 16 | 1280 fr × 16 | −0.0031 % | 0.017 % | −0.08 % |
+| m7_smooth_256 offline-m6 | 1792 × 16 | 48 fr × 16 | −0.0047 % | 0.015 % | −0.21 % |
+| m7_nm_flat_256 offline-m6 | 640 × 16 | 40 fr × 16 | −0.0009 % | 0.022 % | −0.11 % |
+| m7_nm_smooth_256 offline-m6 | 1536 × 16 | 56 fr × 16 | −0.0051 % | 0.018 % | −0.16 % |
+| m7_nm_env_256 offline-m6 | 256 × 16 | 14 fr × 16 | −0.0057 % | 0.030 % | +0.13 % |
+| m7_nm_smooth_B_256 offline-m6, Mode B | 1280 × 16 | 48 fr × 16 | −0.0054 % | 0.023 % | −0.09 % |
+| m7_nm_smooth_256 full-m6 chains t = 1 | 896 × 16 | chains, 64² | −0.0023 % | 0.027 % | −0.06 % |
+| m7_nm_smooth_256 full-m6 chains t = 24 | 896 × 16 | chains, 64² | −0.0001 % | 0.053 % | −0.05 % |
+| m7_smooth_lowpoly_256 offline-m6 | 896 × 16 | 32 fr × 16 | −0.0044 % | 0.019 % | −0.21 % (mult 1.028) |
+
+**Plants** (predictions in `validation/scenes/m7-plants.ts`, pinned by `tests/scene/plant-m7.test.ts`, derived before
+any planted render; detection = half-size repeats failing the gate, control = the reference side's A/A).
+
+| Plant | Stage | Scene / region | Predicted | Measured | Detection | Verdict |
+|---|---|---|---|---|---|---|
+| A-NM-sign (bitangent sign ignored) | A (PT vs Cycles) | m7_nm_flat / M_P2 | − (−55.9 % direct) | −44.98 %, z −9333 (global −5.1 %) | 10/10 (10/10) | pass |
+| A-NM-strength (glTF-style strength) | A | m7_nm_flat / M_P3 | − (−32.6 %) | −21.33 %, z −2967 (global −2.0 %) | 10/10 (10/10) | pass |
+| B-NM-sign | B (ReSTIR vs 4× PT) | m7_nm_flat / M_P2 | − | −38.19 %, z −1489 (global −3.1 %) | 10/10 (10/10) | pass |
+| B-NM-strength | B | m7_nm_flat / M_P3 | − | −16.73 %, z −408 (global −0.45 %) | 10/10 (10/10) | pass |
+| B-SM-J (first scene) | B | m7_smooth_256 / global | detect | −0.000 %, z −0.01 | 0/10 (10/10) | **not detected** (M7-11) |
+| B-SM-J (revised, fresh seeds 7805 / 7905) | B | m7_smooth_lowpoly_256 / global | detect | +0.023 %, z +3.55 | 10/10 (10/10) | pass |
+| W × 1.003 (synthetic) | B | m7_nm_smooth offline-m6 | detect | – | 10/10 (A/A re-splits ok) | pass |
+| ReSTIR A/A (7502 vs 7503, 224 fr × 16) | B | m7_nm_smooth | pass | +0.0002 % (MDB 0.011 %) | – | pass |
+
+The measured magnitudes are smaller than the direct-light predictions (indirect light and the unplanted panel borders
+inside the 15 %-inset masks dilute them); the signs hold everywhere with |z| ≥ 400.
+
+**Gate 0 (core).** First run (`m7-gate-core-20261008-062943`, until the session that owned it ended): typecheck,
+cpu lane (57 files / 517 tests incl. U-M7-BITS, U-M7-ARENA, gate-m7-config), python tests, make-m7 (8 packages) and
+make-m7-e2e (21) determinism, `normal-map` (U-NM-1 quantised / lossless: 43 107 hits each, |N − N_f64| ≤ 2.2e-7,
+866 mirrored, 10 826 backfacing, 0 fallbacks; U-NM-2: 2²⁰ (V, L) pairs, 302 840 bump-rejected, 0 mismatches in eval /
+query / NEE f / sampling, glossy unchanged; U-NM-3: 0.44117 vs 0.44151 at s = 1 (z −2.4), 0.48486 vs 0.48492 at s = 0.5
+(z −0.5)), T3-M7 t3_smooth_256 and t3_nm_256 (LOGIC 0, every bin and the nmRc / smoothRc counters ≥ 10⁶; one 24-min
+hold each), the M6 regressions (restir-m6, the three Mode-B T3-2 cases, all six T3-M6 variants) and restir-initial all
+passed. The full core part was relaunched (`--part core`, log `m7-core.log`) and stopped on 2026-10-08 at 13:35 by
+the user's decision, after 15/15 steps had passed again (typecheck through the three Mode-B T3-2 cases; it stopped in
+the first T3-M6 variant). Not run on the M7 code: the T3-M6 variants in that relaunch (they passed in the first run
+above), the M4/M5 regression suites (restir-shift T3 variants, restir-spatial/-debug/-tframe/-temporal/-refresh, the
+M3 suites, the T3-2 rare bins), the perf probe and the in-gate app smoke (21/21 in development). Rationale for
+accepting: U-M7-BITS and U-M7-ARENA show that scenes without normal maps compose the b5b0f5d WGSL and pack the b5b0f5d
+bytes, which is what those regression suites exercise. Run `--part core` before relying on M7 for anything those
+suites cover.
+
+**Performance (540p interactive Mode B, all M6 features; report only).** m7_nm_smooth: 27.2 ms with normal maps vs
+26.5 ms with its normal textures removed (+0.7 ms; rs_initial +0.4 ms); Cornell (i) 16.6 ms (no NORMAL_MAP: the M6
+pipelines). The M7 app smoke (Sponza 262 k triangles with 25 normal-mapped materials at 540p) renders PT and
+ReSTIR-interactive finite, views 320–327 written.
+
+**Open items.**
+- MetalRoughSpheres' +0.07 % D3-type systematic: a Mode-B variant (light MIS on) of the E2E unit would separate the
+  Mode-A near-specular NEE tails from a model difference.
+- B-SM-J was not detectable on finely tessellated meshes (M7-11); the low-poly scene is the plant's home.

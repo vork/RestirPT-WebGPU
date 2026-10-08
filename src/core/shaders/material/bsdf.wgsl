@@ -17,6 +17,12 @@
 // S: Ng·L ≥ 0). With flat shading (Ns = Ng) this is identical to Cycles' eval pdf; under smooth shading it keeps
 // NEE/BSDF MIS a partition of unity where Cycles' is not (gap-bsdf §8.2).
 //
+// NORMAL_MAP (M7, m7-api.md §1.3; math.md#normal-maps): ns is the normal-mapped closure normal N and nsm the unmapped
+// smooth / flat normal Ns. Cycles' bump_shadowing_term (closure/bsdf.h:94-126, SD_USE_BUMP_MAP_CORRECTION off) rejects
+// (Ns·L)(Ns·N)(N·L) < 0: in EVAL (NEE, the all-lobe f) for every lobe, in SAMPLING for the diffuse lobe only. So the
+// per-lobe f_d carries the indicator, f_s / f_g do not (a glossy / glass sample there keeps its weight, as in Cycles),
+// and the all-lobe f (bsdf_eval, bsdf_query.f_all, LOBE_NEE) is 0 when the test fails.
+//
 // Requires the LUT defines of material/lut.wgsl (src/core/render/luts/lut-layout.ts lutDefines()).
 #include "common/math.wgsl"
 #include "common/nan.wgsl"
@@ -72,6 +78,9 @@ struct MatEval {
   ns: vec3f,             // shading normal, flipped to the V side (two-sided shading frame)
   ng: vec3f,             // geometric normal, flipped to the V side
   flags: u32,            // bit0: has non-delta lobe; bit1: diffuse-only (Lambert is the only allocated lobe); MATEVAL_*
+#if NORMAL_MAP
+  nsm: vec3f,            // M7: unmapped smooth / flat shading normal (bump-shadowing reference), flipped with ns
+#endif
 }
 
 struct BsdfEval {       // all-lobe evaluation (NEE) — Cycles eval semantics
@@ -119,6 +128,9 @@ struct BsdfCtx {
   g_eta: f32,          // η_side (relative IOR seen from V's side)
   sw_sum: f32,         // Σ guarded Cycles sample weights (tests: sw_ℓ = q_ℓ·sw_sum)
   model: u32,
+#if NORMAL_MAP
+  nsm: vec3f,          // M7: unmapped shading normal Ns, flipped to V's side (bsdf_bump_ok); +16 B only in NORMAL_MAP builds
+#endif
 }
 
 const BC_SINGULAR: u32 = 1u;     // !(α² > 2e-10): S and G are delta (G_T also when |η_side − 1| < 1e-4)
@@ -143,6 +155,9 @@ fn bsdf_prepare(m: MatEval, V: vec3f) -> BsdfCtx {
   let flip = dot(m.ng, V) < 0.0;
   c.ng = select(m.ng, -m.ng, flip);
   c.ns = select(m.ns, -m.ns, flip);
+#if NORMAL_MAP
+  c.nsm = select(m.nsm, -m.nsm, flip);
+#endif
   if (flip != ((m.flags & MATEVAL_BACKFACING) != 0u)) { c.bits |= BC_BACK; }   // Cycles SD_BACKFACING for this V (triangle.h:39-42)
   let r = saturate(m.roughness);
   c.alpha = r * r;
@@ -183,6 +198,14 @@ fn bsdf_F_S(c: BsdfCtx, cos_hi: f32) -> vec3f {
   return F;
 }
 
+#if NORMAL_MAP
+/// Cycles bump_shadowing_term rejection (closure/bsdf.h:117-126): L and the closure normal N must lie on the same side of
+/// the unmapped shading normal Ns as N·L says, i.e. not (Ns·L)(Ns·N)(N·L) < 0. With no normal map Ns = N ⇒ always true.
+fn bsdf_bump_ok(c: BsdfCtx, L: vec3f) -> bool {
+  return !(dot(c.nsm, L) * dot(c.nsm, c.ns) * dot(c.ns, L) < 0.0);
+}
+#endif
+
 struct LobeEvals {
   f_d: vec3f,
   f_s: vec3f,
@@ -191,16 +214,25 @@ struct LobeEvals {
   p_s: f32,    // q(S|V)·p_S(L|V) (joint; 0 if S is delta)
   p_g: f32,    // q(G|V)·p_G(L|V) (joint, valid-only = true sampler density; 0 if G is delta)
   g_side: u32, // bit0: G sub-event of L is G_T (Ns·L < 0); bit1: (V, L) in the G sampler support
+#if NORMAL_MAP
+  bump: bool,  // bsdf_bump_ok(c, L): false ⇒ f_d = 0 and the all-lobe (NEE) f = 0
+#endif
 }
 
 /// Per-class Cycles eval (no Ng test on f) and joint pdfs (true sampler densities: with the samplers' Ng tests).
 fn bsdf_eval_ctx(c: BsdfCtx, V: vec3f, L: vec3f) -> LobeEvals {
   var e: LobeEvals;
   let cos_ng = dot(c.ng, L);
+#if NORMAL_MAP
+  e.bump = bsdf_bump_ok(c, L);
+#endif
   if (bctx_has(c, BC_HAS_D)) {
     let k = lambert_eval(c.ns, L);
     e.f_d = c.w_d * k;
     e.p_d = select(0.0, c.q_d * k, cos_ng > 0.0);            // bsdf_diffuse.h:57-63
+#if NORMAL_MAP
+    e.f_d = select(vec3f(0.0), e.f_d, e.bump);               // diffuse: rejected in eval AND sampling (bsdf.h:124)
+#endif
   }
   if (bctx_has(c, BC_HAS_S) && !bctx_singular(c)) {
     let g = ggx_refl_eval(bctx_a2(c), c.ns, V, L);
@@ -227,6 +259,9 @@ fn bsdf_eval(m: MatEval, V: vec3f, L: vec3f) -> BsdfEval {
   let e = bsdf_eval_ctx(c, V, L);
   var r: BsdfEval;
   r.f_cos = e.f_d + e.f_s + e.f_g;
+#if NORMAL_MAP
+  r.f_cos = select(vec3f(0.0), r.f_cos, e.bump);              // Cycles eval: every closure rejected (bsdf.h:564-567)
+#endif
   r.pdf_marginal = e.p_d + e.p_s + e.p_g;
   return r;
 }
@@ -252,7 +287,11 @@ fn bsdf_eval_lobe(m: MatEval, V: vec3f, L: vec3f, lobe: u32) -> vec4f {
     case LOBE_S: { return vec4f(e.f_s, e.p_s); }
     case LOBE_GR: { return select(vec4f(0.0), vec4f(e.f_g, e.p_g), (e.g_side & 1u) == 0u); }
     case LOBE_GT: { return select(vec4f(0.0), vec4f(e.f_g, e.p_g), (e.g_side & 1u) != 0u); }
+#if NORMAL_MAP
+    case LOBE_NEE: { return vec4f(select(vec3f(0.0), e.f_d + e.f_s + e.f_g, e.bump), 1.0); }
+#else
     case LOBE_NEE: { return vec4f(e.f_d + e.f_s + e.f_g, 1.0); }
+#endif
     default: { return vec4f(0.0); }
   }
 }
@@ -296,6 +335,9 @@ fn bsdf_query(m: MatEval, V: vec3f, L: vec3f, lobe: u32) -> BsdfQuery {
   let c = bsdf_prepare(m, V);
   let e = bsdf_eval_ctx(c, V, L);
   q.f_all = e.f_d + e.f_s + e.f_g;
+#if NORMAL_MAP
+  q.f_all = select(vec3f(0.0), q.f_all, e.bump);
+#endif
   q.p_marg = e.p_d + e.p_s + e.p_g;
   q.supp = true;
   let suppS = dot(c.ns, V) > 0.0 && dot(c.ng, L) >= 0.0 && dot(c.ns, L) >= 0.0;
@@ -367,6 +409,9 @@ fn bsdf_sample(m: MatEval, V: vec3f, u: vec4f) -> BsdfSample {
     s.lobe = LOBE_D;
     s.L = lambert_sample_dir(c.ns, u.yz);
     if (!(dot(c.ng, s.L) > 0.0)) { return s; }                        // bsdf_diffuse.h:57-63
+#if NORMAL_MAP
+    if (!bsdf_bump_ok(c, s.L)) { return s; }                          // bump_shadowing_term rejects diffuse samples (bsdf.h:124)
+#endif
   } else {
     s.lobe = LOBE_S;
     let cos_ni = dot(c.ns, V);

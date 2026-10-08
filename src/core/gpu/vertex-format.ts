@@ -14,9 +14,15 @@
 //     [p.xyz recentred, uv.x] [n.xyz, uv.y] [COLOR_0 rgba (1 when absent)]
 //   wide-UV section (Q): 2 words (u, v f32 bits) per wide vertex
 //   colour section (Q): rgba8 1 word / rgba16 2 words per vertex; decode f32(q) · f32(1/(2^b − 1)) (exact product)
+//   tangent section (M7, only when the scene has a normal-mapped material; m7-api.md §1.2), right after the colour
+//   section (Q) / the records (F32):
+//     Q    1 word per vertex: oct 2 × 15 snorm MikkTSpace tangent (x bits 0..14, y bits 15..29), bit 30 = present,
+//          bit 31 = bitangent sign w < 0; absent (no tangent: no UVs / MikkTSpace failed) ⇒ 0 ⇒ decodes to vec4f(0)
+//     F32  4 words per vertex: t.xyz, w (f32 bits)
+//   The WGSL derives the section start from header B (Q: colorWord + colour words; F32: (2 + 3·vertexCount)·4).
 // Decoding positions / UVs is dyadic (integer × 2^k): exact on CPU and GPU even under fast-math reassociation or FMA.
 import {
-  C_OCT16, C_UNORM16, C_UNORM8, POS_MAX_OFFSET, QuantizationError, UV_Q_MAX, octCodeExact, octDecode, vertexLatticeGroups,
+  C_OCT15, C_OCT16, C_UNORM16, C_UNORM8, POS_MAX_OFFSET, QuantizationError, UV_Q_MAX, octCodeExact, octDecode, vertexLatticeGroups,
 } from '../scene/quantize.ts';
 import type { SceneGeometry, SceneQuant, UvLattice } from '../scene/types.ts';
 
@@ -46,8 +52,30 @@ export interface VertexArena {
   vertexCount: number;
   wideCount: number;
   colorFormat: number;
+  /** M7: the arena carries the tangent section (the scene has a normal-mapped material; WGSL define NORMAL_MAP). */
+  tangents: boolean;
+  /** Word offset of the tangent section (0 when absent). */
+  tangentWord: number;
   /** Bytes per section (reporting). */
-  bytes: { header: number; records: number; wideUv: number; color: number; total: number };
+  bytes: { header: number; records: number; wideUv: number; color: number; tangent: number; total: number };
+}
+
+/** Tangent word bits (Q format). */
+export const TAN_PRESENT = 1 << 30;
+export const TAN_NEG = 0x80000000;
+
+/** Q tangent word of tangents[4v..4v+3] (an exact oct-15 code, else QuantizationError); 0 = absent (w = 0). */
+export function tangentWord(t: ArrayLike<number>, v: number): number {
+  if (t[4 * v + 3] === 0) return 0;
+  let q: [number, number];
+  try { q = octCodeExact(t, 4 * v, 15); } catch (e) { throw new QuantizationError(`vertex packer: tangent ${v}: ${(e as Error).message}`); }
+  return ((q[0] & 0x7fff) | ((q[1] & 0x7fff) << 15) | TAN_PRESENT | (t[4 * v + 3] < 0 ? TAN_NEG : 0)) >>> 0;
+}
+/** TS mirror of scene-data.wgsl scene_vertex_tangent (Q word). */
+export function decodeTangentWord(w: number): [number, number, number, number] {
+  if ((w & TAN_PRESENT) === 0) return [0, 0, 0, 0];
+  const n = octDecode(((w << 17) >> 17), ((w << 2) >> 17), C_OCT15) as number[];
+  return [n[0], n[1], n[2], (w >>> 31) !== 0 ? -1 : 1];
 }
 
 /** Per-material UV lattice words for MaterialGpu (flags bits 16..31 = ku + 128, kv + 128; MAT_UV_WIDE; uvBase). */
@@ -69,9 +97,12 @@ export function originOnLattice(origin: readonly number[], q: SceneQuant): boole
  * Pack the vertex arena. `recentred` = f32(p − origin) (the BVH / light frame). Quantized scenes → Q format; lossless or
  * unquantized scenes → F32. Throws QuantizationError unless every Q record decodes (TS mirror) to the exact bits.
  */
-export function packVertexArena(g: SceneGeometry, recentred: Float32Array, quant: SceneQuant | undefined, origin: readonly number[]): VertexArena {
+export function packVertexArena(g: SceneGeometry, recentred: Float32Array, quant: SceneQuant | undefined, origin: readonly number[],
+  o: { tangents?: boolean } = {}): VertexArena {
   const nV = g.positions.length / 3;
-  if (!quant || quant.mode !== 'quantized') return packF32(g, recentred);
+  const withTan = !!o.tangents;
+  if (withTan && g.tangents.length !== nV * 4) throw new QuantizationError(`vertex packer: ${g.tangents.length} tangent floats for ${nV} vertices`);
+  if (!quant || quant.mode !== 'quantized') return packF32(g, recentred, withTan);
   const fail = (m: string): never => { throw new QuantizationError(`vertex packer: ${m}`); };
   if (!originOnLattice(origin, quant)) fail(`render origin (${origin.join(', ')}) is not on the 2^${quant.posLog2} lattice (use computeRenderOrigin(bounds, quant))`);
   const s = 2 ** quant.posLog2;
@@ -100,7 +131,8 @@ export function packVertexArena(g: SceneGeometry, recentred: Float32Array, quant
   const wideWord = recWords;
   const colorWord = wideWord + 2 * wide.length;
   const colorWords = colorFormat === COLOR_NONE ? 0 : colorFormat === COLOR_RGBA8 ? nV : 2 * nV;
-  const total = Math.ceil((colorWord + colorWords) / 4) * 4;
+  const tanWord = colorWord + colorWords;
+  const total = Math.ceil((tanWord + (withTan ? nV : 0)) / 4) * 4;
   const words = new Uint32Array(Math.max(total, (VQ_HEADER_VEC4S + 1) * 4));
   words[0] = posBase[0] >>> 0; words[1] = posBase[1] >>> 0; words[2] = posBase[2] >>> 0; words[3] = pow2Bits(quant.posLog2);
   words[4] = nV; words[5] = wideWord; words[6] = colorWord; words[7] = colorFormat;
@@ -133,17 +165,19 @@ export function packVertexArena(g: SceneGeometry, recentred: Float32Array, quant
       else { words[colorWord + 2 * v] = (q[0] | (q[1] << 16)) >>> 0; words[colorWord + 2 * v + 1] = (q[2] | (q[3] << 16)) >>> 0; }
     }
   }
+  if (withTan) for (let v = 0; v < nV; v++) words[tanWord + v] = tangentWord(g.tangents, v);
   const arena: VertexArena = {
-    words, format: VERTEX_FORMAT_Q, vertexCount: nV, wideCount: wide.length, colorFormat,
-    bytes: { header: 32, records: nV * VERTEX_BYTES_Q, wideUv: 8 * wide.length, color: 4 * colorWords, total: words.byteLength },
+    words, format: VERTEX_FORMAT_Q, vertexCount: nV, wideCount: wide.length, colorFormat, tangents: withTan, tangentWord: withTan ? tanWord : 0,
+    bytes: { header: 32, records: nV * VERTEX_BYTES_Q, wideUv: 8 * wide.length, color: 4 * colorWords, tangent: withTan ? 4 * nV : 0, total: words.byteLength },
   };
   verifyArena(arena, g, recentred, quant, groups);
   return arena;
 }
 
-function packF32(g: SceneGeometry, recentred: Float32Array): VertexArena {
+function packF32(g: SceneGeometry, recentred: Float32Array, withTan: boolean): VertexArena {
   const nV = recentred.length / 3;
-  const words = new Uint32Array(Math.max(VQ_HEADER_VEC4S + 3 * nV, VQ_HEADER_VEC4S + 3) * 4);
+  const tanWord = (VQ_HEADER_VEC4S + 3 * nV) * 4;
+  const words = new Uint32Array(Math.max(VQ_HEADER_VEC4S + 3 * nV + (withTan ? nV : 0), VQ_HEADER_VEC4S + 3) * 4);
   const f = new Float32Array(words.buffer);
   words[3] = pow2Bits(0);
   words[4] = nV;
@@ -152,17 +186,22 @@ function packF32(g: SceneGeometry, recentred: Float32Array): VertexArena {
     f[o] = recentred[3 * i]; f[o + 1] = recentred[3 * i + 1]; f[o + 2] = recentred[3 * i + 2]; f[o + 3] = g.uv0[2 * i] ?? 0;
     f[o + 4] = g.normals[3 * i]; f[o + 5] = g.normals[3 * i + 1]; f[o + 6] = g.normals[3 * i + 2]; f[o + 7] = g.uv0[2 * i + 1] ?? 0;
     for (let c = 0; c < 4; c++) f[o + 8 + c] = g.color0 ? g.color0[4 * i + c] : 1;
+    if (withTan) for (let c = 0; c < 4; c++) f[tanWord + 4 * i + c] = g.tangents[4 * i + c];
   }
   return {
-    words, format: VERTEX_FORMAT_F32, vertexCount: nV, wideCount: 0, colorFormat: COLOR_NONE,
-    bytes: { header: 32, records: nV * VERTEX_BYTES_F32, wideUv: 0, color: 0, total: words.byteLength },
+    words, format: VERTEX_FORMAT_F32, vertexCount: nV, wideCount: 0, colorFormat: COLOR_NONE, tangents: withTan, tangentWord: withTan ? tanWord : 0,
+    bytes: { header: 32, records: nV * VERTEX_BYTES_F32, wideUv: 0, color: 0, tangent: withTan ? 16 * nV : 0, total: words.byteLength },
   };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
 // TS decode mirror (= scene-data.wgsl vq_*). Positions are in the render (recentred) frame.
 
-export interface DecodedVertex { p: [number, number, number]; n: [number, number, number]; uv: [number, number]; color: [number, number, number, number] }
+export interface DecodedVertex {
+  p: [number, number, number]; n: [number, number, number]; uv: [number, number]; color: [number, number, number, number];
+  /** Tangent (xyz, w = bitangent sign; 0 when absent) if the arena has the tangent section. */
+  t?: [number, number, number, number];
+}
 
 const sext16 = (x: number) => (x << 16) >> 16;
 
@@ -170,7 +209,9 @@ export function decodeVertex(a: VertexArena, i: number, lattice: UvLattice | und
   const w = a.words;
   if (a.format === VERTEX_FORMAT_F32) {
     const o = (VQ_HEADER_VEC4S + 3 * i) * 4, b = (k: number) => bitsF32(w[o + k]);
-    return { p: [b(0), b(1), b(2)], n: [b(4), b(5), b(6)], uv: [b(3), b(7)], color: [b(8), b(9), b(10), b(11)] };
+    const d: DecodedVertex = { p: [b(0), b(1), b(2)], n: [b(4), b(5), b(6)], uv: [b(3), b(7)], color: [b(8), b(9), b(10), b(11)] };
+    if (a.tangents) { const t0 = a.tangentWord + 4 * i; d.t = [bitsF32(w[t0]), bitsF32(w[t0 + 1]), bitsF32(w[t0 + 2]), bitsF32(w[t0 + 3])]; }
+    return d;
   }
   const o = (VQ_HEADER_VEC4S + i) * 4;
   const scale = bitsF32(w[3]);
@@ -187,7 +228,7 @@ export function decodeVertex(a: VertexArena, i: number, lattice: UvLattice | und
     const c0 = w[w[6] + 2 * i], c1 = w[w[6] + 2 * i + 1];
     color = [c0 & 0xffff, c0 >>> 16, c1 & 0xffff, c1 >>> 16].map((q) => f32(q * C_UNORM16)) as typeof color;
   }
-  return { p, n: [nn[0], nn[1], nn[2]], uv, color };
+  return { p, n: [nn[0], nn[1], nn[2]], uv, color, ...(a.tangents ? { t: decodeTangentWord(w[a.tangentWord + i]) } : {}) };
 }
 
 function verifyArena(a: VertexArena, g: SceneGeometry, recentred: Float32Array, q: SceneQuant, groups: Int32Array): void {
@@ -202,5 +243,9 @@ function verifyArena(a: VertexArena, g: SceneGeometry, recentred: Float32Array, 
     bad('normal', d.n, [g.normals[3 * v], g.normals[3 * v + 1], g.normals[3 * v + 2]]);
     if (groups[v] >= 0) bad('uv', d.uv, [g.uv0[2 * v], g.uv0[2 * v + 1]]);
     if (g.color0) bad('COLOR_0', d.color, [g.color0[4 * v], g.color0[4 * v + 1], g.color0[4 * v + 2], g.color0[4 * v + 3]]);
+    if (a.tangents) {
+      const want = g.tangents[4 * v + 3] === 0 ? [0, 0, 0, 0] : [g.tangents[4 * v], g.tangents[4 * v + 1], g.tangents[4 * v + 2], g.tangents[4 * v + 3] < 0 ? -1 : 1];
+      bad('tangent', d.t!, want);
+    }
   }
 }
