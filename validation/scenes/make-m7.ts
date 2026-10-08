@@ -40,7 +40,7 @@ export const M7_OUT = 'validation/out/m7/scenes';
 const OUT = argv[0] && !argv[0].startsWith('--') ? path.resolve(argv[0]) : path.join(ROOT, M7_OUT);
 const HDRI_DIR = 'validation/assets/downloaded/hdri';
 
-export const M7_SCENES = ['m7_smooth_256', 'm7_nm_flat_256', 'm7_nm_smooth_256', 'm7_nm_smooth_B_256', 'm7_nm_env_256', 'm7_xivlite_hdr_256', 'm7_xivlite_exr_256'] as const;
+export const M7_SCENES = ['m7_smooth_256', 'm7_smooth_lowpoly_256', 'm7_nm_flat_256', 'm7_nm_smooth_256', 'm7_nm_smooth_B_256', 'm7_nm_env_256', 'm7_xivlite_hdr_256', 'm7_xivlite_exr_256'] as const;
 
 /** Plant regions of m7_nm_flat_256 (pixel rectangles in the 256² image, from the panel corners; m7-api.md §5.1). */
 export const M7_PANELS = {
@@ -108,6 +108,26 @@ async function m7Smooth(): Promise<void> {
   const lights = [rectLight(), light('point', new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.3, 0.78, 0.25, 1]), 3)];
   await write({ name: 'm7_smooth_256', scene: sceneOf('m7_smooth_256', mb, mats, lights), flatShaded: false,
     extra: { tier: 'model-approximate', notes: 'smooth shading, no normal maps; open wavy sheet (Cycles NEE/BSDF MIS non-partition where Ng·L ≤ 0 < Ns·L, gap-bsdf §8.2)' } });
+}
+
+/** M7-11: low-poly smooth shading (Ns up to ~35–45° from Ng): the B-SM-J plant needs reconnection vertices where the
+ *  shading and geometric cosines differ (m7_smooth_256 is finely tessellated: undetectable, measured). */
+async function m7SmoothLowpoly(): Promise<void> {
+  resetLightIds();
+  const mats = [...wallMats(),
+    principled('dielectric', { baseColorFactor: [0.75, 0.75, 0.8, 1], roughnessFactor: 0.35 }),
+    principled('gold', { baseColorFactor: [0.95, 0.72, 0.4, 1], metallicFactor: 1, roughnessFactor: 0.3 }),
+    principled('torus', { baseColorFactor: [0.35, 0.55, 0.75, 1], roughnessFactor: 0.4 }),
+    principled('sheet', { baseColorFactor: [0.6, 0.6, 0.8, 1], roughnessFactor: 0.3 })];
+  const mb = new MeshBuilder();
+  room(mb, ROOM);
+  smoothSphere(mb, [-0.24, 0.18, -0.12], 0.18, 4, 6, 5);
+  smoothSphere(mb, [0.24, 0.14, 0.1], 0.14, 4, 7, 6);
+  smoothTorus(mb, [0.0, 0.07, 0.25], 0.12, 0.05, 8, 5, 7);
+  smoothSheet(mb, 0.04, 0.46, -0.46, -0.12, 0.45, 0.06, 18, 15, 4, 8);
+  const lights = [rectLight(), light('point', new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.3, 0.78, 0.25, 1]), 3)];
+  await write({ name: 'm7_smooth_lowpoly_256', scene: sceneOf('m7_smooth_lowpoly_256', mb, mats, lights), flatShaded: false,
+    extra: { tier: 'model-approximate', notes: 'm7_smooth_256 with low-poly meshes (sphere 4×6 / 4×7, torus 8×5, sheet 4×4): Ns up to ~40° from Ng' } });
 }
 
 async function m7NmFlat(): Promise<void> {
@@ -225,7 +245,7 @@ async function xivLite(ext: 'hdr' | 'exr'): Promise<void> {
 }
 
 const GENS: Record<string, () => Promise<void>> = {
-  m7_smooth_256: m7Smooth, m7_nm_flat_256: m7NmFlat, m7_nm_smooth_256: m7NmSmooth, m7_nm_smooth_B_256: m7NmSmoothB, m7_nm_env_256: m7NmEnv,
+  m7_smooth_256: m7Smooth, m7_smooth_lowpoly_256: m7SmoothLowpoly, m7_nm_flat_256: m7NmFlat, m7_nm_smooth_256: m7NmSmooth, m7_nm_smooth_B_256: m7NmSmoothB, m7_nm_env_256: m7NmEnv,
   m7_xivlite_hdr_256: () => xivLite('hdr'), m7_xivlite_exr_256: () => xivLite('exr'),
 };
 

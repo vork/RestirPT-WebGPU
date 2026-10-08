@@ -45,7 +45,7 @@ const TIMEOUT_MS = 24 * 3600_000;
 /** Seeds of the M7 gate (disjoint from M3–M6). Stage A: our PT 7007 / 107007, Cycles 0..K−1 / 100..100+K−1. */
 export const SEEDS = {
   pt: 7001, ptRerun: 107001, restir: 7002, restirRerun: 107002, aa: 7502, aa2: 7503, plantBase: 7101, ptCalib: 7201, ptPilot: 7011, restirPilot: 7012,
-  chains: 7002, chainsRerun: 107002, chainPilot: 7012, ours: 7007, oursRerun: 107007, oursAA: [7301, 7302], plantA: 7401, cyclesRerunBase: 100,
+  chains: 7002, chainsRerun: 107002, chainPilot: 7012, plantRevised: 7801, ours: 7007, oursRerun: 107007, oursAA: [7301, 7302], plantA: 7401, cyclesRerunBase: 100,
 } as const;
 const M7_PT = { root: M7_OUT, pilot: SEEDS.ptPilot, ref: SEEDS.pt, rerun: SEEDS.ptRerun } as const;
 export const CALIB_FACTOR = 4;
@@ -55,7 +55,7 @@ const NUM_EPS_NOTE = 'two f32 implementations (cycles-deviations.md D2; restir-a
 export const MODEL_APPROX_CHECKS = { sidak_tiles: false, chi2_red: false, mean_t: false, ks_ad: false, numeric_tiles: false } as const;
 
 /** Packages written by make-m7.ts into validation/out/m7/scenes. */
-export const M7_PKGS = ['m7_smooth_256', 'm7_nm_flat_256', 'm7_nm_smooth_256', 'm7_nm_smooth_B_256', 'm7_nm_env_256', 'm7_xivlite_hdr_256', 'm7_xivlite_exr_256'];
+export const M7_PKGS = ['m7_smooth_256', 'm7_smooth_lowpoly_256', 'm7_nm_flat_256', 'm7_nm_smooth_256', 'm7_nm_smooth_B_256', 'm7_nm_env_256', 'm7_xivlite_hdr_256', 'm7_xivlite_exr_256'];
 /** Packages written by make-m7-e2e.ts into validation/out/m7/e2e (E2E_UNITS order). */
 export const E2E_PKGS = [
   ...['cornell_point_spot', 'metalrough_spheres', 'texture_transform', 'normal_tangent_mirror', 'alpha_mask', 'emissive_strength', 'transmission', 'ior_grid']
@@ -77,6 +77,7 @@ const A = (pkg: string, label: string, o: Partial<StageAUnit> = {}): StageAUnit 
 export const STAGE_A_UNITS: StageAUnit[] = [
   A('m7_nm_flat_256', '(vii-N) flat geometry + normal maps (tiles / bumps / waves; panels P1–P3)'),
   A('m7_smooth_256', 'smooth shading, no normal maps (open wavy sheet)', { tier: 'model-approximate' }),
+  A('m7_smooth_lowpoly_256', 'low-poly smooth shading (Ns up to ~40° from Ng), no normal maps', { tier: 'model-approximate' }),
   A('m7_nm_smooth_256', '(vii-N) smooth + normal-mapped (bumps / waves / tiles torus / bumps sheet)', { tier: 'model-approximate' }),
   A('m7_nm_smooth_B_256', '(vii-N) smooth + normal-mapped, light mode B', { tier: 'model-approximate' }),
   A('m7_nm_env_256', '(vii-N) smooth normal-mapped spheres on a normal-mapped ground, overcast HDRI', { tier: 'model-approximate' }),
@@ -93,6 +94,7 @@ export const SEQ_UNITS: SeqUnit[] = [
   U('initial', 'm7_smooth_256', 'smooth shading, initial candidates only', 'initial'),
   U('initial', 'm7_nm_smooth_256', 'smooth + normal maps, initial candidates only', 'initial'),
   U('offline', 'm7_smooth_256', 'smooth shading, offline-m6 (σ 16 + RIS-NEE, 3 spatial rounds)', 'offline-m6'),
+  U('offline', 'm7_smooth_lowpoly_256', 'low-poly smooth shading (Ns up to ~40° from Ng), offline-m6', 'offline-m6'),
   U('offline', 'm7_nm_flat_256', 'flat + normal maps, offline-m6', 'offline-m6'),
   U('offline', 'm7_nm_smooth_256', 'smooth + normal maps, offline-m6', 'offline-m6'),
   U('offline', 'm7_nm_env_256', 'smooth + normal maps under the overcast HDRI, offline-m6', 'offline-m6'),
@@ -108,6 +110,8 @@ export const CHAIN_UNITS: ChainUnitM7[] = [
 export interface PlantM7 {
   id: string; name: string; stage: 'A' | 'B'; pkg: string; preset?: RestirPresetName; base?: Partial<RestirSettings>; plant: Record<string, unknown>; ptArgs?: string[];
   predict: { region: string; sign: '+' | '-' | 'detect' }[]; masks: ('M_P2' | 'M_P3')[]; derivation: string;
+  /** Revised plants run on fresh disjoint seeds (E-18): ReSTIR seedBase, 4× PT seedBase + 100. */
+  seedBase?: number;
 }
 export const PLANT_IDS = ['A-NM-sign', 'A-NM-strength', 'B-NM-sign', 'B-NM-strength', 'B-SM-J'] as const;
 export function plantList(): PlantM7[] {
@@ -122,8 +126,11 @@ export function plantList(): PlantM7[] {
       predict: [{ region: 'M_P2', sign: pred.sign.sign }], masks: ['M_P2', 'M_P3'], derivation: `${d('sign')}; shifted paths through P2 evaluated with the flipped normal` },
     { id: 'B-NM-strength', name: 'glTF-style strength in every ReSTIR pass but the path tree (m7NmStrength)', stage: 'B', pkg: 'm7_nm_flat_256', preset: 'offline-m6', plant: { m7NmStrength: true },
       predict: [{ region: 'M_P3', sign: pred.strength.sign }], masks: ['M_P2', 'M_P3'], derivation: `${d('strength')}; shifted paths through P3 evaluated with the steeper normal` },
-    { id: 'B-SM-J', name: 'shading normal in the shift Jacobian geometry term (RS_PLANT_SMOOTH_J)', stage: 'B', pkg: 'm7_smooth_256', preset: 'offline-m6', plant: { m7SmoothJ: true },
-      predict: [{ region: 'global', sign: 'detect' }], masks: [], derivation: 'J uses |cos| at the reconnection vertex w.r.t. Ns instead of Ng: ratio cos_s/cos_g ≠ 1 wherever Ns ≠ Ng (sign varies with the side; detect only)' },
+    // M7-11: the first B-SM-J ran on m7_smooth_256 (finely tessellated, Ns ≈ Ng) and was NOT detected (0/10, Δ −0.000 %);
+    // revised before any run on the low-poly scene, measured on fresh disjoint seeds
+    { id: 'B-SM-J', name: 'shading normal in the shift Jacobian geometry term (RS_PLANT_SMOOTH_J)', stage: 'B', pkg: 'm7_smooth_lowpoly_256', preset: 'offline-m6', plant: { m7SmoothJ: true },
+      predict: [{ region: 'global', sign: 'detect' }], masks: [], seedBase: SEEDS.plantRevised,
+      derivation: 'J uses |cos| at the reconnection vertex w.r.t. Ns instead of Ng: ratio cos_s/cos_g ≠ 1 wherever Ns ≠ Ng (up to ~40° on the low-poly meshes; sign varies with the side; detect only)' },
   ];
 }
 /** Read at use: the derivation reads validation/out/m7/scenes/m7_nm_flat_256/scene.json (ensurePackages first). */
@@ -448,9 +455,10 @@ function plantUnit(p: PlantM7, i: number, dir: string, runId: string, nU: number
     const z = sizeUnit(p.pkg, p.preset!, p.base, add, `plantbase-${p.id}`);
     if (!z) return { ...data, status: 'sizing failed' };
     tile = z.tile;
-    const pr = ptRefRun(p.pkg, z.ptSpp * CALIB_FACTOR, z.B, SEEDS.ptCalib + i, 1.2 * CALIB_FACTOR * z.ptSeconds, add);
+    const rSeed = (p.seedBase ?? SEEDS.plantBase) + i, cSeed = (p.seedBase ? p.seedBase + 100 : SEEDS.ptCalib) + i;
+    const pr = ptRefRun(p.pkg, z.ptSpp * CALIB_FACTOR, z.B, cSeed, 1.2 * CALIB_FACTOR * z.ptSeconds, add);
     const settings = { ...(p.base ?? {}), plant: p.plant } as Partial<RestirSettings>;
-    const run = runBatches([...rsArgs(p.pkg, p.preset!, settings), '--spp', String(z.frames), '--batches', String(z.B), '--seed', String(SEEDS.plantBase + i)],
+    const run = runBatches([...rsArgs(p.pkg, p.preset!, settings), '--spp', String(z.frames), '--batches', String(z.B), '--seed', String(rSeed)],
       `${runId}-plant-${p.id}`.replace(/[^\w.-]+/g, '_'), path.join(dir, 'plants', safe(p.id), 'restir'), { B: z.B, estSeconds: z.seconds * 1.2 });
     if (run.dir && run.meta && pr) {
       ours = { dir: run.dir, meta: run.meta }; ref = pr;
@@ -459,7 +467,7 @@ function plantUnit(p: PlantM7, i: number, dir: string, runId: string, nU: number
       const named = run.meta.t16?.plantsNamed as string[] | undefined;
       for (const k of Object.keys(p.plant)) if (!named?.includes(k)) t16.push(`plant ${k} not named in t16.plantsNamed (${json(named)})`);
     }
-    Object.assign(data, { sizing: { frames: z.frames, B: z.B, ptSpp4x: z.ptSpp * CALIB_FACTOR, tile: z.tile }, seeds: { restir: SEEDS.plantBase + i, ptCalib: SEEDS.ptCalib + i } });
+    Object.assign(data, { sizing: { frames: z.frames, B: z.B, ptSpp4x: z.ptSpp * CALIB_FACTOR, tile: z.tile }, seeds: { restir: rSeed, ptCalib: cSeed, ...(p.seedBase ? { note: 'revised plant: fresh disjoint seeds (E-18)' } : {}) } });
   }
   if (!ours || !ref) { add(`plant ${p.id}`, false, (performance.now() - t0) / 1000, data, 'run failed'); return { ...data, status: 'run failed' }; }
   const test = writeTest(dir, `plant-${p.id}`, p.stage, nU, 'tight', { ...(masks.length ? { masks } : {}), ...(tile !== 32 ? { tile } : {}) });
