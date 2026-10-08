@@ -192,7 +192,8 @@ The adapter rules. All of them are implemented and verified in `normalize.ts` (`
    **M7 additions (m7-api.md §3.1, M7-4):** UsdUVTexture networks from the scan with Blender 5.2's importer semantics
    (diffuse / roughness + metallic / normal / emissive / opacity-of-the-diffuse-texture; one wrap = wrapS; normal
    strength 1); a mesh bound inside an instance prototype (rc4 reports no material) takes its `material:binding` and
-   every PreviewSurface constant from the scan. In Blender-compatible mode (`blenderCompat`, the E2E-USD gate) the
+   every PreviewSurface constant from the scan. A mesh without authored normals gets Blender's automatic smooth
+   normals (corner-angle-weighted, computed in mesh space; M7-10). In Blender-compatible mode (`blenderCompat`, the E2E-USD gate) the
    Blender-exporter `specular` input is not read (Blender's importer ignores it, M7-7).
 5. **Frames.** Apply upAxis Z → R_x(−90°) and metersPerUnit scaling once, in the adapter. Apply `v = 1 − v`.
 6. **Scan scope.**

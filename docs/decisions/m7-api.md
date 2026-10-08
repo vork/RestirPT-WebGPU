@@ -215,3 +215,10 @@ normal maps vs 26.5 ms with the same scene's normal textures removed (+0.7 ms, +
 - **M7-9 (Stage-A sizes).** Pilots ran Cycles at 1024 spp; the gate uses ≥ 4096 spp (cycles-deviations D4). The
   sub-δ systematic of MetalRoughSpheres (+0.07 % at 1024 spp, TOST pass, rejection checks fail) is reported in the
   model-approximate tier, not hidden; see validation.md M7.
+- **M7-10 (USD meshes without authored normals).** The gate's first E2E run failed `e2e_usd_instancing` (tile [3,1]
+  Y +1.47 %, R / B tiles beyond 2 % on the PointInstancer pyramids and gems; confirmed on the disjoint re-run seeds):
+  our loader averaged unit face normals UNWEIGHTED in world space, while Blender 5.2's importer leaves such faces smooth
+  with its automatic normals (corner-angle-weighted, per mesh, verified in bpy: Pyr base corners (±0.6555, ±0.6555,
+  −0.3752)). The loader now computes Blender's normals on the mesh in its own space and transforms them like authored
+  normals (non-uniformly scaled instances keep Blender's weighting). Affects only USD meshes without normals (in the
+  repo: m7_instancing's prototypes, spike_hand.usda); the unit was re-run from scratch on the gate seeds.
