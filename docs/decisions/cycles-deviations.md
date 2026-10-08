@@ -216,6 +216,33 @@ so Cycles' **expectation is unchanged** and only its variance moves (blender-5.2
 **Effect on the gates.** None on the expectation. D5's documented approximate-tier excess on G5b depends on Cycles'
 normalisation and may shift slightly; G5b stays in the approximate tier.
 
+## D9. Tangents: our MikkTSpace on the package mesh vs Blender's (M7, measured equal)
+
+Blender computes MikkTSpace itself (`Mesh.calc_tangents`) on the package mesh; we run the Rust MikkTSpace port on the
+same corners (whole mesh, corner normals, UV map, w negated for the bridge's v flip; m7-api.md N4). Different
+implementations, same algorithm: U-TAN-B (gate-m7 loader part) measures sign agreement on every normal-mapped corner
+and ≤ 0.0036° max angle on the M7 packages (gate: p99.9 ≤ 0.01°, max ≤ 0.05°; oct-15 storage adds ≤ 0.0049°). No
+effect on the expectation beyond that.
+
+## D10. Smooth shading and normal maps: Cycles' NEE/BSDF MIS is not a partition (M7, model-approximate tier)
+
+Where `Ng·L ≤ 0 < N·L` (smooth shading, gap-bsdf §8.2) or where the bump-shadowing term rejects a direction a glossy
+sample still reaches (math.md §29), only one technique contributes and its MIS weight is < 1, so the expectation depends
+on the MIS heuristic (Cycles power, ours balance), the lobe pmf and the light pmf. We implement Cycles' rules exactly
+(no Ng test in eval, the bump term in eval + diffuse sampling, `use_bump_map_correction` off) but not its heuristic, so
+smooth-shaded Stage-A scenes run in the **model-approximate tier** (m7-api.md N6: TOST at the unchanged δ gates, the
+Δ = 0 rejection checks are reported). Flat geometry with normal maps is a partition (math.md §29) and stays tight.
+Stage B is unaffected (ReSTIR and our PT share F, ω, p).
+
+## D11. E2E stock imports: importer conventions (M7, model-approximate tier)
+
+E2E-GLB / E2E-USD render Blender's own importer output. Measured Blender 5.2.2 conventions our loader reproduces only in
+the E2E (Blender-compatible) mode: USD SphereLight energy π·i with `normalize` kept (Cycles: an un-normalised point at
+radius 0 is 4× a normalised one), DistantLight ×4, the exporter-only `specular` input ignored (m7-api.md §3.4, M7-6 /
+M7-7). glTF import (SPEC lighting, FLAT / NORMALS) needs no compat rule. Stock units are model-approximate: TOST at the
+unchanged δ gates, so an unmodelled importer detail larger than δ (e.g. KHR_materials_volume) still fails the unit; a
+sub-δ systematic is reported, not hidden (validation.md M7).
+
 ## Deferred
 
 - **C0o visibleToCamera** (M3a): Mode B only. In Mode A Cycles 5.1.2 does not show camera-visible area lights when no

@@ -179,6 +179,9 @@ The adapter rules. All of them are implemented and verified in `normalize.ts` (`
    - For a node without a mesh under an `instanceable` prim, reuse the mesh at the same path suffix under another instance of the same reference target. Use the node's `worldMatrix`.
    - Skip subtrees of `class` prims and of `PointInstancer.prototypePaths`.
 2. **PointInstancers.** world = transpose3×3(`draw.transform`) · world(instancer node) (row-vector convention).
+   **Amended (M7, m7-api.md M7-3):** the per-instance transform is rebuilt from the authored `positions` /
+   `orientations` (half quaternions, NOT normalised, as pxr) / `scales` / `protoIndices` of the root-layer scan; rc4
+   normalises the quaternion (3e-5 bbox error vs pxr).
 3. **Lights.**
    - `spot` → SphereLight + shaping, with `coneAngle = angle·180/π`.
    - `directional` → DistantLight, with `angle` in degrees (the diameter).
@@ -186,6 +189,11 @@ The adapter rules. All of them are implemented and verified in `normalize.ts` (`
    - Then apply the plan §1.2 v1 rules: sphere → point with r := 0 and preserved I. The DistantLight Blender quirk applies when `doc` starts with `Blender v`.
    - Colour temperature applies when `enableColorTemperature` is set.
 4. **Materials.** Use PreviewSurface from `mesh.material` / `mesh.materials[submesh.materialIndex]`. Patch `ior`, `clearcoat*`, `useSpecularWorkflow`, `specularColor`, Blender `specular` and `opacityThreshold` from the scan (shader prim → parent Material), and use the spec defaults otherwise.
+   **M7 additions (m7-api.md §3.1, M7-4):** UsdUVTexture networks from the scan with Blender 5.2's importer semantics
+   (diffuse / roughness + metallic / normal / emissive / opacity-of-the-diffuse-texture; one wrap = wrapS; normal
+   strength 1); a mesh bound inside an instance prototype (rc4 reports no material) takes its `material:binding` and
+   every PreviewSurface constant from the scan. In Blender-compatible mode (`blenderCompat`, the E2E-USD gate) the
+   Blender-exporter `specular` input is not read (Blender's importer ignores it, M7-7).
 5. **Frames.** Apply upAxis Z → R_x(−90°) and metersPerUnit scaling once, in the adapter. Apply `v = 1 − v`.
 6. **Scan scope.**
    - The scan reads the root layer only (no composition). Log a warning when the file has other layers: a USDZ with several USD entries, or `subLayers`/external `references`/`payload` in the root layer.
@@ -198,3 +206,8 @@ The adapter rules. All of them are implemented and verified in `normalize.ts` (`
 - File upstream issues against LightUSD for findings 1, 2, 3–5, 6–8. Re-run `run-spike.ts` on every version bump.
 - Re-run the harness on the M1 `make_cornell.py` USD export and on a Kitchen_set / PointInstancer asset (non-commercial test only). The harness currently reads files from `validation/assets/usd-spike/` (+ `validation/out/usd-spike/perf/`).
 - Not covered by this spike: textures (UsdUVTexture), variants, multi-file references and payloads, `visibility`/`purpose` pruning, subdivision, `orientation = leftHanded`, cameras vs pxr.
+- **M7 status.** UsdUVTexture (single root layer + texture assets resolved next to the file / inside a USDZ), instanceable
+  prims and PointInstancers (incl. bindings inside prototypes) and cameras are covered and checked against pxr per draw /
+  material / light / camera by (viii-L) (`validation/harness/m7-loader-fidelity.ts`, 7 files) and rendered against
+  Blender's stock importer by E2E-USD (5 files). Still out of scope: variants, payloads / multi-layer composition,
+  `visibility` / `purpose` pruning, subdivision, `UsdTransform2d`, non-`st` primvars.

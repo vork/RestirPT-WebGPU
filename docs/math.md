@@ -1818,6 +1818,77 @@ HDR-FLIP is reported alongside.
 
 ---
 
+<a id="normal-maps"></a>
+## 29. Shading normals: smooth shading, the Normal Map node, bump shadowing, ReSTIR [M7 addition]
+
+Sources: plan §5 M7; gap-bsdf §8.1–§8.4; gris-math §9 ("Jacobian cosines use the geometric normal"); enhanced-verify
+O1 / C8; cyc `svm/tex_coord.h` (svm_node_normal_map), `closure/bsdf.h` (bump_shadowing_term); m7-api.md N1–N6.
+
+**Three normals per hit.**
+```
+Ng   geometric (face) normal, winding orientation; flipped with the two-sided rule (math §10)
+Ns   unmapped shading normal: normalize(nU), nU = Σ w_i n_i (barycentric, un-normalised) on smooth faces; Ns ≡ Ng on
+     TRI_FLAT faces (bit for bit)
+N    closure normal: the Normal Map node output for a normal-mapped material, else Ns
+```
+Under `NORMAL_MAP` the hit carries `ns := N` and `nsm := Ns`; both are flipped together with the two-sided flip.
+
+**Normal Map node (tangent space, Cycles).** With the image sample rgb (Non-Color, LOD 0), strength s, the
+barycentrically interpolated MikkTSpace tangent T (un-normalised) and sign σ (interpolated, ±1 on a triangle), and nU:
+```
+c    = 2(rgb − ½);   c.x ·= s;  c.y ·= s;   c.z = mix(1, c.z, saturate(s))
+B    = σ·(nU × T)
+N    = safe_normalize(c.x·T + c.y·B + c.z·nU)            (all in winding orientation)
+N    = −N on backfacing hits;   N = Ns if N is zero / non-finite
+```
+On flat faces nU = Ng (Cycles' `shader_bsdf … sd->N` is Ng there). glTF's `normalTexture.scale` is the node Strength;
+glTF itself scales only c.xy (no z mix) — the "glTF-style strength" plant (§5 of m7-api) is exactly that difference.
+
+**Tangent frame (Blender semantics).** MikkTSpace over the whole mesh from the corner normals and the UV map with v
+flipped by the bridge (v_b = 1 − v) ⇒ Blender's bitangent sign; we run it on glTF-convention UVs and negate w, so
+`B = w·(n × t)` is the same vector. Per vertex the tangent is each corner's MikkTSpace tangent (vertices split where
+corners differ), so interpolation reproduces Blender's per-corner attribute.
+
+**BSDF (where each normal enters).**
+```
+eval f(V, L)        lobes around N (Lambert max(N·L, 0); GGX with Ns := N in its Ns·V, Ns·L tests)
+sampling support    D: Ng·L > 0;  S / G_R: N·V > 0 ∧ Ng·L ≥ 0 ∧ N·L ≥ 0;  G_T as math §14 with N      (unchanged rule, N in place of Ns)
+bump term           b(L) = ¬[(Ns·L)(Ns·N)(N·L) < 0]           (=1 when N = Ns)
+NEE f_all           f_all(V, L)·b(L)                           (every closure; Cycles eval)
+BSDF sample         diffuse: weight f_d·b(L)/p (the draw happens, a failing sample carries 0);  glossy / glass: f/p, no b
+pdfs                unchanged: p_d, p_s, p_g, p̄ = the samplers' densities (a failing diffuse draw is still drawn)
+```
+*Derivation.* The renderer's estimator at x_{d−1} is ω1·F_NEE/p1 + ω2·F_BSDF/p2 with ω1 + ω2 = 1 for every direction
+both techniques can produce. Where b(L) = 0: F_NEE = 0 (all closures rejected) and F_BSDF = ω2·f_{S,G}·cos/p (glossy
+samples kept), so the expectation is ∫ [b·f_all + (1 − b)·ω2·f_{S,G}] cos dω — a non-partition exactly as Cycles'.
+With flat geometry (Ns = Ng) the (1 − b) term vanishes: b = 0 requires Ng·L and N·L of opposite sign; the glossy
+sampler needs Ng·L ≥ 0, so N·L < 0 and the GGX eval is 0 (gap-bsdf §8.4) ⇒ flat + normal maps is a partition and Stage A
+is tight. On smooth faces the (1 − b) term and gap-bsdf §8.2's `Ng·L ≤ 0 < N·L` region depend on the MIS heuristic
+(Cycles: power; ours: balance) and on q ⇒ the model-approximate tier (m7-api N6). ReSTIR uses the same F, ω and p as
+the PT, so Stage B stays exact.
+
+**ReSTIR (unchanged rules, now exercised).**
+```
+reconnection vertex x_k   reconstructed from ids: Ng, Ns, N of the triangle at (u, v); flipped to the side of the
+                          incoming V^y = normalize(y_{k−1} − x_k)
+F at x_k                  f(x_k; V^y, ω_k) with N, b and the support indicator under V^y (math §14)
+Jacobian (Eq. 2)          G(y_{k−1} → x_k) = |Ng(x_k)·ω'| / t²       — Ng, never Ns or N (gris §9: a shading cosine
+                          makes |∂T/∂ū| inexact)
+pdf factors               p^y_{k−1}(ω'), p^y_k(ω_k | V^y): joint, with N; the sampler support (Ng tests) included
+footprints F_k, I_k       cos_a, cos_b with Ng (math §19); p̄ with N; thr from R²_pri with Ng(x₁)
+```
+*Why Ng in G.* The reconnection maps primary-sample space through a change of area measure at x_k: dA(x_k) =
+t²/|Ng·ω'|·dω'. The surface element is the geometric one whatever normal the BSDF uses, so Ns or N in G would make J
+≠ |∂T/∂ū| wherever they differ (planted as RS_PLANT_SMOOTH_J, m7-api §5.2). Invertibility needs both directions to
+evaluate the same quantities from the same ids: N and Ns are deterministic functions of (primId, u, v) and the
+texture, so T⁻¹(T(x̄)) = x̄ holds as on flat faces (T3-M7).
+
+**Predicate.** k* (math §19) is unchanged: roughness from the material, footprints with Ng cosines and the marginal p̄
+evaluated with N. A normal map changes p̄ (hence k*) consistently in both directions because x_k and y_{k−1} are
+evaluated with their own normals in both T and T⁻¹.
+
+---
+
 <a id="open-inconsistencies"></a>
 ## Open inconsistencies
 
