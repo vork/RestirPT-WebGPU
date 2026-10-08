@@ -2,7 +2,7 @@
 // tangent-space normal maps (RGBA8, Non-Color), and the CPU mirror of the Cycles Normal Map node used by the tests and
 // the analytic expectations. Builds on scene-kit.ts (its MeshBuilder arrays are appended to directly: smooth vertices
 // are shared, so quantizeScene does NOT flag their triangles TRI_FLAT and the package is exported smooth).
-import { MeshBuilder, norm, texture, type V3 } from './scene-kit.ts';
+import { MeshBuilder, norm, texture, type V3 } from './kit-core.ts';
 import type { TextureData } from '../../src/core/scene/types.ts';
 
 /** Cycles svm_node_normal_map, tangent space (f64 mirror of scene-data.wgsl normal_map_cycles); null = Cycles' fallback. */
