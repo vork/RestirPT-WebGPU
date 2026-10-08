@@ -48,7 +48,9 @@ export interface UsdSceneStats {
   materialPaths: (string | null)[];
 }
 
-interface Draw { path: string; mesh: Rec; world: Mat4; materialOverride?: string; }
+/** instanced: the draw is an instance (PointInstancer instance, or a mesh under an instanceable prim) — Blender's importer
+ *  makes those Cycles instances (M7-12). */
+interface Draw { path: string; mesh: Rec; world: Mat4; materialOverride?: string; instanced?: boolean }
 
 const num = (v: unknown, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const matOf = (x: Rec | undefined): Rec | undefined => (x && typeof x.material === 'object' ? x.material : x);
@@ -100,7 +102,8 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}, images: Re
       if (m) proxies++;
     }
     if (!m) { unresolved++; continue; }
-    draws.push({ path: n.primPath, mesh: m, world: Array.from(n.worldMatrix as ArrayLike<number>) });
+    const instanced = instRoots.some(([p]) => n.primPath.startsWith(p + '/'));
+    draws.push({ path: n.primPath, mesh: m, world: Array.from(n.worldMatrix as ArrayLike<number>), instanced });
   }
   if (hidden) warn(`${hidden} invisible mesh prim(s) skipped`);
   if (unresolved) warn(`${unresolved} mesh prim(s) without geometry (unsupported instancing) skipped`);
@@ -116,7 +119,7 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}, images: Re
       // rc4: transform is instancer-relative with a transposed 3×3 (usd.md finding 5); M7: pxr's own transform from the
       // authored arrays when the scan has them (UsdGeomPointInstancer: S · R(q) · T with the half quaternion as stored)
       const relM = exact?.[dr.instanceIndex] ?? transpose3(Array.from(dr.transform));
-      draws.push({ path: `${pi.primPath}[${dr.instanceIndex}]`, mesh: m, world: mulRow(relM, Array.from(piWorld)), materialOverride: dr.materialPath || undefined });
+      draws.push({ path: `${pi.primPath}[${dr.instanceIndex}]`, mesh: m, world: mulRow(relM, Array.from(piWorld)), materialOverride: dr.materialPath || undefined, instanced: true });
       piDraws++;
     }
   }
@@ -195,6 +198,11 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}, images: Re
     const c20 = a01 * a12 - a02 * a11, c21 = a02 * a10 - a00 * a12, c22 = a00 * a11 - a01 * a10;
     const det = a00 * c00 + a01 * c01 + a02 * c02;
     const flipped = det < 0;
+    // M7-12 (Blender-compatible mode): Cycles keeps an INSTANCE's mesh in object space and interpolates its normals there
+    // (then the inverse transpose); baked world normals must then keep M^-T·n UNNORMALISED (= cofactor/|det|), so that the
+    // GPU's normalize(interpolated) equals Cycles' result under non-uniform instance scale. Lossless packages keep the
+    // lengths; quantised (oct) normals cannot, and are unit as everywhere else.
+    const keepLen = !!opts.blenderCompat && !!d.instanced && Math.abs(det) > 0;
     for (let v = 0; v < nv; v++) {
       const x = P[3 * v], y = P[3 * v + 1], z = P[3 * v + 2];
       const o = (vBase + v) * 3;
@@ -206,7 +214,7 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}, images: Re
         const s = det < 0 ? -1 : 1;
         const wx = s * (c00 * nx + c01 * ny + c02 * nz), wy = s * (c10 * nx + c11 * ny + c12 * nz), wz = s * (c20 * nx + c21 * ny + c22 * nz);
         const l = Math.hypot(wx, wy, wz);
-        if (l > 0 && Number.isFinite(l)) { normals[o] = wx / l; normals[o + 1] = wy / l; normals[o + 2] = wz / l; }
+        if (l > 0 && Number.isFinite(l)) { const k = keepLen ? 1 / Math.abs(det) : 1 / l; normals[o] = wx * k; normals[o + 1] = wy * k; normals[o + 2] = wz * k; }
       }
       if (T) { uv0[(vBase + v) * 2] = T[2 * v]; uv0[(vBase + v) * 2 + 1] = 1 - T[2 * v + 1]; }
     }
