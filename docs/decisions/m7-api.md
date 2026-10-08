@@ -118,7 +118,8 @@ build_env_original` loads that file in Blender, compares Blender's pixels with O
 
 | Package | Content | Stage A tier | Stage B |
 |---|---|---|---|
-| m7_smooth_256 | smooth spheres (dielectric, gold), torus, OPEN wavy sheet; rect + point | model-approximate | 3.8 initial, offline-m6; B-SM-J plant |
+| m7_smooth_256 | smooth spheres (dielectric, gold), torus, OPEN wavy sheet; rect + point | model-approximate | 3.8 initial, offline-m6 (first B-SM-J: not detected, M7-11) |
+| m7_smooth_lowpoly_256 | the same with low-poly meshes (Ns up to ~40° from Ng; M7-11) | model-approximate | 3.8 offline-m6; B-SM-J plant |
 | m7_nm_flat_256 | flat geometry + normal maps (tiles floor, bumps wall, waves wall, bumps box), panels P1–P3 | tight | 3.8 offline-m6; NM plants |
 | m7_nm_smooth_256 | smooth + normal-mapped spheres / torus / open sheet | model-approximate | 3.8 initial, offline-m6, chains full-m6; A/A |
 | m7_nm_smooth_B_256 | the same, light mode B | model-approximate | 3.8 offline-m6 Mode B |
@@ -140,7 +141,7 @@ T3 fixtures `t3_smooth_256`, `t3_nm_256` (m7-fixtures.ts) for T3-M7.
 ### 5.2 Stage B (ReSTIR with the plant in every pass but the path tree vs a 4× PT)
 - **B-NM-sign** (`m7NmSign`), **B-NM-strength** (`m7NmStrength`): the same normals in shifts / replay / refresh; the
   same sign on the same panel (shifted contributions through the panel use the planted normal).
-- **B-SM-J** (`RS_PLANT_SMOOTH_J`, `m7SmoothJ`): Ns instead of Ng in the receiving geometry term of the shift; ratio
+- **B-SM-J** (`RS_PLANT_SMOOTH_J`, `m7SmoothJ`; on `m7_smooth_lowpoly_256`, M7-11): Ns instead of Ng in the receiving geometry term of the shift; ratio
   cos_s/cos_g ≠ 1 wherever Ns ≠ Ng, sign varies ⇒ **detect** (global).
 - W × 1.003 (synthetic) + calibrate A/A re-splits; a ReSTIR A/A.
 
@@ -224,3 +225,10 @@ normal maps vs 26.5 ms with the same scene's normal textures removed (+0.7 ms, +
   meshes (Pyr vertex 0: (−0.707, −0.707, 0)), so "not authored" is decided from the root-layer scan (faceVertexCounts
   without normals / primvars:normals). Affects only USD meshes without normals (in the repo: m7_instancing's prototypes,
   spike_hand.usda); the other E2E USD packages are byte-identical; the unit was re-run from scratch on the gate seeds.
+- **M7-11 (B-SM-J revised).** The planned B-SM-J on `m7_smooth_256` was **not detected** (0/10 half-size repeats, full
+  comparison pass, global Δ −0.000 %, z −0.01; plants run `m7-gate-plants-…`): its meshes are finely tessellated
+  (sphere 24 × 48, torus 40 × 20, sheet 24²), so Ns and Ng at reconnection vertices differ by ≲ 4° and cos_s/cos_g ≈ 1.
+  The prediction ("detect") was wrong for that scene, not the rule. Revised BEFORE any run on the new scene: a low-poly
+  copy `m7_smooth_lowpoly_256` (spheres 4 × 6 / 4 × 7, torus 8 × 5, sheet 4²: Ns up to ~40° from Ng), measured on fresh
+  disjoint seeds (ReSTIR 7801 + i, 4× PT 7901 + i, E-18). The scene also joins Stage A (model-approximate) and rung 3.8
+  (offline-m6), so the plant's unplanted twin is itself shown unbiased.
