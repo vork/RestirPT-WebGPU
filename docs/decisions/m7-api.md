@@ -220,5 +220,7 @@ normal maps vs 26.5 ms with the same scene's normal textures removed (+0.7 ms, +
   our loader averaged unit face normals UNWEIGHTED in world space, while Blender 5.2's importer leaves such faces smooth
   with its automatic normals (corner-angle-weighted, per mesh, verified in bpy: Pyr base corners (±0.6555, ±0.6555,
   −0.3752)). The loader now computes Blender's normals on the mesh in its own space and transforms them like authored
-  normals (non-uniformly scaled instances keep Blender's weighting). Affects only USD meshes without normals (in the
-  repo: m7_instancing's prototypes, spike_hand.usda); the unit was re-run from scratch on the gate seeds.
+  normals (non-uniformly scaled instances keep Blender's weighting). LightUSD rc4 synthesises normals of its own for such
+  meshes (Pyr vertex 0: (−0.707, −0.707, 0)), so "not authored" is decided from the root-layer scan (faceVertexCounts
+  without normals / primvars:normals). Affects only USD meshes without normals (in the repo: m7_instancing's prototypes,
+  spike_hand.usda); the other E2E USD packages are byte-identical; the unit was re-run from scratch on the gate seeds.
