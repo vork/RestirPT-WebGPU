@@ -15,7 +15,14 @@ export interface UsdaScan {
   externalLayers: boolean;
 }
 
-const WANTED = /^(?:uniform\s+)?(?:bool|float|double|int|token|color3f|float3)\s+(treatAsPoint|inputs:[A-Za-z:]+)\s*=\s*(.+?)\s*$/;
+// M7: also the UsdUVTexture / UsdPrimvarReader shading network (info:id, inputs:file / wrapS / wrapT /
+// sourceColorSpace / scale / bias / varname and every `inputs:X.connect = <…>`), so the adapter can rebuild texture
+// bindings, output channels and wrap modes that LightUSD rc4 does not report (m7-api.md §3.1).
+const WANTED = /^(?:uniform\s+)?(?:bool|float|double|int|token|color3f|color4f|float2|float3|float4|normal3f|half|half3|asset|string)\s+(treatAsPoint|info:id|inputs:[A-Za-z0-9_:]+(?:\.connect)?)\s*=\s*(.+?)\s*$/;
+// M7: PointInstancer arrays (pxr computes instance transforms from the AUTHORED quath without normalising; LightUSD rc4
+// normalises: up to 2·10⁻⁴ relative differences) and material bindings (instance prototypes: LightUSD rc4 drops them).
+const WANTED_ARRAY = /^(?:uniform\s+)?(?:quath|quatf|quatd|point3f|float3|vector3f|int)\[\]\s+(orientations|positions|scales|protoIndices)\s*=\s*(\[.*\])\s*$/;
+const WANTED_REL = /^rel\s+(material:binding)\s*=\s*(<[^>]+>)\s*$/;
 
 export function scanUsda(text: string): UsdaScan {
   const out: UsdaScan = { doc: null, abstract: [], instanceable: {}, attrs: {}, externalLayers: /\bsubLayers\s*=|\bpayload\s*=|references\s*=\s*\[?\s*@/.test(text) };
@@ -59,7 +66,7 @@ export function scanUsda(text: string): UsdaScan {
       stack.pop();
       continue;
     }
-    const m = WANTED.exec(line);
+    const m = WANTED.exec(line) ?? WANTED_ARRAY.exec(line) ?? WANTED_REL.exec(line);
     if (m && stack.length) {
       const path = '/' + stack.filter(Boolean).join('/');
       (out.attrs[path] ??= {})[m[1]] = m[2];
@@ -76,3 +83,25 @@ export const parseUsdaValue = (s: string | undefined): number | boolean | number
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
 };
+
+/** Tuples of a usda array value: "[(1, 0, 0, 0), (…)]" → number[][]; "[0, 1, 2]" → number[][] of length-1 tuples. */
+export const parseUsdaTuples = (s: string | undefined): number[][] | null => {
+  if (!s || !s.startsWith('[')) return null;
+  const body = s.slice(1, -1).trim();
+  if (!body) return [];
+  if (body.startsWith('(')) return [...body.matchAll(/\(([^)]*)\)/g)].map((m) => m[1].split(',').map(Number));
+  return body.split(',').map((x) => [Number(x)]);
+};
+
+/** Nearest IEEE half of x (round to nearest even), as a number: the value a quath stores. */
+export function toHalf(x: number): number {
+  if (!Number.isFinite(x) || x === 0) return x;
+  const a = Math.abs(x);
+  if (a >= 65520) return Math.sign(x) * Infinity;
+  const e = Math.max(Math.floor(Math.log2(a)), -14);
+  const ulp = 2 ** (e - 10);
+  let q = a / ulp;
+  const f = Math.floor(q), r = q - f;
+  q = r > 0.5 || (r === 0.5 && f % 2 === 1) ? f + 1 : f;
+  return Math.sign(x) * q * ulp;
+}

@@ -858,6 +858,109 @@ def build_from_package(package_dir: str | Path, *, reset: bool = True) -> dict[s
     return built
 
 
+def build_from_stock(package_dir: str | Path, *, reset: bool = True) -> dict[str, Any]:
+    """M7 E2E-GLB / E2E-USD (PLAN §7.2; docs/decisions/m7-api.md §3.4): Blender's STOCK importer on the original asset
+    named by scene.json "stock" ({importer: gltf | usd, file: repo-relative path, sha256, options}), instead of the package
+    geometry / materials. Imported cameras are removed (the package camera is used, as on our side); imported lights are
+    kept as the importer made them (cycles_settings.stock_light_rows applies only the §7.5 sampling rows); package lights
+    with "origin": "added" (lights the test adds to an asset that has none) are built from the package; the env too. Image
+    nodes keep their imported interpolation (glTF NEAREST → Closest). Post-processing to GGX, bump correction off, emission
+    sampling and terminator offsets are the ordinary §7.5 material rows (cycles_settings.material_object_rows)."""
+    pkg = Path(package_dir).resolve()
+    sj, _arrays = load_package(pkg)
+    st = sj["stock"]
+    src = (REPO_ROOT / st["file"]).resolve()
+    if not src.is_file():
+        raise BridgeError(f"stock asset {st['file']} missing")
+    fsha = file_sha256(src)
+    if st.get("sha256") and fsha != st["sha256"]:
+        raise BridgeError(f"stock asset {st['file']}: sha256 {fsha} != package {st['sha256']}")
+    if reset:
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+    scene = bpy.context.scene
+    light_mode = sj.get("lightMode", "A")
+    if light_mode == "A'":
+        light_mode = "A′"
+    opts = dict(st.get("options") or {})
+    before = set(bpy.data.objects)
+    if st["importer"] == "gltf":
+        res = bpy.ops.import_scene.gltf(filepath=str(src), **opts)
+    elif st["importer"] == "usd":
+        res = bpy.ops.wm.usd_import(filepath=str(src), **opts)
+    else:
+        raise BridgeError(f"stock importer {st['importer']!r}")
+    if "FINISHED" not in res:
+        raise BridgeError(f"stock import of {st['file']} failed: {res}")
+    imported = [o for o in bpy.data.objects if o not in before]
+    for o in [o for o in imported if o.type == "CAMERA"]:
+        bpy.data.objects.remove(o, do_unlink=True)
+    imported = [o for o in bpy.data.objects if o not in before]
+    for m in bpy.data.materials:
+        if m.node_tree is None:
+            continue
+        for n in m.node_tree.nodes:
+            if n.bl_idname == "ShaderNodeTexImage":
+                n["restir_interpolation"] = n.interpolation      # keep the importer's choice (asserted, not forced)
+
+    lights: dict[Any, bpy.types.Object] = {}
+    light_specs: dict[Any, dict[str, Any]] = {}
+    for o in imported:
+        if o.type == "LIGHT":
+            lights[f"stock:{o.name}"] = o
+            light_specs[f"stock:{o.name}"] = {"stock": True}
+    for L in sj.get("lights", []):
+        if L.get("origin") != "added":
+            continue
+        ob, spec = build_light(L, light_mode)
+        scene.collection.objects.link(ob)
+        lights[int(L["id"])], light_specs[int(L["id"])] = ob, spec
+
+    cam = build_camera(sj["camera"])
+    scene.collection.objects.link(cam)
+    scene.camera = cam
+    world, env_info = None, None
+    if sj.get("env"):
+        builder = build_env_constant if sj["env"].get("blenderWorld") == "constant" else build_env
+        world, env_info = builder(scene, sj["env"], pkg)
+    else:
+        scene.world = None
+    r = sj.get("render", {})
+    scene.render.resolution_x, scene.render.resolution_y = int(r.get("width", 512)), int(r.get("height", 512))
+    scene.render.resolution_percentage = 100
+    bpy.context.view_layer.update()
+
+    meshes = [o for o in imported if o.type == "MESH"]
+    tris = 0
+    dg = bpy.context.evaluated_depsgraph_get()
+    for o in meshes:
+        me = o.evaluated_get(dg).to_mesh()
+        me.calc_loop_triangles()
+        tris += len(me.loop_triangles)
+        o.evaluated_get(dg).to_mesh_clear()
+    psha, per_file = package_sha256(pkg)
+    emission = {m.name: "FRONT_BACK" for m in bpy.data.materials}
+    return {
+        "scene": scene, "mesh": None, "camera": cam, "lights": lights, "world": world, "materials": list(bpy.data.materials),
+        "package": sj, "package_dir": str(pkg), "light_mode": light_mode,
+        "state": {"yfov": float(sj["camera"]["yfov"]), "znear": float(sj["camera"].get("znear", 1e-4)), "light_specs": light_specs, "frame": None},
+        "manifest": {
+            "package": str(pkg), "package_sha256": psha, "package_files": per_file, "name": sj.get("name"), "blender": bpy.app.version_string,
+            "stock": {"importer": st["importer"], "file": st["file"], "file_sha256": fsha, "options": opts,
+                      "objects": sorted(o.name for o in imported), "meshes": len(meshes), "triangles": tris,
+                      "lights": {k: {"type": o.data.type, "energy": o.data.energy, "color": list(o.data.color),
+                                     "normalize": getattr(o.data, "normalize", None), "use_temperature": o.data.use_temperature,
+                                     "temperature": o.data.temperature, "exposure": o.data.exposure,
+                                     "matrix_world": [list(row) for row in o.matrix_world]} for k, o in lights.items() if str(k).startswith("stock:")},
+                      "materials": sorted(m.name for m in bpy.data.materials)},
+            "emission_sampling": emission,
+            "lights": {str(k): {"object": o.name, "type": o.data.type} for k, o in lights.items()},
+            "light_mode": light_mode,
+            "camera": {"object": cam.name, "yfov": cam.data.angle_y, "clip_start": cam.data.clip_start, "matrix_world": [list(row) for row in cam.matrix_world]},
+            "env": env_info, "resolution": [scene.render.resolution_x, scene.render.resolution_y],
+        },
+    }
+
+
 def apply_frame(built: dict[str, Any], frame: dict[str, Any] | None) -> None:
     """Apply one resolved frame state (scene-bridge.md 'frames'). None = the package's base state."""
     sj = built["package"]
@@ -869,6 +972,8 @@ def apply_frame(built: dict[str, Any], frame: dict[str, Any] | None) -> None:
     base_lights = {int(L["id"]): L for L in sj.get("lights", [])}
     flights = (frame or {}).get("lights") or {}
     for lid, ob in built["lights"].items():
+        if isinstance(lid, str) and lid.startswith("stock:"):
+            continue                                          # stock-imported lights keep the importer's state
         fl = flights.get(str(lid), flights.get(lid, {})) or {}
         bl = base_lights[lid]
         set_object_matrix(ob, gltf_matrix(fl.get("matrix", bl["matrix"]), f"frame light {lid}"))

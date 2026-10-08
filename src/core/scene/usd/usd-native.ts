@@ -20,6 +20,10 @@ export interface UsdRaw {
   layerScanError?: string;
   /** Other USD layers inside a .usdz (the scan only covers the root layer). */
   extraLayers: string[];
+  /** M7: bytes of the texture files the materials reference (usdz entries, or the caller's resolver), by asset path. */
+  assets: Record<string, Uint8Array>;
+  /** Asset paths that could not be resolved. */
+  missingAssets: string[];
   timings: Record<string, number>;
 }
 
@@ -80,13 +84,18 @@ function copyView(native: Rec, desc: Rec | undefined | null): ArrayBufferView | 
 
 const isUsdaText = (b: Uint8Array) => b.length >= 8 && new TextDecoder().decode(b.subarray(0, 8)) === '#usda 1.';
 
-/** Parse one USD file (.usda/.usdc/.usdz bytes) into raw LightUSD data plus the root-layer scan. */
-export async function extractUsd(bytes: Uint8Array, name: string): Promise<UsdRaw> {
+/** Resolver for external assets (texture files) referenced by a USD layer: the asset path as authored → bytes. */
+export type UsdAssetResolver = (assetPath: string) => Promise<Uint8Array | undefined>;
+
+/** Parse one USD file (.usda/.usdc/.usdz bytes) into raw LightUSD data plus the root-layer scan. `resolveAsset` loads
+ *  texture files that are not inside the .usdz (relative to the USD file; M7 UsdUVTexture). */
+export async function extractUsd(bytes: Uint8Array, name: string, resolveAsset?: UsdAssetResolver): Promise<UsdRaw> {
   const t0 = performance.now();
   const native = await loadLightUsdNext();
   const tInit = performance.now();
   const rs = new native.RenderStream() as Rec;
   const extraLayers: string[] = [];
+  const zipEntries = new Map<string, Uint8Array>();
   try {
     rs.setBuildVertexIndices(true);
     let root = bytes;
@@ -95,6 +104,7 @@ export async function extractUsd(bytes: Uint8Array, name: string): Promise<UsdRa
       const rootEntry = entries.find((x) => /\.usd[ac]?$/i.test(x.name));
       if (!rootEntry) throw new Error('usdz has no USD root layer');
       for (const x of entries) if (x !== rootEntry && /\.usd[ac]?$/i.test(x.name)) { rs.provideAsset(x.name, x.data); extraLayers.push(x.name); }
+      for (const x of entries) zipEntries.set(x.name, x.data);
       root = rootEntry.data;
     }
     const begin = rs.begin(root) as Rec;
@@ -119,6 +129,8 @@ export async function extractUsd(bytes: Uint8Array, name: string): Promise<UsdRa
       pointInstanceDraws: list(rs.pointInstanceDrawCount(), (i) => rs.getPointInstanceDraw(i)),
       unsupportedRenderables: rs.getUnsupportedRenderables() ?? [],
       extraLayers,
+      assets: {},
+      missingAssets: [],
       timings: {},
     };
     const tExtract = performance.now();
@@ -136,7 +148,24 @@ export async function extractUsd(bytes: Uint8Array, name: string): Promise<UsdRa
       raw.layerScanError = e instanceof Error ? e.message : String(e);
     }
     const tScan = performance.now();
-    raw.timings = { wasmInitMs: initMs, beginMs: tBegin - tInit, extractMs: tExtract - tBegin, layerScanMs: tScan - tExtract, totalMs: tScan - t0 };
+    // M7: texture files (UsdUVTexture inputs:file from the scan, LightUSD's textureMetadata paths)
+    const paths = new Set<string>();
+    for (const attrs of Object.values(raw.layerScan?.attrs ?? {})) {
+      const f = attrs['inputs:file'];
+      if (f) paths.add(f.replace(/^@+|@+$/g, ''));
+    }
+    for (const m of meshes) for (const mm of [m.material, ...((m.materials ?? []) as Rec[])]) {
+      const tm = (mm && typeof mm.material === 'object' ? mm.material : mm)?.textureMetadata as Record<string, { path?: string }> | undefined;
+      for (const t of Object.values(tm ?? {})) if (t?.path) paths.add(t.path);
+    }
+    for (const p of paths) {
+      const key = p.replace(/^\.\//, '');
+      const z = zipEntries.get(p) ?? zipEntries.get(key);
+      const b = z ?? (resolveAsset ? await resolveAsset(p) : undefined);
+      if (b) raw.assets[p] = b; else raw.missingAssets.push(p);
+    }
+    const tAssets = performance.now();
+    raw.timings = { wasmInitMs: initMs, beginMs: tBegin - tInit, extractMs: tExtract - tBegin, layerScanMs: tScan - tExtract, assetsMs: tAssets - tScan, totalMs: tAssets - t0 };
     return raw;
   } finally {
     try { rs.end(); rs.delete(); } catch { /* already released */ }

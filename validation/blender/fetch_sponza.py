@@ -1,6 +1,9 @@
-"""Download Khronos glTF-Sample-Assets Sponza (glTF + bin + textures, ~53 MB) for the M0 timing run.
+"""Download Khronos glTF-Sample-Assets Sponza (glTF + bin + textures, ~53 MB) for the M0 timing run, or (M7 E2E-GLB,
+docs/decisions/m7-api.md §3.4) any other sample model variant.
 
   python3 validation/blender/fetch_sponza.py [--out validation/assets/downloaded/sponza] [--ref main]
+  python3 validation/blender/fetch_sponza.py --model NormalTangentMirrorTest --variant glTF-Binary \
+      [--out validation/assets/downloaded/khronos/NormalTangentMirrorTest]
 
 Lists the folder via the GitHub contents API (one call), downloads each file from
 raw.githubusercontent.com and verifies size and git blob SHA-1. Existing verified files are skipped.
@@ -16,7 +19,7 @@ import urllib.request
 from pathlib import Path
 
 REPO = "KhronosGroup/glTF-Sample-Assets"
-FOLDER = "Models/Sponza/glTF"
+FOLDER = "Models/Sponza/glTF"  # default (M0); --model / --variant select another folder
 
 
 def git_blob_sha1(data: bytes) -> str:
@@ -31,9 +34,15 @@ def fetch(url: str) -> bytes:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", type=Path, default=Path("validation/assets/downloaded/sponza"))
+    ap.add_argument("--out", type=Path)
     ap.add_argument("--ref", default="main")
+    ap.add_argument("--model", default="Sponza")
+    ap.add_argument("--variant", default="glTF")
     args = ap.parse_args()
+    global FOLDER
+    FOLDER = f"Models/{args.model}/{args.variant}"
+    if args.out is None:
+        args.out = Path("validation/assets/downloaded/sponza") if args.model == "Sponza" else Path(f"validation/assets/downloaded/khronos/{args.model}")
     args.out.mkdir(parents=True, exist_ok=True)
     listing = json.loads(fetch(f"https://api.github.com/repos/{REPO}/contents/{FOLDER}?ref={args.ref}"))
     files = [e for e in listing if e["type"] == "file"]
@@ -50,7 +59,7 @@ def main() -> int:
         got += 1
     manifest = {e["name"]: {"size": e["size"], "git_sha1": e["sha"]} for e in files}
     (args.out / "manifest.json").write_text(json.dumps({"repo": REPO, "ref": args.ref, "folder": FOLDER, "files": manifest}, indent=1) + "\n")
-    print(f"sponza: {len(files)} files ({sum(e['size'] for e in files) / 1e6:.1f} MB), downloaded {got}, in {args.out}")
+    print(f"{args.model}/{args.variant}: {len(files)} files ({sum(e['size'] for e in files) / 1e6:.1f} MB), downloaded {got}, in {args.out}")
     return 0
 
 

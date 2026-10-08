@@ -3,7 +3,8 @@
 //   instanceable prims, PointInstancer draws (rc4 transform quirk); class/prototype subtrees are not drawn.
 // - Stage → glTF canonical frame: upAxis Z → R_x(−90°), metersPerUnit scaling (stageMatrix), applied once.
 // - UV v flip (USD st origin bottom-left → glTF top-left). Winding preserved; det < 0 flips it (TRI_FLIPPED).
-// - UsdPreviewSurface constants → MaterialData (principled); textures (UsdUVTexture) are not supported yet (warned).
+// - UsdPreviewSurface constants → MaterialData (principled); M7: UsdUVTexture bindings (usd-textures.ts: diffuse / opacity
+//   alpha, roughness + metallic channels, normal, emissive; Blender-importer semantics), images decoded by load-usd.ts.
 // - UsdLux Rect/Disk/Sphere(→ point, r = 0)/Sphere+Shaping(→ spot)/Distant(angle 0, Blender ×4) → usd-lights.ts.
 // - Degenerate / non-finite triangles are dropped (dense primIds), like the glTF flatten (plan §1.3).
 import { rigidMatrix } from '../gltf-loader.ts';
@@ -12,8 +13,9 @@ import { quantizeScene } from '../quantize.ts';
 import {
   TRI_ALPHA_MASK, TRI_EMISSIVE, TRI_FLIPPED, type Bounds, type CameraData, type LightData, type MaterialData, type SceneData,
 } from '../types.ts';
-import { parseUsdaValue, type UsdaScan } from './usda-scan.ts';
+import { parseUsdaTuples, parseUsdaValue, toHalf, type UsdaScan } from './usda-scan.ts';
 import { convertUsdLight, mul4, stageMatrix, type Mat4, type UsdLightInput } from './usd-lights.ts';
+import { UsdTextureTable, applyUsdTextures, previewSurfaceBindings, type DecodedUsdImage } from './usd-textures.ts';
 import type { Rec, UsdRaw } from './usd-native.ts';
 
 export interface UsdConvertOptions {
@@ -23,6 +25,9 @@ export interface UsdConvertOptions {
    *  metersPerUnit conversion, so the lattice is chosen in metres (data-formats.md E-15). */
   quantize?: 'quantized' | 'lossless';
 }
+
+/** M7 loader-fidelity provenance (viii-L): one entry per drawn mesh / PointInstancer instance, in draw order. */
+export interface UsdDrawRecord { path: string; mesh: string; triStart: number; triCount: number; world: number[]; material: string | null }
 
 export interface UsdSceneStats {
   draws: number;
@@ -36,6 +41,9 @@ export interface UsdSceneStats {
   metersPerUnit: number;
   doc: string | null;
   blenderAuthored: boolean;
+  /** M7: per-draw provenance (triangle range in the final primId order, USD world matrix) and the material paths. */
+  drawRecords: UsdDrawRecord[];
+  materialPaths: (string | null)[];
 }
 
 interface Draw { path: string; mesh: Rec; world: Mat4; materialOverride?: string; }
@@ -55,7 +63,7 @@ function transpose3(m: number[]): number[] {
 /** Row-vector product a·b (USD convention) = column-major b·a. */
 const mulRow = (a: number[], b: number[]): number[] => mul4(b, a);
 
-export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}): { scene: SceneData; stats: UsdSceneStats } {
+export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}, images: Record<string, DecodedUsdImage | undefined> = {}): { scene: SceneData; stats: UsdSceneStats } {
   const warnings: string[] = [];
   const warn = (m: string) => { if (!warnings.includes(m)) warnings.push(m); };
   const meta = raw.metadata ?? {};
@@ -98,11 +106,15 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}): { scene: 
   for (const pi of pis) {
     const piWorld = nodeByPath.get(pi.primPath)?.worldMatrix as number[] | undefined;
     if (!piWorld) { warn(`PointInstancer ${pi.primPath}: no node; skipped`); continue; }
+    const exact = pointInstancerTransforms(scan, pi.primPath);
+    if (!exact) warn(`PointInstancer ${pi.primPath}: authored arrays not in the root-layer scan; LightUSD's (normalised-quaternion) transforms used`);
     for (const dr of (raw.pointInstanceDraws ?? []).filter((x) => x.pointInstancerId === pi.index)) {
       const m = meshByPath.get(dr.meshPath);
       if (!m || !dr.transform) { warn(`PointInstancer ${pi.primPath}: prototype mesh ${dr.meshPath} missing; instance skipped`); continue; }
-      // rc4: transform is instancer-relative with a transposed 3×3 (usd.md finding 5).
-      draws.push({ path: `${pi.primPath}[${dr.instanceIndex}]`, mesh: m, world: mulRow(transpose3(Array.from(dr.transform)), Array.from(piWorld)), materialOverride: dr.materialPath || undefined });
+      // rc4: transform is instancer-relative with a transposed 3×3 (usd.md finding 5); M7: pxr's own transform from the
+      // authored arrays when the scan has them (UsdGeomPointInstancer: S · R(q) · T with the half quaternion as stored)
+      const relM = exact?.[dr.instanceIndex] ?? transpose3(Array.from(dr.transform));
+      draws.push({ path: `${pi.primPath}[${dr.instanceIndex}]`, mesh: m, world: mulRow(relM, Array.from(piWorld)), materialOverride: dr.materialPath || undefined });
       piDraws++;
     }
   }
@@ -110,6 +122,8 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}): { scene: 
 
   // ---- materials (adapter rule 4) ----
   const materials: MaterialData[] = [];
+  const materialPaths: (string | null)[] = [];
+  const texTable = new UsdTextureTable(images, warn);
   const matIndex = new Map<string, number>();
   const matRecs = new Map<string, Rec>();
   for (const m of raw.meshes ?? []) for (const s of [m.material, ...((m.materials ?? []) as Rec[])]) {
@@ -122,9 +136,23 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}): { scene: 
     if (i === undefined) {
       i = materials.length;
       matIndex.set(key, i);
-      materials.push(path ? previewSurfaceMaterial(path, matRecs.get(path), scan, warn) : defaultMaterial());
+      materials.push(path ? previewSurfaceMaterial(path, matRecs.get(path), scan, warn, texTable) : defaultMaterial());
+      materialPaths.push(path);
     }
     return i;
+  };
+
+  // M7: material bindings LightUSD rc4 drops inside instance prototypes (usd.md finding / condition 4): the root-layer
+  // scan's `rel material:binding` of the prim, or of the prototype prim an instance proxy stands for.
+  const scanBinding = (p: string): string | undefined => {
+    const direct = scan?.attrs[p]?.['material:binding'];
+    let b = direct;
+    if (!b) {
+      const own = instRoots.find(([r]) => p.startsWith(r + '/'));
+      if (own?.[1]) b = scan?.attrs[own[1] + p.slice(own[0].length)]?.['material:binding'];
+    }
+    const m = b && /<([^>]+)>/.exec(b);
+    return m ? m[1] : undefined;
   };
 
   // ---- geometry ----
@@ -140,10 +168,12 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}): { scene: 
   let indices = new Uint32Array(totalTris * 3), triMaterial = new Uint32Array(totalTris), triFlags = new Uint32Array(totalTris);
   const bmin = [Infinity, Infinity, Infinity], bmax = [-Infinity, -Infinity, -Infinity];
   let vBase = 0, tOut = 0, degenerate = 0, nonFinite = 0, flippedTris = 0, noNormals = 0, noUv = 0;
+  const drawRecords: UsdDrawRecord[] = [];
   for (const d of draws) {
     const m = d.mesh;
     const P = m.points as Float32Array | null;
-    if (!P || P.length < 9) continue;
+    const triStart = tOut;
+    if (!P || P.length < 9) { drawRecords.push({ path: d.path, mesh: m.primPath, triStart, triCount: 0, world: d.world, material: d.materialOverride ?? null }); continue; }
     const nv = P.length / 3;
     const N = m.normals && (m.normals as Float32Array).length === nv * 3 ? (m.normals as Float32Array) : null;
     const T = m.uv0 && (m.uv0 as Float32Array).length === nv * 2 ? (m.uv0 as Float32Array) : null;
@@ -174,7 +204,9 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}): { scene: 
     const idx = (m.indices as Uint32Array | null) ?? Uint32Array.from({ length: nv - (nv % 3) }, (_, i) => i);
     const nt = Math.floor(idx.length / 3);
     // per-triangle material: GeomSubset ranges (start/count in index units), base material elsewhere
-    const baseMat = d.materialOverride ?? (matOf(m.material)?.primPath as string | undefined) ?? null;
+    // LightUSD rc4 reports an unresolved binding as the pseudo material "__default" (instance prototypes): the scan's binding wins
+    const lusd = matOf(m.material)?.primPath as string | undefined;
+    const baseMat = d.materialOverride ?? (lusd && lusd.startsWith('/') ? lusd : undefined) ?? scanBinding(d.path) ?? (lusd || null);
     const triMat = new Int32Array(nt).fill(-1);
     for (const s of (m.submeshes ?? []) as Rec[]) {
       const p = matOf(((m.materials ?? []) as Rec[])[s.materialIndex])?.primPath as string | undefined;
@@ -194,7 +226,7 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}): { scene: 
       const mat = materials[mi];
       let f = flipped ? TRI_FLIPPED : 0;
       if (Math.max(...mat.emissiveFactor) * mat.emissiveStrength > 0) f |= TRI_EMISSIVE;
-      if (mat.alphaMode === 'MASK' && mat.baseColorFactor[3] !== 1) f |= TRI_ALPHA_MASK;
+      if (mat.alphaMode === 'MASK' && (mat.baseColorFactor[3] !== 1 || mat.baseColorTexture)) f |= TRI_ALPHA_MASK;
       triFlags[tOut] = f;
       if (flipped) flippedTris++;
       for (const vi of [i0, i1, i2]) for (let k = 0; k < 3; k++) {
@@ -206,6 +238,7 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}): { scene: 
       tOut++;
     }
     vBase += nv;
+    drawRecords.push({ path: d.path, mesh: m.primPath, triStart, triCount: tOut - triStart, world: d.world, material: baseMat });
   }
   repairNormals(positions, normals, indices.subarray(0, tOut * 3));
   if (noNormals) warn(`${noNormals} USD mesh(es) without normals: face normals used`);
@@ -244,7 +277,7 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}): { scene: 
   const qz = quantizeScene({
     name: raw.name,
     geometry: { positions, normals, tangents: new Float32Array(totalVerts * 4), uv0, indices, triMaterial, triFlags },
-    materials, textures: [], lights, cameras, bounds, warnings,
+    materials, textures: texTable.textures, lights, cameras, bounds, warnings,
   }, { mode: opts.quantize ?? 'quantized' });
   const scene = qz.scene;
   return {
@@ -252,12 +285,37 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}): { scene: 
     stats: {
       draws: draws.length, instanceProxyDraws: proxies, pointInstanceDraws: piDraws, triangles: scene.geometry.indices.length / 3,
       droppedDegenerate: degenerate + qz.stats.droppedDegenerate, droppedNonFinite: nonFinite, flippedTriangles: flippedTris,
-      upAxis, metersPerUnit: mpu, doc, blenderAuthored,
+      upAxis, metersPerUnit: mpu, doc, blenderAuthored, drawRecords, materialPaths,
     },
   };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+
+/** Instancer-relative transforms (USD row-vector layout) of every instance from the authored arrays, exactly as
+ *  UsdGeomPointInstancer::ComputeInstanceTransformsAtTime: rows = scale_i · R(q)_i, translation = position; R(q) by
+ *  GfMatrix4d::SetRotate(GfQuatd(quath)) — the half quaternion as stored, NOT normalised (|q| = 1 ± 2⁻¹¹ for quath;
+ *  LightUSD rc4 normalises it). null when the scan has no positions / protoIndices for this instancer. */
+function pointInstancerTransforms(scan: UsdaScan | undefined, path: string): number[][] | null {
+  const a = scan?.attrs[path];
+  const pos = parseUsdaTuples(a?.positions), idx = parseUsdaTuples(a?.protoIndices);
+  if (!pos || !idx || pos.length !== idx.length) return null;
+  const ori = parseUsdaTuples(a?.orientations), scl = parseUsdaTuples(a?.scales);
+  const f32 = Math.fround;   // point3f / float3: the authored values are f32
+  return pos.map((p0, i) => {
+    const p = p0.map(f32);
+    const s = (scl?.[i] ?? [1, 1, 1]).map(f32);
+    const q = (ori?.[i] ?? [1, 0, 0, 0]).map(toHalf);
+    const [w, x, y, z] = q;
+    const R = [
+      [1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w)],
+      [2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w)],
+      [2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y)],
+    ];
+    return [s[0] * R[0][0], s[0] * R[0][1], s[0] * R[0][2], 0, s[1] * R[1][0], s[1] * R[1][1], s[1] * R[1][2], 0,
+      s[2] * R[2][0], s[2] * R[2][1], s[2] * R[2][2], 0, p[0], p[1], p[2], 1];
+  });
+}
 
 function lightInput(l: Rec, scan: UsdaScan | undefined): { light: UsdLightInput; world: number[] | null } {
   const attrs = scan?.attrs[l.primPath] ?? {};
@@ -317,21 +375,25 @@ const v3 = (v: unknown, d: [number, number, number]): [number, number, number] =
   Array.isArray(v) && v.length >= 3 && v.slice(0, 3).every((x) => typeof x === 'number') ? [v[0], v[1], v[2]] : d;
 
 /** UsdPreviewSurface constants → MaterialData (principled). Unsupported inputs are warned, never silently used. */
-function previewSurfaceMaterial(path: string, rec: Rec | undefined, scan: UsdaScan | undefined, warn: (m: string) => void): MaterialData {
+function previewSurfaceMaterial(path: string, rec: Rec | undefined, scan: UsdaScan | undefined, warn: (m: string) => void, table: UsdTextureTable): MaterialData {
   const inp = previewInputs(rec);
   // Shader prims sit directly under their Material (Blender and hand-authored files): patch fields rc4 drops.
   const patched: Record<string, unknown> = {};
   if (scan) for (const [p, attrs] of Object.entries(scan.attrs)) {
     if (p.slice(0, p.lastIndexOf('/')) !== path) continue;
-    for (const k of ['ior', 'clearcoat', 'clearcoatRoughness', 'useSpecularWorkflow', 'specularColor', 'specular', 'opacityThreshold']) {
+    const keys = ['ior', 'clearcoat', 'clearcoatRoughness', 'useSpecularWorkflow', 'specularColor', 'specular', 'opacityThreshold',
+      // no LightUSD record (a material bound inside an instance prototype): every PreviewSurface constant from the scan
+      ...(rec ? [] : ['diffuseColor', 'roughness', 'metallic', 'emissiveColor', 'opacity'])];
+    for (const k of keys) {
       const v = parseUsdaValue(attrs[`inputs:${k}`]);
       if (v !== null) patched[k] = v;
     }
   }
   const get = (k: string) => patched[k] ?? inp[k];
-  if (!rec) warn(`material ${path}: not reported by LightUSD; Cycles default surface used`);
+  if (!rec) warn(`material ${path}: not reported by LightUSD (bound inside an instance prototype); PreviewSurface constants read from the root-layer scan`);
   if (rec && rec.shaderType && rec.shaderType !== 'PreviewSurface') warn(`material ${path}: ${rec.shaderType} shader; only UsdPreviewSurface constants are read`);
-  if (inp.__textures || Object.keys(inp).some((k) => k.endsWith(':texture'))) warn(`material ${path}: UsdUVTexture inputs are not supported yet (M7); constants used`);
+  const tb = previewSurfaceBindings(path, scan, warn);
+  if ((inp.__textures || Object.keys(inp).some((k) => k.endsWith(':texture'))) && !Object.keys(tb.bindings).length) warn(`material ${path}: textured inputs but no UsdUVTexture network in the root-layer scan; constants used`);
   if (num(get('clearcoat'), 0) > 0) warn(`material ${path}: clearcoat ignored (v1)`);
   if (num(get('useSpecularWorkflow'), 0) === 1) warn(`material ${path}: specular workflow ignored (metallic workflow used)`);
   const opacity = num(get('opacity'), 1);
@@ -340,7 +402,7 @@ function previewSurfaceMaterial(path: string, rec: Rec | undefined, scan: UsdaSc
   if (threshold > 0) { alphaMode = 'MASK'; alphaCutoff = threshold; }
   else if (opacity < 1) { alphaMode = 'MASK'; alphaCutoff = 0.5; warn(`material ${path}: opacity ${opacity} without opacityThreshold rendered as MASK 0.5 (v1: no blending)`); }
   const blenderSpecular = get('specular');
-  return {
+  const md: MaterialData = {
     name: path.split('/').pop() || path,
     baseColorFactor: [...v3(get('diffuseColor'), [0.18, 0.18, 0.18]), opacity] as MaterialData['baseColorFactor'],
     metallicFactor: num(get('metallic'), 0),
@@ -357,6 +419,8 @@ function previewSurfaceMaterial(path: string, rec: Rec | undefined, scan: UsdaSc
     doubleSided: true,
     model: 'principled',
   };
+  applyUsdTextures(md, path, tb.bindings, table, warn);
+  return md;
 }
 
 /** Unbound geometry: Cycles' default surface (Principled base 0.8, roughness 0.5), as in the glTF loader. */

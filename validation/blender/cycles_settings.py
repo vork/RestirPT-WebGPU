@@ -292,6 +292,8 @@ def light_rows(obj: bpy.types.Object, spec: dict[str, Any]) -> list[Row]:
     spot_size, spot_blend, shape, size, size_y]. Object scale must already be 1 (it scales area/cones)."""
     L = obj.data
     p = f"objects{_q(obj.name)}"
+    if spec.get("stock"):
+        return stock_light_rows(obj, spec)
     rows = [
         Row(obj, p, "scale", (1.0, 1.0, 1.0), False),
         Row(obj, p, "visible_camera", bool(spec["visible_camera"])),
@@ -322,6 +324,35 @@ def light_rows(obj: bpy.types.Object, spec: dict[str, Any]) -> list[Row]:
                 np = f"{p}.data.node_tree.nodes{_q(n.name)}"
                 rows.append(Row(n.inputs["Strength"], np + '.inputs["Strength"]', "default_value", 1.0, False))
                 rows.append(Row(n.inputs["Color"], np + '.inputs["Color"]', "default_value", (1.0, 1.0, 1.0, 1.0), False))
+    return rows
+
+
+def stock_light_rows(obj: bpy.types.Object, spec: dict[str, Any]) -> list[Row]:
+    """M7 E2E stock imports (docs/decisions/m7-api.md §3.4): a light created by Blender's own glTF / USD importer keeps
+    everything the importer decided (energy, colour, normalize, colour temperature, exposure, size, object transform) and
+    gets only the §7.5 sampling settings our loader's v1 light rules also assume: point / spot radius 0 (plan §1.2 sphere →
+    point, r := 0), no soft falloff, sun angle 0, spread π unless authored, the light mode's MIS, not camera-visible, no
+    caustics flags, max_bounces 1024, shadows on. The kept values are asserted (read back into the manifest)."""
+    L = obj.data
+    p = f"objects{_q(obj.name)}"
+    rows = [
+        Row(obj, p, "visible_camera", bool(spec["visible_camera"])),
+        Row(L, p + ".data", "use_shadow", True),
+        Row(L.cycles, p + ".data.cycles", "use_multiple_importance_sampling", bool(spec["mis"])),
+        Row(L.cycles, p + ".data.cycles", "is_caustics_light", False),
+        Row(L.cycles, p + ".data.cycles", "is_portal", False),
+        Row(L.cycles, p + ".data.cycles", "max_bounces", 1024),
+    ]
+    for k in ("energy", "color", "normalize", "exposure", "use_temperature", "temperature"):
+        if hasattr(L, k):
+            v = getattr(L, k)
+            rows.append(Row(L, p + ".data", k, tuple(v) if k == "color" else v, False))
+    if L.type in ("POINT", "SPOT"):
+        rows += [Row(L, p + ".data", "shadow_soft_size", 0.0), Row(L, p + ".data", "use_soft_falloff", False)]
+    if L.type == "SUN":
+        rows.append(Row(L, p + ".data", "angle", 0.0))
+    if L.type == "AREA":
+        rows.append(Row(L, p + ".data", "spread", float(L.spread), False))
     return rows
 
 
