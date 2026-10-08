@@ -23,6 +23,8 @@ const WANTED = /^(?:uniform\s+)?(?:bool|float|double|int|token|color3f|color4f|f
 // normalises: up to 2·10⁻⁴ relative differences) and material bindings (instance prototypes: LightUSD rc4 drops them).
 const WANTED_ARRAY = /^(?:uniform\s+)?(?:quath|quatf|quatd|point3f|float3|vector3f|int)\[\]\s+(orientations|positions|scales|protoIndices)\s*=\s*(\[.*\])\s*$/;
 const WANTED_REL = /^rel\s+(material:binding)\s*=\s*(<[^>]+>)\s*$/;
+// M7-10: which meshes AUTHOR normals (LightUSD rc4 synthesises normals for the others); only presence is recorded ('1')
+const WANTED_PRESENCE = /^(?:uniform\s+)?(?:int|normal3f)\[\]\s+(faceVertexCounts|normals|primvars:normals)\s*=/;
 
 export function scanUsda(text: string): UsdaScan {
   const out: UsdaScan = { doc: null, abstract: [], instanceable: {}, attrs: {}, externalLayers: /\bsubLayers\s*=|\bpayload\s*=|references\s*=\s*\[?\s*@/.test(text) };
@@ -66,6 +68,8 @@ export function scanUsda(text: string): UsdaScan {
       stack.pop();
       continue;
     }
+    const pres = WANTED_PRESENCE.exec(line);
+    if (pres && stack.length) { (out.attrs['/' + stack.filter(Boolean).join('/')] ??= {})[pres[1]] = '1'; continue; }
     const m = WANTED.exec(line) ?? WANTED_ARRAY.exec(line) ?? WANTED_REL.exec(line);
     if (m && stack.length) {
       const path = '/' + stack.filter(Boolean).join('/');

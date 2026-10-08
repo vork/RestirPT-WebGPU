@@ -180,9 +180,13 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}, images: Re
     const idxLocal = (m.indices as Uint32Array | null) ?? Uint32Array.from({ length: nv - (nv % 3) }, (_, i) => i);
     // no authored normals: Blender's automatic smooth normals on the MESH (prototype) in its own space, then transformed
     // like authored ones (a non-uniformly scaled instance must not re-weight them; m7-api.md M7-10)
-    const N = m.normals && (m.normals as Float32Array).length === nv * 3 ? (m.normals as Float32Array) : autoNormals(P, idxLocal);
+    // LightUSD rc4 synthesises normals for meshes that author none; the root-layer scan tells (faceVertexCounts seen, no
+    // normals / primvars:normals): those get Blender's automatic normals instead (M7-10)
+    const sa = scan?.attrs[m.primPath as string];
+    const authored = !sa?.faceVertexCounts || !!(sa.normals || sa['primvars:normals']);
+    const N = authored && m.normals && (m.normals as Float32Array).length === nv * 3 ? (m.normals as Float32Array) : autoNormals(P, idxLocal);
     const T = m.uv0 && (m.uv0 as Float32Array).length === nv * 2 ? (m.uv0 as Float32Array) : null;
-    if (!(m.normals && (m.normals as Float32Array).length === nv * 3)) noNormals++;
+    if (!(authored && m.normals && (m.normals as Float32Array).length === nv * 3)) noNormals++;
     if (!T) noUv++;
     const M = mul4(W, d.world);
     const a00 = M[0], a10 = M[1], a20 = M[2], a01 = M[4], a11 = M[5], a21 = M[6], a02 = M[8], a12 = M[9], a22 = M[10];
