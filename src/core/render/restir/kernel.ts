@@ -1,6 +1,6 @@
 // ReSTIR PT kernel orchestration (restir-api.md §4, P0/WP-A): frame work units, the stage interface for the spatial
 // and ensemble stages (WP-C), pipelines, G0/G1/G3 bind groups, the RsDispatch ring (D17), counters/reservoir readback
-// and the interactive frame pass. Mode A only (D1).
+// and the interactive frame pass. Light modes A, B and A′ (restir-m6-api MD9 lifted D1's Mode-A-only restriction).
 //
 // Frame schedule (§4.1): rs_primary (row bands) → rs_initial × tree chunks (row bands) → spatial stage units (rounds)
 // → rs_finalize (+ ensemble stage units). The estimate in finalize is rsShade when the spatial stage emitted units

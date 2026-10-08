@@ -111,7 +111,7 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
   const W = o.width ?? p.render.width, H = o.height ?? p.render.height;
   const seqFrames = p.sequence?.frameCount;
   const pkgFrame = (i: number): number => o.pkgFrames?.[i] ?? (seqFrames ? Math.min(i, seqFrames - 1) : -1);
-  if ((p.lightMode ?? 'A') !== 'A') throw new Error(`${o.package}: light mode ${p.lightMode}; the interactive ReSTIR is Mode A only`);
+  if ((p.lightMode ?? 'A') !== 'A') throw new Error(`${o.package}: light mode ${p.lightMode}; renderDenoise renders Mode A packages only (its renderer runs lightMode 'A')`);
 
   const debug = new DebugResources(device, new DebugViewRegistry());
   await debug.init();
