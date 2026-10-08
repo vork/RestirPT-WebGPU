@@ -748,7 +748,11 @@ M4–M7 PT references whose cache keys hold an older PT code hash and re-runs ev
 hours by budget.json). Its summary: `validation/out/validate-all-20261008-140328/summary.json`. The M0 / M1 lane steps
 run their own milestone's GPU suites only (M0: smoke.gpu.test.ts in node-dawn and Chrome under the GPU lock; M1: bvh /
 env / textures / primary): the full lanes now contain every later suite, which need their own gates' env, timeouts and
-lock holds. Result: pending at the time of writing.
+lock holds. Result: stopped on 2026-10-08 by the user's decision after M0–M2 and part of M3 (168 steps passed; M1 10/10,
+M2 24/24; M0 8/9: the only failure was the Chrome-version pin, Chrome having auto-updated to 155, now relaxed to
+major ≥ 154, platform-lanes.md). The rest was not run on the M8 code; the validation path's bitwise identity to eda22be
+(U-M8-BITS, U-M7-BITS) and the CWBVH Stage-B units above stand in for it. Run `validate --all` before relying on M8
+for anything those gates cover.
 
 **Open items.** D-M8-1 (96 B / 120 B quantized layout), D-M8-4 (40 B G-buffer), Sponza's targets (D-M8-6: a wavefront split
 of the path tree, a cheaper RIS target), rs_primary reusing the M1 V-buffer (≈ 1.4 ms on Sponza), tinybvh WASM once
