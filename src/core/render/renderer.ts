@@ -50,7 +50,7 @@ import { PtFramePass } from './pt-kernel.ts';
 import type { LightMode } from './lights-gpu.ts';
 import type { TexturePathMode } from './textures-gpu.ts';
 import { RestirKernel, type RestirAdvance, type RestirFramePass } from './restir/kernel.ts';
-import { RESTIR_PRESETS, type RestirSettings } from './restir/presets.ts';
+import { DEFAULT_RESTIR_SETTINGS, RESTIR_PRESETS, type RestirSettings } from './restir/presets.ts';
 import { RestirDebugPass, RestirHud } from './restir/debug.ts';
 import { Denoiser, type DenoiseFrame } from './denoise/denoiser.ts';
 import { denoiseModeKey, denoiserAllowed, denoiserDefault, type DenoiserSettings } from './denoise/layout.ts';
@@ -65,11 +65,15 @@ export const RESTIR_APP_MODES: Record<RestirAppMode, string> = {
   unbiased: 'ReSTIR-unbiased (S 1, 1 round × 3, σ 16, RIS-NEE)', criteria2022: 'ReSTIR-2022-criteria', offline: 'Offline (S 32, 3 rounds × 6, σ 16, RIS-NEE)',
   initial: 'initial only (rung 3.1 / 3.3)',
 };
-/** Settings of an app ReSTIR mode (maxBounces and temporal from the renderer options). */
-export function restirAppSettings(mode: RestirAppMode, maxBounces: number, temporal = true, features: Partial<RestirSettings> = {}): Partial<RestirSettings> {
+/** Settings of an app ReSTIR mode (maxBounces and temporal from the renderer options). Complete, not a partial: the
+ *  kernel merges setSettings() onto its current settings, so a partial let a field the new mode's preset leaves unset
+ *  carry over from the previous mode (interactive's boostSlots 3 + offline's 6 slots = 9 > RS_MAX_SLOTS threw on a
+ *  switch to Offline). A freshly compiled kernel starts from DEFAULT_RESTIR_SETTINGS, so first-compile settings are
+ *  unchanged. */
+export function restirAppSettings(mode: RestirAppMode, maxBounces: number, temporal = true, features: Partial<RestirSettings> = {}): RestirSettings {
   const base = mode === 'offline' ? RESTIR_PRESETS['offline-m6'] : mode === 'unbiased' ? RESTIR_PRESETS['full-m6']
     : mode === 'initial' ? { ...RESTIR_PRESETS.interactive, rounds: 0 } : RESTIR_PRESETS.interactive;
-  return { ...base, criteria: mode === 'criteria2022' ? '2022' : 'enhanced', maxBounces, temporal, ...features };
+  return { ...DEFAULT_RESTIR_SETTINGS, ...base, criteria: mode === 'criteria2022' ? '2022' : 'enhanced', maxBounces, temporal, ...features };
 }
 
 /** M6 feature toggles of the app (restir-m6-api.md MD13): overrides of the mode's preset (empty = the preset's). */
