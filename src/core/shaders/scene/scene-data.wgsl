@@ -14,6 +14,11 @@
 // Positions and UVs decode as (integer) × 2^k: bit-identical to the CPU mirror under fast-math/FMA. Normals and
 // colours decode through the exact f32 product q·f32(1/(2^b − 1)) (never unpack*: implementation-defined precision).
 //
+// NORMAL_MAP (M7, docs/decisions/m7-api.md §1; math.md#normal-maps): the scene has a normal-mapped material. The vertex
+// arena then carries the tangent section and scene_surface returns the Cycles Normal Map node normal in ns (materials
+// with a normal texture) and the unmapped smooth / flat shading normal in nsm (the bump-shadowing reference normal of
+// the BSDF). Without the define the composed text is the M6 one (U-M7-BITS).
+//
 // CUSTOM_ALPHA: provides traverse.wgsl's alpha_pass hook = the MASK cutout (plan §1.3; math.md#visibility):
 // α = baseColorFactor.a × baseColorTexture.a (bilinear, LOD 0) × COLOR_0.a, the hit counts iff α ≥ alphaCutoff.
 // Only triangles flagged TRI_ALPHA_MASK fetch anything; it creates no vertex and consumes no random numbers.
@@ -75,6 +80,10 @@ const VQ_HEADER: u32 = 2u;                   // header vec4s before the records
 const VQ_C_OCT16: u32 = 0x38000100u;         // f32(1/32767)
 const VQ_C_UNORM8: u32 = 0x3b808081u;        // f32(1/255)
 const VQ_C_UNORM16: u32 = 0x37800080u;       // f32(1/65535)
+#if NORMAL_MAP
+const VQ_C_OCT15: u32 = 0x38800200u;         // f32(1/16383)
+const VQ_TAN_PRESENT: u32 = 0x40000000u;
+#endif
 
 fn vq_word(w: u32) -> u32 { return sceneVerts[w >> 2u][w & 3u]; }
 /// 2^k as f32, k in [−126, 127] (exact bit construction).
@@ -142,6 +151,49 @@ fn scene_vertex_uv(i: u32, mi: u32) -> vec2f { return bitcast<vec2f>(vec2u(vf_re
 fn scene_vertex_color(i: u32) -> vec4f { return bitcast<vec4f>(vf_rec(i, 2u)); }
 #endif
 
+#if NORMAL_MAP
+/// Word offset of the tangent section (vertex-format.ts): Q right after the colour section, F32 after the records.
+fn vq_tangent_base() -> u32 {
+  let h = sceneVerts[1];
+#if VERTEX_FORMAT == 1
+  return h.z + select(select(0u, 2u * h.x, h.w == 2u), h.x, h.w == 1u);
+#else
+  return (VQ_HEADER + 3u * h.x) * 4u;
+#endif
+}
+/// MikkTSpace tangent of vertex i: (t.xyz, w = bitangent sign); vec4f(0) when the vertex has none.
+fn scene_vertex_tangent(i: u32) -> vec4f {
+  let b = vq_tangent_base();
+#if VERTEX_FORMAT == 1
+  let w = vq_word(b + i);
+  if ((w & VQ_TAN_PRESENT) == 0u) { return vec4f(0.0); }
+  let q = vec2i(bitcast<i32>(w << 17u) >> 17u, bitcast<i32>(w << 2u) >> 17u);
+  return vec4f(vq_oct(q, bitcast<f32>(VQ_C_OCT15)), select(1.0, -1.0, (w >> 31u) != 0u));
+#else
+  return bitcast<vec4f>(vec4u(vq_word(b + 4u * i), vq_word(b + 4u * i + 1u), vq_word(b + 4u * i + 2u), vq_word(b + 4u * i + 3u)));
+#endif
+}
+
+/// Cycles Normal Map node, tangent space (svm/tex_coord.h svm_node_normal_map; math.md#normal-maps). rgb = the
+/// Non-Color image sample, s = Strength (glTF normalTexture.scale), T / sgn = the barycentrically interpolated
+/// (un-normalised) MikkTSpace tangent and sign, nU = the un-normalised interpolated vertex normal (smooth faces) or Ng
+/// (flat faces), all in WINDING orientation (before the backface flip):
+///   c = 2(rgb − ½);  c.xy ·= s;  c.z = mix(1, c.z, saturate(s));  N = safe_normalize(c.x·T + c.y·(sgn·nU × T) + c.z·nU).
+/// Returns vec4f(N, 1), or vec4f(0) when N is zero / non-finite (Cycles then keeps sd->N).
+fn normal_map_cycles(rgb: vec3f, s: f32, T: vec3f, sgn: f32, nU: vec3f) -> vec4f {
+  var c = 2.0 * (rgb - vec3f(0.5));
+  c.x *= s;
+  c.y *= s;
+  c.z = mix(1.0, c.z, saturate(s));
+  let B = sgn * cross(nU, T);
+  let N = c.x * T + c.y * B + c.z * nU;
+  let l = length(N);
+  let Nn = select(N, N * (1.0 / l), l != 0.0);
+  if (!(all_finite3(Nn) && any(Nn != vec3f(0.0)))) { return vec4f(0.0); }
+  return vec4f(Nn, 1.0);
+}
+#endif
+
 /// Barycentric interpolation with (1−u−v, u, v) on (v0, v1, v2) of the ORIGINAL index order (traverse.wgsl Hit).
 fn scene_uv0(t: vec4u, u: f32, v: f32) -> vec2f {
   let mi = tri_material(t);
@@ -183,7 +235,10 @@ fn glass_plant_transparent(primId: u32) -> bool {
 struct SurfaceHit {
   pos: vec3f,        // from barycentrics on the vertices (never o + t·d; Wächter–Binder)
   ng: vec3f,         // unit geometric normal, flipped toward the incoming ray (Cycles two-sided)
-  ns: vec3f,         // interpolated shading normal, flipped together with ng
+  ns: vec3f,         // interpolated shading normal, flipped together with ng (NORMAL_MAP: the normal-mapped closure normal)
+#if NORMAL_MAP
+  nsm: vec3f,        // the unmapped shading normal (smooth or flat = Cycles sd->N), flipped together with ng
+#endif
   uv: vec2f,
   color: vec4f,
   matId: u32,
@@ -215,6 +270,9 @@ fn scene_surface(primId: u32, u: f32, v: f32, d: vec3f) -> SurfaceHit {
   s.backfacing = dot(ng, d) > 0.0;
   ng = select(ng, -ng, s.backfacing);
   s.ng = ng;
+#if NORMAL_MAP
+  var nU = select(ng, -ng, s.backfacing);             // Cycles: Ng un-flipped (winding orientation) on flat faces
+#endif
   if ((s.triFlags & TRI_FLAT) != 0u) {
     s.ns = ng;                                        // flat face: exactly ng (Cycles Ng on flat faces)
   } else {
@@ -225,6 +283,9 @@ fn scene_surface(primId: u32, u: f32, v: f32, d: vec3f) -> SurfaceHit {
 #endif
     let l2 = dot(ns, ns);
     s.ns = select(ng, select(ns, -ns, s.backfacing) * inverseSqrt(l2), l2 > 1e-24 && all_finite3(ns));
+#if NORMAL_MAP
+    nU = ns;                                          // un-normalised interpolated normal (Cycles smooth normal input)
+#endif
   }
 #if VERTEX_FORMAT == 1
   s.uv = w * vq_uv(ra, s.matId) + u * vq_uv(rb, s.matId) + v * vq_uv(rc, s.matId);
@@ -232,5 +293,17 @@ fn scene_surface(primId: u32, u: f32, v: f32, d: vec3f) -> SurfaceHit {
   s.uv = scene_uv0(t, u, v);
 #endif
   s.color = scene_color0(t, u, v);
+#if NORMAL_MAP
+  s.nsm = s.ns;
+  let texN = sceneMaterials[s.matId].texNormal;
+  if (tex_slot_valid(texN)) {
+    let ta = scene_vertex_tangent(t.x);
+    let tb = scene_vertex_tangent(t.y);
+    let tc = scene_vertex_tangent(t.z);
+    let tg = w * ta + u * tb + v * tc;                // interpolated (un-normalised) tangent and sign
+    let nm = normal_map_cycles(tex_sample(texN, s.uv).rgb, sceneMaterials[s.matId].normalScale, tg.xyz, tg.w, nU);
+    if (nm.w != 0.0) { s.ns = select(nm.xyz, -nm.xyz, s.backfacing); }   // invert for backfacing polygons
+  }
+#endif
   return s;
 }

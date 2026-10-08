@@ -28,6 +28,9 @@ fn vertex_from_ids(prim: u32, u: f32, v: f32, fromPos: vec3f) -> SurfaceHit {
   if (dot(s.ng, fromPos - s.pos) < 0.0) {
     s.ng = -s.ng;
     s.ns = -s.ns;
+#if NORMAL_MAP
+    s.nsm = -s.nsm;
+#endif
     s.backfacing = true;
   }
   return s;

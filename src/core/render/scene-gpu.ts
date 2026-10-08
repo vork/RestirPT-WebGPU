@@ -8,13 +8,16 @@
 //   scenes), triangles (indices + material + flags merged, 16 B), materials (336 B).
 // - Quantized scenes (SceneData.quant, data-formats.md §B0): the packer is a lossless recoding and THROWS unless every
 //   value round-trips bit-exactly; the render origin must be a lattice point (computeRenderOrigin(bounds, quant)).
-// - Tangents are not uploaded until M7 binds them (data-formats.md P0; then oct 2 × 15 + sign, 4 B).
+// - Tangents (M7, m7-api.md §1.2) are uploaded only for scenes with a normal-mapped material: the vertex arena's tangent
+//   section (oct 2 × 15 + sign, 4 B; f32 in lossless scenes) and the composer define NORMAL_MAP. Every other scene composes
+//   the M6 WGSL text unchanged (U-M7-BITS).
 // - Textures: validation path by default (plan §1.6), interactive on request.
 import { buildBvh } from '../bvh/sah-builder.ts';
 import { uploadBvh, type BvhData, type BvhGpuBuffers } from '../bvh/layout.ts';
 import type { Defines } from '../gpu/wgsl-composer.ts';
 import { materialUvWords, packVertexArena, VERTEX_BYTES_F32, VERTEX_BYTES_Q, type VertexArena } from '../gpu/vertex-format.ts';
 import type { MaterialData, SceneData, SceneGeometry, SceneQuant } from '../scene/types.ts';
+import { sceneHasNormalMaps } from '../scene/tangents.ts';
 import { createGpuTextures, packTexSlot, type GpuTextures, type TexturePathMode } from './textures-gpu.ts';
 
 export const SCENE_GROUP_DEFAULT = 1;
@@ -80,9 +83,11 @@ export function recentrePositions(positions: Float32Array, origin: readonly numb
   return out;
 }
 
+export { sceneHasNormalMaps };
+
 /** The vertex arena for `origin` (see gpu/vertex-format.ts). Throws if a quantized value does not round-trip. */
 export function packSceneVertices(scene: SceneData, recentred: Float32Array, origin: readonly number[]): VertexArena {
-  return packVertexArena(scene.geometry, recentred, scene.quant, origin);
+  return packVertexArena(scene.geometry, recentred, scene.quant, origin, { tangents: sceneHasNormalMaps(scene) });
 }
 
 /** Triangle records (vec4u): i0, i1, i2, material | triFlags << 24. */
@@ -256,6 +261,8 @@ export class SceneGpu {
       CUSTOM_ALPHA: true,
       VERTEX_FORMAT: this.vertexArena.format,
       ...this.textures.defines(group, SCENE_BINDING.textureBase),
+      // M7: only scenes with a normal-mapped material get the key (the define set of every other scene is the M6 one)
+      ...(this.vertexArena.tangents ? { NORMAL_MAP: true } : {}),
     };
   }
 

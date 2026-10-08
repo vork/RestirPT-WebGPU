@@ -17,11 +17,14 @@
 //   overrides incl. `enabled` (true add/remove), radiometric / size fields, env `map` (id of an `envMaps[]` entry, extra
 //   env_<id>.exr files; 'env' = the base map) and env tint / visibility; top-level `sequence {fps, frameCount,
 //   testFrames, notes}`. resolvePackageFrame() turns a frame into the scene state of that frame.
+// - M7 (m7-api.md §1.2): tangents are not exported; a package with a normal-mapped material gets Blender-semantics
+//   MikkTSpace tangents on read (tangents.ts: whole mesh, corner normals as Blender sees them, oct-15 when quantized).
 import { encodeExr, flipRows } from '../io/exr.ts';
 import { decodePng, encodePng } from '../io/png.ts';
 import { sha256Hex } from '../io/zlib.ts';
 import { decodeExr } from './env/exr.ts';
 import { QuantizationError, assertQuantized, quantizeScene } from './quantize.ts';
+import { withSceneTangents } from './tangents.ts';
 import {
   TRI_ALPHA_MASK, TRI_EMISSIVE, TRI_FLAT, type CameraData, type EnvironmentData, type LightData, type MaterialData, type SceneData,
   type SceneGeometry, type SceneQuant, type TextureData, type TextureRef,
@@ -495,6 +498,10 @@ export async function readScenePackage(input: PackageFiles): Promise<LoadedScene
     }
     scene.quant = { ...q, uv: q.uv.map((l) => ({ ...l })) };
   }
+  // M7: Blender-semantics tangents for normal-mapped packages (a no-op for every other package)
+  const tg = await withSceneTangents(scene, { quantized: scene.quant?.mode === 'quantized', flatFaceNormals: json.flatShaded });
+  scene = tg.scene;
+  if (tg.stats?.zeroTangents) scene.warnings.push(`tangents: ${tg.stats.zeroTangents} corner(s) without a MikkTSpace tangent (normal map falls back to the unmapped normal there)`);
   const lightMode: LightMode = (json.lightMode as string) === "A'" ? 'A′' : json.lightMode;   // ASCII spelling accepted
   return {
     scene, camera, render: json.render, lightMode, flatShaded: json.flatShaded, frames: json.frames, json,

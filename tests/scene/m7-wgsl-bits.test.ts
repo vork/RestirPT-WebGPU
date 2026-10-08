@@ -41,7 +41,7 @@ export function m7Hashes(extraScene: Defines = {}): Record<string, string> {
   for (const [sk, sd0] of Object.entries(SCENES)) {
     const sd = { ...sd0, ...extraScene };
     const ptBase = { ...sd, ...envDefines(0, 1), LIGHTS_GROUP: 0, LIGHTS_BINDING: 5, ...lutDefines({ base: LUT_RECORDS_BASE, recordsKind: 'u32' }), ENV_PLANT: 0, ENV_MIS_POWER: false };
-    for (const [tag, d] of Object.entries({
+    for (const [tag, d] of Object.entries<Defines>({
       batch: { PT_INTERACTIVE: false, PT_PROBE: false, GLASS_PLANT: 0 },
       frame: { PT_INTERACTIVE: true, PT_PROBE: false, GLASS_PLANT: 0, COLOR_FORMAT: 'rgba16float' },
       probe: { PT_INTERACTIVE: false, PT_PROBE: true, GLASS_PLANT: 0 },
