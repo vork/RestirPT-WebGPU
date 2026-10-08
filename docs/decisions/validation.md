@@ -430,3 +430,144 @@ string limit) and regex-escaped `-t` patterns (two T3-2 cases had silently run n
 for predictions revised after measurement; E-19 / C-11 the N1-mixed inverse refresh (no PENDING_LEFT exception); E-20
 the ixs_i rect back at the ceiling (the E-13 placement made the scene heavy-tailed); E-21 PT runs at ≤ 32 spp per
 dispatch (hard cap) and the A/A sizing rationale; E-22 U8-2t as a Gate-0 activity test.
+
+# M6: Enhanced features, Mode-B ReSTIR, glass and alpha in ReSTIR, Gate 3 rungs 3.7 / 3.9 / 3.10 / 3.11 and Gate 5 (restir-m6-api.md §4–§5, PLAN §5 M6, §7.1, §7.4 M6)
+
+`npm run validate -- --milestone M6 --part core|r37|r39|r310|r311|gate5|plants` runs `validation/harness/gate-m6.ts`
+(seven required parts; the harness of each is the M4 sequential harness or gate-m5's chain machinery):
+- **core (Gate 0).** Typecheck; cpu lane (U-WGSL-BITS, T14, the plant-m6 predictions, layout / inline budget, gate
+  configs, every M1–M5 test); python tests (incl. dup_bias); `make-m6.ts` determinism; the Chrome suites restir-m6
+  (U-M5-BITS, compile smoke, U4-tiles, U1-M, U10-B, U9-R, U-RR-M6, U-DMV-1, functional smokes), the T3-M6 variants of
+  restir-shift (t3_cases_256 + RIS-NEE, t3_modeb_256, t3_modeb_rare_256, t3_glass_256, t3_glass_pane_256,
+  t3_alpha_256; one ≤ 24-min hold each, E-16), the Mode-B T3-2 cases of restir-temporal (24 000 pairs at 256², every
+  ana / deep bin ≥ 10⁶; M6-8, M6-13), and every M4 / M5 Gate-0 suite and T3-2 rare-bin hold as regressions; the M6 app
+  smoke (views 471–479, Mode B default, feature toggles).
+- **Rungs (Stage B, δ 0.2 % global / 1 % per 32² tile; dyn 2 % per 64² tile, 3 % per mask).** 3.7 toggles one feature
+  per unit on the M4 / M5 rung it extends against the cached M4 / M5 PT references (MD14): pairing σ 16, RR, RIS-NEE,
+  all features (`offline-m6`), chains `full-m6` on m5s_cornell_i and dual MVs on ixs_d_camera. 3.9 glass and 3.10 alpha
+  run `offline-m6` (new PT references, seed 6001; (vi) A and (xii) reuse M4's); 3.11 runs `offline-m6` in light mode B,
+  `full-m6` Mode-B chains and ixs_b_area in Mode B through the rung-3.6 statistics. One disjoint-seed re-run per failed
+  unit; seeds per MD17 / M6-7.
+- **Gate 5** (MD15): chains of the interactive configuration with the duplication map on, at cCap 5 and 20, on
+  m5s_cornell_i t = 24, m5s_glossy_v1 t = 24 and ixs_d_camera (every test frame); dup_bias.py: mean noise-debiased 16²
+  tile bias b̂_t ≤ 3.25 % and the 99 % bound of the global |bias| ≤ 3.25 %, noise floor ≤ 1 %; the dupmap-off twin of
+  each must pass Stage B / dyn.
+- **Plants** (§5.3, predictions derived before measurement in `tests/restir/plant-m6.test.ts`): U8-4, U8-7, U8-8,
+  U8-10 (the M5 deferrals) by the TD29 rule (detected ≥ 9/10 half-size repeats vs the 4× PT, PT A/A ≥ 9/10, full
+  comparison not `pass`, predicted sign z ≥ 3 on the predicted region); the synthetic W × 1.003 + calibrate re-splits
+  and a ReSTIR A/A (6502 / 6503, 4×) on (i) `offline-m6`.
+
+**Sizing** (`budget.json` `m6_entries`, 53 rows from the runs r37, r39, r310, r311 and gate5 listed in `m6_runs`,
+written by `--write-budget`, 305a358). The rows equal the PT spp × B, ReSTIR frames × B / chains R and tile size of
+every executed unit in the final logs (checked unit by unit). The largest sides: (x) RIS-NEE 3.7 (ReSTIR 768 fr × 16,
+36 min, in 4 lock chunks), G9 bubble (41 min), G7 Principled mix (25 min), G8 (22 min, 64² tiles), the full-m6 /
+Mode-B chain units (17–19 min).
+
+**M6 gate result (2026-10-08; final code = M6-10 delta-incoming fix + M6-11 dual-MV c_p ≤ 1; harness through 23087c7).**
+Every rung, Gate-5 and plant run below is on the merged fixes (ReSTIR code hash fca1aeda68c6, PT bf362071108b, i.e. the
+PT closure is unchanged, MD2). Runs (under `validation/out/`): r37 `m6-gate-r37-20261007-062218`, r39
+`m6-gate-r39-20261007-082614`, r310 `m6-gate-r310-20261007-104930`, r311 `m6-gate-r311-20261007-105855`, gate5
+`m6-gate-gate5-20261007-115614` recomputed by `m6-gate-gate5-20261007-154618` (M6-12; in the WebGPURestirPT-g5
+worktree, with `validation/out/gate5-recompute/gate5-recompute.json`), plants
+`m6-gate-plants-20261007-153724`, core `m6-gate-core-20261007-172751` (31/40; started 2026-10-07 17:27 on the
+production code of cd279de, before 2fe00ec) + a targeted re-check of its 9 failing steps on 23087c7
+(`m6-recheck-app-smoke` and the vitest logs of the re-check).
+
+| Part | Result |
+|---|---|
+| Gate 0 (core) | 31/40 in the full core run; the 9 failures re-run individually at the gate setting on 23087c7, all pass (table below). Green in the full run: typecheck, cpu 499, python 74, make-m6 determinism, restir-m6, T3-M6 t3_cases_256 + RIS-NEE / t3_modeb_256 / t3_modeb_rare_256 / t3_alpha_256 (LOGIC 0), every M4 T3 variant, restir-initial / spatial / debug / tframe (U-M4-BITS) / temporal / refresh, the M3 suites, U8-2t activity with RIS on |
+| 3.7 features | 112/112 steps; 20 units + the dual-MV sequence statistics: \|Δ_Y\| ≤ 0.0010 % on the sequential units (MDB ≤ 0.015 %), chains full-m6 −0.0038 / +0.0002 %, dual MV on ixs_d_camera f8–f64 ≤ +0.020 % (f40 +0.0078 %, MDB 0.051 %), worst tile ≤ 0.31 %, no re-run |
+| 3.9 glass | 108/108; 21 units (C0h–k, G1 ×2, G3–G10, G5b (B), G6 (B), G6-neg, G7 furnace, (vi) A, (vi) B, (vi-B) (B), (xiv) glass): \|Δ_Y\| ≤ 0.0076 %, worst tile ≤ 0.29 %, no re-run |
+| 3.10 alpha | 13/13; (xii) −0.0008 %, x10_foliage −0.0000 %, worst tile ≤ 0.11 % |
+| 3.11 Mode B | 73/73; (i) B, m6_crossings_B, C0o, (xiv) overcast + rect B: \|Δ_Y\| ≤ 0.0067 %; Mode-B chains on m6_crossings_B f1 / f24 +0.023 / +0.006 %; ixs_b_area Mode B (6 test frames + sequence) \|Δ_Y\| ≤ 0.036 %, worst tile ≤ 0.26 % |
+| Gate 5 | 6/6 configurations pass (M6-12 recompute): mean b̂_t 0.22–0.89 % against the 3.25 % budget, 99 % global bound ≤ 0.30 %, noise floor 0.04–0.21 %; every dupmap-off twin passes (\|Δ_Y\| ≤ 0.02 %) |
+| Plants | 23/23: U8-4 M_foot +4.36 % (z 674, global +2.30 %), U8-7 global −1.06 % (z −325), U8-8 global +26.5 % (z 3721; predicted +26 %, M6-3), U8-10 global +0.79 % / M_hl +0.92 %; each detected 10/10 with the control 10/10; ReSTIR A/A Δ_Y +0.0004 %; W × 1.003 detected 10/10, A/A re-splits ok |
+
+Core failures and their re-check (each step run alone with the gate's command and environment on 23087c7):
+
+| Failed step (core run) | Cause | Fix | Re-check on 23087c7 |
+|---|---|---|---|
+| T3-2/M6 Mode B: camera translate, moving + rotating crossing lights, add / remove + intensity | the 24 000-pair holds hit the 120 s Chrome test timeout (no test result) | 2fe00ec `--testTimeout 900000`; M6-13 makes the Mode-B rule stricter (no empty crossing bin is skipped) | pass, LOGIC 0, FP 0; smallest bin c-ana/k>2 rtOk **1 233 254** (camera translate), 1 602 779 (moving lights), 1 303 123 (add / remove) |
+| T3-2 M5 rare bins: translate, add / remove + intensity, moving lights + env | the M5 every-bin rule iterated over the six M6 crossing bins, structurally empty in light mode A | M6-13 (mode-A cases assert the crossing bins empty) | pass; minima c-tri/k>2 1 377 989, a-delta/k>2 1 427 754, c-tri/k>2 1 656 006 (bit-identical to the failing run) |
+| T3-M6 t3_glass_256, t3_glass_pane_256 | grKm1 0.38 M, sideFlip 0.27 M < 10⁶: the glass counters stalled once the common case bins closed | M6-14 keep mask (selection only; scenes and shift unchanged) | pass; grKm1 5.38 M (grK 21.0 M), sideFlip 9.27 M; T3-1 LOGIC 0, FP 0, T3-D LOGIC 0, U-11 J 0 bad |
+| M6 app smoke 5/7 | a ReSTIR frame encoded with an uncompiled pipeline variant at the RIS-NEE toggle | 0bf99a6 / 2a558ba (encodeRestir waits for the prepared variant) | 15/15 |
+
+The full core part was not repeated on 23087c7; the 31 steps that passed were not re-run. Between the core run's code
+(cd279de) and 23087c7 no shader changed: `src/` changed only in the app (interactive default light mode B, the variant
+preparation in `renderer.ts` / `restir/kernel.ts`); everything else is harness, test and tool code (2fe00ec, M6-12's
+dup_bias.py, M6-13's T3-2 fixtures, M6-14's keep mask in the T3 test kernel, where xKeep = 0 is the old behaviour).
+
+**Failures that led to the fixes (pre-fix code, ReSTIR bad2cc978b59).**
+- Rung 3.7 (`m6-gate-r37-20261006-210627`): 110/111, `ixs_d_camera_256@3.7-dualmv-f40` failed M_disocc and tile TOST on
+  the run and its disjoint-seed re-run (−0.90 % / +1.85 %): a heavy tail from dual-MV picks reused at c_p = 20, not a
+  bias ⇒ **M6-11** (`c_p ≤ 1` for a dual pick); f40 passes on the final code (+0.0078 %).
+- Rung 3.9 (`m6-gate-r39-20261007-013338`, stopped during the 21st unit, no summary): 17 units passed and C0h Δ_Y
+  +0.120 % (MDB 0.015 %), G1 Glass node +0.074 %, G1 Principled +0.052 % failed, all positive and concentrated at grazing incidence; reproduced at rung 3.1 with M4's own preset ⇒ not an M6
+  feature: the path tree took the incoming direction after a delta event from positions ⇒ **M6-10**; fresh-seed
+  verification 12/12 and the final run 21/21.
+- Gate 5 (`m6-gate-gate5-20261007-115614`): dup_bias.py read the per-chain sums as means (≈ 25 000 % "bias") ⇒ **M6-12**
+  (tool fix; the verdicts were recomputed from the same chains).
+
+**Changes to earlier results.** M6-10 changes ReSTIR output wherever a delta lobe is sampled (smooth glass, roughness-0
+mirrors / specular), including the M4 / M5 validation presets; MD1's "M4 / M5 results stay valid by construction" holds
+only for delta-free scenes. The M4 / M5 units with a delta lobe were re-run on 23087c7 (next subsection). The M4 / M5
+results on delta-free scenes, U-M4-BITS on (i) and every cached PT reference are unaffected.
+
+### M4 / M5 units re-verified after M6-10 (2026-10-08, 23087c7)
+
+**Selection** (from the packages' materials, not the scene names). A lobe is delta when its roughness is ≤ 0.00376
+(`BSDF_ROUGHNESS_SQ_THRESH` 2e-10 on α²) and the lobe exists (V1: mix · glossy > 0; Principled: metallic > 0 or a
+dielectric specular with IOR ≠ 1; glass / refraction nodes), or a refraction with |η − 1| < 1e-4. No package uses a
+roughness texture. Among the M4 / M5 packages, delta lobes occur in exactly four: (vi) `vi_glass_mirror_A_512` (Principled metal
+mirror r 0 + smooth Glass node), C0r `c0r_mirror_256` (V1 glossy r 0), (xiii) `xiii_spheres_512x256` (V1 glossy r 0
+sphere) and M5's `m5s_glass_mirror_A` (the (vi) materials at 256²). Every other M4 scene ((i)–(v), (x)–(xii), C0q(d),
+C0r irradiance, (xiv) ×6), every M5 static, sequence and U8 package and every M4 / M5 plant / A/A / ensemble scene is
+delta-free (smallest roughness 0.05, (v) V1 sharp). (xiii) is report-only in M5 and was not run there. The fixture box
+with the roughness-0 mirror is a Gate-0 GPU-test fixture: its U-M4-BITS / U-M5-BITS goldens were re-recorded by M6-10.
+
+**Runs.** `npm run validate -- --milestone M4 --only vi_glass_mirror_A_512,c0r_mirror_256,xiii_spheres_512x256`
+(`m4-gate-20261008-024722`, 29/29) and `npm run validate -- --milestone M5 --part static --only m5s_glass_mirror_A`
+(`m5-gate-20261008-025320`, 19/19), on the normal seeds (M4 PT 4001 / ReSTIR 4002; M5 PT 7001 / chains 7002) and the
+cached PT references (PT closure bf362071108b, unchanged). Old values: M4 from `m4-gate-20260930-162356` (C0r and
+(xiii) also from the M6-branch subset `m4-gate-20261006-185706`, identical to 3 digits), M5 from
+`m5-gate-20261001-162035`. The M4 pilots were re-measured, so (vi) and (xiii) 3.1 ran at slightly different frame
+counts; the C0r, (xiii) 3.1b / 3.2 and M5 units ran at the old sizes and seeds, i.e. paired with the old runs.
+
+| Unit | Δ_Y new (old) | MDB_Y new (old) | worst tile new (old) | size new (old) | Verdict |
+|---|---|---|---|---|---|
+| (vi) A 3.1 | −0.0028 % (−0.0028 %) | 0.0094 % (0.0085 %) | −0.29 % (−0.33 %) | 448 (512) fr × 16 | pass (pass) |
+| (vi) A 3.1b | −0.0032 % (−0.0031 %) | 0.0091 % (0.0089 %) | −0.29 % (−0.33 %) | 448 (512) fr × 16 | pass (pass) |
+| (vi) A 3.2 | −0.0028 % (−0.0031 %) | 0.0067 % (0.0074 %) | −0.14 % (−0.16 %) | 32 (40) fr × 16 | pass (pass) |
+| C0r mirror 3.1 | −0.0007 % (−0.0007 %) | 0.0013 % (0.0013 %) | +0.01 % (+0.01 %) | 128 fr × 16 | pass (pass), identical |
+| C0r mirror 3.1b | −0.0007 % (−0.0007 %) | 0.0013 % (0.0013 %) | +0.01 % (+0.01 %) | 128 fr × 16 | pass (pass), identical |
+| C0r mirror 3.2 | −0.0009 % (−0.0009 %) | 0.0058 % (0.0058 %) | −0.03 % (−0.03 %) | 8 fr × 16 | pass (pass), identical |
+| (xiii) 3.1 | −0.0014 % (−0.0013 %) | 0.0099 % (0.0101 %) | −0.20 % (−0.17 %) | 224 (256) fr × 32 | pass (pass) |
+| (xiii) 3.1b | −0.0015 % (−0.0015 %) | 0.0100 % (0.0100 %) | −0.17 % (−0.17 %) | 256 fr × 32 | pass (pass) |
+| (xiii) 3.2 | +0.0005 % (+0.0005 %) | 0.0102 % (0.0102 %) | +0.29 % (+0.29 %) | 28 fr × 32 | pass (pass) |
+| m5s_glass_mirror_A 3.3 t 1 | +0.0037 % (+0.0035 %) | 0.024 % (0.024 %) | −0.03 % (−0.03 %) | R 2592, 64² | pass (pass) |
+| m5s_glass_mirror_A 3.3 t 24 | −0.0002 % (−0.0002 %) | 0.034 % (0.034 %) | −0.10 % (−0.10 %) | R 2592, 64² | pass (pass) |
+| m5s_glass_mirror_A 3.4 t 1 | +0.0211 % (+0.0209 %) | 0.041 % (0.041 %) | +0.11 % (+0.11 %) | R 928, 64² | pass (pass) |
+| m5s_glass_mirror_A 3.4 t 24 | −0.0142 % (−0.0146 %) | 0.057 % (0.057 %) | −0.14 % (−0.14 %) | R 928, 64² | pass (pass) |
+
+All 13 units pass with no re-run (multiplier 1 except (vi) 3.1 / 3.1b at 1.012 / 1.008) and every T16 counter 0. C0r is
+unchanged to all printed digits (the mirror sphere reflects straight into the environment: no surface vertex follows
+the delta event, so the incoming direction M6-10 changes is never formed). On the paired units the shifts are ≤ 0.0005
+percentage points, consistent with M6-10 mattering mainly near grazing incidence on smooth glass (the C0h / G1
+mechanism), which these scenes barely sample. (vi) A also passed rung 3.9 (`offline-m6`) against the same M4 PT reference (−0.0045 %). The M4
+and M5 Stage-B results therefore stand for the M6 code.
+
+**Performance (540p interactive, report only).** m6_crossings: 24.0 ms (before M6) → 28.8 ms (all M6 features) →
+31.0 ms (+ Mode B); Cornell (i): ~16–17 → 20.7 → 21.3 ms. RIS-NEE ≈ +3.5 ms in rs_initial, Mode-B
+crossings ≈ +1.7 ms, the duplication-map pass ≈ 1.0 ms.
+
+**Interactive default** (305a358, MD9 after rung 3.11): light mode B, Gaussian pairing σ 16, RIS-NEE, dual MVs, the
+duplication map, cCap 5. The silhouette resolve fixes of the denoiser (denoiser.md DN-16 / DN-17) were merged on main
+(cf8d358) after this branch forked; they are not part of the M6 runs.
+
+**Open items.**
+- Mode-B T3-2 margin: the rarest bin (c-ana/k>2, camera translate) reached 1.23·10⁶ round trips against the 10⁶
+  minimum at 24 000 pairs (M6-13 projected ≈ 1.2·10⁶). A small change in the case mix would fail the bin rule; raise the
+  pair count before tightening anything else.
+- `validation/harness/denoise-run.ts` still rejects non-A light modes with "the interactive ReSTIR is Mode A only"
+  (harness-only, stale since M6-9); the file headers of `src/core/render/renderer.ts` and `restir/kernel.ts` still say
+  "Mode A only (D1)".
