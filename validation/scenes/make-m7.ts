@@ -13,7 +13,7 @@
 //                        and an OPEN wavy sheet (one-sided: Ng·L ≤ 0 < Ns·L is not self-occluded there); rect + point.
 //   m7_nm_flat_256       flat geometry, normal maps (vii-N tight tier): tiles floor (s 1), bumps back wall (s 0.6), waves
 //                        left wall (s 1.7), a bumps box (s 1); three panels on the back wall for the Stage-A plants: P1 tilt
-//                        35° toward +B (s 1), P2 the same with mirrored u (MikkTSpace w = −1), P3 tilt 50° toward +B at s 0.5;
+//                        35° toward +B (s 1), P2 the same with mirrored u (MikkTSpace w = −1), P3 tilt 60° toward −B at s 0.5;
 //                        rect + a spot on the panels.
 //   m7_nm_smooth_256     smooth + normal-mapped (vii-N model-approximate): bumps sphere (diffuse), waves gold sphere
 //                        (r 0.3), tiles torus, bumps open sheet; rect + point.
@@ -112,7 +112,7 @@ async function m7Smooth(): Promise<void> {
 
 async function m7NmFlat(): Promise<void> {
   resetLightIds();
-  const tex = [tilesMap('tiles', 256, 4), bumpsMap('bumps', 256, 6, 0.8), wavesMap('waves', 256, 5), tiltMap('tilt35', 35 * deg, 90 * deg), tiltMap('tilt50', 50 * deg, 90 * deg)];
+  const tex = [tilesMap('tiles', 256, 4), bumpsMap('bumps', 256, 6, 0.8), wavesMap('waves', 256, 5), tiltMap('tilt35', 35 * deg, 90 * deg), tiltMap('tilt60', 60 * deg, 270 * deg)];
   const nm = (i: number, s: number) => ({ normalTexture: { texture: i, texCoord: 0, scale: s } });
   const mats = [
     principled('floor', { baseColorFactor: [0.72, 0.7, 0.66, 1], roughnessFactor: 0.35, ...nm(0, 1) }),
@@ -139,7 +139,7 @@ async function m7NmFlat(): Promise<void> {
   mb.quad([P.P3.x[0], P.P3.y[0], z], [P.P3.x[1], P.P3.y[0], z], [P.P3.x[1], P.P3.y[1], z], [P.P3.x[0], P.P3.y[1], z], 7);
   const lights = [rectLight(), light('spot', lightToward([0.15, 0.05, -1], [-0.1, 0.62, 0.45]), 6, { spotSize: 70 * deg, spotBlend: 0.2 })];
   await write({ name: 'm7_nm_flat_256', scene: sceneOf('m7_nm_flat_256', mb, mats, lights, tex), flatShaded: true,
-    extra: { tier: 'tight', panels: P, notes: 'flat geometry + normal maps (tiles s 1, bumps s 0.6 / 1, waves s 1.7); panels P1 tilt 35° +B s 1, P2 = P1 with mirrored u, P3 tilt 50° +B s 0.5' } });
+    extra: { tier: 'tight', panels: P, notes: 'flat geometry + normal maps (tiles s 1, bumps s 0.6 / 1, waves s 1.7); panels P1 tilt 35° +B s 1, P2 = P1 with mirrored u, P3 tilt 60° −B (down) s 0.5' } });
 }
 
 function nmSmoothBuild(name: string): { scene: SceneData } {

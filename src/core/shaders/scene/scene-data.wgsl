@@ -18,6 +18,9 @@
 // arena then carries the tangent section and scene_surface returns the Cycles Normal Map node normal in ns (materials
 // with a normal texture) and the unmapped smooth / flat shading normal in nsm (the bump-shadowing reference normal of
 // the BSDF). Without the define the composed text is the M6 one (U-M7-BITS).
+// NM_PLANT (validation plants only, m7-api.md §5): 1 = the MikkTSpace bitangent sign is ignored (w := +1), 2 = the
+// Normal Map strength applied glTF-style (c.z not mixed toward 1). The PT sets it for the Stage-A plants, the ReSTIR
+// kernel for every pass but the path tree (rs_initial) for the Stage-B plants.
 //
 // CUSTOM_ALPHA: provides traverse.wgsl's alpha_pass hook = the MASK cutout (plan §1.3; math.md#visibility):
 // α = baseColorFactor.a × baseColorTexture.a (bilinear, LOD 0) × COLOR_0.a, the hit counts iff α ≥ alphaCutoff.
@@ -184,7 +187,9 @@ fn normal_map_cycles(rgb: vec3f, s: f32, T: vec3f, sgn: f32, nU: vec3f) -> vec4f
   var c = 2.0 * (rgb - vec3f(0.5));
   c.x *= s;
   c.y *= s;
+#if NM_PLANT != 2
   c.z = mix(1.0, c.z, saturate(s));
+#endif
   let B = sgn * cross(nU, T);
   let N = c.x * T + c.y * B + c.z * nU;
   let l = length(N);
@@ -301,7 +306,11 @@ fn scene_surface(primId: u32, u: f32, v: f32, d: vec3f) -> SurfaceHit {
     let tb = scene_vertex_tangent(t.y);
     let tc = scene_vertex_tangent(t.z);
     let tg = w * ta + u * tb + v * tc;                // interpolated (un-normalised) tangent and sign
+#if NM_PLANT == 1
+    let nm = normal_map_cycles(tex_sample(texN, s.uv).rgb, sceneMaterials[s.matId].normalScale, tg.xyz, 1.0, nU);
+#else
     let nm = normal_map_cycles(tex_sample(texN, s.uv).rgb, sceneMaterials[s.matId].normalScale, tg.xyz, tg.w, nU);
+#endif
     if (nm.w != 0.0) { s.ns = select(nm.xyz, -nm.xyz, s.backfacing); }   // invert for backfacing polygons
   }
 #endif

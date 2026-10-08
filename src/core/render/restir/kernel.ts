@@ -26,7 +26,7 @@ import {
   RES_BYTES, RESTIR_PARAMS_SIZE, RS_DISPATCH_RING, RS_DISPATCH_SIZE, RS_DISPATCH_STRIDE, RS_TEMPORAL_SIZE, RSC, RS_WGSL_CONSTS as K,
   ARENA_HDR_BYTES, arenaWords, nsAlloc, packRestirParams, packRsDispatch, packRsTemporal, queueHdr, type RscName, type RsDispatchCpu,
 } from './layout.ts';
-import { m6Defines, numSlotsOf, pairTexSizes, restirFlags, restirSettings, tModeOf, tPlantsOf, validateSettings, type RestirSettings } from './presets.ts';
+import { m6Defines, m7NmPlantDefine, numSlotsOf, pairTexSizes, restirFlags, restirSettings, tModeOf, tPlantsOf, validateSettings, type RestirSettings } from './presets.ts';
 import { RS_M6_CONSTS as K6, arenaM6Base } from './layout.ts';
 import { G0_BINDING, RS_PASSES, RestirResources, createUniforms, g2LayoutEntries, restirCommonDefines, restirDefines, type RsPassName } from './resources.ts';
 import { SpatialStage } from './stage-spatial.ts';
@@ -207,13 +207,13 @@ export class RestirKernel {
 
   /** Composer defines shared by every ReSTIR pipeline (+ the pass's own). */
   defines(name: RsPassName, extra: Defines = {}): Defines {
-    return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug, extra: { ...this.m6Defines(), ...extra } });
+    return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug, extra: { ...this.m6Defines(), NM_PLANT: m7NmPlantDefine(this.settings, name), ...extra } });
   }
 
   /** M6 pipeline-variant defines of the current settings / light mode (restir-m6-api.md MD1). */
   m6Defines(): Record<string, number> { return m6Defines(this.settings, this.lightMode); }
   /** Cache key of the current pipeline variant. */
-  variantKey(): string { const d = this.m6Defines(); return `${d.RS_RIS_NEE}${d.RS_MODE_B}${d.RS_DUAL_MV}${d.RS_DUPMAP}${d.RS_PLANT_T2}`; }
+  variantKey(): string { const d = this.m6Defines(); return `${d.RS_RIS_NEE}${d.RS_MODE_B}${d.RS_DUAL_MV}${d.RS_DUPMAP}${d.RS_PLANT_T2}${d.RS_PLANT_SMOOTH_J}${m7NmPlantDefine(this.settings, 'rs_spatial_shift')}`; }
 
   /** Compile (once) the pipeline of a standard pass; `extra` defines give test variants (their own cache key). */
   pipeline(name: RsPassName, extra: Defines = {}, colorFormat?: GPUTextureFormat): Promise<GPUComputePipeline> {

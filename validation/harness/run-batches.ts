@@ -9,6 +9,7 @@
 //      --light-mode A|B|A' overrides the package's light mode (plan §1.4; U9 A ≡ B), --plant-glass eta2|pr-half|tint|side|shadow
 //      (M3b glass plants, pt-kernel.ts GlassPlant: B-η 1/η² BTDF scaling, R/T chosen with 0.5 instead of P_R without
 //      pdf compensation, B-tint C instead of √C, B-side η not inverted on backfaces, B-shadow glass does not occlude),
+//      M7 Stage-A Normal Map plants: --plant-nm sign|strength (the bitangent sign ignored / glTF-style strength; NM_PLANT),
 //      Gate-1 planted biases: --plant-emit-scale 1.01 (every emitter ×s), --plant-drop 0.01@2 (terminate 1% of the
 //      paths at vertex 2, no compensation); M3c env options: --env-nee on|off (default: the package's env.sampling),
 //      --env-cap N (importance resolution), --env-no-floors, --env-mis-power, --env-plant
@@ -78,6 +79,7 @@ const OPTIONS = {
   'plant-drop': { type: 'string' },
   'light-mode': { type: 'string' },
   'plant-glass': { type: 'string' },
+  'plant-nm': { type: 'string' },
   'env-nee': { type: 'string' },
   'env-cap': { type: 'string' },
   'env-no-floors': { type: 'boolean', default: false },
@@ -183,8 +185,12 @@ async function main(shared?: SharedPage): Promise<number> {
   const base = args.run ?? `batches-${path.basename(pkgDir ?? args.scene!).replace(/[^\w.-]+/g, '_')}-${stamp()}`;
 
   let plant: PtPlant | undefined;
-  if (args['plant-emit-scale'] || args['plant-drop'] || args['plant-glass']) {
+  if (args['plant-emit-scale'] || args['plant-drop'] || args['plant-glass'] || args['plant-nm']) {
     plant = {};
+    if (args['plant-nm']) {
+      if (!['sign', 'strength'].includes(args['plant-nm'])) { console.error('--plant-nm sign|strength'); return 2; }
+      plant.nm = args['plant-nm'] as 'sign' | 'strength';
+    }
     if (args['plant-glass']) {
       if (!(GLASS_PLANTS as readonly string[]).includes(args['plant-glass'])) { console.error(`--plant-glass ${GLASS_PLANTS.join('|')}`); return 2; }
       plant.glass = args['plant-glass'] as GlassPlant;

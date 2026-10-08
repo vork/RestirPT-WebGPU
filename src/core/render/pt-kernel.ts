@@ -52,7 +52,9 @@ export interface PtSettings {
  *  (B-side), 'shadow' = shadow rays pass through glass (B-shadow). */
 export type GlassPlant = 'eta2' | 'pr-half' | 'tint' | 'side' | 'shadow';
 export const GLASS_PLANTS: readonly GlassPlant[] = ['eta2', 'pr-half', 'tint', 'side', 'shadow'];
-export interface PtPlant { emitScale?: number; dropProb?: number; dropBounce?: number; glass?: GlassPlant }
+/** M7 Stage-A Normal Map plants (m7-api.md §5.1, NM_PLANT): 'sign' = the bitangent sign ignored, 'strength' = glTF-style strength. */
+export type NmPlant = 'sign' | 'strength';
+export interface PtPlant { emitScale?: number; dropProb?: number; dropBounce?: number; glass?: GlassPlant; nm?: NmPlant }
 
 /** Env planted biases (validation only, env §5.3). 'strength' (env strength ×1.0075) is applied to the env params by
  *  the caller; 'pdfFromTargets' is an importance-table option; the others are WGSL defines (env-sample.wgsl). */
@@ -122,6 +124,7 @@ async function compilePt(device: GPUDevice, scene: SceneGpu, layouts: GPUBindGro
       PT_INTERACTIVE: entry === 'pt_frame', PT_PROBE: !!opts.probe, GLASS_PLANT: opts.plant?.glass ? GLASS_PLANTS.indexOf(opts.plant.glass) + 1 : 0,
       ...(opts.colorFormat ? { COLOR_FORMAT: opts.colorFormat } : {}),
       ENV_PLANT: opts.env?.plant ? ENV_PLANT_CODE[opts.env.plant] : 0, ENV_MIS_POWER: !!opts.env?.misPower,
+      ...(opts.plant?.nm ? { NM_PLANT: opts.plant.nm === 'sign' ? 1 : 2 } : {}),
     },
     features: opts.features, wgslLanguageFeatures: opts.wgslLanguageFeatures,
   });
