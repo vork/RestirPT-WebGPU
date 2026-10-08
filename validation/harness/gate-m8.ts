@@ -97,11 +97,15 @@ function perf(dir: string, add: Add): Record<string, any> {
     { id: '540p N3', w: 960, h: 540, extra: {}, target: 35 },
     { id: '540p N1+moving', w: 960, h: 540, extra: { restir: { slots: 1 } }, target: 32 },
     { id: '720p N3', w: 1280, h: 720, extra: {}, target: 51 },
+    // the dynamic-resolution controller's 0.625 level of 540p (m8-perf.md §9), its 33 ms target
+    { id: '336p N3 (dyn-res 0.625)', w: 600, h: 336, extra: {}, target: 33 },
   ];
   const jobs: Record<string, unknown>[] = [];
-  for (const [name, s] of Object.entries(scenes)) for (const c of cfgs) for (const [tag, base] of [['M8', {}], ['pre-M8', PRE_M8]] as const) {
+  // ABBA order per (scene, config): a sustained run slows down over time (thermal / drift, m8-perf.md §2), so each side
+  // is measured once early and once late and the two are averaged
+  for (const [name, s] of Object.entries(scenes)) for (const c of cfgs) for (const [tag, base, rep] of [['M8', {}, 0], ['pre-M8', PRE_M8, 0], ['pre-M8', PRE_M8, 1], ['M8', {}, 1]] as const) {
     const moving = c.id.includes('moving');
-    jobs.push({ scene: s.scene, ...(s.env ? { env: s.env } : {}), width: c.w, height: c.h, frames: 64, label: `${name} ${c.id} ${tag}`, ...base, ...c.extra,
+    jobs.push({ scene: s.scene, ...(s.env ? { env: s.env } : {}), width: c.w, height: c.h, frames: 64, label: `${name} ${c.id} ${tag} r${rep}`, ...base, ...c.extra,
       ...(moving ? { lightAnim: s.lightAnim } : {}) });
   }
   const jf = path.join(dir, 'perf-jobs.json');
@@ -110,10 +114,13 @@ function perf(dir: string, add: Add): Record<string, any> {
   const rep = tryJson(path.join(dir, 'perf.json'));
   const rows: Record<string, any>[] = [];
   for (const [name] of Object.entries(scenes)) for (const c of cfgs) {
-    const get = (tag: string) => rep?.reports?.find((x: any) => x.label === `${name} ${c.id} ${tag}`);
+    const get = (tag: string) => [0, 1].map((r) => rep?.reports?.find((x: any) => x.label === `${name} ${c.id} ${tag} r${r}`));
+    const avg = (xs: any[], f: (x: any) => number) => (xs.every(Boolean) ? xs.reduce((t, x) => t + f(x), 0) / xs.length : undefined);
     const a = get('M8'), b = get('pre-M8');
-    rows.push({ scene: name, config: c.id, target_ms: c.target, m8_ms: a?.frame?.meanMs, pre_m8_ms: b?.frame?.meanMs, met: a ? a.frame.meanMs <= c.target : undefined,
-      denoiser_ms: a?.denoiser?.totalMs, pre_denoiser_ms: b?.denoiser?.totalMs, ok: !!a?.ok && !!b?.ok });
+    const m8 = avg(a, (x) => x.frame.meanMs), pre = avg(b, (x) => x.frame.meanMs);
+    rows.push({ scene: name, config: c.id, target_ms: c.target, m8_ms: m8, pre_m8_ms: pre, m8_runs: a.map((x) => x?.frame?.meanMs), pre_m8_runs: b.map((x) => x?.frame?.meanMs),
+      met: m8 !== undefined ? m8 <= c.target : undefined, denoiser_ms: avg(a, (x) => x.denoiser?.totalMs ?? NaN), pre_denoiser_ms: avg(b, (x) => x.denoiser?.totalMs ?? NaN),
+      passes_m8: a[0]?.passes, passes_pre: b[0]?.passes, ok: [...a, ...b].every((x) => !!x?.ok) });
   }
   add('M8 perf (recorded, not gating): frame ms M8 vs the pre-M8-equivalent configuration, same session', r.code === 0 && rows.every((x) => x.ok), r.seconds, { rows },
     rows.map((x) => `${x.scene} ${x.config}: ${x.m8_ms?.toFixed(1)} (pre ${x.pre_m8_ms?.toFixed(1)}) ${x.met ? '≤' : '>'} ${x.target_ms}`).join(' | '));
