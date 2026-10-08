@@ -194,7 +194,8 @@ The adapter rules. All of them are implemented and verified in `normalize.ts` (`
    strength 1); a mesh bound inside an instance prototype (rc4 reports no material) takes its `material:binding` and
    every PreviewSurface constant from the scan. A mesh without authored normals gets Blender's automatic smooth
    normals (corner-angle-weighted, computed in mesh space; M7-10). In Blender-compatible mode (`blenderCompat`, the E2E-USD gate) the
-   Blender-exporter `specular` input is not read (Blender's importer ignores it, M7-7).
+   Blender-exporter `specular` input is not read (Blender's importer ignores it, M7-7), and instance draws keep
+   unnormalised `M^-T·n` normals (Cycles' object-space interpolation of instanced meshes, M7-12).
 5. **Frames.** Apply upAxis Z → R_x(−90°) and metersPerUnit scaling once, in the adapter. Apply `v = 1 − v`.
 6. **Scan scope.**
    - The scan reads the root layer only (no composition). Log a warning when the file has other layers: a USDZ with several USD entries, or `subLayers`/external `references`/`payload` in the root layer.

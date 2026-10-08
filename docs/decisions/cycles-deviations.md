@@ -239,7 +239,10 @@ Stage B is unaffected (ReSTIR and our PT share F, ω, p).
 E2E-GLB / E2E-USD render Blender's own importer output. Measured Blender 5.2.2 conventions our loader reproduces only in
 the E2E (Blender-compatible) mode: USD SphereLight energy π·i with `normalize` kept (Cycles: an un-normalised point at
 radius 0 is 4× a normalised one), DistantLight ×4, the exporter-only `specular` input ignored (m7-api.md §3.4, M7-6 /
-M7-7). glTF import (SPEC lighting, FLAT / NORMALS) needs no compat rule. Stock units are model-approximate: TOST at the
+M7-7), and — a Cycles convention rather than an importer one — an INSTANCED mesh's normals are interpolated in object
+space and then transformed, while single-user meshes get per-vertex normalised world normals; under non-uniform
+instance scale the two differ by up to ~3 % on low-poly smooth prototypes (M7-12; compat mode keeps unnormalised
+`M^-T·n` for instance draws). glTF import (SPEC lighting, FLAT / NORMALS) needs no compat rule. Stock units are model-approximate: TOST at the
 unchanged δ gates, so an unmodelled importer detail larger than δ (e.g. KHR_materials_volume) still fails the unit; a
 sub-δ systematic is reported, not hidden (validation.md M7).
 

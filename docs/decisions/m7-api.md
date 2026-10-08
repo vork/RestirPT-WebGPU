@@ -109,7 +109,10 @@ build_env_original` loads that file in Blender, compares Blender's pixels with O
 - **Blender-compatible USD mode** (`usdToScene(..., {blenderCompat})`), measured on 5.2.2: SphereLight → energy π·i,
   `normalize` kept, so at radius 0 power = (normalize ? 1 : 4)·π·i (Cycles renders an un-normalised point 4× a
   normalised one at r = 0); DistantLight ×4 always; the Blender-exporter-only `specular` input is NOT read (Blender's
-  importer keeps Specular IOR Level 0.5). Default (non-compat) mode keeps usd.md's rules (Blender round trip).
+  importer keeps Specular IOR Level 0.5); instance draws keep unnormalised `M^-T·n` normals (Cycles interpolates an
+  instanced mesh's normals in object space, M7-12). Default (non-compat) mode keeps usd.md's rules (Blender round trip).
+- Meshes without authored normals get Blender's automatic normals (corner-angle-weighted, in mesh space; M7-10), in
+  both modes.
 - Node-side PNG decode: palette / interlaced PNGs fall back to sharp in make-m7-e2e (the app decodes in the browser).
 
 ---
@@ -232,3 +235,14 @@ normal maps vs 26.5 ms with the same scene's normal textures removed (+0.7 ms, +
   copy `m7_smooth_lowpoly_256` (spheres 4 × 6 / 4 × 7, torus 8 × 5, sheet 4²: Ns up to ~40° from Ng), measured on fresh
   disjoint seeds (ReSTIR 7801 + i, 4× PT 7901 + i, E-18). The scene also joins Stage A (model-approximate) and rung 3.8
   (offline-m6), so the plant's unplanted twin is itself shown unbiased.
+- **M7-12 (instances in Blender-compatible mode: object-space normal interpolation).** After M7-10, e2e_usd_instancing
+  still failed (−0.12 %, tile [4,1] −2.40 %). Diagnosis (all on the gate seeds / references): pxr, Blender and our
+  instance matrices are equal; Blender's per-vertex normals equal ours; realising Blender's instances changes nothing;
+  but Cycles rendering OUR package (bridge-built single mesh) matches our renderer exactly (pass, worst tile 0.02 %) while
+  differing from Blender's stock import by up to +2.8 % per tile on the prototypes. Cause: Cycles keeps an instanced
+  mesh in object space and interpolates its normals there before the inverse-transpose (only single-user meshes get the
+  transform applied with per-vertex normalisation); under the prototypes' non-uniform instance scales (1.5, 1, 0.75 …)
+  that differs from interpolating per-vertex normalised world normals. In Blender-compatible mode, instance draws
+  (PointInstancer instances, meshes under instanceable prims) now keep `M^-T·n` unnormalised (lossless packages;
+  `normalize(interpolated)` on the GPU then equals Cycles). A variant built that way matched the stock reference
+  (Δ_Y +0.0004 %, worst tile 0.02 %) and the gate unit passes (§6, validation.md M7). Default mode unchanged.
