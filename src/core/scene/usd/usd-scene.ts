@@ -138,7 +138,7 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}, images: Re
     if (i === undefined) {
       i = materials.length;
       matIndex.set(key, i);
-      materials.push(path ? previewSurfaceMaterial(path, matRecs.get(path), scan, warn, texTable) : defaultMaterial());
+      materials.push(path ? previewSurfaceMaterial(path, matRecs.get(path), scan, warn, texTable, !!opts.blenderCompat) : defaultMaterial());
       materialPaths.push(path);
     }
     return i;
@@ -377,7 +377,8 @@ const v3 = (v: unknown, d: [number, number, number]): [number, number, number] =
   Array.isArray(v) && v.length >= 3 && v.slice(0, 3).every((x) => typeof x === 'number') ? [v[0], v[1], v[2]] : d;
 
 /** UsdPreviewSurface constants → MaterialData (principled). Unsupported inputs are warned, never silently used. */
-function previewSurfaceMaterial(path: string, rec: Rec | undefined, scan: UsdaScan | undefined, warn: (m: string) => void, table: UsdTextureTable): MaterialData {
+function previewSurfaceMaterial(path: string, rec: Rec | undefined, scan: UsdaScan | undefined, warn: (m: string) => void, table: UsdTextureTable,
+  blenderCompat = false): MaterialData {
   const inp = previewInputs(rec);
   // Shader prims sit directly under their Material (Blender and hand-authored files): patch fields rc4 drops.
   const patched: Record<string, unknown> = {};
@@ -403,7 +404,9 @@ function previewSurfaceMaterial(path: string, rec: Rec | undefined, scan: UsdaSc
   let alphaMode: MaterialData['alphaMode'] = 'OPAQUE', alphaCutoff = 0.5;
   if (threshold > 0) { alphaMode = 'MASK'; alphaCutoff = threshold; }
   else if (opacity < 1) { alphaMode = 'MASK'; alphaCutoff = 0.5; warn(`material ${path}: opacity ${opacity} without opacityThreshold rendered as MASK 0.5 (v1: no blending)`); }
-  const blenderSpecular = get('specular');
+  // Blender's stock importer (blenderCompat, the E2E-USD gate) does not read the non-standard `specular`: Specular IOR Level
+  // stays at its 0.5 default (measured, Blender 5.2.2 on cornell.usda; m7-api.md §3.4).
+  const blenderSpecular = blenderCompat ? undefined : get('specular');
   const md: MaterialData = {
     name: path.split('/').pop() || path,
     baseColorFactor: [...v3(get('diffuseColor'), [0.18, 0.18, 0.18]), opacity] as MaterialData['baseColorFactor'],

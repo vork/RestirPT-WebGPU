@@ -61,8 +61,10 @@ const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 
 /** Node image decoder for the glTF loader: PNG (io/png.ts), JPEG through sharp (libjpeg-turbo, raw RGBA8). */
 async function decodeImage(bytes: Uint8Array, mime: string): Promise<{ width: number; height: number; pixels: Uint8Array } | null> {
-  if (isPng(bytes)) return decodePng(bytes);
-  if (mime === 'image/jpeg') {
+  if (isPng(bytes)) {
+    try { return await decodePng(bytes); } catch { /* palette / interlaced PNG (io/png.ts subset): decoded by sharp below */ }
+  }
+  if (isPng(bytes) || mime === 'image/jpeg') {
     const { default: sharp } = await import('sharp');
     const { data, info } = await sharp(bytes, { failOn: 'none' }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     return { width: info.width, height: info.height, pixels: new Uint8Array(data.buffer, data.byteOffset, data.byteLength) };
