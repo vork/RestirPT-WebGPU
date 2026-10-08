@@ -33,3 +33,16 @@ export interface TpPane extends TpFolder { dispose(): void }
 export function createPane(container: HTMLElement, title: string): TpPane {
   return new Pane({ container, title }) as unknown as TpPane;
 }
+
+/** Hover tooltip on a blade (the native title attribute; Tweakpane 4 has no tooltip option). */
+export function tip<B extends TpBlade>(blade: B, text: string): B {
+  blade.element.title = text;
+  return blade;
+}
+
+/** A full-width DOM block inside a folder (a separator blade whose content is replaced): legends, help text. */
+export function addHtmlBlock(folder: TpFolder, content: HTMLElement, index?: number): TpBlade {
+  const b = folder.addBlade({ view: 'separator', ...(index === undefined ? {} : { index }) });
+  b.element.replaceChildren(content);
+  return b;
+}

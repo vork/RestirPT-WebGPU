@@ -1,5 +1,5 @@
 // Wires the M3a editor into the app shell: LightEditor (+ LightStore per scene, animation, undo), the timeline bar,
-// the compare view, and the Lights / Animation / Compare panels. Called once from main.ts.
+// the compare view, and the Lights / Animation / Validation folders of the panel. Called once from main.ts.
 //   window.__editor  exposes the handle for automation (tests/editor/e2e-editor.ts).
 import { lightTarget } from '../../core/scene/animation.ts';
 import type { App } from '../app.ts';
@@ -84,10 +84,10 @@ export function installEditor(app: App, integration?: Integration): EditorHandle
     };
   }
 
-  const pane = app.panel?.pane;
-  if (pane) {
-    addLightsPanel(pane, editor, 2);
-    addAnimationPanel(pane, editor, {
+  const folders = app.panel?.folders;
+  if (folders) {
+    addLightsPanel(folders.lights, editor);
+    addAnimationPanel(folders.animation, editor, {
       save: () => download(`${(app.scene?.name ?? 'scene').replace(/[^\w.-]+/g, '_')}.scene.json`, handle.saveState()),
       load: () => {
         void pickFiles('.json').then(async (f) => {
@@ -95,8 +95,8 @@ export function installEditor(app: App, integration?: Integration): EditorHandle
           try { handle.loadState(await f[0].text()); } catch (e) { editor.message = e instanceof Error ? e.message : String(e); console.error(e); }
         });
       },
-    }, 3);
-    addComparePanel(pane, compare, { config: referenceConfig, runReference: handle.runReference }, 4);
+    });
+    addComparePanel(folders.validation, compare, { config: referenceConfig, runReference: handle.runReference });
   }
   window.__editor = handle;
   return handle;

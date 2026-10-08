@@ -6,12 +6,17 @@ import { LightStore } from '../../../core/scene/light-store.ts';
 import type { LightType } from '../../../core/scene/types.ts';
 import { DEG } from '../../camera-math.ts';
 import type { LightEditor } from '../../editor/light-editor.ts';
-import type { TpFolder, TpPane } from '../tweakpane.ts';
+import { tip, type TpFolder } from '../tweakpane.ts';
 
-export const MODE_A_WARNING = 'Mode A: area lights must have visibleToCamera = false (Cycles 5.1.2 only shows lights to camera rays when MIS is on). A Mode-A export will fail; use Mode B.';
+const ADD_TITLES: Record<LightType, string> = {
+  point: 'Add point light', spot: 'Add spot light', rect: 'Add area light (rectangle)', disk: 'Add area light (disk)', sun: 'Add sun (direction only)',
+};
 
-export function addLightsPanel(pane: TpPane, ed: LightEditor, index?: number): { folder: TpFolder; refresh(): void } {
-  const f = pane.addFolder({ title: 'Lights', expanded: true, index });
+export const MODE_A_WARNING = 'Mode A exports only: Cycles shows area lights to camera rays only with MIS, so a Mode A export of a camera-visible area light fails. Mode B (the default) is fine.';
+
+/** Fills the (pre-created, hidden) Lights folder of the panel and shows it. */
+export function addLightsPanel(f: TpFolder, ed: LightEditor): { folder: TpFolder; refresh(): void } {
+  f.hidden = false;
   // Tweakpane's refresh() re-emits 'change' for values it pulls from the object: ignore those.
   let quiet = false;
   const q = <T>(fn: (e: T) => void) => (e: T) => { if (!quiet) fn(e); };
@@ -25,13 +30,14 @@ export function addLightsPanel(pane: TpPane, ed: LightEditor, index?: number): {
     status: '',
     emissive: '',
   };
-  const add = f.addFolder({ title: 'Add (click a surface)', expanded: true });
+  const add = f.addFolder({ title: 'Add a light (then click a surface)', expanded: true });
   for (const t of ['point', 'spot', 'rect', 'disk', 'sun'] as LightType[]) {
-    add.addButton({ title: t === 'sun' ? 'Add sun (direction)' : `Add ${t}` }).on('click', () => ed.beginPlacement(t));
+    const b = add.addButton({ title: ADD_TITLES[t] }).on('click', () => ed.beginPlacement(t));
+    if (t === 'sun') tip(b, 'No surface click: the sun is added in front of the camera; aim it with the rotate gizmo (R).');
   }
-  add.addBinding(ui, 'facing', { label: 'orientation', options: { 'away from surface (−Ng)': 'surface', 'toward camera': 'camera' } })
+  add.addBinding(ui, 'facing', { label: 'orientation', options: { 'away from the surface': 'surface', 'toward the camera': 'camera' } })
     .on('change', q((e) => { ed.placement.facing = e.value as 'surface' | 'camera'; }));
-  add.addBinding(ui, 'epsilon', { label: 'offset ε (m, 0=auto)', min: 0, max: 10, step: 0.001 }).on('change', q((e) => { ed.placement.epsilon = e.value; }));
+  tip(add.addBinding(ui, 'epsilon', { label: 'surface offset (m)', min: 0, max: 10, step: 0.001 }), 'Distance of a placed light from the clicked surface; 0 = automatic.').on('change', q((e) => { ed.placement.epsilon = e.value; }));
 
   let selBinding = f.addBinding(ui, 'selected', { label: 'selected', options: { '(none)': -1 } });
   let selKey = '';
@@ -47,7 +53,7 @@ export function addLightsPanel(pane: TpPane, ed: LightEditor, index?: number): {
     selBinding = f.addBinding(ui, 'selected', { label: 'selected', options: opts, index: idx });
     selBinding.on('change', q((e) => ed.select(e.value >= 0 ? e.value : undefined)));
   };
-  f.addBinding(ui, 'mode', { label: 'gizmo (G/R)', options: { translate: 'translate', rotate: 'rotate' } }).on('change', q((e) => ed.setMode(e.value as 'translate' | 'rotate')));
+  f.addBinding(ui, 'mode', { label: 'gizmo (G / R)', options: { translate: 'translate', rotate: 'rotate' } }).on('change', q((e) => ed.setMode(e.value as 'translate' | 'rotate')));
   f.addButton({ title: 'Duplicate (Ctrl+D)' }).on('click', () => ed.duplicateSelected());
   f.addButton({ title: 'Delete (Del)' }).on('click', () => ed.deleteSelected());
   const undoBtn = f.addButton({ title: 'Undo (Ctrl+Z)' }).on('click', () => ed.undoLast());
@@ -79,17 +85,17 @@ export function addLightsPanel(pane: TpPane, ed: LightEditor, index?: number): {
     props = undefined;
     if (!l) return;
     load();
-    const pf = f.addFolder({ title: `Properties: ${l.name}`, expanded: true });
+    const pf = f.addFolder({ title: `Properties: ${l.name}`, expanded: true, index: f.children.indexOf(emF) });
     props = pf;
     const commit = (ev: { last?: boolean }) => ev.last !== false;
-    pf.addBinding(p, 'name').on('change', q((e) => ed.updateSelected({ name: e.value }, 'rename light')));
+    pf.addBinding(p, 'name', { label: 'name' }).on('change', q((e) => ed.updateSelected({ name: e.value }, 'rename light')));
     pf.addBinding(p, 'type', { label: 'type / shape', options: { point: 'point', spot: 'spot', 'area: rect': 'rect', 'area: disk': 'disk', sun: 'sun' } })
       .on('change', q((e) => ed.setType(e.value as LightType)));
     pf.addBinding(p, 'power', { label: l.type === 'sun' ? 'strength (W/m²)' : 'power (W)', min: 0, max: l.type === 'sun' ? 100 : 5000, step: 0.01 })
       .on('change', q((e) => ed.editLive({ power: Math.max(0, e.value) }, commit(e), 'power')));
-    pf.addBinding(p, 'color', { color: { type: 'float' } })
+    pf.addBinding(p, 'color', { label: 'colour', color: { type: 'float' } })
       .on('change', q((e) => ed.editLive({ color: [Math.max(0, e.value.r), Math.max(0, e.value.g), Math.max(0, e.value.b)] }, commit(e), 'colour')));
-    pf.addBinding(p, 'exposure', { min: -10, max: 10, step: 0.01 }).on('change', q((e) => ed.editLive({ exposure: e.value }, commit(e), 'exposure')));
+    pf.addBinding(p, 'exposure', { label: 'exposure (EV)', min: -10, max: 10, step: 0.01 }).on('change', q((e) => ed.editLive({ exposure: e.value }, commit(e), 'exposure')));
     if (l.type === 'spot') {
       pf.addBinding(p, 'spotSizeDeg', { label: 'spot size (°)', min: 1, max: 180, step: 0.1 })
         .on('change', q((e) => ed.editLive({ spotSize: Math.min(180, Math.max(1, e.value)) * DEG }, commit(e), 'spot size')));
@@ -109,7 +115,7 @@ export function addLightsPanel(pane: TpPane, ed: LightEditor, index?: number): {
         if (e.value) { console.warn(`[lights] ${MODE_A_WARNING}`); ed.message = MODE_A_WARNING; }
         ed.updateSelected({ visibleToCamera: e.value }, 'visible to camera');
       }));
-      pf.addBinding(p, 'warning', { readonly: true, multiline: true, rows: 3, label: '⚠' });
+      pf.addBinding(p, 'warning', { readonly: true, multiline: true, rows: 3, label: 'note' });
     }
     if (l.simplified) pf.addBinding(p, 'simplified', { readonly: true, label: 'simplified (file)' });
   };
@@ -125,7 +131,7 @@ export function addLightsPanel(pane: TpPane, ed: LightEditor, index?: number): {
     buildProps();
     refreshQuiet(f);
   };
-  const emF = f.addFolder({ title: 'Emissive meshes (static)', expanded: false });
+  const emF = f.addFolder({ title: 'Emissive meshes (static, read-only)', expanded: false });
   emF.addBinding(ui, 'emissive', { readonly: true, multiline: true, rows: 4, label: 'meshes' });
 
   let pendingSelect = true;
