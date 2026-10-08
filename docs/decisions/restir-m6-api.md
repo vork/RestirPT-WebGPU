@@ -468,3 +468,10 @@ pairing generator (MD3). §27: duplication-map realisation (MD10).
     rtOk > 0 at any size), so a crossing class that silently stopped occurring now fails instead of passing.
   - **Effect on earlier results.** None. M5 (main) never had the bins; the M6 core gate's failure was this assertion
     alone (the M5 bins in that log pass the M5 rule). No production code changed.
+  - **Verification (M6-13).** The three rare cases at the gate setting pass, counts bit-identical to the failing gate
+    log (no production change): translate 5.58·10⁸ round trips, minimum c-tri/k>2 1 377 989; add / remove + intensity
+    5.45·10⁸, minimum a-delta/k>2 1 427 754; moving lights + env 6.58·10⁸, minimum c-tri/k>2 1 656 006; LOGIC 0, FP 0,
+    crossing bins 0 trials. Mode B camera translate pilot (2 000 pairs, 256²): ∅-ana k2 / k>2 rtOk 179 068 / 382 796,
+    d-ana 317 694 / 318 721, c-ana 114 024 / 102 571 (≈ 51 per pair for the rarest, so ≈ 1.2·10⁶ at the gate's 24 000
+    pairs). restir-temporal 53/53 (the default-size Mode-B cases have every crossing bin rtOk ≥ 149), restir-tframe
+    20/20, typecheck, cpu 492.
