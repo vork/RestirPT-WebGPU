@@ -21,6 +21,8 @@ import type { Rec, UsdRaw } from './usd-native.ts';
 export interface UsdConvertOptions {
   /** DistantLight ×4 (Blender-author quirk): 'auto' = when the root-layer doc starts with "Blender v". */
   distantQuirk?: 'auto' | 'always' | 'never';
+  /** M7 Blender-compatible mode (E2E-USD): Blender 5.2 importer light conventions (usd-lights.ts). */
+  blenderCompat?: boolean;
   /** quantizeScene mode (default 'quantized'; 'lossless' for the loader-fidelity / E2E-USD gates). Runs after the
    *  metersPerUnit conversion, so the lattice is chosen in metres (data-formats.md E-15). */
   quantize?: 'quantized' | 'lossless';
@@ -254,7 +256,7 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}, images: Re
     if (!l) continue;
     const input = lightInput(l, scan);
     if (!input.world) { warn(`light ${l.primPath}: no transform; skipped`); continue; }
-    const r = convertUsdLight(input.light, mul4(W, input.world), lights.length, { blenderAuthored });
+    const r = convertUsdLight(input.light, mul4(W, input.world), lights.length, { blenderAuthored, blenderCompat: !!opts.blenderCompat });
     for (const w of r.warnings) warn(w);
     if (r.light) {
       if (r.light.simplified) warn(`light ${l.primPath}: simplified (${r.light.simplified})`);

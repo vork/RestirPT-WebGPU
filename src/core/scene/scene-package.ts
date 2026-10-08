@@ -112,6 +112,8 @@ export interface LightJson {
   id: number; name: string; type: LightData['type']; color: V3; power: number; exposure: number; matrix: number[];
   spotSize?: number; spotBlend?: number; sizeX?: number; sizeY?: number; spread?: number; visibleToCamera: boolean;
   simplified?: string;
+  /** M7 E2E (scene-bridge.md "stock"): 'asset' | 'added'. */
+  origin?: 'asset' | 'added';
 }
 
 export interface EnvJson {
@@ -279,7 +281,7 @@ export async function exportScenePackage(scene: SceneData, opts: ExportScenePack
     const lj: LightJson = {
       id: l.id, name: l.name, type: l.type, color: [...l.color], power: l.power, exposure: l.exposure, matrix: arr(l.matrix),
       spotSize: l.spotSize, spotBlend: l.spotBlend, sizeX: l.sizeX, sizeY: l.type === 'disk' ? undefined : l.sizeY,
-      spread: area ? (l.spread ?? Math.PI) : undefined, visibleToCamera: l.visibleToCamera, simplified: l.simplified,
+      spread: area ? (l.spread ?? Math.PI) : undefined, visibleToCamera: l.visibleToCamera, simplified: l.simplified, origin: l.origin,
     };
     return stripUndefined(lj);
   });
@@ -458,7 +460,7 @@ export async function readScenePackage(input: PackageFiles): Promise<LoadedScene
   const lights: LightData[] = (json.lights ?? []).map((l) => stripUndefined({
     id: l.id, name: l.name ?? `light${l.id}`, type: l.type, color: [...(l.color ?? [1, 1, 1])] as V3, power: l.power, exposure: l.exposure ?? 0,
     matrix: new Float32Array(l.matrix), spotSize: l.spotSize, spotBlend: l.spotBlend, sizeX: l.sizeX, sizeY: l.sizeY,
-    spread: l.spread, visibleToCamera: l.visibleToCamera ?? false, simplified: l.simplified,
+    spread: l.spread, visibleToCamera: l.visibleToCamera ?? false, simplified: l.simplified, origin: l.origin,
   }));
   const camera = { name: 'package', matrix: new Float64Array(json.camera.matrix), yfov: json.camera.yfov, znear: json.camera.znear ?? 1e-4 };
   let env: EnvironmentData | undefined;
