@@ -693,9 +693,14 @@ make-m7-e2e (21) determinism, `normal-map` (U-NM-1 quantised / lossless: 43 107 
 query / NEE f / sampling, glossy unchanged; U-NM-3: 0.44117 vs 0.44151 at s = 1 (z −2.4), 0.48486 vs 0.48492 at s = 0.5
 (z −0.5)), T3-M7 t3_smooth_256 and t3_nm_256 (LOGIC 0, every bin and the nmRc / smoothRc counters ≥ 10⁶; one 24-min
 hold each), the M6 regressions (restir-m6, the three Mode-B T3-2 cases, all six T3-M6 variants) and restir-initial all
-passed. The full core part was relaunched (`--part core`, log `m7-core.log`); the packages it checks are the final
-ones (verified equal to the generators after M7-12). The M7 app smoke passed 21/21 in development
-(`m7-app-smoke-dev`).
+passed. The full core part was relaunched (`--part core`, log `m7-core.log`) and stopped on 2026-10-08 at 13:35 by
+the user's decision, after 15/15 steps had passed again (typecheck through the three Mode-B T3-2 cases; it stopped in
+the first T3-M6 variant). Not run on the M7 code: the T3-M6 variants in that relaunch (they passed in the first run
+above), the M4/M5 regression suites (restir-shift T3 variants, restir-spatial/-debug/-tframe/-temporal/-refresh, the
+M3 suites, the T3-2 rare bins), the perf probe and the in-gate app smoke (21/21 in development). Rationale for
+accepting: U-M7-BITS and U-M7-ARENA show that scenes without normal maps compose the b5b0f5d WGSL and pack the b5b0f5d
+bytes, which is what those regression suites exercise. Run `--part core` before relying on M7 for anything those
+suites cover.
 
 **Performance (540p interactive Mode B, all M6 features; report only).** m7_nm_smooth: 27.2 ms with normal maps vs
 26.5 ms with its normal textures removed (+0.7 ms; rs_initial +0.4 ms); Cornell (i) 16.6 ms (no NORMAL_MAP: the M6
