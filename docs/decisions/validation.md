@@ -730,7 +730,7 @@ the CWBVH option, env-gpu the format rule) although the validation outputs are b
 keyed by an older hash (M4–M7) are re-rendered by `--all` (no hash aliasing was introduced).
 
 **M8 gate result (2026-10-08, code 2f393dd = 76ee705 + the ABBA perf ordering; PT code 7ca99daa6ec4, ReSTIR fced7bf07351).**
-Runs under `validation/out/`: core `m8-gate-core-20261008-133740`, stageB `m8-gate-stageB-…` (15:43–15:49), perf
+Runs under `validation/out/`: core `m8-gate-core-20261008-133740`, stageB `m8-gate-stageB-20261008-134328`, perf
 `m8-gate-perf-20261008-135504` (ABBA; the first perf run `m8-gate-perf-20261008-134944` measured M8 before pre-M8 and is
 superseded).
 
