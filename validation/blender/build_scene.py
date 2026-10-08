@@ -675,7 +675,16 @@ def exr_file_sha256(path: Path) -> tuple[str, tuple[int, int]]:
     return hashlib.sha256(np.ascontiguousarray(rgba, dtype="<f4").tobytes()).hexdigest(), (spec.width, spec.height)
 
 
+REPO_ROOT = HERE.parent.parent
+
+
+def file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def build_env(scene: bpy.types.Scene, env: dict[str, Any], pkg: Path) -> tuple[bpy.types.World, dict[str, Any]]:
+    if env.get("original"):
+        return build_env_original(scene, env, pkg)
     path = pkg / env["file"]
     wcfg = {"hdri": str(path), "rotation_z": float(env.get("rotationZ", 0.0)), "strength": float(env.get("strength", 1.0)),
             "tint": tuple(_v3(env.get("tint", [1, 1, 1]), "env.tint"))}
@@ -698,6 +707,38 @@ def build_env(scene: bpy.types.Scene, env: dict[str, Any], pkg: Path) -> tuple[b
     if env.get("sha256") and got != env["sha256"]:
         raise BridgeError(f"ENV-U9: Blender image.pixels hash {got} != package env.sha256 {env['sha256']}")
     info["hash_ok"] = True
+    return w, info
+
+
+def build_env_original(scene: bpy.types.Scene, env: dict[str, Any], pkg: Path) -> tuple[bpy.types.World, dict[str, Any]]:
+    """M7 E2E-HDR (docs/decisions/m7-api.md §3.3): Blender loads the ORIGINAL Poly Haven .hdr / .exr named by
+    env.original (repo-relative path + SHA-256 of the file bytes) with its own decoder, instead of the package's env.exr
+    (our decoded texels). The file must be the pinned one. Recorded (not asserted): whether Blender's decoded pixels equal
+    our decoded texels bit for bit (image hash vs the package's ENV-U9 env.sha256) and OIIO's decode of the file."""
+    o = env["original"]
+    path = (REPO_ROOT / o["file"]).resolve()
+    if not path.is_file():
+        raise BridgeError(f"env.original {o['file']} missing (validation/assets/fetch_hdris.ts)")
+    fsha = file_sha256(path)
+    if fsha != o["sha256"]:
+        raise BridgeError(f"env.original {o['file']}: file sha256 {fsha} != package {o['sha256']}")
+    wcfg = {"hdri": str(path), "rotation_z": float(env.get("rotationZ", 0.0)), "strength": float(env.get("strength", 1.0)),
+            "tint": tuple(_v3(env.get("tint", [1, 1, 1]), "env.tint"))}
+    w = cs.build_world(scene, wcfg)
+    tex = next(n for n in w.node_tree.nodes if n.bl_idname == "ShaderNodeTexEnvironment")
+    img = tex.image
+    img.colorspace_settings.name = cs.WORKING_SPACE
+    img.alpha_mode = "NONE"
+    _assert_file_image(img, "env")
+    w.cycles.sampling_method = env.get("sampling", "AUTOMATIC")
+    w.cycles_visibility.camera = bool(env.get("visibleToCamera", True))
+    got = image_pixels_sha256(img)
+    oiio_hash, (fw, fh) = exr_file_sha256(path)
+    info = {"file": o["file"], "original": True, "format": o.get("format"), "file_sha256": fsha, "size": list(img.size),
+            "image_sha256": got, "oiio_sha256": oiio_hash, "package_env_sha256": env.get("sha256"), "colorspace": img.colorspace_settings.name,
+            "blender_equals_ours": got == env.get("sha256"), "oiio_equals_ours": oiio_hash == env.get("sha256"), "blender_equals_oiio": got == oiio_hash}
+    if tuple(img.size) != (int(env.get("width", fw)), int(env.get("height", fh))):
+        raise BridgeError(f"env.original: Blender image size {tuple(img.size)} != package env {env.get('width')}x{env.get('height')}")
     return w, info
 
 

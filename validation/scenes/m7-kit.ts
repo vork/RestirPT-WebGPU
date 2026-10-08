@@ -50,14 +50,17 @@ export function smoothSphere(mb: MeshBuilder, c: V3, r: number, nLat: number, nL
     const th = top ? th0 : th1;
     const y = c[1] + r * Math.cos(th);
     const n: V3 = [0, top ? 1 : -1, 0];
-    const ctr = pushV(mb, [c[0], y, c[2]], n, [0.5, top ? 0 : sv]);
+    // planar UV projection (x, z) of the cap: non-degenerate, so MikkTSpace's bitangent sign is well defined
+    const capUv = (p: readonly number[]): [number, number] => [0.5 + (p[0] - c[0]) / (2 * r), 0.5 + (p[2] - c[2]) / (2 * r)];
+    const ctr = pushV(mb, [c[0], y, c[2]], n, capUv(c));
     const ring: number[] = [];
-    for (let j = 0; j <= nLon; j++) {
-      const p = mb.pos.slice(3 * at(i, j), 3 * at(i, j) + 3);
-      ring.push(pushV(mb, p, n, [su * j / nLon, top ? 0 : sv]));
-    }
     for (let j = 0; j < nLon; j++) {
-      if (top) pushT(mb, ctr, ring[j + 1], ring[j], capMat); else pushT(mb, ctr, ring[j], ring[j + 1], capMat);
+      const p = mb.pos.slice(3 * at(i, j), 3 * at(i, j) + 3);
+      ring.push(pushV(mb, p, n, capUv(p)));
+    }
+    ring.push(ring[0]);
+    for (let j = 0; j < nLon; j++) {
+      if (top) pushT(mb, ctr, ring[j], ring[j + 1], capMat); else pushT(mb, ctr, ring[j + 1], ring[j], capMat);   // outward (CCW seen from outside)
     }
   }
 }
