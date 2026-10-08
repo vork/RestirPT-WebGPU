@@ -177,9 +177,12 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}, images: Re
     const triStart = tOut;
     if (!P || P.length < 9) { drawRecords.push({ path: d.path, mesh: m.primPath, triStart, triCount: 0, world: d.world, material: d.materialOverride ?? null }); continue; }
     const nv = P.length / 3;
-    const N = m.normals && (m.normals as Float32Array).length === nv * 3 ? (m.normals as Float32Array) : null;
+    const idxLocal = (m.indices as Uint32Array | null) ?? Uint32Array.from({ length: nv - (nv % 3) }, (_, i) => i);
+    // no authored normals: Blender's automatic smooth normals on the MESH (prototype) in its own space, then transformed
+    // like authored ones (a non-uniformly scaled instance must not re-weight them; m7-api.md M7-10)
+    const N = m.normals && (m.normals as Float32Array).length === nv * 3 ? (m.normals as Float32Array) : autoNormals(P, idxLocal);
     const T = m.uv0 && (m.uv0 as Float32Array).length === nv * 2 ? (m.uv0 as Float32Array) : null;
-    if (!N) noNormals++;
+    if (!(m.normals && (m.normals as Float32Array).length === nv * 3)) noNormals++;
     if (!T) noUv++;
     const M = mul4(W, d.world);
     const a00 = M[0], a10 = M[1], a20 = M[2], a01 = M[4], a11 = M[5], a21 = M[6], a02 = M[8], a12 = M[9], a22 = M[10];
@@ -203,7 +206,7 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}, images: Re
       }
       if (T) { uv0[(vBase + v) * 2] = T[2 * v]; uv0[(vBase + v) * 2 + 1] = 1 - T[2 * v + 1]; }
     }
-    const idx = (m.indices as Uint32Array | null) ?? Uint32Array.from({ length: nv - (nv % 3) }, (_, i) => i);
+    const idx = idxLocal;
     const nt = Math.floor(idx.length / 3);
     // per-triangle material: GeomSubset ranges (start/count in index units), base material elsewhere
     // LightUSD rc4 reports an unresolved binding as the pseudo material "__default" (instance prototypes): the scan's binding wins
@@ -236,14 +239,13 @@ export function usdToScene(raw: UsdRaw, opts: UsdConvertOptions = {}, images: Re
         if (p < bmin[k]) bmin[k] = p;
         if (p > bmax[k]) bmax[k] = p;
       }
-      // zero/missing normals → face normal (flat)
       tOut++;
     }
     vBase += nv;
     drawRecords.push({ path: d.path, mesh: m.primPath, triStart, triCount: tOut - triStart, world: d.world, material: baseMat });
   }
   repairNormals(positions, normals, indices.subarray(0, tOut * 3));
-  if (noNormals) warn(`${noNormals} USD mesh(es) without normals: face normals used`);
+  if (noNormals) warn(`${noNormals} USD mesh(es) without normals: smooth corner-angle-weighted normals (Blender's automatic normals)`);
   if (noUv) warn(`${noUv} USD mesh(es) without st/uv: UVs are 0`);
   if (degenerate) warn(`dropped ${degenerate} zero-area triangle(s); primIds are dense over the kept triangles`);
   if (nonFinite) warn(`dropped ${nonFinite} triangle(s) with non-finite positions`);
@@ -447,20 +449,40 @@ function triQuality(p: Float32Array, i0: number, i1: number, i2: number): 'ok' |
   return a2 > 0 ? 'ok' : 'degenerate';
 }
 
-/** Vertices whose normal is still zero (missing/invalid) get the normalized sum of adjacent face normals. */
+/** Blender's automatic smooth vertex normals of a mesh without authored normals (local space). */
+function autoNormals(P: Float32Array, idx: Uint32Array): Float32Array {
+  const n = new Float32Array(P.length);
+  repairNormals(P, n, idx);
+  return n;
+}
+
+/** Vertices whose normal is still zero (missing / invalid) get Blender's automatic smooth normal: the corner-angle-weighted
+ *  sum of the adjacent face normals, normalised (Blender 5.2 wm.usd_import leaves faces of a mesh without authored normals
+ *  smooth with these normals; m7-api.md M7-10). Triangulated planar polygons split a polygon corner's angle between their
+ *  triangles, so the sum equals Blender's per-polygon weighting. */
 function repairNormals(pos: Float32Array, nrm: Float32Array, idx: Uint32Array): void {
   const nv = pos.length / 3;
   let bad = false;
   for (let v = 0; v < nv && !bad; v++) bad = nrm[3 * v] === 0 && nrm[3 * v + 1] === 0 && nrm[3 * v + 2] === 0;
   if (!bad) return;
   const acc = new Float64Array(nv * 3);
+  const P = (i: number) => [pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]];
+  const angle = (o: number[], a: number[], b: number[]) => {
+    const u = [a[0] - o[0], a[1] - o[1], a[2] - o[2]], w = [b[0] - o[0], b[1] - o[1], b[2] - o[2]];
+    const lu = Math.hypot(u[0], u[1], u[2]), lw = Math.hypot(w[0], w[1], w[2]);
+    if (!(lu > 0 && lw > 0)) return 0;
+    return Math.acos(Math.min(1, Math.max(-1, (u[0] * w[0] + u[1] * w[1] + u[2] * w[2]) / (lu * lw))));
+  };
   for (let t = 0; t < idx.length; t += 3) {
     const a = idx[t], b = idx[t + 1], c = idx[t + 2];
-    const ex = pos[3 * b] - pos[3 * a], ey = pos[3 * b + 1] - pos[3 * a + 1], ez = pos[3 * b + 2] - pos[3 * a + 2];
-    const fx = pos[3 * c] - pos[3 * a], fy = pos[3 * c + 1] - pos[3 * a + 1], fz = pos[3 * c + 2] - pos[3 * a + 2];
+    const pa = P(a), pb = P(b), pc = P(c);
+    const ex = pb[0] - pa[0], ey = pb[1] - pa[1], ez = pb[2] - pa[2];
+    const fx = pc[0] - pa[0], fy = pc[1] - pa[1], fz = pc[2] - pa[2];
     const nx = ey * fz - ez * fy, ny = ez * fx - ex * fz, nz = ex * fy - ey * fx;
     const l = Math.hypot(nx, ny, nz) || 1;
-    for (const v of [a, b, c]) { acc[3 * v] += nx / l; acc[3 * v + 1] += ny / l; acc[3 * v + 2] += nz / l; }
+    for (const [v, wgt] of [[a, angle(pa, pb, pc)], [b, angle(pb, pc, pa)], [c, angle(pc, pa, pb)]] as const) {
+      acc[3 * v] += wgt * nx / l; acc[3 * v + 1] += wgt * ny / l; acc[3 * v + 2] += wgt * nz / l;
+    }
   }
   for (let v = 0; v < nv; v++) {
     if (nrm[3 * v] !== 0 || nrm[3 * v + 1] !== 0 || nrm[3 * v + 2] !== 0) continue;
