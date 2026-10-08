@@ -1,5 +1,6 @@
 // Present: fullscreen triangle that upscales the internal-resolution image to the canvas (plan §1.8, §1.10).
-// Beauty: linear 'color' -> resolve_display (exposure + view transform) per source texel, then nearest/bilinear.
+// Beauty: linear 'color' -> resolve_display (exposure + view transform) per source texel, then nearest / bilinear /
+// bicubic (M8: Catmull-Rom with an anti-ringing clamp, the app default).
 // Debug: debugOut already holds display-encoded false colour. Output target: bgra8unorm (no hardware sRGB).
 #include "post/resolve.wgsl"
 
@@ -19,6 +20,7 @@ const BLIT_DEBUG: u32 = 2u;
 const BLIT_SPLIT: u32 = 4u;
 const BLIT_NONFINITE: u32 = 8u;
 const BLIT_PROBE: u32 = 16u;
+const BLIT_BICUBIC: u32 = 32u;
 
 @group(0) @binding(0) var colorTex: texture_2d<f32>;
 @group(0) @binding(1) var debugTex: texture_2d<f32>;
@@ -44,7 +46,36 @@ fn fetch_src(p: vec2i, dbgView: bool) -> vec3f {
   return beauty_texel(q);
 }
 
+/// M8 (m8-perf.md §10): Catmull-Rom (4 × 4 display-space texels) clamped to the range of the 2 × 2 nearest texels
+/// (FSR-style anti-ringing: no halos at HDR edges or fireflies), sharper than bilinear on upscaled internal resolution.
+fn catmull_rom_w(t: f32) -> vec4f {
+  let t2 = t * t;
+  let t3 = t2 * t;
+  return vec4f(-0.5 * t3 + t2 - 0.5 * t, 1.5 * t3 - 2.5 * t2 + 1.0, -1.5 * t3 + 2.0 * t2 + 0.5 * t, 0.5 * t3 - 0.5 * t2);
+}
+fn sample_bicubic(s: vec2f, dbgView: bool) -> vec3f {
+  let t = s - 0.5;
+  let i0 = vec2i(floor(t)) - vec2i(1);
+  let f = t - floor(t);
+  let wx = catmull_rom_w(f.x);
+  let wy = catmull_rom_w(f.y);
+  var acc = vec3f(0.0);
+  var lo = vec3f(1e30);
+  var hi = vec3f(-1e30);
+  for (var j = 0; j < 4; j++) {
+    var row = vec3f(0.0);
+    for (var i = 0; i < 4; i++) {
+      let c = fetch_src(i0 + vec2i(i, j), dbgView);
+      row += wx[i] * c;
+      if ((i == 1 || i == 2) && (j == 1 || j == 2)) { lo = min(lo, c); hi = max(hi, c); }
+    }
+    acc += wy[j] * row;
+  }
+  return clamp(acc, lo, hi);
+}
+
 fn sample_src(s: vec2f, dbgView: bool) -> vec3f {
+  if ((P.flags & BLIT_BICUBIC) != 0u) { return sample_bicubic(s, dbgView); }
   if ((P.flags & BLIT_BILINEAR) == 0u) { return fetch_src(vec2i(floor(s)), dbgView); }
   let t = s - 0.5;
   let i0 = vec2i(floor(t));

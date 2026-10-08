@@ -8,7 +8,7 @@ import type { Overlay } from './overlay.ts';
 
 export type Tonemap = 'standard' | 'agx' | 'aces' | 'raw';
 export const TONEMAP_CODE: Record<Tonemap, number> = { standard: 0, agx: 1, aces: 2, raw: 3 };
-export type UpscaleFilter = 'nearest' | 'bilinear';
+export type UpscaleFilter = 'nearest' | 'bilinear' | 'bicubic';
 
 export interface PresentSettings {
   exposureEV: number;
@@ -25,16 +25,18 @@ export interface PresentDebug {
   probePixel: [number, number];
 }
 
-const BLIT = { BILINEAR: 1, DEBUG: 2, SPLIT: 4, NONFINITE: 8, PROBE: 16 } as const;
+const BLIT = { BILINEAR: 1, DEBUG: 2, SPLIT: 4, NONFINITE: 8, PROBE: 16, BICUBIC: 32 } as const;
 const PARAMS_SIZE = 48;
 
-/** Internal resolution for a preset at a given canvas aspect: height H, width = round(H·aspect/8)·8. */
+/** Internal resolution for a preset at a given canvas aspect: height H, width = round(H·aspect/8)·8. M8 dynamic
+ *  resolution (src/app/dynres.ts): `scale` < 1 scales H to a multiple of 8 (native: both canvas axes). */
 export type ResolutionPreset = '540p' | '720p' | '1080p' | 'native';
-export function internalResolution(preset: ResolutionPreset, canvasW: number, canvasH: number): [number, number] {
+export function internalResolution(preset: ResolutionPreset, canvasW: number, canvasH: number, scale = 1): [number, number] {
   const cw = Math.max(1, Math.round(canvasW));
   const ch = Math.max(1, Math.round(canvasH));
-  if (preset === 'native') return [cw, ch];
-  const h = preset === '540p' ? 540 : preset === '720p' ? 720 : 1080;
+  const sc = (x: number) => (scale === 1 ? x : Math.max(8, Math.round((x * scale) / 8) * 8));
+  if (preset === 'native') return scale === 1 ? [cw, ch] : [sc(cw), sc(ch)];
+  const h = sc(preset === '540p' ? 540 : preset === '720p' ? 720 : 1080);
   const w = Math.max(8, Math.round((h * (cw / ch)) / 8) * 8);
   return [w, h];
 }
@@ -115,6 +117,7 @@ export class Presenter {
     u32[5] = TONEMAP_CODE[s.tonemap];
     let flags = 0;
     if (s.filter === 'bilinear') flags |= BLIT.BILINEAR;
+    if (s.filter === 'bicubic') flags |= BLIT.BICUBIC;
     if (dbg.active) flags |= BLIT.DEBUG;
     if (dbg.active && dbg.split) flags |= BLIT.SPLIT;
     if (s.highlightNonFinite) flags |= BLIT.NONFINITE;

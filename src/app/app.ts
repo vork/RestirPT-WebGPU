@@ -14,6 +14,7 @@ import {
 } from '../core/render/frame-uniforms.ts';
 import { Overlay } from '../core/render/overlay.ts';
 import { Presenter, internalResolution, type PresentSettings, type ResolutionPreset } from '../core/render/present.ts';
+import { DynamicResolution, gpuBusyMs } from './dynres.ts';
 import { ProbeRing, pickPixel, type ProbeFrame } from '../core/render/probe.ts';
 import { GpuTimestamps, RollingAverage } from '../core/render/timestamps.ts';
 import type { EnvironmentData, SceneData } from '../core/scene/types.ts';
@@ -113,6 +114,9 @@ export interface RenderSettings {
   /** M5: suspend temporal reuse (every frame resets the ReSTIR temporal history; restir-temporal-api.md Changelog D-2). */
   freezeHistory: boolean;
   overlay: boolean;
+  /** M8 (docs/decisions/m8-perf.md §9): scale the internal resolution to hold the GPU frame time near `targetMs`. */
+  dynamicResolution: boolean;
+  targetMs: number;
 }
 
 export interface AppOptions {
@@ -155,8 +159,14 @@ export class App {
 
   readonly render: RenderSettings = {
     resolution: '540p', colorFormat: 'rgba32float', jitter: 'r2', paused: false, freezeSeed: false, freezeFrame: false, freezeHistory: false, overlay: true,
+    dynamicResolution: false, targetMs: 33,
   };
-  readonly present: PresentSettings = { exposureEV: 0, tonemap: 'standard', filter: 'bilinear', highlightNonFinite: true };
+  // M8: Catmull-Rom upscale (anti-ringing clamp) by default (m8-perf.md §10)
+  readonly present: PresentSettings = { exposureEV: 0, tonemap: 'standard', filter: 'bicubic', highlightNonFinite: true };
+  /** M8 dynamic resolution (m8-perf.md §9): the controller and the last frame's GPU busy time (ms, from onSubmittedWorkDone). */
+  readonly dynres = new DynamicResolution();
+  gpuFrameMs = 0;
+  private lastGpuDone: number | undefined;
   readonly debugSettings: DebugSettings = defaultDebugSettings();
   readonly envParams: EnvParams = { url: '', strength: 1, rotationDeg: 0, tint: { r: 1, g: 1, b: 1 }, visibleToCamera: true, nee: true, importanceRes: 2048, info: 'no environment' };
   hudVisible = true;
@@ -265,7 +275,14 @@ export class App {
   step(): void { this.stepPending = true; }
   setPaused(p: boolean): void { this.render.paused = p; this.camera.frozen = p; this.panel?.refresh(); }
 
-  setResolution(p: ResolutionPreset): void { this.render.resolution = p; this.resizeTargets(); }
+  setResolution(p: ResolutionPreset): void { this.render.resolution = p; this.dynres.reset(); this.resizeTargets(); }
+  /** M8: dynamic resolution on / off (off: back to the preset at scale 1). */
+  setDynamicResolution(on: boolean, targetMs = this.render.targetMs): void {
+    this.render.dynamicResolution = on;
+    this.render.targetMs = targetMs;
+    this.dynres.o.targetMs = targetMs;
+    if (!on && this.dynres.level !== 0) { this.dynres.reset(); this.resizeTargets(); }
+  }
   setColorFormat(f: ColorFormat): void {
     if (f === this.render.colorFormat) return;
     this.render.colorFormat = f;
@@ -424,7 +441,7 @@ export class App {
 
   private resizeTargets(force = false): void {
     const [cw, ch] = this.canvasSize[0] > 0 ? this.canvasSize : [960, 540];
-    const [w, h] = internalResolution(this.render.resolution, cw, ch);
+    const [w, h] = internalResolution(this.render.resolution, cw, ch, this.render.dynamicResolution ? this.dynres.scale : 1);
     const t = this.targets;
     if (!force && t && t.width === w && t.height === h && t.colorFormat === this.render.colorFormat) return;
     t?.color.destroy();
@@ -575,6 +592,15 @@ export class App {
     this.probe.encodeCopy(enc, this.debug.buffer, this.frameCounter);
     this.timestamps.resolve(enc);
     this.device.queue.submit([enc.finish()]);
+    // M8 (m8-perf.md §9): the frame's GPU busy time from its completion; drives the dynamic-resolution controller
+    const tSubmit = performance.now();
+    const dynTarget = this.targets;
+    void this.device.queue.onSubmittedWorkDone().then(() => {
+      const done = performance.now();
+      this.gpuFrameMs = gpuBusyMs(tSubmit, done, this.lastGpuDone);
+      this.lastGpuDone = done;
+      if (this.render.dynamicResolution && advance && dynTarget === this.targets && this.dynres.update(this.gpuFrameMs)) this.resizeTargets();
+    });
     this.timestamps.afterSubmit();
     this.probe.afterSubmit();
     this.hooks.afterSubmit?.(this);
@@ -607,7 +633,10 @@ export class App {
         recording: !!cam.recording, playing: !!cam.playing,
       },
       scene: this.scene?.name,
-      extra: this.hooks.hudLines?.(this),
+      extra: [
+        `GPU ${this.gpuFrameMs.toFixed(1)} ms (completion)${this.render.dynamicResolution ? `  dyn-res ${(this.dynres.scale * 100).toFixed(1)} % → ${this.render.targetMs} ms` : ''}`,
+        ...(this.hooks.hudLines?.(this) ?? []),
+      ],
     });
     const aovIsCode = this.debug.activeView()?.kind === 'code';
     this.probePanel.update(this.debugSettings.probePixel, this.probe.latest, aovIsCode);
