@@ -19,7 +19,8 @@
 //      initial|initial-rr|offline|criteria2022, --members E (ensemble atlas, writes ensemble.npz), --plant no-j|marginal-j,
 //      --w-scale s (W × s plant), --max-bounces N; --env-nee on|off as for the PT; M6: --preset offline-m6, --light-mode
 //      A|B|A' (default: the package's), --restir-settings JSON (Partial<RestirSettings>: pairing, risNee, rr, dualMv,
-//      dupmap, plant {u8T2, u8RisMixed, u8TilePmf, u8CrossOcc}, …; recorded in meta.json))
+//      dupmap, plant {u8T2, u8RisMixed, u8TilePmf, u8CrossOcc}, …; recorded in meta.json); M8: --bvh cwbvh (the CWBVH
+//      instead of BVH2, docs/decisions/m8-perf.md §3; recorded as meta.config.bvh))
 //   --batch-offset N (pt / restir sequential): render batches N … N+batches−1 of a longer run (the same samples; the
 //      gate splits long references into GPU-lock chunks and merges the batch files)
 //   npx tsx validation/harness/run-batches.ts --package validation/scenes/ixs_d_camera_256 --kernel restir --preset full --chains 256
@@ -107,6 +108,7 @@ const OPTIONS = {
   mode: { type: 'string' },
   'max-spp-per-dispatch': { type: 'string' },
   'restir-settings': { type: 'string' },
+  bvh: { type: 'string' },
 } as const;
 const parse = (argv?: string[]) => parseArgs({ options: { ...OPTIONS, jobs: { type: 'string' } }, ...(argv ? { args: argv } : {}) }).values;
 let args = parse();
@@ -270,7 +272,7 @@ async function main(shared?: SharedPage): Promise<number> {
             batches: Number(args.batches), batchOffset: args['batch-offset'] ? Number(args['batch-offset']) : undefined, seed, chromeVersion, members: args.members ? Number(args.members) : undefined,
             plant: args.plant as RestirPlantName | undefined, wScale: args['w-scale'] !== undefined ? Number(args['w-scale']) : undefined,
             maxBounces: args['max-bounces'] !== undefined ? Number(args['max-bounces']) : undefined, env: env && env.nee !== undefined ? { nee: env.nee } : undefined,
-            settings: rsSettings, lightMode: args['light-mode'],
+            settings: rsSettings, lightMode: args['light-mode'], ...(args.bvh === 'cwbvh' ? { bvhKind: 'cwbvh' as const } : {}),
           });
         } else rep = await page.evaluate((o) => window.__harness!.renderBatches(o), {
           run: runId, package: pkgUrl, sceneUrl: args.scene, kernel: args.kernel as ValidationKernel, spp: Number(args.spp), batches: Number(args.batches),
