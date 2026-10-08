@@ -658,6 +658,7 @@ export class Renderer {
     // A light-mode / feature toggle switches the kernel's pipeline variant at once and compiles it asynchronously
     // (setOptions awaits it, but frames keep coming): until it is compiled the PT beauty is shown (before advancing the
     // temporal state, so the history is not consumed by a frame that never ran).
+    k.syncLightModeVariant();   // M8 P-4: the Mode-A text while no rect / disk light exists (a frame boundary)
     if (!rs.pass.ready) { void this.prepareRestirVariant(rs); return false; }
     let arena: GPUBuffer;
     try { arena = k.resources.arena; } catch { return false; }

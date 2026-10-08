@@ -71,6 +71,10 @@ export interface RestirView {
 export interface RestirKernelOptions {
   settings: Partial<RestirSettings>;
   lightMode?: LightMode;
+  /** M8 (m8-perf.md §5, P-4): compile light modes B / A′ as the Mode-A pipeline text while no rect / disk light exists
+   *  (nothing a BSDF ray could cross: the two estimators are bitwise equal, U-M8-MODEB). Off by default (every validation
+   *  caller keeps the requested text); RestirKernel.interactive (the app) turns it on. */
+  modeBNeedsAreaLights?: boolean;
   env?: PtEnvOptions;
   debug?: DebugResources;
   features?: Set<string>;
@@ -145,6 +149,7 @@ export class RestirKernel {
     this.rsTemporal = device.createBuffer({ label: 'rs-temporal', size: RS_TEMPORAL_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
     this.lights = new LightsGpu(device, scene.scene, scene.origin, recentrePositions(scene.scene.geometry.positions, scene.origin), { lightMode: this.lightMode, label: 'rs-lights' });
     applyEnvLighting(this.lights, env, this.envOptions);
+    this.variantLightMode = this.desiredVariantLightMode();
     const c = GPUShaderStage.COMPUTE;
     const empty = device.createBindGroupLayout({ label: 'rs-empty', entries: [] });
     this.layouts = {
@@ -187,7 +192,7 @@ export class RestirKernel {
   /** Interactive ReSTIR (renderer mode 'restir'): progressive mean into the renderer's colour target. */
   static async interactive(device: GPUDevice, scene: SceneGpu, env: EnvGpuResources, colorFormat: GPUTextureFormat,
     o: Omit<RestirKernelOptions, 'settings'> & { settings?: Partial<RestirSettings> } = {}): Promise<RestirFramePass> {
-    const k = await RestirKernel.create(device, scene, env, { ...o, settings: { ...restirSettings('interactive'), ...o.settings } });
+    const k = await RestirKernel.create(device, scene, env, { modeBNeedsAreaLights: true, ...o, settings: { ...restirSettings('interactive'), ...o.settings } });
     await k.pipeline('rs_finalize_frame', {}, colorFormat);
     return new RestirFramePass(k, colorFormat);
   }
@@ -211,7 +216,21 @@ export class RestirKernel {
   }
 
   /** M6 pipeline-variant defines of the current settings / light mode (restir-m6-api.md MD1). */
-  m6Defines(): Record<string, number> { return m6Defines(this.settings, this.lightMode); }
+  m6Defines(): Record<string, number> { return m6Defines(this.settings, this.variantLightMode); }
+  /** The light mode whose pipeline text is compiled (= lightMode unless modeBNeedsAreaLights finds no rect / disk light). */
+  private variantLightMode: LightMode = 'A';
+  private desiredVariantLightMode(): LightMode {
+    return this.o.modeBNeedsAreaLights && this.lightMode !== 'A' && !this.lights.hasAreaLights ? 'A' : this.lightMode;
+  }
+  /** M8 P-4: re-evaluate the compiled light-mode text at a frame boundary (call before checking isPrepared()): a switch
+   *  is a new variant (prepare() compiles it) and resets the temporal history. Returns true when it switched. */
+  syncLightModeVariant(): boolean {
+    const m = this.desiredVariantLightMode();
+    if (m === this.variantLightMode) return false;
+    this.variantLightMode = m;
+    this.frameState.invalidate('light-mode-variant');
+    return true;
+  }
   /** Cache key of the current pipeline variant. */
   variantKey(): string { const d = this.m6Defines(); return `${d.RS_RIS_NEE}${d.RS_MODE_B}${d.RS_DUAL_MV}${d.RS_DUPMAP}${d.RS_PLANT_T2}${d.RS_PLANT_SMOOTH_J}${m7NmPlantDefine(this.settings, 'rs_spatial_shift')}`; }
 
@@ -304,6 +323,7 @@ export class RestirKernel {
     if (m === this.lightMode) return;
     this.lightMode = m;
     this.lights.setLightMode(m);
+    this.variantLightMode = this.desiredVariantLightMode();
     this.g0Key = '';
     this.writeParams();
   }

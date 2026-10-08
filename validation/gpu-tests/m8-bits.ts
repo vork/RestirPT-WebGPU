@@ -17,7 +17,7 @@ import { PtKernel } from '../../src/core/render/pt-kernel.ts';
 import { BatchAccumulator } from '../../src/core/render/batch-accumulator.ts';
 import { JITTER_IID } from '../../src/core/render/frame-uniforms.ts';
 
-export type M8BitsScene = 'all' | 'nm_smooth' | 'glass' | 'alpha';
+export type M8BitsScene = 'all' | 'noarea' | 'nm_smooth' | 'glass' | 'alpha';
 export interface M8BitsCase {
   name: string; scene: M8BitsScene; preset: RestirPresetName; settings: Partial<RestirSettings>; lightMode: LightMode; frames: number;
   /** Per frame from `from` on: move light index 0 by dx (m) and yaw the camera by dyaw (rad). */
@@ -34,7 +34,7 @@ export const M8_BITS_CASES: M8BitsCase[] = [
   { name: 'alpha-full-m6-A', scene: 'alpha', preset: 'full-m6', settings: { maxBounces: 3 }, lightMode: 'A', frames: 3 },
 ];
 
-const PKG: Record<Exclude<M8BitsScene, 'all'>, string> = {
+const PKG: Record<Exclude<M8BitsScene, 'all' | 'noarea'>, string> = {
   nm_smooth: '/validation/out/m7/scenes/m7_nm_smooth_256/',
   glass: '/validation/scenes/g8_cornell_glass_512/',
   alpha: '/validation/scenes/m5s_alpha_foliage/',
@@ -42,6 +42,10 @@ const PKG: Record<Exclude<M8BitsScene, 'all'>, string> = {
 
 export async function m8BitsScene(s: M8BitsScene): Promise<{ scene: SceneData; cam: { camToWorld: number[]; yfov: number } }> {
   if (s === 'all') return { scene: allLightsScene(), cam: boxCamera() };
+  if (s === 'noarea') {   // every endpoint type but the crossable rect / disk lights (point, spot, sun, emissive quad, env)
+    const sc = allLightsScene();
+    return { scene: { ...sc, lights: sc.lights.filter((l) => l.type !== 'rect' && l.type !== 'disk') }, cam: boxCamera() };
+  }
   const p = await fetchScenePackage(PKG[s]);
   return { scene: p.scene, cam: { camToWorld: Array.from(p.camera.matrix), yfov: p.camera.yfov } };
 }

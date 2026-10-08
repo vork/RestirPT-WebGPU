@@ -46,3 +46,49 @@ describe('U-M8-PTBITS: PT batch (validation configuration) ≡ the pre-M8 build'
     }, 300_000);
   }
 });
+
+// m8-perf.md §5 (P-4): without rect / disk lights (nothing a BSDF ray can cross) light mode B and A are the same
+// estimator; the kernel then compiles the Mode-A text (RestirKernelOptions.modeBNeedsAreaLights). Evidence: bitwise
+// equal chains and PT images in both modes on the every-other-endpoint fixture.
+describe('U-M8-MODEB: without rect / disk lights, light mode B ≡ light mode A (bitwise)', () => {
+  for (const preset of ['interactive', 'full-m6'] as const) {
+    it(`ReSTIR ${preset}`, async () => {
+      const base = { name: `noarea-${preset}`, scene: 'noarea' as const, preset, settings: { maxBounces: 3 }, frames: 4, motion: { from: 2, dx: 0.03, dyaw: 0.01 } };
+      const a = await m8BitsCase({ ...base, lightMode: 'A' });
+      const b = await m8BitsCase({ ...base, lightMode: 'B' });
+      console.log(`[U-M8-MODEB] ${preset} A ${JSON.stringify(a)} B ${JSON.stringify(b)}`);
+      expect(b).toEqual(a);
+    }, 300_000);
+  }
+  it('PT batch', async () => {
+    expect(await m8PtBits('noarea', 'B')).toBe(await m8PtBits('noarea', 'A'));
+  }, 300_000);
+});
+
+describe('M8 P-4: the interactive kernel compiles the Mode-A text while no rect / disk light exists', () => {
+  it('variant follows the light list at frame boundaries (current, previous and pending lists), history resets on a switch', async () => {
+    const { RestirKernel } = await import('../../src/core/render/restir/kernel.ts');
+    const { restirSettings } = await import('../../src/core/render/restir/presets.ts');
+    const { gpuScene, allLightsScene } = await import('./restir-fixtures.ts');
+    const full = allLightsScene();
+    const noArea = full.lights.filter((l) => l.type !== 'rect' && l.type !== 'disk');
+    const g = await gpuScene({ ...full, lights: noArea });
+    const k = await RestirKernel.create(g.device, g.gpu, g.env, { settings: restirSettings('interactive', { maxBounces: 2 }), lightMode: 'B', modeBNeedsAreaLights: true, features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
+    expect(k.m6Defines().RS_MODE_B).toBe(0);
+    k.setLights(full.lights);                              // a rect light appears (pending until the next commit)
+    expect(k.syncLightModeVariant()).toBe(true);
+    expect(k.m6Defines().RS_MODE_B).toBe(1);
+    k.lights.commit();                                     // the rect light is now in the current slot
+    expect(k.syncLightModeVariant()).toBe(false);
+    k.setLights(noArea);                                   // removed: the previous slot still holds it → stays B
+    k.lights.commit();
+    expect(k.syncLightModeVariant()).toBe(false);
+    expect(k.m6Defines().RS_MODE_B).toBe(1);
+    k.lights.commit();                                     // unchanged commit: both slots without area lights → A again
+    expect(k.syncLightModeVariant()).toBe(true);
+    expect(k.m6Defines().RS_MODE_B).toBe(0);
+    const off = await RestirKernel.create(g.device, g.gpu, g.env, { settings: restirSettings('interactive', { maxBounces: 2 }), lightMode: 'B', features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
+    expect(off.m6Defines().RS_MODE_B).toBe(1);             // validation callers keep the requested text
+    k.destroy(); off.destroy(); g.destroy();
+  }, 300_000);
+});
