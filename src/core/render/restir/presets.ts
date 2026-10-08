@@ -1,6 +1,6 @@
 // ReSTIR settings and the rung / mode presets (restir-api.md §4.6, §6.3; PLAN §3 modes, §7.1 rungs 3.1/3.1b/3.2).
 // Criteria mode, plants, RR, S, NS and rounds are UNIFORMS (no recompiles, §4.5).
-import { RS_WGSL_CONSTS as K } from './layout.ts';
+import { RS_WGSL_CONSTS as K, RS_M6_CONSTS as K6 } from './layout.ts';
 
 export interface RestirSettings {
   /** Cycles max_bounces N (≤ N+1 scattering vertices, the PT's semantics). */
@@ -18,6 +18,9 @@ export interface RestirSettings {
   plant?: {
     noJ?: boolean; marginalJ?: boolean; wScale?: number;
     u8W1Delta?: boolean; u8NoPk?: boolean; u8T2?: boolean; u8OneSided?: boolean; u8FailedK?: boolean;
+    /** M6 (restir-m6-api.md §5.3): U8-8 RIS UCW in mixed measures, U8-10 tile-conditional pmf in ω1, U8-7 crossed lights
+     *  stop BSDF rays in the path tree (Mode B). U8-4 is u8T2 (J = t_x²/t_y², spatial shifts). */
+    u8RisMixed?: boolean; u8TilePmf?: boolean; u8CrossOcc?: boolean;
   };
   // ---- M5 temporal (restir-temporal-api.md §3.8, TD1, TD14, TD21, TD23, TD24) ----
   /** Temporal reuse on (TD15: temporal before spatial). Off ⇒ every M4 output bitwise unchanged. */
@@ -38,15 +41,30 @@ export interface RestirSettings {
     n6CurCam?: boolean; n7PerLight?: boolean; envNoRotVis?: boolean; envGammaT?: boolean; cpPlus1?: boolean; u8StaleAux?: boolean;
     u8SpotPrevAxis?: boolean;
   };
+  // ---- M6 (restir-m6-api.md §2.5; every feature off by default ⇒ the M5 pipelines, MD1) ----
+  /** Pairing maps: the M4 uniform-disk involutions of radius diskRadius, or the M6 Gaussian maps of std pairSigma (MD3). */
+  pairing: 'disk' | 'gauss';
+  pairSigma: number;
+  /** RIS-NEE light tiles at x₁ with risM candidates (MD4; M(1) = risM, a power of two). Pipeline variant RS_RIS_NEE. */
+  risNee: boolean;
+  risM: number;
+  /** Dual motion vectors for disoccluded pixels (MD11; temporal only, unbiased). Variant RS_DUAL_MV. */
+  dualMv: boolean;
+  /** Duplication-map adaptive temporal cap (MD10; BIASED, temporal only). Variant RS_DUPMAP + pass rs_dupmap. */
+  dupmap: boolean;
 }
 
-export type RestirPresetName = 'initial' | 'initial-rr' | 'offline' | 'interactive' | 'criteria2022' | 'temporal' | 'full';
+export type RestirPresetName = 'initial' | 'initial-rr' | 'offline' | 'interactive' | 'criteria2022' | 'temporal' | 'full' | 'offline-m6' | 'full-m6';
 
 export const DEFAULT_RESTIR_SETTINGS: RestirSettings = {
   maxBounces: 3, rr: false, rrMinBounces: 3, trees: 1, rounds: 0, slots: 3, diskRadius: 30,
   criteria: 'enhanced', tau: 2e-4, alphaMin: 0.2,
   temporal: false, cCap: 20, temporalMis: 'contribution', temporalCheck: 'none', refresh: 'exact', boostSlots: 0,
+  pairing: 'disk', pairSigma: 16, risNee: false, risM: 32, dualMv: false, dupmap: false,
 };
+
+/** The unbiased Enhanced features of M6 (rungs 3.9–3.11 configuration, restir-m6-api.md MD13). */
+const M6_UNBIASED: Partial<RestirSettings> = { pairing: 'gauss', pairSigma: 16, risNee: true, risM: 32 };
 
 const OFFLINE: Partial<RestirSettings> = { trees: 32, rounds: 3, slots: 6, diskRadius: 10, rr: false };
 
@@ -61,12 +79,22 @@ export const RESTIR_PRESETS: Record<RestirPresetName, Partial<RestirSettings>> =
   // undefined inverse shift (π_p = 0) the whole Σw̃ including the history weight, i.e. a ~(1+c_p)× spike that then
   // persists ~c_p frames (diag 2026-10-01: births 3.7× over-represented at edges). c_cap 5: edge RMSE 0.041 → 0.021,
   // spike events −62%, still unbiased (constant cap). Validation presets ('temporal', 'full') keep the spec's 20.
-  interactive: { trees: 1, rounds: 1, slots: 3, diskRadius: 30, rr: true, rrMinBounces: 3, temporal: true, boostSlots: 3, cCap: 5 },
+  // M6 (restir-m6-api.md MD13): + the σ = 16 Gaussian maps, RIS-NEE at x₁, dual MVs and the (biased) duplication map.
+  interactive: {
+    trees: 1, rounds: 1, slots: 3, diskRadius: 30, rr: true, rrMinBounces: 3, temporal: true, boostSlots: 3, cCap: 5,
+    ...M6_UNBIASED, dualMv: true, dupmap: true,
+  },
   criteria2022: { ...OFFLINE, criteria: '2022' },
   // M5 rungs (TD24; math §25: RR off in 3.2–3.6)
   temporal: { trees: 1, rounds: 0, rr: false, temporal: true, boostSlots: 0 },
   full: { trees: 1, rounds: 1, slots: 3, diskRadius: 30, rr: false, temporal: true, boostSlots: 0 },
+  // M6 rungs (restir-m6-api.md MD13, MD14): every unbiased Enhanced feature on (no RR: toggled in rung 3.7).
+  'offline-m6': { ...OFFLINE, ...M6_UNBIASED },
+  'full-m6': { trees: 1, rounds: 1, slots: 3, diskRadius: 30, rr: false, temporal: true, boostSlots: 0, ...M6_UNBIASED },
 };
+
+/** M6 features off (the M5 configuration of a preset): U-M4-BITS / U-M5-BITS pin the interactive cases with it. */
+export const M6_OFF: Partial<RestirSettings> = { pairing: 'disk', risNee: false, dualMv: false, dupmap: false };
 
 /** Default settings ⊕ preset ⊕ overrides (maxBounces etc. come from the scene package). */
 export function restirSettings(preset?: RestirPresetName, overrides: Partial<RestirSettings> = {}): RestirSettings {
@@ -88,6 +116,10 @@ export function validateSettings(s: RestirSettings): void {
   int(s.boostSlots ?? 0, 0, K.RS_MAX_SLOTS, 'boostSlots');
   if (numSlotsOf(s) > K.RS_MAX_SLOTS) throw new Error(`RestirSettings: slots + boostSlots = ${numSlotsOf(s)} > ${K.RS_MAX_SLOTS}`);
   if (!(s.cCap >= 0) || !Number.isFinite(s.cCap)) throw new Error(`RestirSettings.cCap = ${s.cCap}: finite ≥ 0 required`);
+  if (s.pairing !== 'disk' && s.pairing !== 'gauss') throw new Error(`RestirSettings.pairing = ${String(s.pairing)}`);
+  if (!(s.pairSigma >= 0.8 && s.pairSigma <= 40)) throw new Error(`RestirSettings.pairSigma = ${s.pairSigma} not in [0.8, 40]`);
+  int(s.risM, 1, K6.RS_RIS_M_MAX, 'risM');
+  if ((s.risM & (s.risM - 1)) !== 0) throw new Error(`RestirSettings.risM = ${s.risM}: a power of two (MD5: p2/M is exact)`);
 }
 
 /** RestirParams.numSlots: slots + boost slots (boost only with temporal on, TD21). */
@@ -130,8 +162,34 @@ export function restirFlags(s: RestirSettings): number {
   if (s.plant?.u8T2) f |= K.RSF_PLANT_U8_T2;
   if (s.plant?.u8OneSided) f |= K.RSF_PLANT_U8_ONESIDED;
   if (s.plant?.u8FailedK) f |= K.RSF_PLANT_U8_FAILED_K;
+  // M6 (restir-m6-api.md §2.1): the feature bits mirror the defines; plants act only inside their variants
+  if (s.risNee) f |= K6.RSF_RIS_NEE;
+  if (s.dupmap && s.temporal) f |= K6.RSF_DUPMAP;
+  if (s.dualMv && s.temporal) f |= K6.RSF_DUAL_MV;
+  if (s.plant?.u8RisMixed) f |= K6.RSF_PLANT_U8_RIS_MIXED;
+  if (s.plant?.u8TilePmf) f |= K6.RSF_PLANT_U8_TILE_PMF;
+  if (s.plant?.u8CrossOcc) f |= K6.RSF_PLANT_U8_CROSS_OCC;
   return f;
+}
+
+/** Composer defines of the M6 pipeline variants (MD1; 0 / false ⇒ the M5 text). */
+export function m6Defines(s: RestirSettings, lightMode: 'A' | 'B' | 'A′' = 'A'): Record<string, number> {
+  return {
+    RS_RIS_NEE: s.risNee ? 1 : 0,
+    RS_MODE_B: lightMode === 'A' ? 0 : 1,
+    RS_DUAL_MV: s.dualMv && s.temporal ? 1 : 0,
+    RS_DUPMAP: s.dupmap && s.temporal ? 1 : 0,
+    // U8-4 plant (restir-m6-api.md §5.3): validation-only variant, the spatial shifts know their source record
+    RS_PLANT_T2: s.plant?.u8T2 ? 1 : 0,
+  };
+}
+
+/** Logical layer sizes W_s of the pairing maps of the settings (RestirParams.pairTexSize). */
+export function pairTexSizes(s: Pick<RestirSettings, 'pairing'>): number[] {
+  return s.pairing === 'gauss' ? [...GAUSS_PAIR_SIZES, 0, 0] : PAIR_TEX_SIZES;
 }
 
 /** Logical sizes W_s of the 8 pairing-map layers (§2.8; M4 defaults for 6 slots, layers 6–7 unused). */
 export const PAIR_TEX_SIZES = [254, 246, 238, 230, 222, 210, 0, 0];
+/** M6 Gaussian maps (MD3): the plan's 254 / 230 / 210 first, then the 6-slot / boost layers. */
+export const GAUSS_PAIR_SIZES = [254, 230, 210, 246, 238, 222];

@@ -12,6 +12,7 @@ import { createEnvResources, destroyEnvResources, writeEnvParams, type EnvGpuRes
 import { computeRenderOrigin, JITTER_IID, JITTER_NONE } from '../../src/core/render/frame-uniforms.ts';
 import type { PtEnvOptions } from '../../src/core/render/pt-kernel.ts';
 import { ChainFrameCollector, ChainRunner, type ChainMasks, type ChainSpec } from '../../src/core/render/restir/chain-runner.ts';
+import type { LightMode } from '../../src/core/render/lights-gpu.ts';
 import { RestirKernel } from '../../src/core/render/restir/kernel.ts';
 import { writeNpz, type NpzArray } from '../../src/core/render/restir/npz.ts';
 import { RESTIR_PRESETS, restirSettings, type RestirPresetName, type RestirSettings } from '../../src/core/render/restir/presets.ts';
@@ -21,7 +22,7 @@ import { packageSha256, uploadFile } from './export-package.ts';
 import { stable } from './batch-run.ts';
 
 export type TPlantName = keyof NonNullable<RestirSettings['tPlant']>;
-export type U8PlantName = 'u8W1Delta' | 'u8NoPk' | 'u8T2' | 'u8OneSided' | 'u8FailedK';
+export type U8PlantName = 'u8W1Delta' | 'u8NoPk' | 'u8T2' | 'u8OneSided' | 'u8FailedK' | 'u8RisMixed' | 'u8TilePmf' | 'u8CrossOcc';
 
 export interface RenderRestirChainsOptions {
   run: string;
@@ -55,6 +56,10 @@ export interface RenderRestirChainsOptions {
   env?: PtEnvOptions;
   /** 'disocc': M_disocc harness mode for every test frame t (a 2-frame chain t−1, t; E = 1; jitter off). */
   mode?: 'chains' | 'disocc';
+  /** M6 setting overrides (rung 3.7 toggles, Gate 5 duplication map; restir-m6-api.md §5). */
+  settings?: Partial<RestirSettings>;
+  /** Light mode override (default: the package's; restir-m6-api.md MD9). */
+  lightMode?: string;
   chromeVersion?: string;
   budget?: Partial<SubmitBudget>;
 }
@@ -62,7 +67,7 @@ export interface RenderRestirChainsOptions {
 export interface RenderRestirChainsReport { ok: boolean; run: string; files: string[]; meta: Record<string, unknown>; errors: string[] }
 
 /** Temporal plants are validation-only and never part of an unbiased unit. */
-export const UNBIASED_CHAIN_PRESETS: readonly RestirPresetName[] = ['temporal', 'full', 'initial', 'initial-rr', 'offline', 'criteria2022'];
+export const UNBIASED_CHAIN_PRESETS: readonly RestirPresetName[] = ['temporal', 'full', 'initial', 'initial-rr', 'offline', 'criteria2022', 'offline-m6', 'full-m6', 'interactive'];
 
 /** Upload in ≤ 8 MB parts `<name>.part###` (run-batches.ts concatenates them): Playwright receives every request body
  *  through its CDP pipe as a JSON string, and a single upload above ~80 MB exceeds V8's 512 M-character string limit in
@@ -113,16 +118,17 @@ export async function renderRestirChains(ctx: GpuContext, o: RenderRestirChainsO
   const pkgEnvSampling = p.json.env?.sampling ?? 'AUTOMATIC';
   const envOpts: PtEnvOptions = { ...o.env, nee: o.env?.nee ?? pkgEnvSampling !== 'NONE' };
   const maxBounces = o.maxBounces ?? p.render.maxBounces ?? 3;
-  if ((p.lightMode ?? 'A') !== 'A') throw new Error(`${o.package}: light mode ${p.lightMode}; M5 ReSTIR is Mode A only (restir-api.md D1)`);
+  const lightMode = ((o.lightMode ?? p.lightMode ?? 'A').replace("'", '′')) as LightMode;
+  if (!['A', 'B', 'A′'].includes(lightMode)) throw new Error(`${o.package}: light mode ${lightMode}`);
   const tPlant = o.tPlants?.length ? Object.fromEntries(o.tPlants.map((n) => [n, true])) as RestirSettings['tPlant'] : undefined;
   const plant = (o.u8Plants?.length || (o.wScale !== undefined && o.wScale !== 1))
     ? { ...Object.fromEntries((o.u8Plants ?? []).map((n) => [n, true])), ...(o.wScale !== undefined && o.wScale !== 1 ? { wScale: o.wScale } : {}) } : undefined;
   const settings = restirSettings(o.preset, {
     maxBounces, ...(o.temporalMis ? { temporalMis: o.temporalMis } : {}), ...(o.temporalCheck ? { temporalCheck: o.temporalCheck } : {}),
     ...(o.refresh ? { refresh: o.refresh } : {}), ...(o.boostSlots !== undefined ? { boostSlots: o.boostSlots } : {}),
-    ...(tPlant ? { tPlant } : {}), ...(plant ? { plant } : {}),
+    ...o.settings, ...(tPlant ? { tPlant } : {}), ...(plant ? { plant } : {}),
   });
-  const kernel = await RestirKernel.create(device, gpu, env, { settings, lightMode: 'A', env: envOpts, features, wgslLanguageFeatures });
+  const kernel = await RestirKernel.create(device, gpu, env, { settings, lightMode, env: envOpts, features, wgslLanguageFeatures });
   const jitterMode = disocc ? JITTER_NONE : JITTER_IID;
   kernel.setView({ camera: { camToWorld: Array.from(f0.camera.camToWorld), yfov: f0.camera.yfov }, width: W, height: H, runSeed: o.seed >>> 0, members: E, jitterMode, jitter: [0.5, 0.5] });
   await kernel.prepare();
@@ -209,12 +215,12 @@ export async function renderRestirChains(ctx: GpuContext, o: RenderRestirChainsO
       if (r.temporalUnits === 0) errors.push(`frame ${r.t}: no temporal units emitted (T16)`);
     }
   }
-  const unbiased = UNBIASED_CHAIN_PRESETS.includes(o.preset) && !tPlant && !plant;
+  const unbiased = UNBIASED_CHAIN_PRESETS.includes(o.preset) && !tPlant && !plant && !(settings.dupmap && settings.temporal);
   const envInfo = env.present ? { nee: envOpts.nee !== false } : undefined;
   const config = {
     kernel: 'restir-chains', preset: o.preset, members: E, width: W, height: H, jitter: disocc ? 'none (pixel centre)' : 'iid-per-run', filter: 'box-1px',
     scene: hash.sha256, frames, testFrames, average: o.average ?? null, textureMode: 'validation', intersector: 'woop-watertight',
-    maxBounces, lightMode: 'A', settings, env: envInfo ? { nee: envInfo.nee } : 'none', plants: { temporal: o.tPlants ?? [], u8: o.u8Plants ?? [], wScale: o.wScale ?? 1 },
+    maxBounces, lightMode, settings, env: envInfo ? { nee: envInfo.nee } : 'none', plants: { temporal: o.tPlants ?? [], u8: o.u8Plants ?? [], wScale: o.wScale ?? 1 },
     masks: o.masks ?? null, mode: o.mode ?? 'chains',
   };
   const configHash = await sha256Hex(new TextEncoder().encode(stable(config)));
@@ -227,7 +233,8 @@ export async function renderRestirChains(ctx: GpuContext, o: RenderRestirChainsO
       validationModeUnbiased: unbiased, plantsNamed: [...(o.tPlants ?? []), ...(o.u8Plants ?? []), ...(o.wScale !== undefined && o.wScale !== 1 ? ['wScale'] : [])],
       internalScale: 1, denoiser: 'none', upscaler: 'none',
       readback: 'linear rsFrame radiance per chain (f32 texels, f64 host reduction per test frame); no accumulation buffer',
-      jitterMode: disocc ? 'none' : 'iid-per-run', maxBounces, lightMode: 'A', temporal: temporalOn, cCap: settings.cCap, rr: settings.rr,
+      jitterMode: disocc ? 'none' : 'iid-per-run', maxBounces, lightMode, temporal: temporalOn,
+      m6: { pairing: settings.pairing, pairSigma: settings.pairSigma, risNee: settings.risNee, risM: settings.risM, dualMv: settings.dualMv, dupmap: settings.dupmap, cCap: settings.cCap, boostSlots: settings.boostSlots }, cCap: settings.cCap, rr: settings.rr,
       spatialRoundsRequested: settings.rounds, spatialRoundsExecuted: kernel.lastRounds, historyPattern: histPattern, resetFrames: [...resetFrames],
     },
     restir: { settings, counters: T.rsc, codes: T.codes, queueOverflow: T.queueOverflow, queueMaxCounter: T.queueMaxCounter, rates: T.rates, probeMs: T.probeMs, frameRecords: T.frameRecords },

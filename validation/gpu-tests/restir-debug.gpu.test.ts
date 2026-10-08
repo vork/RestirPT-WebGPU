@@ -946,3 +946,78 @@ describe('interactive RestirFramePass: the finalize bind-group cache stays bound
     pass.destroy(); color.destroy(); fu.destroy(); g.destroy();
   });
 });
+
+// ------------------------------------------------------------------------------------------------ M6 views 471–479
+
+import { RS_VIEW_M6 } from '../../src/core/render/restir/debug.ts';
+import { gaussLayer, pairPartner, pairTransform } from '../../src/core/render/restir/pairing.ts';
+import { GAUSS_PAIR_SIZES } from '../../src/core/render/restir/presets.ts';
+
+describe('U-PAIR-VIEW / U-DUP-VIEW (restir-m6-api.md §1.1, §1.6): views 471–479', () => {
+  it('pairing offset (hue = angle, value = length/48) of slot 0 and reciprocity (0 / 1, never 2) with the σ = 16 maps', async () => {
+    const W = 64, H = 64;
+    const rig = await debugRig(W, H, 'offline', { trees: 1, rounds: 1, slots: 3, pairing: 'gauss' });
+    const t = 5;
+    const off = await rig.frame(t, { mode: RS_VIEW_M6.pairOffset });
+    const layer = gaussLayer(GAUSS_PAIR_SIZES[0], 16, 0);
+    const tr = pairTransform(11, 0, t, 0, 0, layer.W);
+    let checked = 0, bad = 0;
+    for (let y = 0; y < H; y += 5) for (let x = 0; x < W; x += 5) {
+      const q = pairPartner(layer, tr, [x, y], W, H);
+      const i = 4 * (y * W + x);
+      const c = [off.aovF[i], off.aovF[i + 1], off.aovF[i + 2]];
+      if (!q) { if (c.some((v) => v !== 0)) bad++; continue; }
+      const dx = q[0] - x, dy = q[1] - y;
+      const v = Math.min(Math.hypot(dx, dy) / 48, 1);
+      if (Math.abs(Math.max(...c) - v) > 1e-4) bad++;
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(50);
+    expect(bad).toBe(0);
+    const rec = await rig.frame(t, { mode: RS_VIEW_M6.pairRecip });
+    const hist = [0, 0, 0];
+    for (let i = 0; i < W * H; i++) { const c = rec.aov[4 * i]; if (c <= 2) hist[c]++; }
+    expect(hist[2]).toBe(0);
+    expect(hist[0]).toBeGreaterThan(0);
+    rig.destroy();
+  });
+
+  it('duplication count (478) equals a CPU count over the final reservoirs; cap (479) = cCap − (cCap − 1)·(n/288)^0.1', async () => {
+    const W = 48, H = 40;
+    const rig = await debugRig(W, H, 'full', { dupmap: true, cCap: 20 });
+    const k = rig.kernel;
+    let last: Frame | undefined, capF: Frame | undefined;
+    for (let t = 0; t < 4; t++) {
+      k.advance({ t, camera: boxCamera(), lights: rig.g.gpu.scene.lights });
+      last = await rig.frame(t, { mode: RS_VIEW_M6.dupCount });
+    }
+    const res = await k.readReservoirs('final');
+    const seed = (i: number) => [res[40 * i + 4], res[40 * i + 5]];
+    const ok = (i: number) => (res[40 * i + 6] & 0xF) !== 0 && (res[40 * i + 6] & 0x2000000) === 0;
+    let bad = 0, nonzero = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      let n = 0;
+      if (ok(i)) {
+        const s = seed(i);
+        for (let dy = -8; dy <= 8; dy++) for (let dx = -8; dx <= 8; dx++) {
+          if (!dx && !dy) continue;
+          const xx = x + dx, yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+          const j = yy * W + xx;
+          if (ok(j) && seed(j)[0] === s[0] && seed(j)[1] === s[1]) n++;
+        }
+      }
+      if (n > 0) nonzero++;
+      if (last!.aovF[4 * i] !== n) bad++;
+    }
+    console.log(`[U-DUP-VIEW] pixels with duplicates: ${nonzero} / ${W * H}`);
+    expect(bad).toBe(0);
+    expect(nonzero).toBeGreaterThan(0);
+    k.advance({ t: 4, camera: boxCamera(), lights: rig.g.gpu.scene.lights });
+    capF = await rig.frame(4, { mode: RS_VIEW_M6.dupCap });
+    expect(capF.aovF[0]).toBeGreaterThanOrEqual(1);
+    expect(capF.aovF[0]).toBeLessThanOrEqual(20);
+    rig.destroy();
+  });
+});

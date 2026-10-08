@@ -1,0 +1,10 @@
+{
+ "kind": "batches",
+ "kernel": "pt",
+ "seed": 7001,
+ "sppPerBatch": 8192,
+ "batches": 4,
+ "width": 32,
+ "height": 32,
+ "source": "validation/out/m5/ptrefs/m5s_cornell_i-fbase-s7001-8192x16-33734be3d1b2d3db"
+}

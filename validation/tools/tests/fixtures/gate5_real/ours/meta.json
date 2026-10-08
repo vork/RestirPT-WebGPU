@@ -1,0 +1,10 @@
+{
+ "kind": "chains",
+ "kernel": "restir",
+ "seed": 6002,
+ "chains": 32,
+ "width": 32,
+ "height": 32,
+ "frame": 24,
+ "source": "validation/out/m6-gate-gate5-20261007-115614/chains/m5s_cornell_i@G5-cap5-dup/f24"
+}

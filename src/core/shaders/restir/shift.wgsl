@@ -35,6 +35,17 @@
 #include "restir/endpoint.wgsl"
 #include "restir/rc.wgsl"
 #include "path/replay.wgsl"
+#if RS_RIS_NEE
+#include "restir/m6-types.wgsl"
+#endif
+#if RS_MODE_B
+#include "restir/cross.wgsl"
+#endif
+#if RS_PLANT_T2
+#include "restir/m6-types.wgsl"
+/// U8-4 plant (validation only): atlas index of the source record of the current spatial shift (set by the caller).
+var<private> rsT2SrcAi: u32 = 0xFFFFFFFFu;
+#endif
 
 struct ShiftSrc { empty: bool, flags: u32, seed: vec2u, F: vec3f, rc: vec3u, jDen: f32, rcWi: vec3f, aux: f32,
                   rcRad: vec3f, end: vec3u, endOcc: bool }                // M5: N1 end occluded (¬endVis; false spatially)
@@ -95,6 +106,23 @@ const SH_DEEP: u32 = 5u;     // (deep)
 const SH_NONE: u32 = 6u;     // ∅
 const SH_BAD: u32 = 7u;      // not an M4 configuration (e.g. BSDF_ANALYTIC)
 
+#if RS_MODE_B
+const SH_XEMIT: u32 = 8u;    // (d-ana): the crossed analytic-light point is the rc vertex (restir-m6-api.md MD7)
+fn shift_case(f: u32) -> u32 {
+  let d = rf_d(f);
+  let k = rf_k(f);
+  let tech = rf_tech(f);
+  if (k == 0u) { return SH_NONE; }
+  if (k < 2u || k > d) { return SH_BAD; }
+  if (k == d) {
+    if (tech == RS_TECH_NEE) { return SH_FORCED; }
+    if (tech == RS_TECH_BSDF_ANALYTIC) { return SH_XEMIT; }
+    return select(SH_ENV, SH_EMIT, tech == RS_TECH_BSDF_TRI);
+  }
+  if (k == d - 1u) { return select(SH_B1, SH_N1, tech == RS_TECH_NEE); }
+  return SH_DEEP;
+}
+#else
 fn shift_case(f: u32) -> u32 {
   let d = rf_d(f);
   let k = rf_k(f);
@@ -108,6 +136,7 @@ fn shift_case(f: u32) -> u32 {
   if (k == d - 1u) { return select(SH_B1, SH_N1, tech == RS_TECH_NEE); }
   return SH_DEEP;
 }
+#endif
 
 fn shift_fail(sc: u32, term: u32, pair: u32, margin: f32) -> ShiftOut {
   var o: ShiftOut;
@@ -137,6 +166,9 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
   // ---- 2. replay -------------------------------------------------------------------------------------------------------
   if (k > 2u || k == 0u) {
 #if RS_REPLAY
+#if RS_MODE_B
+    rsReplayCrossEntry = src.end.x & RC_ENTRY_MASK;
+#endif
     let rp = replay_prefix(src.seed, yPrev, yPrevPrim, camPos, thr, k, d, rf_tech(f), dst.fs);
     if (rs_slot_code_sc(rp.code) != SC_OK) { var o: ShiftOut; o.code = rp.code; return o; }
     if (cs == SH_NONE) { return shift_finish(rp.F, 1.0, 1.0, true); }
@@ -167,6 +199,21 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
     xk = vertex_from_ids(src.rc.x, bitcast<f32>(src.rc.y), bitcast<f32>(src.rc.z), yPrev.pos);
     wP = normalize(xk.pos - yPrev.pos);
   }
+#if RS_MODE_B
+  if (cs == SH_XEMIT) {                                  // (d-ana): z = the stored crossing of the frame's light record
+    let slotX = lf_slot(dst.fs);
+    let eX = src.rc.x & RC_ENTRY_MASK;
+    if (eX >= slotX.nAnalytic) { return shift_fail(SC_O0_LIGHT, RCT_NONE, 0u, 0.0); }
+    let rX = light_load(slotX, eX);
+    xk.pos = cross_point(rX, bitcast<vec2f>(src.rc.yz));
+    xk.ng = rX.normal;
+    xkPrim = LIGHT_NONE;
+    wP = normalize(xk.pos - yPrev.pos);
+#if RS_SHIFT_TRACE
+    rs_trace_cross(rX.normal, xk.pos);
+#endif
+  }
+#endif
   // NEE end term and its visibility data, reduced to a few registers inside the iteration that evaluates the light
   // sample (the full LightSample is not kept live across the rest of the shift and the visibility traversal:
   // docs/decisions/platform-lanes.md "Metal quirks", M4 T3 control-flow fault)
@@ -202,7 +249,11 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
     let q = bsdf_query(m, V, L, lobe);
     if (neeHere) {                                       // (a)/(f) at y_{d−1}, (b) at x_{d−1}: p2 = this vertex's p̄
       if (ls.valid && (!atY || ls.prim != yPrevPrim) && any(ls.Lambda > vec3f(0.0))) {
+#if RS_RIS_NEE
+        var w1 = nee_mis_w1(ls, rs_p2m(q.p_marg, B), B);   // M6 MD5: M(B) as p2/M (B = d−1; M = 1 unless B = 1)
+#else
         var w1 = nee_mis_w1(ls, q.p_marg, B);
+#endif
         if (shift_u8_plants_on()) { w1 = shift_u8_w1(ls, q.p_marg, B, w1, !atY && cs == SH_N1, src.aux); }
         neeT = (w1 / ls.q) * (q.f_all * ls.Lambda);
       }
@@ -223,9 +274,15 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
         if (pr.ok) { return shift_fail(SC_O1, pr.term, k - 1u, pr.margin); }
       }
       // O2 of the single-iteration cases: (y_{d−1}, z | LIGHT) and (y_{d−1}, env | ENV)
+#if RS_MODE_B
+      if (cs == SH_EMIT || cs == SH_ENV || cs == SH_XEMIT) {
+        var zV = RcVertex(yPrev.pos + wP, vec3f(0.0), RCK_ENV, 0u);
+        if (cs == SH_EMIT || cs == SH_XEMIT) { zV = RcVertex(xk.pos, xk.ng, RCK_LIGHT, 0u); }
+#else
       if (cs == SH_EMIT || cs == SH_ENV) {
         var zV = RcVertex(yPrev.pos + wP, vec3f(0.0), RCK_ENV, 0u);
         if (cs == SH_EMIT) { zV = RcVertex(xk.pos, xk.ng, RCK_LIGHT, 0u); }
+#endif
         let pr = rcPairTest(yV, eY, zV, rc_event_none(), thr);
 #if RS_SHIFT_TRACE
         rs_trace_pair(k, pr.ok, pr.margin, pr.term);
@@ -264,10 +321,28 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
   let pKj = select(select(pK, pKm, marg), 1.0, (rsParams.flags & RSF_PLANT_U8_NO_PK) != 0u);
   var jNum = 1.0;
   if (cs == SH_ENV) { jNum = pYj; }
+#if RS_MODE_B
+  else if (cs == SH_EMIT || cs == SH_N1 || cs == SH_XEMIT) { jNum = pYj * rc_G(yPrev.pos, xk.pos, xk.ng); }
+#else
   else if (cs == SH_EMIT || cs == SH_N1) { jNum = pYj * rc_G(yPrev.pos, xk.pos, xk.ng); }
+#endif
   else if (cs != SH_FORCED) { jNum = pYj * rc_G(yPrev.pos, xk.pos, xk.ng) * pKj; }
   var J = 1.0;
   if (cs != SH_FORCED) { J = jNum / src.jDen; }
+#if RS_PLANT_T2
+  // PLANT U8-4 (validation only, spatial shifts): J = t_x²/t_y² for a forced point / spot endpoint (Cycles' pseudo-pdf
+  // t² used in a ratio; the correct light-vertex J is 1, gap-light §5.7)
+  if (cs == SH_FORCED && rs_m6_flag(RSF_PLANT_U8_T2) && rsT2SrcAi != 0xFFFFFFFFu && !visInf && visPrim == BVH_MISS) {
+    let lt = rf_ep(f);
+    if (lt == LT_POINT || lt == LT_SPOT) {
+      let sx = resin_plane(rsT2SrcAi, RP_SFX0);
+      let xs = scene_surface(sx.x, bitcast<f32>(sx.y), bitcast<f32>(sx.z), vec3f(0.0)).pos;
+      let tx = xs - visPos;
+      let ty = yPrev.pos - visPos;
+      J = dot(tx, tx) / max(dot(ty, ty), 1e-30);
+    }
+  }
+#endif
 #if RS_SHIFT_TRACE
   rs_trace_recon(min(abs(dot(yPrev.ng, wP)), select(1.0, abs(dot(xk.ng, wP)), xkPrim != BVH_MISS)),
                  select(1.0, abs(dot(xk.ng, src.rcWi)), cs == SH_B1 || cs == SH_DEEP), length(xk.pos - yPrev.pos),
@@ -280,17 +355,39 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
       F = Tp * neeT;
     }
     case SH_EMIT: {                                      // (d): ω2 with p1 recomputed at y_{d−1}
+#if RS_RIS_NEE
+      let w2 = mis_w2(tri_light_p1_s(yPrev.pos, xk.pos, xk.ng, xkPrim, lf_slot(dst.fs)), rs_p2m(pYm, B), B);
+#else
       let w2 = mis_w2(tri_light_p1_s(yPrev.pos, xk.pos, xk.ng, xkPrim, lf_slot(dst.fs)), pYm, B);
+#endif
       F = Tp * (fY / pY) * (w2 * tri_emission(xkPrim, bitcast<f32>(src.rc.y), bitcast<f32>(src.rc.z)));
     }
     case SH_ENV: {                                       // (e)
+#if RS_RIS_NEE
+      let w2 = env_bsdf_mis_weight_s(wP, rs_p2m(pYm, B), B, false, lf_slot(dst.fs), lf_env(dst.fs));
+#else
       let w2 = env_bsdf_mis_weight_s(wP, pYm, B, false, lf_slot(dst.fs), lf_env(dst.fs));
+#endif
       let er = lf_env(dst.fs);
       F = Tp * (fY / pY) * (w2 * envRadiance_s(envUV(wP, er.cg, er.sg), er));
     }
     case SH_N1: {                                        // (b): NEE end term re-evaluated at x_{d−1} (D6), p2 changes
       F = Tp * (fY / pY) * neeT;
     }
+#if RS_MODE_B
+    case SH_XEMIT: {                                     // (d-ana): one-sided L_e of the copied point, ω2 with p1 at y_{d−1}
+      let slotX = lf_slot(dst.fs);
+      let eX = src.rc.x & RC_ENTRY_MASK;
+      let rX = light_load(slotX, eX);
+      var w2 = 1.0;
+#if RS_RIS_NEE
+      if (cross_mis(false)) { w2 = mis_w2(analytic_area_p1_s(yPrev.pos, eX, xk.pos, slotX), rs_p2m(pYm, B), B); }
+#else
+      if (cross_mis(false)) { w2 = mis_w2(analytic_area_p1_s(yPrev.pos, eX, xk.pos, slotX), pYm, B); }
+#endif
+      F = Tp * (fY / pY) * (w2 * area_radiance(rX, -wP));
+    }
+#endif
     case SH_B1: {                                        // (c): emitter / env end term re-evaluated at x_{d−1} (D6)
       var endT = vec3f(0.0);
       if (src.end.x == RC_ENV_DIR) {
@@ -298,6 +395,15 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
         var w2 = env_bsdf_mis_weight_s(src.rcWi, pKm, B, false, lf_slot(dst.fs), er);
         if (rs_tplant(TP_U8_STALE_AUX)) { w2 = mis_w2(src.aux, pKm, B); }                  // PLANT U8-2t: stale p1
         endT = w2 * envRadiance_s(envUV(src.rcWi, er.cg, er.sg), er);
+#if RS_MODE_B
+      } else if (rs_is_cross_words(src.end)) {          // (c-ana): the crossing re-intersected along ω_k (MD7)
+        let ce = cross_end(xk.pos, src.rcWi, src.end.x & RC_ENTRY_MASK, lf_slot(dst.fs));
+        var p1 = ce.p1;
+        if (rs_tplant(TP_U8_STALE_AUX)) { p1 = src.aux; }                                 // PLANT U8-2t: stale p1
+        var w2 = 1.0;
+        if (cross_mis(false)) { w2 = mis_w2(p1, pKm, B); }
+        endT = select(vec3f(0.0), w2 * ce.Le, ce.ok);
+#endif
       } else {
         let z = vertex_from_ids(src.end.x, bitcast<f32>(src.end.y), bitcast<f32>(src.end.z), xk.pos);
         var p1 = tri_light_p1_s(xk.pos, z.pos, z.ng, src.end.x, lf_slot(dst.fs));
@@ -310,6 +416,11 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
       F = Tp * (fY / pY) * (fK / pK) * src.rcRad;
     }
   }
+#if RS_SHIFT_TRACE && RS_M6_TRACE
+  // M6 T3 counters (tests only): side of x_k seen from y_{k−1} (glass side flips) and the reconnection segment (alpha cards)
+  rs_trace_side(xk.backfacing && xkPrim != BVH_MISS);
+  rs_trace_seg(yPrev.pos, select(xk.pos, visPos, cs == SH_FORCED), cs != SH_ENV && !(cs == SH_FORCED && visInf));
+#endif
   return shift_finish_vis(F, J, jNum, cs, yPrev, yPrevPrim, xk, xkPrim, wP, visPos, visN, visPrim, visInf, src.endOcc);
 }
 
@@ -383,7 +494,11 @@ fn shift_finish_vis(F: vec3f, J: f32, jNum: f32, cs: u32, y: SurfaceHit, yPrim: 
     else { vis = visible(y.pos, y.ng, yPrim, visPos, visN, visPrim); }
   }
   else if (cs == SH_ENV) { vis = visibleInf(y.pos, y.ng, yPrim, wP); }
+#if RS_MODE_B
+  else if ((cs == SH_N1 || cs == SH_B1) && endOcc) { vis = false; }   // N1 / B1-ana end occluded under frame dst.fs (refresh)
+#else
   else if (cs == SH_N1 && endOcc) { vis = false; }      // M5 (§3.4): N1 end occluded under frame dst.fs (refresh)
+#endif
   else { vis = visible(y.pos, y.ng, yPrim, xk.pos, xk.ng, xkPrim); }
   if (!vis) { return shift_finish(F, J, jNum, false); }
   return o;

@@ -507,6 +507,17 @@ W_NEE       = W^RIS · q(Y) = (1/M)·Σ_i r_i / r_Y             ("W^RIS·p1" of 
 - Plain NEE is M = 1, which gives W_NEE = 1.
 - **Trap (bias):** forming r_i with p̂ in one measure and q in another. Examples are
   `lum(f·L_e)` over `P/A`, or `lum(f·I)` without `1/r²`. Test U3 plants exactly this.
+  - **[M6 addition, restir-m6-api.md §5.3]** Precisely: a *consistent* target in any measure is unbiased — RIS only needs
+    the same ratio r = p̂/q in the selection and in the UCW (p̂ > 0 wherever the integrand is). The bias comes from a UCW
+    whose measure differs from q's: `W_NEE = W^RIS·p1_σ` instead of `W^RIS·q` multiplies the estimator by p1_σ/q =
+    r²/|cos θ_z| for area / triangle picks (U8-8 plant; tests/restir/plant-m6.test.ts shows both statements in f64).
+- **[M6 addition, restir-m6-api.md MD4]** Realisation in ReSTIR: RIS-NEE runs only at x₁ (B = 1) with M = 32. A per-frame
+  pass draws `128 tiles × 1024` i.i.d. alias entries (env entry included) per ensemble member from hashes of
+  `(runSeed ⊕ member·φ, t, tile·1024 + slot, STREAM_LIGHT_TILE)`; each 8×8 member-local screen tile picks one tile. A
+  candidate j uses slot `h.x & 1023` of `h = pcg4d(seed, j, STREAM_RIS_NEE)` and the per-entry light-local words of
+  `nee_draw` from `h.yzw`; same-triangle samples have p̂ = 0. `q` in r and in W_NEE is the **marginal** q (pmf[L]·…),
+  never the tile frequency (plan rule 2; the U8-10 plant puts the tile multiplicity/1024 into ω1 instead). The selected
+  endpoint then runs the unchanged NEE code (F, k*, visibility).
 - **Never** replay RIS-NEE over per-frame tiles in a shift or refresh. It is not a shift and is
   +64% biased (plan rule 10; gap-temporal §5.2).
 
@@ -574,6 +585,15 @@ M(B) is part of the frame config: a change resets history.
 - **In shifts**, p1 and p2 are recomputed at the **offset path's own** x_{d−1} (y_{d−1} in cases
   (a), (d), (e), (f)). p2 changes in cases (b) and (c) because V at x_{d−1} changes
   ([jacobian](#jacobian)).
+- **[M6 addition, restir-m6-api.md MD5]** In ReSTIR, M(B) = risM (32) at B = 1 with RIS-NEE and 1 otherwise. It is
+  realised as `p2/M` (ω1 = p1/(p1 + p2/M) = M p1/(M p1 + p2), exact for M a power of two) in every MIS evaluation whose
+  x_{d−1} can be x₁ (path tree NEE / BSDF ends at B = 1, shift cases (a)/(f), (d)/(d-ana), (e) at d = 2, replay ∅ at
+  b = 1); the PT's `mis_M` is not touched (the PT has no RIS-NEE).
+- **[M6 addition, restir-m6-api.md MD6]** **Mode-B crossings in ReSTIR.** After the BSDF continuation at x_B, every
+  rect / disk light crossed front-facing by the continuation ray before its hit (or on an escape) is a candidate
+  `(d = B + 1, BSDF_ANALYTIC, entry)` with its own direction ω_c to the stored crossing point, its own BSDF query and
+  `ω2 = p2(ω_c)/M(B) / (p1 + p2(ω_c)/M(B))` (ω2 = 1 after a delta lobe; Mode A′: only after delta lobes). Crossings
+  consume no bounce, no RNG dimension, no RR test.
 
 ---
 
@@ -1039,6 +1059,32 @@ finalize:              W = Σw / lum(F_Y)     (tree M = 1);  c = 1;  W = 0 if Σ
   stored `rcWi` of a continuing x_k. Sampled bits are used only to trace the ray and as the escape direction of a
   `BSDF_ENV` ending. Base-path throughput factors may use the sampler's `weight` (a few-ulp difference in F is not a
   bias: F is a target and a fixed function of the path).
+- <a id="delta-incoming"></a>**[M6 addition, restir-m6-api.md M6-10]** **Incoming direction after a delta event.** The
+  one exception to the same-formula rule for V: if the event at x_b was sampled from a **delta** lobe, the incoming
+  direction of x_{b+1} is the **traced** direction, `V_{b+1} = −ω_b` (the sampled ω_b, as in the PT), in the path tree
+  and in replay (prefix and ∅ mode, hence in every spatial and temporal shift). Every other V stays position-derived.
+  - *Why the position-derived V is biased there.* The continuation ray starts at the offset origin
+    `o_b = x_b + δ·n` (Wächter–Binder, [visibility](#visibility); δ = 2⁻¹⁶ m for |p| < 1/32, else 256 ulp), so
+    `x_{b+1} = o_b + t·ω_b` and `normalize(x_{b+1} − x_b) = normalize(t·ω_b − δ·n)`: a deterministic tilt of order
+    `δ·sin θ / t` toward the normal of the side the ray leaves. Base path and replay share it, so every shift stays
+    consistent, but the integrand is that of a different path: the delta sampler at x_{b+1} picks its lobe with
+    `P_R(θ')`, θ' the tilted angle, and the sample weight `R/P_R` (or `T/(1−P_R)`) cancels only the tree's own pick. The
+    estimate of a smooth dielectric chain becomes `Π (1−F(θ'_j))…` instead of `Π (1−F(θ_j))…`, a bias
+    `≈ −(∂F/∂θ)·Δθ` per interface with **one sign** (inside a slab of thickness h the tilt always steepens the segment,
+    `tan θ' = tan θ_t·(1 − δ/h)`) and `∂F/∂θ → ∞` at the critical angle. C0h (h = 0.02 m, δ = 1.53e-5 m,
+    δ/h = 7.6e-4; a grazing camera ray refracts to just below θ_c = 41.8°): +0.11 % at 70°, +0.78 % at 80°, +4.0 % at
+    85° incidence (f64: `(1−F(θ'))/(1−F(θ))` at the bottom face), matching the rung-3.9 row profile (+3.6 % in the far
+    rows, ~+0.1 % mid-image; global +0.12 %). For a non-delta event the same tilt moves the evaluation point of a
+    smooth f/p by O(δ/t) only, and the position-derived V is what a shift recomputes at a reconnection vertex.
+  - *Consistency.* A vertex reached by a delta event is never an x_k (rule D fails at x_{k−1}), so no Jacobian and no
+    `rcWi` depend on its V. Where it is a prefix vertex (up to y_{k−1}, incl. the p̄ / joint pdf at y_{k−1} that enter
+    O1/O2 and jNum), base path and shift obtain V from the same replay code (`VLast`), and the ∅ integrand is the
+    replay's own: T∘T⁻¹ = id is unchanged, and the base integrand equals the PT's sample (U-RIS-1g). The stored
+    suffix-cache direction of an NEE end (ω_o at x_{d−1}) is the path tree's V, so the refresh inherits the rule.
+    Mode-B crossing tests keep the position-derived ray (their delta-event factor is the sampler's weight).
+  - *Remaining tilt.* A delta-only vertex reached through a **non-delta** event still sees the position-derived V
+    (tilt δ/t with t the distance between two surfaces, not a slab thickness); no gate scene shows it (rough-glass
+    units G3, G4, C0j pass at rung 3.9).
 - **[M4 addition, restir-api.md]** **Base NEE endpoint.** The NEE candidate stores its endpoint as the sampler's own light-local
   coordinates (alias entry, `u01(h_l0)`, `u01(h_l1)`; for emissive triangles these are the `(u₁, u₂)` of the
   area-uniform map; env `(i<<16)|j, h2`) and evaluates it with the same per-entry function as the PT, so every later
@@ -1102,6 +1148,13 @@ belongs to `restir/reservoir.wgsl`. This section defines the semantics.
   **background** ⇔ bg flag, d = 0, c = 0.
 - **[M5 addition, restir-temporal-api.md]** Suffix flag `SFX_DELTA_END` (word 27 bit 3): the final BSDF event of a BSDF-ended path was a delta lobe
   (ω2 = 1). The refresh of deep BSDF ends needs it; `lobeHist` covers only x₁…x₈ while d ≤ 15.
+- **[M6 addition, restir-m6-api.md §2.4, MD6–MD8]** `BSDF_ANALYTIC` (Mode B / A′ crossings): endpoint and (k = d) rc words
+  `(RC_TAG_CROSS | entry, bits(x), bits(y))` with planar light-local `xy ∈ [−1, 1]²` (`z = c + x·halfU·a_u + y·halfV·a_v`;
+  disks x² + y² ≤ 1), so a moved light carries its crossing rigidly and no inverse concentric map is needed. Case (c-ana):
+  rcWi = ω_c, rcRadiance = L_e, aux = p1; deep: rcRadiance = β_s ⊙ (f/p)(ω_c) ⊙ ω2 L_e. Suffix cache of a crossing:
+  `sfxDir = ω_c`, `sfxT` = the continuation's hit distance, flag `SFX_CROSS` (word 27 bit 4). The end term of cases (c-ana),
+  deep, ∅ and of the refresh is ONE function: the ray (x, ω) re-intersected with the light (front-facing, inside, t > 0),
+  L_e toward x and p1 at the crossing (a miss is a defined zero).
 - Class is derivable and **not stored** ([light-changes](#light-changes)):
   - L: k = d ∧ NEE
   - N1: k = d−1 ∧ NEE
@@ -1650,6 +1703,13 @@ Sources: plan §2 rule 13 and §1.9, gap-temporal §3.7, review R15.
   unbiasedness gate.
 - **[M5 addition, restir-temporal-api.md]** No q′ (or no history) keeps the canonical c = 1. An empty temporal output keeps c = c_c + c_p. c_prev is the
   previous frame's final (post-spatial, uncapped) c; the cap is applied once, in the temporal step.
+- **[M6 addition, restir-m6-api.md M6-11]** A q′ found by the dual motion vector carries `c_p = min(1, c_prev)`.
+  Unbiased: whether q′ is a dual pick is a function of the G-buffers and the pick stream only (rule 9), so the c's stay
+  sample-independent constants of the MIS partition. Why: c_p encodes how many samples the history is worth *for the
+  current target*; a dual source is another surface point, and with Talbot or contribution MIS its candidate's
+  contribution is its own estimate times ≈ min(r, c_p) with r = p̂_q(Y)·J/p̂_{q′}(X_p) the target ratio, which is ≈ 1
+  for a standard q′ but broadly distributed for a dual one (ix-d f40: 7× the per-chain standard deviation of the
+  disocclusion region at c_p = 20, see M6-11).
 
 ---
 
@@ -1675,6 +1735,14 @@ enh-verify C1):
 n_σ = ⌊ σ²/2 + 1.46·σ⁻¹ − 1.76·σ⁻² + 0.656·σ⁻³ + 0.5 ⌋          n_σ(16) = 128,  n_σ(0.814) = 1
 ```
 See [pairing-textures](#pairing-textures).
+
+**[M6 addition, restir-m6-api.md MD3, MD10]** Realisations. Gaussian pairing maps: n_σ shuffles of 2×2 blocks on a W-torus
+(link L = (yW + x) ≫ 1; every odd pass offset by (1, 1)), the partner delta stored explicitly with d(b) = −d(a); layer
+sizes [254, 230, 210, 246, 238, 222], deterministic PCG32 per (layer, σ, W); T14 measures per-axis σ within 3 % of 16
+and KS < 0.01. Duplication map: `rs_dupmap` after the frame's final reservoirs counts, per atlas pixel, the pixels q ≠ p
+of the 17×17 window (same member, inside the tile) with the same non-empty 64-bit seed; the next frame's T1 caps
+`c_p = min(c_Cap, c_prev)` with `c_Cap = cCap − (cCap − 1)·(count/288)^0.1` (f32, not truncated). Biased; off in every
+unbiasedness unit; Gate 5 bounds its bias (dup_bias.py).
 
 ---
 

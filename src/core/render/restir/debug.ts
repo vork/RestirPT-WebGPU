@@ -41,6 +41,9 @@ export const RS_VIEW_T = {
 } as const;
 /** M5 probe tags (§2.11; 79 = internal anchor ids, Changelog D-1). */
 export const RS_PROBE_TAG_T = { header: 73, forward: 74, inverse: 75, select: 76, refresh: 77, pick: 78, anchor: 79 } as const;
+/** M6 view ids (restir-m6-api.md §1.1, §1.6; passes/restir/debug.wgsl RSV_PAIR_* / RSV_DUP_*). */
+export const RS_VIEW_M6 = { pairOffset: 471, pairRecip: 477, dupCount: 478, dupCap: 479 } as const;
+const G_M6 = 'ReSTIR Enhanced (M6)';
 const G_T = 'ReSTIR temporal';
 const T3 = 'rsdbg_temporal (T3 rs_t_select)';
 
@@ -88,12 +91,21 @@ export const RESTIR_VIEWS: DebugViewDef[] = [
   { id: RS_VIEW_T.wp, key: 't.wp', label: 'w̃_p / (w̃_c + w̃_p)', group: G_T, source: T3, kind: 'scalar', range: [0, 1] },
   { id: RS_VIEW_T.lightsChanged, key: 't.lightsChanged', label: 'X_p light changed: moved | radiometric | undefined', group: G_T, source: T3, kind: 'code' },
   { id: RS_VIEW_T.boost, key: 's.boost', label: 'accepted boost slots (bit s − slots)', group: G_SHIFT, source: 'rs_debug_views', kind: 'code' },
+  // ---- M6 (restir-m6-api.md §1.1, §1.6; PLAN §6 "Enhanced"): written by rs_debug_views
+  ...Array.from({ length: 6 }, (_, s): DebugViewDef => ({
+    id: RS_VIEW_M6.pairOffset + s, key: `pair.offset[${s}]`, label: `pairing offset [slot ${s}] (hue = angle, value = length/48 px)`,
+    group: G_M6, source: 'rs_debug_views', kind: 'vec3', range: [0, 1],
+  })),
+  { id: RS_VIEW_M6.pairRecip, key: 'pair.recip', label: 'pairing reciprocity (ok / off-tile / broken)', group: G_M6, source: 'rs_debug_views', kind: 'code' },
+  { id: RS_VIEW_M6.dupCount, key: 'dup.count', label: 'duplication map: same-seed pixels in 17×17', group: G_M6, source: 'rs_debug_views', kind: 'scalar', range: [0.5, 288], log: true, colormap: 'turbo' },
+  { id: RS_VIEW_M6.dupCap, key: 'dup.cap', label: 'duplication map: adaptive c_Cap', group: G_M6, source: 'rs_debug_views', kind: 'scalar', range: [1, 20], colormap: 'turbo' },
 ];
 
 export const isRestirView = (mode: number): boolean => mode >= 400 && mode < 500;
 export const isRestirShiftView = (mode: number): boolean => mode >= RS_VIEW.shiftCode && mode <= RS_VIEW_THR;
 /** Views written by rs_debug_views (shift views and the boost mask). */
-export const isRestirDebugPassView = (mode: number): boolean => isRestirShiftView(mode) || mode === RS_VIEW_T.boost;
+export const isRestirDebugPassView = (mode: number): boolean => isRestirShiftView(mode) || mode === RS_VIEW_T.boost
+  || (mode >= RS_VIEW_M6.pairOffset && mode <= RS_VIEW_M6.dupCap);
 export const isRestirTemporalView = (mode: number): boolean => mode >= RS_VIEW_T.qvalid && mode <= RS_VIEW_T.boost;
 export const isRestirCodeView = (mode: number): boolean => RESTIR_VIEWS.some((v) => v.id === mode && v.kind === 'code');
 
@@ -129,6 +141,7 @@ export function codeName(id: number, code: number): string {
   if (id >= RS_VIEW.shiftTerm && id < RS_VIEW.shiftTerm + 6) return `${RCT_NAMES[code & 0xF] ?? code & 0xF}${code >> 4 ? ` pair ${code >> 4}` : ''}`;
   if (id === RS_VIEW.replayMask || id === RS_VIEW.acceptMask) return code.toString(2).padStart(6, '0').split('').reverse().join('') + ' (slot 0 first)';
   if (id === RS_VIEW.misSel) return code === 0 ? 'canonical' : `partner slot ${code - 1}`;
+  if (id === RS_VIEW_M6.pairRecip) return ['reciprocal', 'some slot off-tile / no partner', 'BROKEN (never for an involution)'][code] ?? String(code);
   if (id === RS_VIEW_T.qvalid) return QVALID_NAMES[code] ?? String(code);
   if (id === RS_VIEW_T.refreshFwd || id === RS_VIEW_T.refreshInv) return REFRESH_CLASS_NAMES[code] ?? String(code);
   if (id === RS_VIEW_T.fwdCode || id === RS_VIEW_T.invCode) return SC_NAMES[code] ?? String(code);

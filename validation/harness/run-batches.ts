@@ -16,7 +16,9 @@
 //   npx tsx validation/harness/run-batches.ts --package validation/scenes/cornell_i_512 --kernel restir --preset offline --spp 64 --batches 16
 //     (M4 Stage-B ReSTIR, restir-api.md §6.4: --spp = frames per batch (alias --frames-per-batch), --preset
 //      initial|initial-rr|offline|criteria2022, --members E (ensemble atlas, writes ensemble.npz), --plant no-j|marginal-j,
-//      --w-scale s (W × s plant), --max-bounces N; --env-nee on|off as for the PT; Mode A only)
+//      --w-scale s (W × s plant), --max-bounces N; --env-nee on|off as for the PT; M6: --preset offline-m6, --light-mode
+//      A|B|A' (default: the package's), --restir-settings JSON (Partial<RestirSettings>: pairing, risNee, rr, dualMv,
+//      dupmap, plant {u8T2, u8RisMixed, u8TilePmf, u8CrossOcc}, …; recorded in meta.json))
 //   --batch-offset N (pt / restir sequential): render batches N … N+batches−1 of a longer run (the same samples; the
 //      gate splits long references into GPU-lock chunks and merges the batch files)
 //   npx tsx validation/harness/run-batches.ts --package validation/scenes/ixs_d_camera_256 --kernel restir --preset full --chains 256
@@ -45,7 +47,7 @@ import type { SceneData } from '../../src/core/scene/types.ts';
 import type { RenderBatchesReport, ValidationKernel } from './batch-run.ts';
 import type { RestirPlantName } from './restir-batch-run.ts';
 import type { RenderRestirChainsOptions, TPlantName, U8PlantName } from './restir-chain-run.ts';
-import type { RestirPresetName } from '../../src/core/render/restir/presets.ts';
+import type { RestirPresetName, RestirSettings } from '../../src/core/render/restir/presets.ts';
 import { acquireGpuLock, GPU_LOCK } from './gpu-lock.ts';
 import type { GlassPlant, PtEnvOptions, PtEnvPlant, PtPlant, PtTechnique } from '../../src/core/render/pt-kernel.ts';
 
@@ -102,6 +104,7 @@ const OPTIONS = {
   'u8-plant': { type: 'string' },
   mode: { type: 'string' },
   'max-spp-per-dispatch': { type: 'string' },
+  'restir-settings': { type: 'string' },
 } as const;
 const parse = (argv?: string[]) => parseArgs({ options: { ...OPTIONS, jobs: { type: 'string' } }, ...(argv ? { args: argv } : {}) }).values;
 let args = parse();
@@ -210,12 +213,17 @@ async function main(shared?: SharedPage): Promise<number> {
     if (args['env-strength-scale']) env.strengthScale = Number(args['env-strength-scale']);
   }
   const restir = args.kernel === 'restir';
+  // M6 (restir-m6-api.md §5): --restir-settings '{"pairing":"gauss","risNee":true,…}' overrides the preset's settings
+  let rsSettings: Partial<RestirSettings> | undefined;
+  if (args['restir-settings']) {
+    try { rsSettings = JSON.parse(args['restir-settings']) as Partial<RestirSettings>; } catch { console.error('--restir-settings: JSON object'); return 2; }
+  }
   const chains = restir && (args.chains !== undefined || args.mode === 'disocc');
   if (chains) {
-    if (!['temporal', 'full', 'initial', 'initial-rr', 'offline', 'criteria2022', 'interactive'].includes(args.preset!)) { console.error('--preset temporal|full|…'); return 2; }
+    if (!['temporal', 'full', 'initial', 'initial-rr', 'offline', 'criteria2022', 'interactive', 'offline-m6', 'full-m6'].includes(args.preset!)) { console.error('--preset temporal|full|…'); return 2; }
     if (args.frames || args.scene || args.check || args.plant) { console.error('--chains: --frames/--scene/--check/--plant are not supported (use --chain-frames, --tplant, --u8-plant)'); return 2; }
   } else if (restir) {
-    if (!['initial', 'initial-rr', 'offline', 'criteria2022'].includes(args.preset!)) { console.error('--preset initial|initial-rr|offline|criteria2022'); return 2; }
+    if (!['initial', 'initial-rr', 'offline', 'criteria2022', 'offline-m6'].includes(args.preset!)) { console.error('--preset initial|initial-rr|offline|criteria2022|offline-m6'); return 2; }
     if (args.plant && !['no-j', 'marginal-j'].includes(args.plant)) { console.error('--plant no-j|marginal-j'); return 2; }
     if (args.frames || args.scene || args.check) { console.error('--kernel restir: --frames/--scene/--check are not supported'); return 2; }
   }
@@ -246,6 +254,7 @@ async function main(shared?: SharedPage): Promise<number> {
             wScale: args['w-scale'] !== undefined ? Number(args['w-scale']) : undefined,
             maxBounces: args['max-bounces'] !== undefined ? Number(args['max-bounces']) : undefined, env: env && env.nee !== undefined ? { nee: env.nee } : undefined,
             mode: args.mode as RenderRestirChainsOptions['mode'],
+            settings: rsSettings, lightMode: args['light-mode'],
           };
           rep = await page.evaluate((x) => window.__harness!.renderRestirChains(x), co) as unknown as RenderBatchesReport;
         } else if (restir) {
@@ -255,6 +264,7 @@ async function main(shared?: SharedPage): Promise<number> {
             batches: Number(args.batches), batchOffset: args['batch-offset'] ? Number(args['batch-offset']) : undefined, seed, chromeVersion, members: args.members ? Number(args.members) : undefined,
             plant: args.plant as RestirPlantName | undefined, wScale: args['w-scale'] !== undefined ? Number(args['w-scale']) : undefined,
             maxBounces: args['max-bounces'] !== undefined ? Number(args['max-bounces']) : undefined, env: env && env.nee !== undefined ? { nee: env.nee } : undefined,
+            settings: rsSettings, lightMode: args['light-mode'],
           });
         } else rep = await page.evaluate((o) => window.__harness!.renderBatches(o), {
           run: runId, package: pkgUrl, sceneUrl: args.scene, kernel: args.kernel as ValidationKernel, spp: Number(args.spp), batches: Number(args.batches),

@@ -301,7 +301,13 @@ export function dualCheckRecord(s: DualScene, w: Uint32Array, o: number): DualRe
   const nB = empty ? d - 1 : (k > 2 ? k - 2 : 0);
   if (nB > 7 || d > 9) { r.skipped = 'deep'; return r; }
   const forced = tech === 0 && k === d;
-  const envRc = tech === 3 && k === d, emitRc = tech === 1 && k === d;
+  const envRc = tech === 3 && k === d;
+  // M6 (restir-m6-api.md MD6/MD7): an analytic crossing (tech 2) at k = d is an emitter rc on the light point recorded by
+  // rs_trace_cross (words 16–18 the light normal, 19–21 the point, 22 = 2); a crossing ∅ path ends on that point too
+  const ana = tech === 2;
+  if (ana && w[o + 22] !== 2 && (k === d || k === 0)) { r.skipped = 'cross-untraced'; return r; }
+  const emitRc = (tech === 1 || ana) && k === d;
+  const crossN: V3 = [bf(w[o + 16]), bf(w[o + 17]), bf(w[o + 18])];
   const rcWi: V3 = [bf(w[o + 9]), bf(w[o + 10]), bf(w[o + 11])];
   const lobes: number[] = [0];
   for (let b = 1; b <= nB; b++) lobes[b] = w[o + 26 + 4 * (b - 1) + 3];
@@ -320,19 +326,42 @@ export function dualCheckRecord(s: DualScene, w: Uint32Array, o: number): DualRe
     }
     const light = { dir: [bf(w[o + 16]), bf(w[o + 17]), bf(w[o + 18])] as V3, pos: perturb([bf(w[o + 19]), bf(w[o + 20]), bf(w[o + 21])], seed, SENS_ULPS), inf: w[o + 22] !== 0 };
     const neeDir = (x: V3): V3 => (light.inf ? light.dir : nrm(sub(light.pos, x)));
-    const xk = (!empty && !forced && !envRc) ? V(w[o + 6], bf(w[o + 7]), bf(w[o + 8])) : undefined;
-    const prevPos = (b: number): V3 => (b === 1 ? cam : Y[b - 1]!.pos);
-    const dirTo = (b: number): V3 | undefined => (Y[b + 1] ? nrm(sub(Y[b + 1]!.pos, Y[b]!.pos)) : escape);
-    const replayEvent = (b: number) => { const L = dirTo(b); return L ? dualEvent(Y[b]!, prevPos(b), L, lobes[b]) : undefined; };
+    const crossPos = perturb([bf(w[o + 19]), bf(w[o + 20]), bf(w[o + 21])], seed, SENS_ULPS);
+    const xk = (!empty && !forced && !envRc)
+      ? (ana && k === d ? { pos: crossPos, ng: crossN, mat: Y[1]!.mat } : V(w[o + 6], bf(w[o + 7]), bf(w[o + 8])))
+      : undefined;
+    // incoming direction V at y_b (math.md#delta-incoming, restir-m6-api.md M6-10): from positions (D3), except after a
+    // delta event at y_{b−1}, where it is the traced direction: the singular reflection of V at y_{b−1} (supported V1 / V2
+    // materials; a delta event of a glass model is not re-derived: undefined ⇒ the record is skipped)
+    const inDir = (b: number): V3 | undefined => {
+      if (b === 1) return nrm(sub(cam, Y[1]!.pos));
+      if ((lobes[b - 1] & 8) === 0) return nrm(sub(Y[b - 1]!.pos, Y[b]!.pos));
+      const x = Y[b - 1]!, Vp = inDir(b - 1);
+      if (!Vp || !dualLobes(x.mat, 1).supported) return undefined;
+      const n: V3 = dot(x.ng, Vp) < 0 ? neg(x.ng) : x.ng;
+      const c = dot(n, Vp);
+      return neg(nrm([2 * c * n[0] - Vp[0], 2 * c * n[1] - Vp[1], 2 * c * n[2] - Vp[2]]));
+    };
+    /** A point on the incoming ray of y_b (dualEvent takes V = normalize(from − x)). */
+    const prevPos = (b: number): V3 | undefined => {
+      const v = inDir(b);
+      return v ? [Y[b]!.pos[0] + v[0], Y[b]!.pos[1] + v[1], Y[b]!.pos[2] + v[2]] : undefined;
+    };
+    const dirTo = (b: number): V3 | undefined => {
+      if (ana && empty && b === d - 1) return nrm(sub(crossPos, Y[b]!.pos));   // ∅ crossing: the candidate's own ω_c
+      return Y[b + 1] ? nrm(sub(Y[b + 1]!.pos, Y[b]!.pos)) : escape;
+    };
+    const replayEvent = (b: number) => { const L = dirTo(b), from = prevPos(b); return L && from ? dualEvent(Y[b]!, from, L, lobes[b]) : undefined; };
     const yk1 = empty ? undefined : Y[yk1Idx];
     const reconnectEvent = () => {
       if (!yk1) return undefined;
       const from = prevPos(yk1Idx);
+      if (!from) return undefined;
       if (forced) return dualEvent(yk1, from, neeDir(yk1.pos), LOBE.NEE);
       const L = envRc ? rcWi : nrm(sub(xk!.pos, yk1.pos));
       return dualEvent(yk1, from, L, lkm1);
     };
-    return { Y, xk, yk1, prevPos, replayEvent, reconnectEvent, neeDir };
+    return { Y, xk, yk1, prevPos, replayEvent, reconnectEvent, neeDir, crossPos };
   };
   type Geom = ReturnType<typeof geom>;
 
@@ -341,7 +370,8 @@ export function dualCheckRecord(s: DualScene, w: Uint32Array, o: number): DualRe
     if (empty && j === d) {                              // ∅ terminal pair (y_{d−1}, emitter | env)
       const ea = g.replayEvent(d - 1);
       if (!ea) return { sup: true, tang: 1, trace: true };
-      const bV: RcVertexD = g.Y[d] ? { pos: g.Y[d]!.pos, ng: g.Y[d]!.ng, kind: RCK.LIGHT, diffuseOnly: false } : { pos: [0, 0, 0], ng: [0, 0, 0], kind: RCK.ENV, diffuseOnly: false };
+      const bV: RcVertexD = ana ? { pos: g.crossPos, ng: crossN, kind: RCK.LIGHT, diffuseOnly: false }
+        : g.Y[d] ? { pos: g.Y[d]!.pos, ng: g.Y[d]!.ng, kind: RCK.LIGHT, diffuseOnly: false } : { pos: [0, 0, 0], ng: [0, 0, 0], kind: RCK.ENV, diffuseOnly: false };
       return { res: pairTestF64(ea.v, ea.e, bV, eventNone(), thr, s.params), sup: ea.supported, tang: Math.min(ea.cosL, bV.kind === RCK.ENV ? 1 : pairTangency(ea.v, bV)) };
     }
     if (empty || j <= nB) {                              // replayed pair (y_{j−1}, y_j | EV_BSDF)
@@ -371,7 +401,7 @@ export function dualCheckRecord(s: DualScene, w: Uint32Array, o: number): DualRe
   };
 
   const g0 = geom(0);
-  if (g0.Y.some((v) => v && !v.mat)) { r.skipped = 'material'; return r; }
+  if (g0.Y.some((v) => v && !v.mat) || (g0.xk && !g0.xk.mat)) { r.skipped = 'material'; return r; }
   // thr of the destination domain (math.md#rc-predicate), recomputed
   const y1 = dualVertex(s, w[o + 3], bf(w[o + 4]), bf(w[o + 5]));
   const thrD = primaryThresholdF64(cam, y1.pos, y1.ng, s.tau);
@@ -406,6 +436,7 @@ export function dualCheckRecord(s: DualScene, w: Uint32Array, o: number): DualRe
     };
     const Gf = (a: V3, b: V3, nb: V3) => { const dl = sub(a, b); const t2 = dot(dl, dl); return Math.abs(dot(nb, dl)) / (t2 * Math.sqrt(t2)); };
     const from = g.prevPos(yk1Idx);
+    if (!from) return undefined;
     if (envRc) return joint(yk1, from, rcWi, lkm1);
     const wP = nrm(sub(g.xk!.pos, yk1.pos));
     const pY = joint(yk1, from, wP, lkm1);

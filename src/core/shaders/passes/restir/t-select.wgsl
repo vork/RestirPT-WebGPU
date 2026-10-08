@@ -56,6 +56,18 @@ fn res_select_temporal(q: u32, qP: u32, W: f32, c: f32) {
       resout_set(q, RP_DIAG, p9);
     }
   }
+#if RS_MODE_B
+  if (rf_tech(f) == RS_TECH_BSDF_ANALYTIC) {             // M6 MD8: crossing entries and endpointId renumbered to frame t
+    let e = r.entryTo & RC_ENTRY_MASK;
+    var p5 = resin_plane(qP, RP_END);
+    p5.x = RC_TAG_CROSS | e;
+    resout_set(q, RP_END, p5);
+    if (k == d) { p2.x = RC_TAG_CROSS | e; }
+    var p9 = resin_plane(qP, RP_DIAG);
+    p9.w = e;
+    resout_set(q, RP_DIAG, p9);
+  }
+#endif
   resout_set(q, RP_RC, p2);
   let deep = k != 0u && k + 2u <= d;
   let bc = k != 0u && k + 1u == d;

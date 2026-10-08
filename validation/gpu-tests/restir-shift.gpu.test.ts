@@ -126,9 +126,13 @@ interface T3RunOptions {
   target?: number; maxMs?: number;
   /** T3-D: record every `dualStride`-th trial (both shifts) and re-derive its predicate decisions in f64. */
   dual?: DualScene; dualStride?: number;
+  /** M6 keep mask: trials whose stored path has ℓ_{k−1} = G_R (bit 0) / ℓ_k = G_R (bit 1) / x_k on glass (bit 2, the
+   *  side-flip candidates) run even in bins at their target; with `xTarget` the run stays open until every kept counter
+   *  (T3_X_CATS grKm1 / grK / sideFlip) has that many round trips. */
+  xKeep?: number; xTarget?: number;
 }
 interface DualSummary { records: number; pairs: number; logic: number; fp: number; tangentFp: number; jChecked: number; jBad: number; skipped: Record<string, number>; details: string[] }
-interface T3Result { stats: T3Stats; viol: Uint32Array; nViol: number; frames: number; ms: number; dual?: DualSummary; mode?: number }
+interface T3Result { stats: T3Stats; viol: Uint32Array; nViol: number; frames: number; ms: number; dual?: DualSummary; mode?: number; extra?: Record<string, { trials: number; rtOk: number; logic: number }> }
 
 /** Render frames with the candidate dump and run the T3 kernel over every dumped candidate × partners. */
 async function runT3(rig: RestirRig, tp: TestPipeline, o: T3RunOptions): Promise<T3Result> {
@@ -157,7 +161,7 @@ async function runT3(rig: RestirRig, tp: TestPipeline, o: T3RunOptions): Promise
   const chunk = o.maxTrialsPerDispatch ?? (1 << 20);
   const res = k.resources;
   const t0 = Date.now();
-  let mask = o.skipMask ?? 0, frames = 0;
+  let mask = o.skipMask ?? 0, maskHi = 0, frames = 0;     // bins 0–31 in passId, 32+ in RsDispatch.flags bits 16+ (M6)
   for (let f = 0; f < o.frames; f++) {
     const t = (o.frameBase ?? 0) + f;
     await rig.frames(1, t);
@@ -165,27 +169,32 @@ async function runT3(rig: RestirRig, tp: TestPipeline, o: T3RunOptions): Promise
       const n = Math.min(chunk, total - base);
       const g = Math.ceil(n / 64);
       await tp.run([res.candDump!, stats, viol, dualBuf], [Math.min(g, 65535), Math.ceil(g / 65535)],
-        { t, treeBase: base, treeCount: n, round: o.mode, flags: o.partners, passId: mask, rowBase: o.dual ? (o.dualStride ?? 101) : 0 },
+        { t, treeBase: base, treeCount: n, round: o.mode, flags: (o.partners | (maskHi << 16) | ((o.xKeep ?? 0) << 20)) >>> 0, passId: mask >>> 0, rowBase: o.dual ? (o.dualStride ?? 101) : 0 },
         [res.views.vbuf, res.views.geo]);
     }
     if (o.dual) await drainDual();
     frames++;
     if (o.target) {
       const w = await readU32(dev, stats, T3_NBINS * T3S.words * 4);
-      mask = o.skipMask ?? 0;
+      mask = o.skipMask ?? 0; maskHi = 0;
       let open = 0;
       for (let b = 0; b < T3_NBINS; b++) {
         const ok = w[b * T3S.words + T3S.fwdOk];
-        if (ok >= o.target) mask |= 1 << b; else if (w[b * T3S.words + T3S.trials] > 0) open++;
+        if (ok >= o.target) { if (b < 32) mask |= 1 << b; else maskHi |= 1 << (b - 32); } else if (w[b * T3S.words + T3S.trials] > 0) open++;
+      }
+      if (o.xKeep && o.xTarget) {
+        const x = decodeT3Extra(await readU32(dev, stats));
+        T3_X_CATS.forEach((c, i) => { if (((o.xKeep! >> i) & 1) && x[c].rtOk < o.xTarget!) open++; });
       }
       if (open === 0) break;
     }
     if (o.maxMs && Date.now() - t0 > o.maxMs) break;
   }
-  const s = decodeT3Stats(await readU32(dev, stats));
+  const sw = await readU32(dev, stats);
+  const s = decodeT3Stats(sw);
   const v = await readU32(dev, viol);
   stats.destroy(); viol.destroy(); dualBuf.destroy();
-  return { stats: s, viol: v, nViol: v[0], frames, ms: Date.now() - t0, dual: o.dual ? dualSum : undefined, mode: o.mode };
+  return { stats: s, viol: v, nViol: v[0], frames, ms: Date.now() - t0, dual: o.dual ? dualSum : undefined, mode: o.mode, extra: decodeT3Extra(sw) };
 }
 
 function t3Report(tag: string, r: T3Result): { logic: number; fp: number; rt: number; jBad: number; platform: number } {
@@ -255,7 +264,9 @@ async function t3Rig(variant: T3Variant, W = 256, o: { envNee?: boolean; criteri
 }
 function dualScene(rig: RestirRig, scene: SceneData, params: { alphaMin: number; crit2022?: boolean; dmin?: number } = { alphaMin: 0.2 }): DualScene {
   const g = scene.geometry;
-  return { positions: recentrePositions(g.positions, rig.g.gpu.origin), indices: g.indices, triMaterial: g.triMaterial, materials: scene.materials.map(dualMaterial), tau: rig.kernel.settings.tau, params };
+  // textured / alpha-tested materials (M6 t3_alpha_256) have no f64 twin: records touching them are skipped ('material')
+  const mats = scene.materials.map((m) => (m.baseColorTexture || m.alphaMode === 'MASK' ? undefined : dualMaterial(m)));
+  return { positions: recentrePositions(g.positions, rig.g.gpu.origin), indices: g.indices, triMaterial: g.triMaterial, materials: mats as DualScene['materials'], tau: rig.kernel.settings.tau, params };
 }
 const T3_DEFINES = { RS_REPLAY: 1, RS_SHIFT_TRACE: 1, RS_VBUF_BINDING: '4u', RS_GEO_BINDING: '5u' };
 
@@ -653,4 +664,60 @@ describe('Production shift passes: platform-fault stress (VITE_STRESS)', () => {
       rig.destroy();
     }
   }, 3_600_000);
+});
+
+// ------------------------------------------------------------------------------------------------ M6: T3-M6 (gating)
+
+import { t3M6Scene, type T3M6Variant } from '../scenes/m6-fixtures.ts';
+import { T3_WGSL_BODY, T3_X_CATS, decodeT3Extra, type T3Card } from './restir-shift-fixtures.ts';
+import type { LightMode } from '../../src/core/render/lights-gpu.ts';
+
+/** M6 T3 variants (restir-m6-api.md §4 T3-M6): RIS-NEE on t3_cases_256, Mode B + RIS on t3_modeb_256, rough glass
+ *  (G_R reconnection, side flips) on t3_glass_256 (gating in M6, D13 → rung 3.9), alpha cards on t3_alpha_256. */
+const T3M6_RUNS: { name: string; base: T3Variant | T3M6Variant; mode: LightMode; settings: Record<string, unknown>; need: string[]; needX: string[] }[] = [
+  { name: 't3_cases_256 + RIS-NEE', base: 't3_cases_256', mode: 'A', settings: { risNee: true }, need: ['a-delta', 'a-area', 'a-tri', 'f-env', 'd', 'e'], needX: [] },
+  { name: 't3_modeb_256 (Mode B + RIS-NEE)', base: 't3_modeb_256', mode: 'B', settings: { risNee: true }, need: ['d-ana', 'c-ana'], needX: [] },
+  { name: 't3_modeb_rare_256 (Mode B, frequent ∅ crossings)', base: 't3_modeb_rare_256', mode: 'B', settings: {}, need: ['none-ana'], needX: [] },
+  { name: 't3_glass_256 (rough-glass G_R reconnection)', base: 't3_glass_256', mode: 'A', settings: {}, need: [], needX: ['grKm1', 'grK'] },
+  { name: 't3_glass_pane_256 (rough-glass side flips)', base: 't3_glass_pane_256', mode: 'A', settings: {}, need: [], needX: ['sideFlip'] },
+  { name: 't3_alpha_256 (cutouts on reconnection segments)', base: 't3_alpha_256', mode: 'A', settings: {}, need: [], needX: ['alphaCard'] },
+];
+const T3M6_MIN = Number(import.meta.env?.VITE_T3M6_MIN ?? 1_000_000);
+
+describe('T3-M6: T3-0 / T3-1 / T4 / T3-D LOGIC = 0 on the M6 cases (≥ 10⁶ round trips per new case / counter)', () => {
+  for (const run of T3M6_RUNS) {
+    it(run.name, async () => {
+      const env = (await loadHdri(`${T3_ENV_ID}_1k.hdr`)) ?? synthEnvData(256, 128);
+      const m6 = (['t3_modeb_256', 't3_modeb_rare_256', 't3_alpha_256', 't3_glass_pane_256'] as string[]).includes(run.base);
+      const t = m6 ? t3M6Scene(run.base as T3M6Variant, env) : { ...t3Scene(run.base as T3Variant, env), cards: [] as T3Card[] };
+      const rig = await restirRig(t.scene, 256, 256, {
+        dumpCandidates: true, cam: { camToWorld: t.camera.matrix, yfov: t.camera.yfov }, lightMode: run.mode,
+        settings: { maxBounces: t.maxBounces, ...run.settings }, env: { nee: true },
+      });
+      const o = rig.g.gpu.origin;
+      const cards: T3Card[] = t.cards.map((c) => ({ ...c, c: [c.c[0] - o[0], c.c[1] - o[1], c.c[2] - o[2]] as [number, number, number] }));
+      const tp = await testPipeline(rig.kernel, 't3m6', T3_WGSL_BODY(cards), 't3_main', 4, { ...T3_DEFINES, RS_M6_TRACE: 1 }, ['uint', 'unfilterable-float']);
+      const tag = run.base;
+      // glass counters: trials whose stored path can produce the counted event keep running after their case bin reached
+      // its target (grKm1 → ℓ_{k−1} = G_R, grK → ℓ_k = G_R, sideFlip → x_k on glass; restir-m6-api.md Changelog M6-14)
+      const xKeep = (run.needX.includes('grKm1') ? 1 : 0) | (run.needX.includes('grK') ? 2 : 0) | (run.needX.includes('sideFlip') ? 4 : 0);
+      const self = t3Report(`T3-0 ${tag}`, await runT3(rig, tp, { mode: 0, partners: 1, frames: 100000, target: T3_TARGET, maxMs: T3_MS / 3, xKeep }));
+      const rtRes = await runT3(rig, tp, { mode: 1, partners: 16, frames: 100000, target: T3_TARGET, maxMs: T3_MS, dual: dualScene(rig, t.scene), dualStride: 997, xKeep, xTarget: T3_TARGET });
+      const rt = t3Report(`T3-1 ${tag}`, rtRes);
+      const x = rtRes.extra!;
+      console.log(`[T3-M6 ${tag} extra] ${JSON.stringify(x)}`);
+      expect(self.logic).toBe(0);
+      expect(rt.logic).toBe(0);
+      expect(rt.jBad).toBe(0);
+      expectPlatformRare(self, rt);
+      for (const b of run.need) {
+        const n = (rtRes.stats.bins[`${b}/k2`]?.fwdOk ?? 0) + (rtRes.stats.bins[`${b}/k>2`]?.fwdOk ?? 0);
+        console.log(`[T3-M6 ${tag}] ${b}: ${n} round trips`);
+        expect(n, b).toBeGreaterThanOrEqual(T3M6_MIN);
+      }
+      for (const c of Object.keys(x)) expect(x[c].logic, c).toBe(0);
+      for (const c of run.needX) expect(x[c].rtOk, c).toBeGreaterThanOrEqual(T3M6_MIN);
+      rig.destroy();
+    }, 3_600_000);
+  }
 });

@@ -31,6 +31,11 @@ const TS_QVALID: u32 = 1u;  const TS_DISOCC: u32 = 2u;  const TS_FWD_QUEUED: u32
 const TS_SEL_P: u32 = 16u;  const TS_SEL_C: u32 = 32u;  const TS_INV_QUEUED: u32 = 64u;  const TS_INV_DONE: u32 = 128u;
 const TS_EMPTY_OUT: u32 = 256u;  const TS_NO_HIST: u32 = 512u;  const TS_PICK_RING: u32 = 1024u;  const TS_ROBUST: u32 = 2048u;
 const TS_E2_ZERO: u32 = 4096u;  const TS_FINAL: u32 = 8192u;  const TS_BG: u32 = 16384u;
+#if RS_DUAL_MV
+/// Dual-MV variant only: T1 found q′ through the dual motion vector (tpick tap ≥ 10; its c_p is DMV_C_CAP-capped,
+/// restir-m6-api.md MD11 amendment DMV-1). Diagnostics / debug.
+const TS_DUAL_PICK: u32 = 65536u;
+#endif
 const SXS_DONE: u32 = 1u;  const SXS_UNDEF: u32 = 2u;  const SXS_VIS: u32 = 4u;  const SXS_RAY: u32 = 8u;  const SXS_DEEP: u32 = 16u;
 const SXS_N1: u32 = 32u;  const SXS_B1: u32 = 64u;  const SXS_ZERO: u32 = 128u;  const SXS_E2: u32 = 256u;  const SXS_PLANT: u32 = 512u;
 const SFX_FWD: u32 = 0u;  const SFX_INV: u32 = 1u;

@@ -59,6 +59,18 @@ export const RS_WGSL_CONSTS = {
 } as const;
 const K = RS_WGSL_CONSTS;
 
+/** Every constant of shaders/restir/m6-types.wgsl (restir-m6-api.md §2.1; included only by M6 code, MD1). */
+export const RS_M6_CONSTS = {
+  RSF_RIS_NEE: 8192, RSF_DUPMAP: 16384, RSF_DUAL_MV: 32768,
+  RSF_PLANT_U8_RIS_MIXED: 65536, RSF_PLANT_U8_TILE_PMF: 131072, RSF_PLANT_U8_CROSS_OCC: 262144,
+  RS_PASS_RIS_NEE: 2, RS_PASS_LIGHT_TILES: 3, RS_PASS_DUPMAP: 4,
+  STREAM_LIGHT_TILE: 0x3c6ef372, STREAM_RIS_NEE: 0x1b873593,
+  RS_TILES: 128, RS_TILE_SIZE: 1024, RS_SCREEN_TILE: 8, RS_RIS_M_MAX: 32,
+  SFX_CROSS: 16, RSC_T_DUAL: 29,
+  DUP_HALF: 8, DUP_DENOM: 288,
+} as const;
+const K6 = RS_M6_CONSTS;
+
 export const RS_TECH = { nee: K.RS_TECH_NEE, bsdfTri: K.RS_TECH_BSDF_TRI, bsdfAnalytic: K.RS_TECH_BSDF_ANALYTIC, bsdfEnv: K.RS_TECH_BSDF_ENV } as const;
 export const RS_TECH_NAMES = ['NEE', 'BSDF_TRI', 'BSDF_ANALYTIC', 'BSDF_ENV'] as const;
 /** Lobe codes (bsdf.wgsl LOBE_*). */
@@ -81,6 +93,8 @@ export const RSC = {
   tClassUndef: K.RSC_T_CLASS_UNDEF, tRefreshRecs: K.RSC_T_REFRESH_RECS, tRefreshRays: K.RSC_T_REFRESH_RAYS, tE2Zeroed: K.RSC_T_E2_ZEROED,
   tRobustMismatch: K.RSC_T_ROBUST_MISMATCH, tNonFinite: K.RSC_T_NONFINITE, tPendingLeft: K.RSC_T_PENDING_LEFT,
   tLightClass: K.RSC_T_LIGHT_CLASS,
+  // M6 (restir-m6-api.md MD11)
+  tDual: K6.RSC_T_DUAL,
 } as const;
 export type RscName = keyof typeof RSC;
 
@@ -179,6 +193,9 @@ export interface RestirParamsCpu {
   memberBase: number;
   /** M5 (appendix B.2): boost slots NB (numSlots already includes them), TM_* word, c cap (20), TP_* word. */
   boostSlots?: number; tMode?: number; cCap?: number; tPlants?: number;
+  /** M6 (restir-m6-api.md §2.2; words 120/124, the WGSL names stay pad4 / pad5): words[] index of the M6 arena region
+   *  and the RIS-NEE candidate count. 0 when no M6 feature needs them (the M5 uniform bytes). */
+  m6Base?: number; risM?: number;
 }
 
 export function packRestirParams(p: RestirParamsCpu, out = new ArrayBuffer(RESTIR_PARAMS_SIZE)): ArrayBuffer {
@@ -194,6 +211,7 @@ export function packRestirParams(p: RestirParamsCpu, out = new ArrayBuffer(RESTI
   u[L.lightMode / 4] = p.lightMode; u[L.memberBase / 4] = p.memberBase;
   u[L.boostSlots / 4] = p.boostSlots ?? 0; u[L.tMode / 4] = (p.tMode ?? 0) >>> 0; f[L.cCap / 4] = p.cCap ?? 20;
   u[L.tPlants / 4] = (p.tPlants ?? 0) >>> 0;
+  u[L.pad4 / 4] = (p.m6Base ?? 0) >>> 0; u[L.pad5 / 4] = (p.risM ?? 0) >>> 0;
   return out;
 }
 
@@ -217,6 +235,17 @@ export const arenaBytes = (P: number, NS: number, temporal = false): number => A
 export const arenaWords = (P: number, NS: number) => ({
   slots: 0, codes: 4 * P * NS, items: 5 * P * NS, tState: 6 * P * NS, sfxOut: 6 * P * NS + 20 * P, end: 6 * P * NS + 36 * P,
 });
+/** M6 arena region (restir-m6-api.md §2.3), words[] indices: the duplication counts (P words, dupmap) and the light
+ *  tiles (E·128·1024 words, RIS-NEE), appended after the M4 / M5 regions. */
+export interface ArenaM6 { dup: boolean; tileMembers: number }
+export const arenaM6Base = (P: number, NS: number, temporal: boolean): number => 6 * P * NS + (temporal ? 36 * P : 0);
+export const arenaM6Words = (P: number, m6: ArenaM6): number => (m6.dup ? P : 0) + m6.tileMembers * K6.RS_TILES * K6.RS_TILE_SIZE;
+export const arenaM6Layout = (P: number, NS: number, temporal: boolean, m6: ArenaM6) => {
+  const base = arenaM6Base(P, NS, temporal);
+  return { base, dup: base, tiles: base + (m6.dup ? P : 0), end: base + arenaM6Words(P, m6) };
+};
+/** Arena bytes including the M6 region. */
+export const arenaBytesM6 = (P: number, NS: number, temporal: boolean, m6: ArenaM6): number => arenaBytes(P, NS, temporal) + 4 * arenaM6Words(P, m6);
 /** Queue q header words {counter, n, capacity, overflow}. */
 export const queueHdr = (q: number) => ({ counter: 4 * q, n: 4 * q + 1, capacity: 4 * q + 2, overflow: 4 * q + 3 });
 
@@ -274,6 +303,7 @@ export function unpackRsTemporal(u: Uint32Array): RsTemporalCpu {
 export const TS_CONSTS = {
   TS_QVALID: 1, TS_DISOCC: 2, TS_FWD_QUEUED: 4, TS_FWD_DONE: 8, TS_SEL_P: 16, TS_SEL_C: 32, TS_INV_QUEUED: 64, TS_INV_DONE: 128,
   TS_EMPTY_OUT: 256, TS_NO_HIST: 512, TS_PICK_RING: 1024, TS_ROBUST: 2048, TS_E2_ZERO: 4096, TS_FINAL: 8192, TS_BG: 16384,
+  TS_DUAL_PICK: 65536,   // RS_DUAL_MV variant only (q′ found by the dual MV; T3 resamples it with Talbot MIS, DMV-1)
   SXS_DONE: 1, SXS_UNDEF: 2, SXS_VIS: 4, SXS_RAY: 8, SXS_DEEP: 16, SXS_N1: 32, SXS_B1: 64, SXS_ZERO: 128, SXS_E2: 256, SXS_PLANT: 512,
   SFX_FWD: 0, SFX_INV: 1,
 } as const;

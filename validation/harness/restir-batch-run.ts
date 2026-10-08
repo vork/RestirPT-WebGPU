@@ -15,6 +15,7 @@ import { createEnvResources, destroyEnvResources, writeEnvParams } from '../../s
 import { computeRenderOrigin, JITTER_IID } from '../../src/core/render/frame-uniforms.ts';
 import type { PtEnvOptions } from '../../src/core/render/pt-kernel.ts';
 import { RestirBatchRunner } from '../../src/core/render/restir/batch-runner.ts';
+import type { LightMode } from '../../src/core/render/lights-gpu.ts';
 import { RestirKernel } from '../../src/core/render/restir/kernel.ts';
 import { writeNpz } from '../../src/core/render/restir/npz.ts';
 import { RESTIR_PRESETS, restirSettings, type RestirPresetName, type RestirSettings } from '../../src/core/render/restir/presets.ts';
@@ -44,8 +45,10 @@ export interface RenderRestirBatchesOptions {
   wScale?: number;
   /** Override the package's max bounces (T16 requires it to equal the PT reference's). */
   maxBounces?: number;
-  /** Extra setting overrides (debugging only; recorded in the config hash). */
+  /** Extra setting overrides (M6 rung 3.7 toggles, Gate 5, U8 plants; recorded in the config hash and meta.json). */
   settings?: Partial<RestirSettings>;
+  /** Light mode override (default: the package's; restir-m6-api.md MD9: 'A', 'B', "A'"). */
+  lightMode?: string;
   env?: PtEnvOptions;
   chromeVersion?: string;
   budget?: Partial<SubmitBudget>;
@@ -56,7 +59,13 @@ export interface RenderRestirBatchesOptions {
 export interface RenderRestirBatchesReport { ok: boolean; run: string; files: string[]; meta: Record<string, unknown>; errors: string[] }
 
 /** Presets that are unbiased validation modes (T16: "validation mode is unbiased"). */
-export const UNBIASED_PRESETS: readonly RestirPresetName[] = ['initial', 'initial-rr', 'offline', 'criteria2022'];
+export const UNBIASED_PRESETS: readonly RestirPresetName[] = ['initial', 'initial-rr', 'offline', 'criteria2022', 'offline-m6'];
+
+/** Plant names present in the settings (T16 "plants only where named"; M5/M6 U8 plants live in settings.plant). */
+export function plantsOf(s: RestirSettings): string[] {
+  return [...Object.entries(s.plant ?? {}).filter(([k, v]) => (k === 'wScale' ? v !== 1 : !!v)).map(([k]) => k),
+    ...Object.entries(s.tPlant ?? {}).filter(([, v]) => !!v).map(([k]) => k)];
+}
 
 export async function renderRestirBatches(ctx: GpuContext, o: RenderRestirBatchesOptions): Promise<RenderRestirBatchesReport> {
   const t0 = performance.now();
@@ -80,14 +89,14 @@ export async function renderRestirBatches(ctx: GpuContext, o: RenderRestirBatche
   const envOpts: PtEnvOptions = { ...o.env, nee: o.env?.nee ?? pkgEnvSampling !== 'NONE' };
   const pkgBounces = typeof src.source.maxBounces === 'number' ? src.source.maxBounces : undefined;
   const maxBounces = o.maxBounces ?? pkgBounces ?? 3;
-  const lightMode = (src.source.lightMode as string | undefined) ?? 'A';
-  if (lightMode !== 'A') throw new Error(`${o.package}: light mode ${lightMode}; M4 ReSTIR is Mode A only (restir-api.md D1)`);
+  const lightMode = ((o.lightMode ?? (src.source.lightMode as string | undefined) ?? 'A').replace("'", '′')) as LightMode;
+  if (!['A', 'B', 'A′'].includes(lightMode)) throw new Error(`${o.package}: light mode ${lightMode}`);
   const plant = o.plant || (o.wScale !== undefined && o.wScale !== 1)
     ? { ...(o.plant === 'no-j' ? { noJ: true } : {}), ...(o.plant === 'marginal-j' ? { marginalJ: true } : {}), ...(o.wScale !== undefined && o.wScale !== 1 ? { wScale: o.wScale } : {}) }
     : undefined;
   const settings = restirSettings(o.preset, { maxBounces, ...o.settings, ...(plant ? { plant } : {}) });
 
-  const kernel = await RestirKernel.create(device, gpu, env, { settings, lightMode: 'A', env: envOpts, features, wgslLanguageFeatures });
+  const kernel = await RestirKernel.create(device, gpu, env, { settings, lightMode, env: envOpts, features, wgslLanguageFeatures });
   kernel.setView({ camera: { camToWorld: src.camera.camToWorld as number[], yfov: src.camera.yfov }, width: W, height: H, runSeed: o.seed >>> 0, members: E, jitterMode: JITTER_IID });
   await kernel.prepare();
   const runner = new RestirBatchRunner(kernel, { budget: o.budget, framesPerBatch: o.framesPerBatch, batches: o.batches, runSeed: o.seed >>> 0 });
@@ -142,11 +151,13 @@ export async function renderRestirBatches(ctx: GpuContext, o: RenderRestirBatche
     console.warn(`[restir-batch-run] spatial stage executed ${spatialRounds}/${settings.rounds} rounds (stub stage: canonical-only output)`);
   }
 
-  const unbiased = UNBIASED_PRESETS.includes(o.preset) && !plant;
+  // T16: unbiased = an unbiased preset, no plant and no biased feature (the duplication map, restir-m6-api.md MD10)
+  const plantsNamed = plantsOf(settings);
+  const unbiased = UNBIASED_PRESETS.includes(o.preset) && !plantsNamed.length && !(settings.dupmap && settings.temporal);
   const config = {
     kernel: 'restir', preset: o.preset, framesPerBatch: o.framesPerBatch, members: E, width: W, height: H, jitter: 'iid-per-run', filter: 'box-1px',
     scene: src.source.packageSha256, frame: null, textureMode: 'validation', intersector: watertight ? 'woop-watertight' : 'moller-trumbore',
-    maxBounces, lightMode: 'A', settings, env: envInfo ? { nee: envInfo.nee } : 'none', plant: plant ?? null,
+    maxBounces, lightMode, settings, env: envInfo ? { nee: envInfo.nee } : 'none', plant: plant ?? null,
   };
   const configHash = await sha256Hex(new TextEncoder().encode(stable(config)));
   const info = describeContext(ctx) as { vendor?: string; architecture?: string; description?: string };
@@ -159,9 +170,11 @@ export async function renderRestirBatches(ctx: GpuContext, o: RenderRestirBatche
     members: E, width: W, height: H, configHash, config, ...(off ? { batchOffset: off } : {}),
     // T16 config assertions (gate-m4.ts checks them against the PT reference's meta.json)
     t16: {
-      validationModeUnbiased: unbiased, plantsNamed: plant ? Object.keys(plant) : [], internalScale: 1, denoiser: 'none', upscaler: 'none',
+      validationModeUnbiased: unbiased, plantsNamed, internalScale: 1, denoiser: 'none', upscaler: 'none',
       readback: E === 1 ? 'linear accumulation buffer (f32 Σ L per frame) / frames, f64 division'
-        : 'linear rsFrame radiance reduced by ensStats / ensPixel (f32 sums per frame, f64 host rows); no accumulation buffer', jitterMode: 'iid-per-run', maxBounces, lightMode: 'A',
+        : 'linear rsFrame radiance reduced by ensStats / ensPixel (f32 sums per frame, f64 host rows); no accumulation buffer', jitterMode: 'iid-per-run', maxBounces, lightMode,
+      // M6 (restir-m6-api.md §5.4): the features of the unit, read back by gate-m6.ts
+      m6: { pairing: settings.pairing, pairSigma: settings.pairSigma, risNee: settings.risNee, risM: settings.risM, dualMv: settings.dualMv, dupmap: settings.dupmap, rr: settings.rr },
       spatialRoundsExecuted: spatialRounds, spatialRoundsRequested: settings.rounds,
     },
     restir: {

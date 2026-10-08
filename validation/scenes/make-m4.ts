@@ -17,7 +17,7 @@
 // fails R, so k > 2, ∅-TRI and ∅-ENV paths are frequent) and a large emissive panel; t3_cutoff_256 (U-12) = the
 // spheres replaced by V2 / V1 materials whose lobe weights sit at the closure cutoff 1e-5 (metallic 1 − 1.5e-5,
 // 1 − 0.8e-5, mix 1 − 1.2e-5, specular level ~1e-5).
-import type { EnvironmentData, LightData, MaterialData, SceneData, SceneGeometry } from '../../src/core/scene/types.ts';
+import type { EnvironmentData, LightData, MaterialData, SceneData, SceneGeometry, TextureData } from '../../src/core/scene/types.ts';
 import { TRI_EMISSIVE } from '../../src/core/scene/types.ts';
 import { quantizeScene } from '../../src/core/scene/quantize.ts';
 
@@ -39,21 +39,22 @@ const BASE: Omit<MaterialData, 'name' | 'model'> = {
   baseColorFactor: [0.8, 0.8, 0.8, 1], metallicFactor: 0, roughnessFactor: 0.5, emissiveFactor: [0, 0, 0], emissiveStrength: 1,
   ior: 1.5, specularFactor: 1, specularColorFactor: [1, 1, 1], transmissionFactor: 0, alphaMode: 'OPAQUE', alphaCutoff: 0.5, doubleSided: true,
 };
-function v1(name: string, o: { diffuse?: V3; glossy?: V3; roughness?: number; mix?: number; emission?: V3 } = {}): MaterialData {
+export function v1(name: string, o: { diffuse?: V3; glossy?: V3; roughness?: number; mix?: number; emission?: V3 } = {}): MaterialData {
   const diffuse = o.diffuse ?? [0.8, 0.8, 0.8];
   return { ...BASE, name, model: 'v1', baseColorFactor: [...diffuse, 1], emissiveFactor: o.emission ?? [0, 0, 0],
     v1: { diffuse, glossy: o.glossy ?? [0, 0, 0], roughness: o.roughness ?? 0.5, mix: o.mix ?? 0 } };
 }
-function principled(name: string, o: Partial<MaterialData>): MaterialData { return { ...BASE, ...o, name, model: 'principled' }; }
+export function principled(name: string, o: Partial<MaterialData>): MaterialData { return { ...BASE, ...o, name, model: 'principled' }; }
 
 // ---- flat-shaded mesh builder (browser-safe twin of scene-kit's MeshBuilder: quads and icospheres) ----------------
 
-class Mesh {
+export class Mesh {
   pos: number[] = []; nrm: number[] = []; uv: number[] = []; idx: number[] = []; mat: number[] = [];
-  tri(a: V3, b: V3, c: V3, m: number): this {
+  /** uv: optional per-corner texture coordinates (M6 alpha cards; 0 otherwise). */
+  tri(a: V3, b: V3, c: V3, m: number, uv?: [number, number][]): this {
     const n = nrm(cross(sub(b, a), sub(c, a)));
     const base = this.pos.length / 3;
-    for (const p of [a, b, c]) { this.pos.push(...p); this.nrm.push(...n); this.uv.push(0, 0); }
+    [a, b, c].forEach((p, i) => { this.pos.push(...p); this.nrm.push(...n); this.uv.push(...(uv ? uv[i] : [0, 0])); });
     this.idx.push(base, base + 1, base + 2);
     this.mat.push(m);
     return this;
@@ -101,13 +102,13 @@ export function lookAt(eye: V3, target: V3, up: V3 = [0, 1, 0]): number[] {
   return frameM(x, cross(z, x), z, eye);
 }
 /** Light matrix at p whose emission axis −Z_obj points along dir. */
-function lightToward(dir: V3, p: V3): Float32Array {
+export function lightToward(dir: V3, p: V3): Float32Array {
   const Z = nrm(scl(dir, -1));
   const helper: V3 = Math.abs(Z[1]) < 0.95 ? [0, 1, 0] : [1, 0, 0];
   const X = nrm(cross(helper, Z));
   return new Float32Array(frameM(X, cross(Z, X), Z, p));
 }
-function light(id: number, type: LightData['type'], matrix: Float32Array, power: number, o: Partial<LightData> = {}): LightData {
+export function light(id: number, type: LightData['type'], matrix: Float32Array, power: number, o: Partial<LightData> = {}): LightData {
   return { id, name: `${type}${id}`, type, color: [1, 1, 1], power, exposure: 0, matrix, visibleToCamera: false, ...o };
 }
 
@@ -123,7 +124,8 @@ export const T3_MAT = {
  * Build a T3 fixture. `env` = the studio_small_09 1k map (required by the env variants; the test passes the map it
  * fetched, the CLI decodes the downloaded file).
  */
-export function t3Scene(variant: T3Variant, env?: EnvironmentData): T3Scene {
+export interface T3Extra { mesh: Mesh; materials: MaterialData[]; lights: LightData[]; textures: TextureData[] }
+export function t3Scene(variant: T3Variant, env?: EnvironmentData, extra?: (b: T3Extra) => void): T3Scene {
   const withEnv = variant !== 't3_cases_256_noenv';
   const lightsOn = variant !== 't3_cases_256_envonly';
   const glass = variant === 't3_glass_256';
@@ -184,11 +186,13 @@ export function t3Scene(variant: T3Variant, env?: EnvironmentData): T3Scene {
     light(4, 'disk', lightToward(nrm([0, -0.3, 1]), [0.9, 1.2, -1.45]), 20, { sizeX: 0.3 }),
     light(5, 'sun', lightToward(nrm([0.3, -1, -0.2]), [0, 5, 0]), 3),
   ] : [];
+  const textures: TextureData[] = [];
+  if (extra) extra({ mesh: mb, materials, lights, textures });   // M6 fixtures (validation/scenes/m6-fixtures.ts)
   const geometry = mb.build(materials);
   const mn: V3 = [Infinity, Infinity, Infinity], mx: V3 = [-Infinity, -Infinity, -Infinity];
   for (let i = 0; i < geometry.positions.length; i += 3) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], geometry.positions[i + k]); mx[k] = Math.max(mx[k], geometry.positions[i + k]); }
   // package v2 / GPU: the one lossy step (data-formats.md §B0), before the env is attached
-  const scene: SceneData = quantizeScene({ name: variant, geometry, materials, textures: [], lights, cameras: [], bounds: { min: mn, max: mx }, warnings: [] }).scene;
+  const scene: SceneData = quantizeScene({ name: variant, geometry, materials, textures, lights, cameras: [], bounds: { min: mn, max: mx }, warnings: [] }).scene;
   if (withEnv) scene.env = { ...env!, name: `${T3_ENV_ID}_1k`, strength: 1, tint: [1, 1, 1], rotationZ: 0.6, visibleToCamera: true };
   return {
     scene, camera: { matrix: lookAt([0, 1.1, 3.6], [0, 0.8, -0.4]), yfov: 50 * Math.PI / 180 },

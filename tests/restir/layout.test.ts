@@ -158,3 +158,36 @@ describe('U-PT-BITS (3): inline budget of every composed ReSTIR entry point (§4
     expect(inlineCount(toy, 'e', 'c')).toBe(3);
   });
 });
+
+// ------------------------------------------------------------------------------------------------ M6 (restir-m6-api.md)
+
+import { RS_M6_CONSTS } from '../../src/core/render/restir/layout.ts';
+
+describe('U-RES-1 (M6): m6-types.wgsl ≡ RS_M6_CONSTS; inline budget of the M6 variants (MD6, R2)', () => {
+  it('every u32 constant of m6-types.wgsl equals RS_M6_CONSTS (both directions; DUP_DENOM is f32 288)', () => {
+    const w = wgslConsts(shaderSources['restir/m6-types.wgsl']);
+    const { DUP_DENOM, ...u32s } = RS_M6_CONSTS;
+    expect(w).toEqual(u32s);
+    expect(stripComments(shaderSources['restir/m6-types.wgsl'])).toMatch(new RegExp(`const DUP_DENOM: f32 = ${DUP_DENOM}\\.0;`));
+  });
+
+  const M6: Defines = { RS_RIS_NEE: 1, RS_MODE_B: 1, RS_DUAL_MV: 1, RS_DUPMAP: 1 };
+  const budget: { name: RsPassName; query: number }[] = [
+    { name: 'rs_initial', query: 4 },            // NEE, continuation, RIS candidates, crossing candidates
+    { name: 'rs_spatial_replay', query: 2 }, { name: 'rs_spatial_shift', query: 2 },
+    { name: 'rs_t_forward', query: 2 }, { name: 'rs_t_inverse', query: 2 }, { name: 'rs_refresh_fwd', query: 2 },
+    { name: 'rs_light_tiles', query: 0 }, { name: 'rs_dupmap', query: 0 },
+  ];
+  for (const { name, query } of budget) {
+    it(`${name} (all M6 variants): ≤ 1 bsdf_sample, ≤ ${query} bsdf_query, ≤ 2 material_eval; ≤ 9 storage buffers`, () => {
+      const def = RS_PASSES[name];
+      const code = composeWgsl(def.file, { sources: shaderSources, defines: restirDefines(name, { sceneDefines: SCENE_DEFINES, debug: true, extra: M6 }) }).code;
+      const n = { sample: inlineCount(code, def.entry, 'bsdf_sample'), query: inlineCount(code, def.entry, 'bsdf_query'), mat: inlineCount(code, def.entry, 'material_eval') };
+      console.log(`[M6 inline] ${name} ${JSON.stringify(n)}`);
+      expect(n.sample).toBeLessThanOrEqual(1);
+      expect(n.query).toBeLessThanOrEqual(query);
+      expect(n.mat).toBeLessThanOrEqual(2);
+      expect(storageBufferCount(name, true)).toBeLessThanOrEqual(9);
+    });
+  }
+});
