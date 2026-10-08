@@ -711,3 +711,21 @@ ReSTIR-interactive finite, views 320–327 written.
 - MetalRoughSpheres' +0.07 % D3-type systematic: a Mode-B variant (light MIS on) of the E2E unit would separate the
   Mode-A near-specular NEE tails from a model difference.
 - B-SM-J was not detectable on finely tessellated meshes (M7-11); the low-poly scene is the plant's home.
+
+# M8: performance (docs/decisions/m8-perf.md; PLAN §5 M8)
+
+`npm run validate -- --milestone M8 --part core|stageB|perf` runs `validation/harness/gate-m8.ts`; `npm run validate --
+--all` runs every milestone gate M0 … M8 in order, each in its own process (PLAN §5 M8 exit).
+
+**What M8 changes for validation.** Every validation path keeps BVH2, the AoS reservoir planes, the requested light-mode
+text and the texture-path à-trous: the CWBVH, P-4, the SoA planes and the tiled à-trous are interactive-only variants
+behind composer defines / options whose keys are absent in validation (U-M7-BITS: every validation pipeline still
+composes to the M6 text). The one validation-path change is `ENV_COMPACT_IN_VALIDATION = true` (the env texture in the
+smallest exact format), bitwise neutral by ENV-U7c. The interactive variants are bitwise the pre-M8 results
+(U-M8-BITS AoS / SoA, U-M8-MODEB, U-DN-3c); the CWBVH is hit-equivalent to BVH2 (T12) and is checked end to end in
+Stage B (part stageB).
+
+**Code hashes.** The PT closure hash changed (traverse.wgsl gained the `BVH_CWBVH` include, scene-gpu / the BVH worker
+the CWBVH option, env-gpu the format rule) although the validation outputs are bitwise unchanged; cached PT references
+keyed by an older hash (M4–M7) are re-rendered by `--all` (no hash aliasing was introduced).
+
