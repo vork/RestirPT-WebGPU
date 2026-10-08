@@ -16,7 +16,8 @@
 // picking, depth and the G-buffer views; restir-api.md D12/R10). restirMode picks the settings preset (PLAN §3 modes:
 // ReSTIR-unbiased, ReSTIR-2022-criteria, Offline; 'initial' = rung 3.1 without spatial reuse). The ReSTIR debug views
 // (400–499), the probe inspector records and the arena HUD come from render/restir/debug.ts; they encode work only while
-// a ReSTIR view or the probe is active. Mode A only (D1): another light mode falls back to the PT with a HUD note.
+// a ReSTIR view or the probe is active. Light modes: M4 shipped Mode A only (restir-api D1); M6 lifted that (restir-m6-api
+// MD9): the kernel takes A, B and A′ (setLightMode), and the app default is B.
 // M5 (T-D; restir-temporal-api.md TD19–TD21, §2.10, §3.7, Changelog D-2): restirMode adds ReSTIR-interactive
 // (interactive preset: temporal, RR, boost 3) next to ReSTIR-unbiased (the `full` preset: temporal, RR off, no boost);
 // options.temporal switches temporal reuse for every mode. With temporal on, every ADVANCED frame calls

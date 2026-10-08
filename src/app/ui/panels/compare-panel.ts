@@ -1,11 +1,11 @@
-// 'Compare (Cycles)' panel (plan §5 M3a "Export for Cycles", §6 M3a "Compare"): dev-only export + headless Blender
-// render through /api/reference with streamed progress, then the compare view modes (split, flip, relative error,
-// t-map), batch capture for replicate statistics, and manual EXR loading.
+// Validation folder: 'Compare with Cycles' and 'Cycles reference render (dev)' (plan §5 M3a "Export for Cycles",
+// §6 M3a "Compare"): dev-only export + headless Blender render through /api/reference with streamed progress, then the
+// compare view modes (split, flip, relative error, t-map), batch capture for replicate statistics, and manual EXR loading.
 import type { CompareMode, CompareView } from '../../compare/compare-view.ts';
 import { parseExrRgba } from '../../compare/images.ts';
 import type { ReferenceConfig, ReferenceProgress } from '../../compare/reference-flow.ts';
 import { pickFiles } from '../../loader.ts';
-import type { TpFolder, TpPane } from '../tweakpane.ts';
+import { tip, type TpFolder } from '../tweakpane.ts';
 
 export interface ComparePanelHooks {
   /** Undefined in production builds (no Blender endpoint). */
@@ -13,8 +13,11 @@ export interface ComparePanelHooks {
   config: ReferenceConfig;
 }
 
-export function addComparePanel(pane: TpPane, view: CompareView, hooks: ComparePanelHooks, index?: number): { folder: TpFolder; refresh(): void } {
-  const f = pane.addFolder({ title: 'Compare (Cycles)', expanded: false, index });
+/** Fills the (pre-created, hidden) Validation folder: "Compare with Cycles" (view modes, batches, EXR loading) and, in
+ *  dev builds, "Cycles reference render (dev)". integration.ts appends "Export scene package (dev)". */
+export function addComparePanel(parent: TpFolder, view: CompareView, hooks: ComparePanelHooks): { folder: TpFolder; refresh(): void } {
+  parent.hidden = false;
+  const f = parent.addFolder({ title: 'Compare with Cycles', expanded: true });
   let quiet = false;
   const q = <T>(fn: (e: T) => void) => (e: T) => { if (!quiet) fn(e); };
   const s = view.settings;
@@ -22,16 +25,17 @@ export function addComparePanel(pane: TpPane, view: CompareView, hooks: CompareP
   let running = false;
   if (hooks.runReference) {
     const cfg = hooks.config;
-    const ex = f.addFolder({ title: 'Export for Cycles (dev)', expanded: true });
-    ex.addBinding(cfg, 'spp', { min: 1, max: 65536, step: 1 });
+    const ex = parent.addFolder({ title: 'Cycles reference render (dev)', expanded: false });
+    ex.addBinding(cfg, 'spp', { label: 'spp', min: 1, max: 65536, step: 1 });
     ex.addBinding(cfg, 'seeds', { label: 'seeds (e.g. 0..3)' });
     ex.addBinding(cfg, 'maxBounces', { label: 'max bounces', min: 0, max: 64, step: 1 });
-    ex.addBinding(cfg, 'lightMode', { label: 'light mode', options: { 'A (NEE only)': 'A', 'B (MIS)': 'B', 'A′ (Cycles: MIS)': 'A′' } });
+    tip(ex.addBinding(cfg, 'lightMode', { label: 'package light mode', options: { 'A: NEE only': 'A', 'B: MIS': 'B', 'A′ (Cycles: MIS)': 'A′' } }),
+      'Light mode of the exported package / reference (independent of the render light mode).');
     ex.addBinding(cfg, 'frames', { label: 'frames', options: { 'current frame': 'current', all: 'all' } });
     ex.addBinding(cfg, 'width', { label: 'width (0 = internal)', min: 0, max: 8192, step: 1 });
     ex.addBinding(cfg, 'height', { label: 'height (0 = internal)', min: 0, max: 8192, step: 1 });
-    ex.addBinding(cfg, 'device', { options: { GPU: 'GPU', CPU: 'CPU' } });
-    const btn = ex.addButton({ title: 'Export + render reference' });
+    ex.addBinding(cfg, 'device', { label: 'Cycles device', options: { GPU: 'GPU', CPU: 'CPU' } });
+    const btn = tip(ex.addButton({ title: 'Export + render reference' }), 'Exports the scene package, renders it with headless Blender (/api/reference) and loads the EXRs into the compare view.');
     btn.on('click', () => {
       if (running) return;
       running = true;
@@ -46,12 +50,12 @@ export function addComparePanel(pane: TpPane, view: CompareView, hooks: CompareP
   }
   f.addBinding(s, 'mode', { label: 'view', options: { off: 'off', split: 'split', flip: 'flip', 'relative error': 'relerr', 't-map': 'tmap', 'ours only': 'ours', 'Cycles only': 'ref' } })
     .on('change', q((e) => view.setMode(e.value as CompareMode)));
-  f.addBinding(s, 'split', { min: 0, max: 1, step: 0.001 }).on('change', q(() => view.draw(true)));
+  f.addBinding(s, 'split', { label: 'split position', min: 0, max: 1, step: 0.001 }).on('change', q(() => view.draw(true)));
   f.addBinding(s, 'exposureEV', { label: 'exposure (EV)', min: -10, max: 10, step: 0.1 }).on('change', q(() => view.draw(true)));
-  f.addBinding(s, 'relErrMax', { label: 'rel.err max', min: 0.01, max: 4, step: 0.01 }).on('change', q(() => view.draw(true)));
+  f.addBinding(s, 'relErrMax', { label: 'rel. error max', min: 0.01, max: 4, step: 0.01 }).on('change', q(() => view.draw(true)));
   f.addBinding(s, 'tile', { label: 't-map tile (px)', min: 4, max: 128, step: 1 }).on('change', q(() => view.draw(true)));
   f.addBinding(s, 'flipMs', { label: 'flip period (ms)', min: 100, max: 5000, step: 10 });
-  f.addBinding(s, 'live', { label: 'live ours' });
+  tip(f.addBinding(s, 'live', { label: 'live ours' }), 'Keep re-reading our image while the compare view is shown (off: keep the last read).');
   f.addButton({ title: 'Capture batch (restarts accumulation)' }).on('click', () => { void view.captureBatch().then(refresh); });
   f.addButton({ title: 'Clear batches' }).on('click', () => { view.clearBatches(); refresh(); });
   f.addButton({ title: 'Load reference EXR(s)...' }).on('click', () => {

@@ -29,6 +29,7 @@ import { ensureLightStore, type LightStore } from '../core/scene/light-store.ts'
 import type { App, AppHooks } from './app.ts';
 import { DEG } from './camera-math.ts';
 import { extensionOf, type SceneLoader } from './loader.ts';
+import { tip } from './ui/tweakpane.ts';
 
 export interface Integration {
   loader: SceneLoader;
@@ -67,15 +68,15 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
     rendererP ??= (async () => {
       for (const [tag, name] of [...PRIMARY_PROBE_TAGS, ...RESTIR_PROBE_TAGS]) registerProbeTag(tag, name);
       for (const v of [...EXTRA_VIEWS, ...ENV_DEBUG_VIEWS, ...SHADING_DEBUG_VIEWS, ...RESTIR_VIEWS, ...DENOISER_VIEWS]) if (!app.debug.registry.get(v.id)) app.registerDebugView(v);
-      app.render.jitter = 'iid'; // plan §1.2: i.i.d. per-run/per-frame jitter; the panel offers R2 and pixel centre
+      app.render.jitter = 'iid'; // plan §1.2: i.i.d. per-run/per-frame jitter (over RenderSettings' 'r2'); the panel shows it and offers R2 / pixel centre
       const r = await Renderer.create({ device: gpu.device, debugLayout: app.debug.layout, debug: app.debug, features: gpu.features, wgslLanguageFeatures: gpu.wgslLanguageFeatures },
         { watertight: false, renderMode: 'pt', lightMode: 'B', bvhKind: 'auto' }); // interactive default: Mode B after rung 3.11 (restir-m6-api MD9); MT (the panel toggles Woop; validation paths default to Woop); PT beauty (M3a); M8: CWBVH on large scenes (m8-perf.md §3)
       renderer = r;
       if (app.targets) r.resize(app.targets);
       addRendererPanel(app, r);
       restirUi.inspector = new RestirInspector(app);
-      restirUi.panel = addRestirPanel(app, r, restirUi.inspector, 4);
-      restirUi.denoiser = addDenoiserPanel(app, r, 5);
+      restirUi.panel = addRestirPanel(app, r, restirUi.inspector);
+      restirUi.denoiser = addDenoiserPanel(app, r);
       app.panel?.refresh();
       return r;
     })();
@@ -204,41 +205,52 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
   };
 }
 
-/** 'Renderer' folder: texture path, watertight intersection, accumulation. */
+/** Render folder (panel.ts): the integrator at the top, texture path and watertight intersection under Advanced. */
 function addRendererPanel(app: App, r: Renderer): void {
-  const pane = app.panel?.pane;
-  if (!pane) return;
-  const f = pane.addFolder({ title: 'Renderer', expanded: false, index: 3 });
+  const folders = app.panel?.folders;
+  if (!folders) return;
+  const f = folders.render;
   const o = r.options;
   const reupload = () => { app.loading.start('Renderer'); void r.reload().then(() => { app.loading.done('re-uploaded'); app.resetHistory(); }, (e: unknown) => app.loading.error(String(e))); };
-  f.addBinding(o, 'textureMode', { label: 'textures', options: { 'validation (no resample)': 'validation', 'interactive (mips)': 'interactive' } })
-    .on('change', () => { if (r.sceneData) reupload(); });
-  f.addBinding(o, 'watertight', { label: 'watertight (Woop)' }).on('change', () => { if (r.sceneData) reupload(); });
-  f.addBinding(o, 'accumulate', { label: 'accumulate' }).on('change', () => app.resetHistory());
-  // M3a reference path tracer (PT) vs the M1 albedo placeholder; bounce count and Russian roulette.
-  f.addBinding(o, 'renderMode', { label: 'mode', options: { 'PT (reference)': 'pt', 'ReSTIR PT (M4)': 'restir', 'albedo (M1)': 'albedo' } })
+  let i = 0;
+  // M3a reference path tracer (PT), M4+ ReSTIR PT, and the M1 albedo placeholder; bounce count and Russian roulette.
+  tip(f.addBinding(o, 'renderMode', { label: 'integrator', options: { 'PT (reference)': 'pt', 'ReSTIR PT': 'restir', 'albedo only': 'albedo' }, index: i++ }),
+    'PT: the reference path tracer (progressive). ReSTIR PT: path resampling, settings in the ReSTIR folder.')
     .on('change', () => { if (o.renderMode === 'restir') void r.prepareRestir(); app.resetHistory(); app.panel?.refresh(); });
-  f.addBinding(o, 'maxBounces', { label: 'max bounces', min: 0, max: 13, step: 1 })
-    .on('change', () => { void r.setOptions({ maxBounces: o.maxBounces }); app.resetHistory(); });
-  f.addBinding(o, 'rr', { label: 'Russian roulette' }).on('change', () => { void r.setOptions({ rr: o.rr }); app.resetHistory(); });
   // M3b light modes (plan §1.4): A = analytic lights NEE-only (smooth mirrors / glass never show them, no caustics);
   // B = area lights hittable by BSDF rays (pass-through, MIS); A′ = hittable only after a delta lobe (same expectation as B)
-  f.addBinding(o, 'lightMode', { label: 'light mode', options: { 'A (NEE only)': 'A', 'B (pass-through + MIS)': 'B', 'A′ (after delta lobes)': 'A′' } })
+  tip(f.addBinding(o, 'lightMode', { label: 'light mode', options: { 'B: hittable + MIS': 'B', 'A: NEE only': 'A', 'A′: hittable after δ lobes': 'A′' }, index: i++ }),
+    'How BSDF rays treat area lights. B (default): area lights are hit by BSDF rays and combined with NEE by MIS. '
+    + 'A: analytic lights are reached by NEE only (no reflections in mirrors / glass). A′: hittable only after a delta lobe.')
     .on('change', () => { void r.setOptions({ lightMode: o.lightMode }); app.resetHistory(); });
+  f.addBinding(o, 'maxBounces', { label: 'max bounces', min: 0, max: 13, step: 1, index: i++ })
+    .on('change', () => { void r.setOptions({ maxBounces: o.maxBounces }); app.resetHistory(); });
+  f.addBinding(o, 'rr', { label: 'Russian roulette', index: i++ }).on('change', () => { void r.setOptions({ rr: o.rr }); app.resetHistory(); });
+  tip(f.addBinding(o, 'accumulate', { label: 'accumulate', index: i++ }), 'Progressive mean over frames while nothing changes.').on('change', () => app.resetHistory());
+  f.addBlade({ view: 'separator', index: i++ });
+  const adv = folders.renderAdvanced;
+  tip(adv.addBinding(o, 'textureMode', { label: 'textures', options: { 'interactive (mips)': 'interactive', 'validation (exact texels)': 'validation' }, index: 0 }),
+    'interactive: mip-mapped, filtered; validation: exact texels, no resampling (as used against Cycles).')
+    .on('change', () => { if (r.sceneData) reupload(); });
+  tip(adv.addBinding(o, 'watertight', { label: 'watertight (Woop)', index: 1 }), 'Watertight ray/triangle test (Woop et al.); off = Möller–Trumbore.')
+    .on('change', () => { if (r.sceneData) reupload(); });
   if (import.meta.env.DEV) addExportFolder(app, r);
 }
 
-/** Dev only: "Export for Cycles" → scene package in validation/out/export-<id>/ (docs/decisions/scene-bridge.md). */
+/** Dev only: Validation › "Export scene package" → validation/out/export-<id>/ (docs/decisions/scene-bridge.md). */
 function addExportFolder(app: App, r: Renderer): void {
-  const pane = app.panel?.pane;
-  if (!pane) return;
-  const f = pane.addFolder({ title: 'Export for Cycles (dev)', expanded: false, index: 4 });
+  const parent = app.panel?.folders.validation;
+  if (!parent) return;
+  parent.hidden = false;
+  const f = parent.addFolder({ title: 'Export scene package (dev)', expanded: false });
   const cfg: ExportConfig = { width: 512, height: 512, maxBounces: 3, lightMode: 'A', status: '' };
-  f.addBinding(cfg, 'width', { min: 16, max: 8192, step: 1 });
-  f.addBinding(cfg, 'height', { min: 16, max: 8192, step: 1 });
+  f.addBinding(cfg, 'width', { label: 'width (px)', min: 16, max: 8192, step: 1 });
+  f.addBinding(cfg, 'height', { label: 'height (px)', min: 16, max: 8192, step: 1 });
   f.addBinding(cfg, 'maxBounces', { label: 'max bounces', min: 0, max: 64, step: 1 });
-  f.addBinding(cfg, 'lightMode', { label: 'light mode', options: { 'A (NEE only)': 'A', 'B (MIS)': 'B', 'A′ (Cycles: MIS)': 'A′' } });
-  f.addButton({ title: 'Export for Cycles' }).on('click', () => { void exportForCycles(app, r, cfg); });
+  tip(f.addBinding(cfg, 'lightMode', { label: 'package light mode', options: { 'A: NEE only': 'A', 'B: MIS': 'B', 'A′ (Cycles: MIS)': 'A′' } }),
+    'Light mode written into the package (independent of the render light mode).');
+  tip(f.addButton({ title: 'Export package' }), 'Scene + camera + environment → validation/out/export-<id>/ (no Blender render).')
+    .on('click', () => { void exportForCycles(app, r, cfg); });
   f.addBinding(cfg, 'status', { readonly: true, multiline: true, rows: 3 });
 }
 
