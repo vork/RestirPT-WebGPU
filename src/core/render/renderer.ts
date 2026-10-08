@@ -39,6 +39,7 @@ import {
   writeEnvParams, type EnvGpuResources, type EnvParamsCpu,
 } from './env-gpu.ts';
 import { EnvDebugPass, isEnvDebugView } from './env-debug.ts';
+import { ShadingDebugPass, isShadingDebugView } from './shading-debug.ts';
 import { buildEnvImportanceAsync } from '../scene/env/env-importance-client.ts';
 import { ENV_IMPORTANCE_CAP_INTERACTIVE, envImportanceBytes } from '../scene/env/env-importance.ts';
 import { SceneGpu, type BvhBuilder } from './scene-gpu.ts';
@@ -168,6 +169,8 @@ interface SceneState {
   /** Env sampling debug views (M3c), compiled on first use. */
   envDebug?: EnvDebugPass;
   envDebugPending?: Promise<EnvDebugPass | undefined>;
+  shadingDebug?: ShadingDebugPass;
+  shadingDebugPending?: Promise<ShadingDebugPass | undefined>;
   /** ReSTIR (renderMode 'restir'), compiled on first use. */
   rs?: RestirState;
   rsPending?: Promise<RestirState | undefined>;
@@ -269,6 +272,7 @@ export class Renderer {
       this.origin = origin;
       old?.pt?.destroy();
       old?.envDebug?.destroy();
+      old?.shadingDebug?.destroy();
       destroyRestir(old?.rs);
       old?.gpu.destroy();
       this.lastError = undefined;
@@ -627,6 +631,10 @@ export class Renderer {
       if (!s.envDebug) void this.compileEnvDebug(s);
       else s.envDebug.encode(encoder, { mode: frame.debugMode, env: this.env, lights: s.pt.lights, frameUniforms: tg.t.frameUniforms, width: tg.t.width, height: tg.t.height, debugGroup: frame.debugGroup, reset: false });
     }
+    if (isShadingDebugView(frame.debugMode)) {   // M7 shading-normal views (m7-api.md §7)
+      if (!s.shadingDebug) void this.compileShadingDebug(s);
+      else s.shadingDebug.encode(encoder, { mode: frame.debugMode, frameUniforms: tg.t.frameUniforms, width: tg.t.width, height: tg.t.height, debugGroup: frame.debugGroup });
+    }
     return true;
   }
 
@@ -764,6 +772,12 @@ export class Renderer {
     void d.time(1);
   }
 
+  private compileShadingDebug(s: SceneState): Promise<ShadingDebugPass | undefined> {
+    s.shadingDebugPending ??= ShadingDebugPass.create(this.device, s.gpu, this.ctx.debugLayout, { features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures })
+      .then((p) => { s.shadingDebug = p; return p; }, (e: unknown) => { this.lastError = `shading debug: ${e instanceof Error ? e.message : String(e)}`; console.error(e); return undefined; });
+    return s.shadingDebugPending;
+  }
+
   private compileEnvDebug(s: SceneState): Promise<EnvDebugPass | undefined> {
     s.envDebugPending ??= EnvDebugPass.create(this.device, s.gpu, this.ctx.debugLayout, { features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures })
       .then((p) => { s.envDebug = p; return p; }, (e: unknown) => { this.lastError = `env debug: ${e instanceof Error ? e.message : String(e)}`; console.error(e); return undefined; });
@@ -860,6 +874,7 @@ export class Renderer {
   destroy(): void {
     this.state?.pt?.destroy();
     this.state?.envDebug?.destroy();
+    this.state?.shadingDebug?.destroy();
     destroyRestir(this.state?.rs);
     this.denoiser?.destroy();
     this.denoiser = undefined;
