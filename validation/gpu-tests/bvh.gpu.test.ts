@@ -3,6 +3,9 @@
 // data-formats.md P1: (1) also runs on the lattice-snapped scenes (the BVH is built from the dequantized positions),
 // (6) T12-Q: rays aimed at shared edges / vertices of xi_contact and at Sponza's cross-mesh seams on the quantized
 // geometry: 0 cracks with Woop; the throughput test measures Sponza f32 vs lattice positions.
+// M8 (docs/decisions/m8-perf.md §3): every check runs on BVH2 AND the CWBVH (BVH_CWBVH, src/core/bvh/cwbvh.ts collapsed from a
+// leaf-≤ 3 BVH2), MT and Woop; (1) also compares the two GPU traversals ray by ray (hit equivalence: the same closest primId
+// up to exact-t ties, the same any-hit answer; differences only where the f64 reference classifies a tie / precision case).
 import { afterAll, describe, expect, it } from 'vitest';
 import { getTestGpu, lane, releaseTestGpu } from './device-factory.ts';
 import { composeWgsl, createCheckedShaderModule } from '../../src/core/gpu/wgsl-composer.ts';
@@ -11,6 +14,7 @@ import { readBuffer } from '../../src/core/gpu/readback.ts';
 import type { GpuContext } from '../../src/core/gpu/device.ts';
 import { buildBvh } from '../../src/core/bvh/sah-builder.ts';
 import { BVH_MISS, uploadBvh, type BvhData, type BvhGpuBuffers } from '../../src/core/bvh/layout.ts';
+import { buildCwbvhFromMesh, uploadCwbvh, type CwbvhData } from '../../src/core/bvh/cwbvh.ts';
 import { bruteAny, bruteClosest, bvhTrace64, intersectTri64 } from '../../src/core/bvh/cpu-trace.ts';
 import { icosphere, loadGltfMesh, meshBounds, proceduralScene, randomDir, rng, type Mesh } from '../../tests/bvh/fixtures.ts';
 import { computeRenderOrigin } from '../../src/core/render/frame-uniforms.ts';
@@ -24,7 +28,11 @@ const KERNEL = /* wgsl */ `
 #include "geom/visible.wgsl"
 #include "common/rng.wgsl"
 
+#if BVH_CWBVH
+@group(0) @binding(0) var<storage, read> bvh_nodes: array<vec4u>;
+#else
 @group(0) @binding(0) var<storage, read> bvh_nodes: array<vec4f>;
+#endif
 @group(0) @binding(1) var<storage, read> bvh_tris: array<vec4f>;
 @group(0) @binding(2) var<storage, read> inp: array<vec4f>;
 @group(0) @binding(3) var<storage, read_write> outp: array<vec4u>;
@@ -173,18 +181,18 @@ fn alpha_pass(primId: u32, u: f32, v: f32) -> bool { return (primId & 1u) == 0u;
 }
 `;
 
-interface Variant { watertight: boolean; stats: boolean }
+interface Variant { watertight: boolean; stats: boolean; cwbvh?: boolean }
 interface RunResult { out: Uint32Array; ctr: Uint32Array; gpuMs: number }
 
 const pipelines = new Map<string, Promise<GPUComputePipeline>>();
 function getPipeline(ctx: GpuContext, v: Variant, entry: string): Promise<GPUComputePipeline> {
-  const key = `${v.watertight}|${v.stats}|${entry}`;
+  const key = `${v.watertight}|${v.stats}|${!!v.cwbvh}|${entry}`;
   let p = pipelines.get(key);
   if (!p) {
     p = (async () => {
       const shader = composeWgsl('tests/bvh_t12.wgsl', {
         sources: { ...shaderSources, 'tests/bvh_t12.wgsl': KERNEL },
-        defines: { WATERTIGHT: v.watertight, BVH_STATS: v.stats },
+        defines: { WATERTIGHT: v.watertight, BVH_STATS: v.stats, ...(v.cwbvh ? { BVH_CWBVH: true } : {}) },
         features: ctx.features, wgslLanguageFeatures: ctx.wgslLanguageFeatures,
       });
       const module = await createCheckedShaderModule(ctx.device, shader, `bvh_t12.${key}`);
@@ -252,8 +260,20 @@ async function run(
   return { out, ctr, gpuMs: times[Math.floor(times.length / 2)], outBuf };
 }
 
-const VARIANTS: Variant[] = [{ watertight: false, stats: true }, { watertight: true, stats: true }];
-const vname = (v: Variant) => (v.watertight ? 'woop' : 'mt');
+const VARIANTS: Variant[] = [
+  { watertight: false, stats: true }, { watertight: true, stats: true },
+  { watertight: false, stats: true, cwbvh: true }, { watertight: true, stats: true, cwbvh: true },
+];
+const vname = (v: Variant) => `${v.cwbvh ? 'cw.' : ''}${v.watertight ? 'woop' : 'mt'}`;
+
+/** CWBVH of a mesh (built once per BVH2 object of the test: a leaf-≤ 3 BVH2 collapsed to 8-wide). */
+const cwCache = new WeakMap<BvhData, CwbvhData>();
+function uploadFor(device: GPUDevice, m: Mesh, bvh: BvhData, v: Variant): BvhGpuBuffers {
+  if (!v.cwbvh) return uploadBvh(device, bvh, { watertight: v.watertight });
+  let cw = cwCache.get(bvh);
+  if (!cw) { cw = buildCwbvhFromMesh(m.positions, m.indices).cw; cwCache.set(bvh, cw); }
+  return uploadCwbvh(device, cw, { watertight: v.watertight });
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // (1) Random rays vs the f64 CPU reference.
@@ -449,11 +469,13 @@ describe(`T12 BVH traversal (${lane()})`, () => {
         expect(bruteClosest(m.positions, m.indices, o, d).primId).toBe(ref.prim[i]);
         expect(bruteAny(m.positions, m.indices, o, d, rays[8 * i + 3]) ? 1 : 0).toBe(ref.occ[i]);
       }
+      const outs: Record<string, Uint32Array> = {};
       for (const v of VARIANTS) {
-        const bufs = uploadBvh(ctx.device, bvh, { watertight: v.watertight });
+        const bufs = uploadFor(ctx.device, m, bvh, v);
         const res = await run(ctx, v, 'closest_any', bufs, rays, N_RAYS);
         const c = compare(m, rays, ref, res.out, N_RAYS);
         const key = `${sc.name}.${vname(v)}`;
+        outs[vname(v)] = res.out;
         report[key] = { ...c, steps: res.ctr[0] / N_RAYS / 2, boxTests: res.ctr[1] / N_RAYS / 2, triTests: res.ctr[2] / N_RAYS / 2, flags: res.ctr[3], maxStack: res.ctr[4], gpuMs: res.gpuMs };
         console.log('T12', lane(), key, JSON.stringify(report[key]));
         expect(res.ctr[3], 'overflow/itercap flags').toBe(0);
@@ -461,6 +483,30 @@ describe(`T12 BVH traversal (${lane()})`, () => {
         expect(c.anyUnexplained, c.examples.join('\n')).toBe(0);
         expect(c.precisionRandom + c.anyPrecisionRandom).toBeLessThan(N_RAYS * 1e-4);
         bufs.nodes.destroy(); bufs.tris.destroy();
+      }
+      // M8 hit equivalence, GPU BVH2 vs GPU CWBVH ray by ray: a closest primId differs only at an exact-t tie (same t bits)
+      // or where the f64 reference classifies a tie / precision case for each traversal (checked above per variant);
+      // same primId ⇒ t / u bits compared (FMA contraction may differ between the two compiled pipelines: reported).
+      for (const it of ['mt', 'woop']) {
+        const a = outs[it], b = outs[`cw.${it}`];
+        const af = new Float32Array(a.buffer), bf = new Float32Array(b.buffer);
+        let primDiff = 0, tieSameT = 0, tBitsDiff = 0, uBitsDiff = 0, anyDiff = 0, maxRelT = 0;
+        for (let i = 0; i < N_RAYS; i++) {
+          if (a[4 * i + 1] !== b[4 * i + 1]) { primDiff++; if (a[4 * i] === b[4 * i]) tieSameT++; }
+          else if (a[4 * i + 1] !== BVH_MISS) {
+            if (a[4 * i] !== b[4 * i]) { tBitsDiff++; maxRelT = Math.max(maxRelT, Math.abs(af[4 * i] - bf[4 * i]) / af[4 * i]); }
+            if (a[4 * i + 3] !== b[4 * i + 3]) uBitsDiff++;
+          }
+          if ((a[4 * i + 2] === BVH_MISS) !== (b[4 * i + 2] === BVH_MISS)) anyDiff++;
+        }
+        const key = `${sc.name}.equiv.${it}`;
+        report[key] = { n: N_RAYS, primDiff, tieSameT, tBitsDiff, uBitsDiff, anyDiff, maxRelT };
+        console.log('T12', lane(), key, JSON.stringify(report[key]));
+        // every closest / any-hit difference must be one the f64 reference already classified (tie / precision) for both
+        // traversals; bound the rate as for the f64 comparison
+        expect(primDiff - tieSameT).toBeLessThan(N_RAYS * 1e-4);
+        expect(anyDiff).toBeLessThan(N_RAYS * 1e-4);
+        expect(maxRelT).toBeLessThan(1e-5);
       }
     }, 900_000);
   }
@@ -496,7 +542,7 @@ describe(`T12 BVH traversal (${lane()})`, () => {
     for (const [label, fromCenter] of [['center', true], ['interior', false]] as const) {
       const rays = mk(fromCenter);
       for (const v of VARIANTS) {
-        const bufs = uploadBvh(ctx.device, bvh, { watertight: v.watertight });
+        const bufs = uploadFor(ctx.device, m, bvh, v);
         const res = await run(ctx, v, 'closest_any', bufs, rays, N_RAYS);
         let miss = 0, anyMiss = 0;
         const byKind = { towardVertex: 0, towardEdge: 0, random: 0 };
@@ -530,7 +576,7 @@ describe(`T12 BVH traversal (${lane()})`, () => {
       const { input, n } = spawnInputs(mesh, 1 << 20, 5);
       const u32 = new Uint32Array(input.buffer);
       for (const v of VARIANTS) {
-        const bufs = uploadBvh(ctx.device, bvh, { watertight: v.watertight });
+        const bufs = uploadFor(ctx.device, mesh, bvh, v);
         const res = await run(ctx, v, 'spawn', bufs, input, n);
         let self = 0, floorHits = 0;
         const ex: string[] = [];
@@ -545,7 +591,7 @@ describe(`T12 BVH traversal (${lane()})`, () => {
         expect(self, ex.join('\n')).toBe(0);
         expect(floorHits).toBe(0);
         expect(res.ctr[3]).toBe(0);
-        if (name === 'procedural' && !v.watertight) {
+        if (name === 'procedural' && !v.watertight && !v.cwbvh) {
           // Negative control: without offset_ray the same spawns must self-intersect (the test has power).
           const params = new Float32Array(24); new Uint32Array(params.buffer)[2] = 1;
           const ctl = await run(ctx, v, 'spawn', bufs, input, n, { params });
@@ -595,7 +641,7 @@ describe(`T12 BVH traversal (${lane()})`, () => {
       infExp.push(h.primId === BVH_MISS ? 1 : h.primId < nFloor || h.t < 1e-3 ? -1 : 0);
     }
     for (const v of VARIANTS) {
-      const bufs = uploadBvh(ctx.device, bvh, { watertight: v.watertight });
+      const bufs = uploadFor(ctx.device, m, bvh, v);
       for (const [label, inp, exp] of [['segment', visInputs(m, pairs), expect1], ['inf', visInputs(m, infPairs, infDirs), infExp]] as const) {
         const res = await run(ctx, v, 'vis', bufs, inp, exp.length);
         let bad = 0, amb = 0, visCount = 0;
@@ -627,15 +673,15 @@ describe(`T12 BVH traversal (${lane()})`, () => {
     const rays = makeRays(m, n, 4321);
     const ref = cpuReference(even, bvhEven, rays, n);
     for (let i = 0; i < n; i++) if (ref.prim[i] !== BVH_MISS) ref.prim[i] *= 2;
-    for (const watertight of [false, true]) {
+    for (const [watertight, cwbvh] of [[false, false], [true, false], [false, true], [true, true]] as const) {
       const shader = composeWgsl('tests/bvh_alpha.wgsl', {
         sources: { ...shaderSources, 'tests/bvh_alpha.wgsl': ALPHA_KERNEL },
-        defines: { WATERTIGHT: watertight, CUSTOM_ALPHA: 1, BVH_DECLARE_BINDINGS: 1, BVH_GROUP: 0, BVH_BINDING_NODES: 0, BVH_BINDING_TRIS: 1 },
+        defines: { WATERTIGHT: watertight, CUSTOM_ALPHA: 1, BVH_DECLARE_BINDINGS: 1, BVH_GROUP: 0, BVH_BINDING_NODES: 0, BVH_BINDING_TRIS: 1, ...(cwbvh ? { BVH_CWBVH: true } : {}) },
         features: ctx.features, wgslLanguageFeatures: ctx.wgslLanguageFeatures,
       });
       const module = await createCheckedShaderModule(ctx.device, shader, 'bvh_alpha');
       const pipeline = await ctx.device.createComputePipelineAsync({ layout: 'auto', compute: { module, entryPoint: 'main' } });
-      const bufs = uploadBvh(ctx.device, bvh, { watertight });
+      const bufs = uploadFor(ctx.device, m, bvh, { watertight, stats: false, cwbvh });
       const inBuf = storage(ctx.device, rays, 'inp'), outBuf = storage(ctx.device, n * 16, 'outp');
       ctx.device.pushErrorScope('validation');
       const bg = ctx.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
@@ -651,7 +697,7 @@ describe(`T12 BVH traversal (${lane()})`, () => {
       for (let i = 0; i < n; i++) flags |= out[4 * i + 3] & 3;
       for (let i = 0; i < n; i++) if ((out[4 * i + 1] !== BVH_MISS && out[4 * i + 1] & 1) || (out[4 * i + 2] !== BVH_MISS && out[4 * i + 2] & 1)) odd++;
       const c = compare(m, rays, ref, out, n);
-      const key = `alpha.${watertight ? 'woop' : 'mt'}`;
+      const key = `alpha.${cwbvh ? 'cw.' : ''}${watertight ? 'woop' : 'mt'}`;
       report[key] = { oddPrimHits: odd, unexplained: c.unexplained, anyUnexplained: c.anyUnexplained, match: c.match, tie: c.tie, flags };
       console.log('T12', lane(), key, JSON.stringify(report[key]));
       expect(odd).toBe(0);
@@ -772,7 +818,7 @@ describe(`T12 BVH traversal (${lane()})`, () => {
       const genMs = Math.round(performance.now() - tGen);
       expect(n).toBeGreaterThan(Math.min(N, 10_000));
       for (const v of VARIANTS) {
-        const bufs = uploadBvh(ctx.device, bvh, { watertight: v.watertight });
+        const bufs = uploadFor(ctx.device, m, bvh, v);
         const res = await run(ctx, v, 'closest_any', bufs, rays, n);
         const tf = new Float32Array(res.out.buffer, res.out.byteOffset, res.out.length);
         // crack = the ray passes through the seam: a miss, or a closest hit on a triangle that is NOT adjacent to the
@@ -819,9 +865,9 @@ describe(`T12 BVH traversal (${lane()})`, () => {
     rnd.set([b.min[0] + 0.1 * ext[0], b.min[1] + 0.05 * ext[1], b.min[2] + 0.1 * ext[2], 0, b.max[0] - 0.1 * ext[0], b.max[1] - 0.3 * ext[1], b.max[2] - 0.1 * ext[2], 0], 4);
     const N = W1080 * H1080;
     const grid: [number, number] = [W1080 / 8, H1080 / 8];
-    for (const watertight of [false, true]) {
-      const v: Variant = { watertight, stats: false };
-      const bufs = uploadBvh(ctx.device, bvh, { watertight });
+    for (const [watertight, cwbvh] of [[false, false], [true, false], [false, true], [true, true]] as const) {
+      const v: Variant = { watertight, stats: false, cwbvh };
+      const bufs = uploadFor(ctx.device, m, bvh, v);
       const prim = await run(ctx, v, 'perf_primary', bufs, null, N, { params, grid, reps: 7, readOut: false });
       const sec = await run(ctx, v, 'perf_secondary', bufs, null, N, { params, grid, reps: 7, outBuf: prim.outBuf, readOut: false });
       const sh = await run(ctx, v, 'perf_shadow', bufs, null, N, { params, grid, reps: 7, outBuf: prim.outBuf });
@@ -830,7 +876,7 @@ describe(`T12 BVH traversal (${lane()})`, () => {
       let hits = 0;
       for (let i = 0; i < N; i++) if (sh.out[4 * i] !== BVH_MISS) hits++;
       const mr = (ms: number) => +(N / ms / 1e3).toFixed(1);
-      const key = `perf.${name}.${watertight ? 'woop' : 'mt'}`;
+      const key = `perf.${name}.${vname(v)}`;
       report[key] = {
         rays: N, primaryHitFraction: +(hits / N).toFixed(3),
         primary: { ms: +prim.gpuMs.toFixed(2), mrays: mr(prim.gpuMs) }, secondaryHemisphere: { ms: +sec.gpuMs.toFixed(2), mrays: mr(sec.gpuMs) },

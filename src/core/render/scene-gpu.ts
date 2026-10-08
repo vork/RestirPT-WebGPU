@@ -14,6 +14,7 @@
 // - Textures: validation path by default (plan §1.6), interactive on request.
 import { buildBvh } from '../bvh/sah-builder.ts';
 import { uploadBvh, type BvhData, type BvhGpuBuffers } from '../bvh/layout.ts';
+import { buildCwbvhFromMesh, uploadCwbvh } from '../bvh/cwbvh.ts';
 import type { Defines } from '../gpu/wgsl-composer.ts';
 import { materialUvWords, packVertexArena, VERTEX_BYTES_F32, VERTEX_BYTES_Q, type VertexArena } from '../gpu/vertex-format.ts';
 import type { MaterialData, SceneData, SceneGeometry, SceneQuant } from '../scene/types.ts';
@@ -44,7 +45,10 @@ export { MAT_UV_WIDE } from '../gpu/vertex-format.ts';
 export const TRI_MAT_MASK = 0xffffff;
 export const TRI_FLAGS_SHIFT = 24;
 
-export type BvhBuilder = (positions: Float32Array, indices: Uint32Array) => Promise<BvhData>;
+export type BvhBuilder = (positions: Float32Array, indices: Uint32Array, opts?: { cwbvh?: boolean }) => Promise<BvhData>;
+/** M8 (docs/decisions/m8-perf.md §3): the acceleration structure: BVH2 (default, every validation path) or the CWBVH
+ *  (composer define BVH_CWBVH; the BVH2 kept on the CPU is then the leaf-≤ 3 tree it was collapsed from). */
+export type BvhKind = 'bvh2' | 'cwbvh';
 
 export interface SceneGpuOptions {
   textureMode: TexturePathMode;
@@ -52,6 +56,8 @@ export interface SceneGpuOptions {
   watertight: boolean;
   /** Default: the Worker build in browsers, inline elsewhere. */
   buildBvh?: BvhBuilder;
+  /** Default 'bvh2'. */
+  bvhKind?: BvhKind;
   textureBudgetBytes?: number;
   features?: Set<string>;
   wgslLanguageFeatures?: Set<string>;
@@ -149,12 +155,18 @@ export function packMaterials(materials: MaterialData[], textures: Pick<GpuTextu
   return buf;
 }
 
-async function defaultBuilder(positions: Float32Array, indices: Uint32Array): Promise<BvhData> {
+async function defaultBuilder(positions: Float32Array, indices: Uint32Array, opts: { cwbvh?: boolean } = {}): Promise<BvhData> {
   if (typeof Worker !== 'undefined' && typeof window !== 'undefined') {
     const { buildBvhInWorker } = await import('../bvh/build-in-worker.ts');
-    return buildBvhInWorker(positions, indices, { mt: true, woop: true });
+    return buildBvhInWorker(positions, indices, { mt: true, woop: true, ...(opts.cwbvh ? { cwbvh: true } : {}) });
   }
+  if (opts.cwbvh) { const r = buildCwbvhFromMesh(positions, indices); return { ...r.bvh2, cwbvh: r.cw }; }
   return buildBvh(positions, indices, { mt: true, woop: true });
+}
+
+/** BVH2 or CWBVH buffers of a built BvhData (the CWBVH when present). */
+function uploadAccel(device: GPUDevice, bvh: BvhData, opts: { watertight: boolean; label?: string }): BvhGpuBuffers {
+  return bvh.cwbvh ? uploadCwbvh(device, bvh.cwbvh, opts) : uploadBvh(device, bvh, opts);
 }
 
 function storageBuffer(device: GPUDevice, data: ArrayBufferView | ArrayBuffer, label: string, minBytes: number): GPUBuffer {
@@ -190,7 +202,8 @@ export class SceneGpu {
     // Before the BVH / texture work: a quantized scene must recode losslessly (throws otherwise).
     const arena = packSceneVertices(scene, pos, origin);
     let t0 = performance.now();
-    const bvhP = (opts.buildBvh ?? defaultBuilder)(pos, g.indices);
+    const cwbvh = opts.bvhKind === 'cwbvh';
+    const bvhP = (opts.buildBvh ?? defaultBuilder)(pos, g.indices, cwbvh ? { cwbvh: true } : undefined);
     bvhP.catch(() => undefined); // observed below; avoids an unhandled rejection if the texture upload throws first
     // Textures upload while the BVH builds (Worker).
     const tt = performance.now();
@@ -200,6 +213,7 @@ export class SceneGpu {
     const textureMs = performance.now() - tt;
     let bvh: BvhData;
     try { bvh = await bvhP; } catch (e) { textures.destroy(); throw e; }
+    if (cwbvh && !bvh.cwbvh) { textures.destroy(); throw new Error('bvhKind cwbvh: the BVH builder returned no CWBVH'); }
     const bvhMs = performance.now() - t0;
     t0 = performance.now();
     // Everything created here is destroyed again on any failure (no GPU memory leaks across scene reloads).
@@ -210,7 +224,7 @@ export class SceneGpu {
     let up: { bvhBuffers: BvhGpuBuffers; vertices: GPUBuffer; tris: GPUBuffer; materials: GPUBuffer } | undefined;
     let thrown: unknown;
     try {
-      const bvhBuffers = uploadBvh(device, bvh, { watertight: opts.watertight, label });
+      const bvhBuffers = uploadAccel(device, bvh, { watertight: opts.watertight, label });
       keep(bvhBuffers.nodes); keep(bvhBuffers.tris);
       up = {
         bvhBuffers,
@@ -241,12 +255,13 @@ export class SceneGpu {
   }
 
   get watertight(): boolean { return this.bvhBuffers.watertight; }
+  get bvhKind(): BvhKind { return this.bvh.cwbvh ? 'cwbvh' : 'bvh2'; }
 
   /** Switch MT <-> Woop (re-uploads only the triangle layout; the caller recompiles with the new defines). */
   setWatertight(on: boolean): void {
     if (on === this.watertight) return;
     const old = this.bvhBuffers;
-    const next = uploadBvh(this.device, this.bvh, { watertight: on, label: 'scene' });
+    const next = uploadAccel(this.device, this.bvh, { watertight: on, label: 'scene' });
     old.tris.destroy();
     next.nodes.destroy();
     this.bvhBuffers = { ...next, nodes: old.nodes };
@@ -258,6 +273,8 @@ export class SceneGpu {
       SCENE_GROUP: group,
       BVH_DECLARE_BINDINGS: true, BVH_GROUP: group, BVH_BINDING_NODES: SCENE_BINDING.bvhNodes, BVH_BINDING_TRIS: SCENE_BINDING.bvhTris,
       WATERTIGHT: this.watertight,
+      // M8: only CWBVH scenes get the key (every BVH2 define set is the M7 one, U-M7-BITS)
+      ...(this.bvh.cwbvh ? { BVH_CWBVH: true } : {}),
       CUSTOM_ALPHA: true,
       VERTEX_FORMAT: this.vertexArena.format,
       ...this.textures.defines(group, SCENE_BINDING.textureBase),

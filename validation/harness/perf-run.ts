@@ -146,7 +146,7 @@ export async function renderPerf(ctx: GpuContext, o: PerfOptions): Promise<PerfR
   debug.resize(W, H);
   const hasGlass = scene.materials.some((m) => m.model === 'glass' || m.model === 'refraction' || m.transmissionFactor > 1e-5);
   const ropts: Partial<RendererOptions> = {
-    watertight: false, renderMode: 'restir', restirMode: 'interactive', temporal: true, accumulate: false, lightMode: 'B',
+    watertight: false, renderMode: 'restir', restirMode: 'interactive', temporal: true, accumulate: false, lightMode: 'B', bvhKind: 'auto',
     maxBounces: Math.max(pkgBounces ?? 3, hasGlass ? 4 : 0),
     restirFeatures: { ...(o.restir ?? {}) } as RendererOptions['restirFeatures'], ...o.renderer,
   };

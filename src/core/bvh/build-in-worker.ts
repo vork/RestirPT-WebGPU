@@ -26,7 +26,7 @@ function getWorker(): Worker {
 }
 
 export function buildBvhInWorker(
-  positions: Float32Array, indices: Uint32Array, options?: BvhBuildOptions, transferInputs = false,
+  positions: Float32Array, indices: Uint32Array, options?: BvhBuildOptions & { cwbvh?: boolean }, transferInputs = false,
 ): Promise<BvhData> {
   const w = getWorker();
   const id = nextId++;

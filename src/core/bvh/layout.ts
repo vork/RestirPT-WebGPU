@@ -13,6 +13,8 @@
 //           by unwelded (flat-shaded) triangles still get one canonical endpoint order.
 //   v0,v1,v2 are the ORIGINAL index order of SceneGeometry.indices[3·primId + 0..2]; hit barycentrics (1−u−v, u, v).
 
+import type { CwbvhData } from './cwbvh.ts';
+
 export const NODE_VEC4S = 4;
 export const NODE_FLOATS = 16;
 export const TRI_VEC4S = 3;
@@ -75,6 +77,8 @@ export interface BvhData {
   weldedVid: Uint32Array;
   bounds: { min: [number, number, number]; max: [number, number, number] };
   stats: BvhStats;
+  /** M8: the CWBVH collapsed from this BVH2 (built with leaves ≤ 3) when requested (src/core/bvh/cwbvh.ts). */
+  cwbvh?: CwbvhData;
 }
 
 export const u32View = (a: Float32Array): Uint32Array => new Uint32Array(a.buffer, a.byteOffset, a.length);
@@ -82,6 +86,7 @@ export const u32View = (a: Float32Array): Uint32Array => new Uint32Array(a.buffe
 /** Transfer list for posting a BvhData across a Worker boundary. */
 export function bvhTransferList(b: BvhData): ArrayBuffer[] {
   const bufs = [b.nodes.buffer, b.tris.buffer, b.trisW.buffer, b.primOrder.buffer, b.weldedVid.buffer] as ArrayBuffer[];
+  if (b.cwbvh) bufs.push(b.cwbvh.nodes.buffer as ArrayBuffer, b.cwbvh.tris.buffer as ArrayBuffer, b.cwbvh.trisW.buffer as ArrayBuffer, b.cwbvh.primOrder.buffer as ArrayBuffer);
   return [...new Set(bufs)];
 }
 

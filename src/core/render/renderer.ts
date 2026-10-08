@@ -42,7 +42,7 @@ import { EnvDebugPass, isEnvDebugView } from './env-debug.ts';
 import { ShadingDebugPass, isShadingDebugView } from './shading-debug.ts';
 import { buildEnvImportanceAsync } from '../scene/env/env-importance-client.ts';
 import { ENV_IMPORTANCE_CAP_INTERACTIVE, envImportanceBytes } from '../scene/env/env-importance.ts';
-import { SceneGpu, type BvhBuilder } from './scene-gpu.ts';
+import { SceneGpu, type BvhBuilder, type BvhKind } from './scene-gpu.ts';
 import type { LightData } from '../scene/types.ts';
 import type { LightsUpdate } from './lights-gpu.ts';
 import { PtFramePass } from './pt-kernel.ts';
@@ -74,6 +74,12 @@ export function restirAppSettings(mode: RestirAppMode, maxBounces: number, tempo
 /** M6 feature toggles of the app (restir-m6-api.md MD13): overrides of the mode's preset (empty = the preset's). */
 export type RestirFeatureOverrides = Partial<Pick<RestirSettings, 'pairing' | 'risNee' | 'dualMv' | 'dupmap'>>;
 
+/** M8 (m8-perf.md §3): 'auto' picks the CWBVH from this many triangles on. */
+export const CWBVH_AUTO_MIN_TRIS = 65536;
+export function resolveBvhKind(k: BvhKind | 'auto', scene: SceneData): BvhKind {
+  return k === 'auto' ? (scene.geometry.indices.length / 3 >= CWBVH_AUTO_MIN_TRIS ? 'cwbvh' : 'bvh2') : k;
+}
+
 export const GBUF_TEXEL_BYTES = 80;
 export const PRIMARY_PARAMS_SIZE = 16;
 export const PRIM_ACCUMULATE = 1;
@@ -99,6 +105,9 @@ export const isBvhStatsView = (mode: number): boolean => mode >= 200 && mode < 3
 export interface RendererOptions {
   textureMode: TexturePathMode;
   watertight: boolean;
+  /** M8 (docs/decisions/m8-perf.md §3): acceleration structure, BVH2 (default: every validation path), CWBVH, or 'auto'
+   *  (CWBVH from CWBVH_AUTO_MIN_TRIS triangles on: measured faster on Sponza, slower on small scenes). */
+  bvhKind: BvhKind | 'auto';
   accumulate: boolean;
   thrTau: number;
   /** 'pt': reference path tracer beauty (M3a); 'albedo': the M1 placeholder (albedo on hits, env on misses). */
@@ -190,7 +199,7 @@ export class Renderer {
   /** Defaults are the validation path: exact textures and Woop watertight intersection (Möller–Trumbore leaks through
    *  the shared diagonal of a quad; plan §1.3). The interactive app opts into MT explicitly (src/app/integration.ts). */
   readonly options: RendererOptions = {
-    textureMode: 'validation', watertight: true, accumulate: true, thrTau: THR_TAU, renderMode: 'albedo', restirMode: 'interactive', temporal: true, restirFeatures: {}, maxBounces: 3, rr: false,
+    textureMode: 'validation', watertight: true, bvhKind: 'bvh2', accumulate: true, thrTau: THR_TAU, renderMode: 'albedo', restirMode: 'interactive', temporal: true, restirFeatures: {}, maxBounces: 3, rr: false,
     lightMode: 'A', envNee: true, envImportanceCap: ENV_IMPORTANCE_CAP_INTERACTIVE, denoise: false,
   };
   /** M5.5: denoiser toggle per mode (denoiseModeKey); a mode without an entry starts at denoiserDefault. */
@@ -255,7 +264,7 @@ export class Renderer {
     this.busy++;
     try {
       const gpu = await SceneGpu.create(this.device, scene, origin, {
-        textureMode: this.options.textureMode, watertight: this.options.watertight, buildBvh: this.ctx.buildBvh,
+        textureMode: this.options.textureMode, watertight: this.options.watertight, bvhKind: resolveBvhKind(this.options.bvhKind, scene), buildBvh: this.ctx.buildBvh,
         features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures,
       });
       const state = this.makeState(gpu);
@@ -285,7 +294,7 @@ export class Renderer {
   /** Change texture path / watertight intersection; re-uploads or recompiles as needed. */
   async setOptions(o: Partial<RendererOptions>): Promise<void> {
     const texChanged = o.textureMode !== undefined && o.textureMode !== this.options.textureMode;
-    const wtChanged = o.watertight !== undefined && o.watertight !== this.options.watertight;
+    const wtChanged = (o.watertight !== undefined && o.watertight !== this.options.watertight) || (o.bvhKind !== undefined && o.bvhKind !== this.options.bvhKind);
     Object.assign(this.options, o);
     this.state?.pt?.setSettings({ maxBounces: this.options.maxBounces, rr: this.options.rr });
     if (this.state?.pt && this.state.pt.lights.lightMode !== this.options.lightMode) this.state.pt.lights.setLightMode(this.options.lightMode);
@@ -817,7 +826,7 @@ export class Renderer {
       const b = g.bvh.stats;
       const mib = (x: number) => (x / 2 ** 20).toFixed(1);
       out.push(`tris ${g.stats.triangles}  BVH ${b.nodeCount} nodes depth ${b.maxDepth} SAH ${b.sahCost.toFixed(1)} (${g.stats.bvhMs.toFixed(0)} ms)`);
-      out.push(`isect ${g.watertight ? 'Woop (watertight)' : 'Möller–Trumbore'}  textures ${this.options.textureMode} ${mib(g.stats.textureBytes)} MiB  geom ${mib(g.stats.geometryBytes)} MiB`);
+      out.push(`isect ${g.watertight ? 'Woop (watertight)' : 'Möller–Trumbore'} ${g.bvhKind === 'cwbvh' ? 'CWBVH' : 'BVH2'}  textures ${this.options.textureMode} ${mib(g.stats.textureBytes)} MiB  geom ${mib(g.stats.geometryBytes)} MiB`);
     }
     out.push(envMemoryReport(this.env).text + (this.env.present ? `  γ ${(this.env.params.rotationZ * 180 / Math.PI).toFixed(1)}° s ${this.env.params.strength}` : ''));
     const pt = this.state?.pt;
