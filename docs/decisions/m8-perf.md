@@ -231,8 +231,8 @@ filter (report only); ENV-U7 tests the bilinear on a forced rgba32float texture 
   halving its writes is worth ≈ 0.1–0.3 ms and changes the denoiser's inputs (oct normals), i.e. a re-run of the M5.5
   evaluation. Open item.
 - **D-M8-5, tinybvh WASM.** emscripten is not installed (§3): the DP collapse is ported to TS instead.
-- **D-M8-6, the PLAN performance targets on Sponza + HDRI** (§14). Missed by ≈ 2.3× (540p) / 2.9× (720p); met on Cornell,
-  m6_crossings and m7_nm_smooth. The path tree (rs_initial, ≈ 50 ms on Sponza) is limited by per-thread state and texture /
+- **D-M8-6, the PLAN performance targets on Sponza + HDRI** (§14). Missed by ≈ 2.2× (540p, N=3 and N=1 + moving) / 2.9×
+  (720p); met on Cornell, m6_crossings (540p; 720p marginal, session drift) and m7_nm_smooth. The path tree (rs_initial, ≈ 50 ms on Sponza) is limited by per-thread state and texture /
   material / RIS work (§2, §6), not by traversal alone; the remaining levers are structural (a wavefront split of the
   path tree, a cheaper RIS target) or quality settings (RIS M, bounces, internal resolution — the dynamic-resolution
   controller holds 33 ms at ≈ 0.625 × 540p).
@@ -249,6 +249,37 @@ filter (report only); ENV-U7 tests the bilinear on a forced rgba32float texture 
 - **perf:** the targets, M8 vs the pre-M8-equivalent configuration, same session (recorded, not gating).
 
 `npm run validate -- --all` runs M0 … M8 in order, each in its own process (PLAN §5 M8 exit).
+
+## 14. Results (gate-m8 `--part perf`, run `m8-gate-perf-20261008-135504`, ABBA per row)
+
+Frame time, ms (pipelined, 64 frames; mean of two runs per side, measured M8 / pre-M8 / pre-M8 / M8). "pre-M8" = the
+same build with every interactive M8 option off (BVH2, AoS planes, no P-4, texture-path à-trous; the env format change
+applies to both sides and was measured neutral: Sponza 80.9 / 78.2 ms compact vs 79.6 / 80.2 ms f32).
+
+| Scene | Config | Target | M8 | pre-M8 | Δ | Denoiser M8 / pre |
+|---|---|---|---|---|---|---|
+| Cornell (i) | 540p N=3 | 35 | **16.2** | 16.7 | −2.8 % | 1.44 / 1.62 |
+| Cornell (i) | 540p N=1 + moving light | 32 | **14.8** | 15.5 | −4.2 % | 1.53 / 1.70 |
+| Cornell (i) | 720p N=3 | 51 | **28.9** | 29.8 | −3.1 % | 2.54 / 2.84 |
+| Sponza + HDRI | 540p N=3 | 35 | 78.7 | 89.5 | −12.0 % | 2.66 / 3.04 |
+| Sponza + HDRI | 540p N=1 + moving light | 32 | 71.8 | 82.9 | −13.3 % | 3.13 / 3.66 |
+| Sponza + HDRI | 720p N=3 | 51 | 148.4 | 156.3 | −5.1 % | 5.01 / 5.39 |
+| Sponza + HDRI | 600 × 336 N=3 (dyn-res 0.625) | 33 | **31.9** | 36.1 | −11.5 % | 1.13 / 1.24 |
+| m6_crossings | 540p N=3 | 35 | **25.7** | 26.2 | −1.7 % | 1.60 / 1.74 |
+| m6_crossings | 540p N=1 + moving light | 32 | **23.7** | 24.3 | −2.6 % | 1.68 / 1.89 |
+| m6_crossings | 720p N=3 | 51 | 52.1 | 54.0 | −3.6 % | 2.78 / 3.17 |
+| m7_nm_smooth | 540p N=3 | 35 | **28.4** | 28.0 | +1.6 % (noise) | 1.60 / 1.76 |
+| m7_nm_smooth | 540p N=1 + moving light | 32 | **24.9** | 25.8 | −3.6 % | 1.64 / 1.85 |
+| m7_nm_smooth | 720p N=3 | 51 | **50.6** | 50.7 | −0.2 % | 2.74 / 3.02 |
+
+- **Targets:** met on Cornell, m6_crossings (540p) and m7_nm_smooth; m6_crossings at 720p 52.1 ms against 51 in this
+  session (44.7 ms in the baseline session: this run's pre-M8 side is 54.0, i.e. the machine ran ≈ 15–20 % slower than at
+  the baseline — §2 measurement hygiene); **Sponza + HDRI missed** (D-M8-6) by 2.2× (540p N=3), 2.2× (N=1 + moving) and
+  2.9× (720p); the dynamic-resolution controller's 0.625 level holds it at 31.9 ms.
+- **Where the M8 gains are:** Sponza −12 % (CWBVH and P-4, overlapping, §3, §5; SoA and the tiled à-trous ≈ 1 % each),
+  small scenes −2…−4 % (SoA, the tiled à-trous, P-4 where no area light exists; BVH2 by `auto`). The denoiser is
+  10–14 % faster everywhere (P-6). Sponza's frame: rs_initial ≈ 46–50 ms, rs_spatial_shift ≈ 14.5 ms, rs_t_classify
+  ≈ 4.8 ms, denoiser 2.7 ms, primaries 3.3 ms.
 
 ## Changelog
 
