@@ -743,9 +743,12 @@ superseded).
 The CWBVH units use the M7 rung-3.8 seeds and sizes on the same packages, so they are close to M7's BVH2 values
 (−0.0051 / −0.0054 / −0.0057 %): the hit-equivalent structure reproduces the estimator, as T12 predicts.
 
-**`validate --all`.** Launched after the gate on the final code (see the M8 report for its run id); it re-renders the
+**`validate --all`.** Launched on 1b37d25 (run `validate-all-20261008-140328`, started 2026-10-08 16:03 CEST); it re-renders the
 M4–M7 PT references whose cache keys hold an older PT code hash and re-runs every Stage-A / Stage-B ladder (≈ 40 GPU
-hours by budget.json). Its summary: `validation/out/validate-all-*/summary.json`.
+hours by budget.json). Its summary: `validation/out/validate-all-20261008-140328/summary.json`. The M0 / M1 lane steps
+run their own milestone's GPU suites only (M0: smoke.gpu.test.ts in node-dawn and Chrome under the GPU lock; M1: bvh /
+env / textures / primary): the full lanes now contain every later suite, which need their own gates' env, timeouts and
+lock holds. Result: pending at the time of writing.
 
 **Open items.** D-M8-1 (96 B / 120 B quantized layout), D-M8-4 (40 B G-buffer), Sponza's targets (D-M8-6: a wavefront split
 of the path tree, a cheaper RIS target), rs_primary reusing the M1 V-buffer (≈ 1.4 ms on Sponza), tinybvh WASM once
