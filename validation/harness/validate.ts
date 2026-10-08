@@ -99,10 +99,19 @@ function budgetPopulated(text: string): string | null {
   return missing.length ? `no s/4096spp @512² for ${missing.map(([s, k]) => `${s} b=${k}`).join(', ')}` : null;
 }
 
+// M8 (validate --all): the M0 / M1 lane steps run their own milestone's GPU suites. The full chrome / node-dawn lanes now
+// hold every later suite (T3 holds of up to 24 min, chains), which their own gates run with the settings they need
+// (env, timeouts, GPU-lock holds); run with the default 120 s timeout they cannot pass.
+const M0_GPU_TESTS = ['validation/gpu-tests/smoke.gpu.test.ts'];
+const M1_GPU_TESTS = ['bvh', 'env', 'textures', 'primary'].map((f) => `validation/gpu-tests/${f}.gpu.test.ts`);
+
 function milestoneM0(): void {
   run('typecheck', 'npx', ['tsc', '--noEmit']);
-  run('vitest cpu + node-dawn', 'npx', ['vitest', 'run', '--project', 'cpu', '--project', 'node-dawn']);
-  run('vitest chrome', 'npx', ['vitest', 'run', '--project', 'chrome']);
+  run('vitest cpu', 'npx', ['vitest', 'run', '--project', 'cpu']);
+  withGpuLockSync('validate-m0', () => {
+    run('vitest node-dawn (M0 smoke: lane diff)', 'npx', ['vitest', 'run', '--project', 'node-dawn', ...M0_GPU_TESTS]);
+    run('vitest chrome (M0 smoke: lane diff)', 'npx', ['vitest', 'run', '--project', 'chrome', ...M0_GPU_TESTS]);
+  });
   // Takes the GPU lock itself around the allocation probes.
   run('chrome smoke', 'npx', ['tsx', 'validation/harness/run-chrome.ts', '--smoke']);
   file('validation/budget.json', budgetPopulated);
@@ -133,7 +142,7 @@ function milestoneM1(): void {
   run('typecheck', 'npx', ['tsc', '--noEmit']);
   run('vitest cpu (ENV-U1 RGBE/EXR vs OIIO, loader, BVH, layouts)', 'npx', ['vitest', 'run', '--project', 'cpu']);
   withGpuLockSync('validate-m1', () => {
-    run('vitest node-dawn (pre-check)', 'npx', ['vitest', 'run', '--project', 'node-dawn']);
+    run('vitest node-dawn (pre-check of the M1 suites)', 'npx', ['vitest', 'run', '--project', 'node-dawn', ...M1_GPU_TESTS]);
     run('T12 BVH brute force / watertight / offsets / overflow (chrome)', 'npx', ['vitest', 'run', '--project', 'chrome', 'validation/gpu-tests/bvh.gpu.test.ts']);
     run('ENV-U2 mapping + ENV-U7 bilinear/pole-wrap (chrome)', 'npx', ['vitest', 'run', '--project', 'chrome', 'validation/gpu-tests/env.gpu.test.ts']);
     run('textures validation/interactive paths (chrome)', 'npx', ['vitest', 'run', '--project', 'chrome', 'validation/gpu-tests/textures.gpu.test.ts']);
