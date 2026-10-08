@@ -22,7 +22,7 @@ import type { LightData } from '../../src/core/scene/types.ts';
 import { lightMatrixToward, material, quadScene } from './pt-fixtures.ts';
 import { evalLocal, type V1Params } from '../../tests/material/bsdf-ref.ts';
 import { recentrePositions } from '../../src/core/render/scene-gpu.ts';
-import { T32Harness, animatedLights, hashU32, movedCamera, readU32, recLumF, runChain, temporalSnapshot, type ChainFrame, type FrameResult, type T32Result, type TemporalSnapshot } from './restir-temporal-fixtures.ts';
+import { T32Harness, animatedLights, t32ModeBBin, hashU32, movedCamera, readU32, recLumF, runChain, temporalSnapshot, type ChainFrame, type FrameResult, type T32Result, type TemporalSnapshot } from './restir-temporal-fixtures.ts';
 import type { SceneData } from '../../src/core/scene/types.ts';
 import { loadHdri, synthEnvData } from './env-fixtures.ts';
 import { t3M6Scene } from '../scenes/m6-fixtures.ts';
@@ -469,11 +469,15 @@ describe('T3-2 / T4-t: production round trips T⁻¹(T(X_p)) with forced s = p (
       const pairs = rare ? T32_RARE_PAIRS : T32_PAIRS;
       const x = await runT32(c, pairs, rare ? T32_RARE_RES : T32_RES);
       reportT32(c.name, x, pairs);
-      if (c.scene === 'rare' && T32_MIN_BIN > 0) for (const b of x.r.bins) expect(b.rtOk, b.name).toBeGreaterThanOrEqual(T32_MIN_BIN);
+      // Light mode A (the M5 cases): the M6 crossing bins are structurally empty (no BSDF_ANALYTIC candidate without
+      // RS_MODE_B), every M5 bin ≥ T32_MIN_BIN (Changelog M6-13: the M5 rule had become "every bin" over the M6 bins too)
+      if (c.scene !== 'modeb') for (const b of x.r.bins.filter((bb) => t32ModeBBin(bb.name))) expect(b.trials, `${b.name} (light mode A)`).toBe(0);
+      if (c.scene === 'rare' && T32_MIN_BIN > 0) for (const b of x.r.bins.filter((bb) => !t32ModeBBin(bb.name))) expect(b.rtOk, b.name).toBeGreaterThanOrEqual(T32_MIN_BIN);
       if (c.scene === 'modeb' && T32_MIN_BIN > 0) {
         // restir-m6-api.md §4 T3-2/M6: every crossing bin (d-ana, c-ana, ∅-ana per k class) and the deep bins ≥ T32_MIN_BIN
-        for (const b of x.r.bins.filter((bb) => /ana|deep/.test(bb.name))) if (b.trials) expect(b.rtOk, b.name).toBeGreaterThanOrEqual(T32_MIN_BIN);
+        for (const b of x.r.bins.filter((bb) => /ana|deep/.test(bb.name))) expect(b.rtOk, b.name).toBeGreaterThanOrEqual(T32_MIN_BIN);
       }
+      if (c.scene === 'modeb') for (const b of x.r.bins.filter((bb) => t32ModeBBin(bb.name))) expect(b.rtOk, b.name).toBeGreaterThan(0);
       for (const r of x.frames) expect([r.counters.rsc.tNonFinite, r.counters.rsc.tPendingLeft], `t=${r.t}`).toEqual([0, 0]);
       if (c.lights || c.env) expect(x.refreshFrames).toBe(pairs);
       if (c.lightClass === 'zero') expect(x.lightClass).toBe(0);
