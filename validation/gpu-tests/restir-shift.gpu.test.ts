@@ -126,6 +126,10 @@ interface T3RunOptions {
   target?: number; maxMs?: number;
   /** T3-D: record every `dualStride`-th trial (both shifts) and re-derive its predicate decisions in f64. */
   dual?: DualScene; dualStride?: number;
+  /** M6 keep mask: trials whose stored path has ℓ_{k−1} = G_R (bit 0) / ℓ_k = G_R (bit 1) / x_k on glass (bit 2, the
+   *  side-flip candidates) run even in bins at their target; with `xTarget` the run stays open until every kept counter
+   *  (T3_X_CATS grKm1 / grK / sideFlip) has that many round trips. */
+  xKeep?: number; xTarget?: number;
 }
 interface DualSummary { records: number; pairs: number; logic: number; fp: number; tangentFp: number; jChecked: number; jBad: number; skipped: Record<string, number>; details: string[] }
 interface T3Result { stats: T3Stats; viol: Uint32Array; nViol: number; frames: number; ms: number; dual?: DualSummary; mode?: number; extra?: Record<string, { trials: number; rtOk: number; logic: number }> }
@@ -165,7 +169,7 @@ async function runT3(rig: RestirRig, tp: TestPipeline, o: T3RunOptions): Promise
       const n = Math.min(chunk, total - base);
       const g = Math.ceil(n / 64);
       await tp.run([res.candDump!, stats, viol, dualBuf], [Math.min(g, 65535), Math.ceil(g / 65535)],
-        { t, treeBase: base, treeCount: n, round: o.mode, flags: (o.partners | (maskHi << 16)) >>> 0, passId: mask >>> 0, rowBase: o.dual ? (o.dualStride ?? 101) : 0 },
+        { t, treeBase: base, treeCount: n, round: o.mode, flags: (o.partners | (maskHi << 16) | ((o.xKeep ?? 0) << 20)) >>> 0, passId: mask >>> 0, rowBase: o.dual ? (o.dualStride ?? 101) : 0 },
         [res.views.vbuf, res.views.geo]);
     }
     if (o.dual) await drainDual();
@@ -177,6 +181,10 @@ async function runT3(rig: RestirRig, tp: TestPipeline, o: T3RunOptions): Promise
       for (let b = 0; b < T3_NBINS; b++) {
         const ok = w[b * T3S.words + T3S.fwdOk];
         if (ok >= o.target) { if (b < 32) mask |= 1 << b; else maskHi |= 1 << (b - 32); } else if (w[b * T3S.words + T3S.trials] > 0) open++;
+      }
+      if (o.xKeep && o.xTarget) {
+        const x = decodeT3Extra(await readU32(dev, stats));
+        T3_X_CATS.forEach((c, i) => { if (((o.xKeep! >> i) & 1) && x[c].rtOk < o.xTarget!) open++; });
       }
       if (open === 0) break;
     }
@@ -661,7 +669,7 @@ describe('Production shift passes: platform-fault stress (VITE_STRESS)', () => {
 // ------------------------------------------------------------------------------------------------ M6: T3-M6 (gating)
 
 import { t3M6Scene, type T3M6Variant } from '../scenes/m6-fixtures.ts';
-import { T3_WGSL_BODY, decodeT3Extra, type T3Card } from './restir-shift-fixtures.ts';
+import { T3_WGSL_BODY, T3_X_CATS, decodeT3Extra, type T3Card } from './restir-shift-fixtures.ts';
 import type { LightMode } from '../../src/core/render/lights-gpu.ts';
 
 /** M6 T3 variants (restir-m6-api.md §4 T3-M6): RIS-NEE on t3_cases_256, Mode B + RIS on t3_modeb_256, rough glass
@@ -690,8 +698,11 @@ describe('T3-M6: T3-0 / T3-1 / T4 / T3-D LOGIC = 0 on the M6 cases (≥ 10⁶ ro
       const cards: T3Card[] = t.cards.map((c) => ({ ...c, c: [c.c[0] - o[0], c.c[1] - o[1], c.c[2] - o[2]] as [number, number, number] }));
       const tp = await testPipeline(rig.kernel, 't3m6', T3_WGSL_BODY(cards), 't3_main', 4, { ...T3_DEFINES, RS_M6_TRACE: 1 }, ['uint', 'unfilterable-float']);
       const tag = run.base;
-      const self = t3Report(`T3-0 ${tag}`, await runT3(rig, tp, { mode: 0, partners: 1, frames: 100000, target: T3_TARGET, maxMs: T3_MS / 3 }));
-      const rtRes = await runT3(rig, tp, { mode: 1, partners: 16, frames: 100000, target: T3_TARGET, maxMs: T3_MS, dual: dualScene(rig, t.scene), dualStride: 997 });
+      // glass counters: trials whose stored path can produce the counted event keep running after their case bin reached
+      // its target (grKm1 → ℓ_{k−1} = G_R, grK → ℓ_k = G_R, sideFlip → x_k on glass; restir-m6-api.md Changelog M6-13)
+      const xKeep = (run.needX.includes('grKm1') ? 1 : 0) | (run.needX.includes('grK') ? 2 : 0) | (run.needX.includes('sideFlip') ? 4 : 0);
+      const self = t3Report(`T3-0 ${tag}`, await runT3(rig, tp, { mode: 0, partners: 1, frames: 100000, target: T3_TARGET, maxMs: T3_MS / 3, xKeep }));
+      const rtRes = await runT3(rig, tp, { mode: 1, partners: 16, frames: 100000, target: T3_TARGET, maxMs: T3_MS, dual: dualScene(rig, t.scene), dualStride: 997, xKeep, xTarget: T3_TARGET });
       const rt = t3Report(`T3-1 ${tag}`, rtRes);
       const x = rtRes.extra!;
       console.log(`[T3-M6 ${tag} extra] ${JSON.stringify(x)}`);
