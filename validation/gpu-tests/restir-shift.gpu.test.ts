@@ -265,8 +265,10 @@ async function t3Rig(variant: T3Variant, W = 256, o: { envNee?: boolean; criteri
 function dualScene(rig: RestirRig, scene: SceneData, params: { alphaMin: number; crit2022?: boolean; dmin?: number } = { alphaMin: 0.2 }): DualScene {
   const g = scene.geometry;
   // textured / alpha-tested materials (M6 t3_alpha_256) have no f64 twin: records touching them are skipped ('material')
-  const mats = scene.materials.map((m) => (m.baseColorTexture || m.alphaMode === 'MASK' ? undefined : dualMaterial(m)));
-  return { positions: recentrePositions(g.positions, rig.g.gpu.origin), indices: g.indices, triMaterial: g.triMaterial, materials: mats as DualScene['materials'], tau: rig.kernel.settings.tau, params };
+  // M7: normal-mapped materials have no f64 twin either (skipped); smooth triangles carry their vertex normals
+  const mats = scene.materials.map((m) => (m.baseColorTexture || m.alphaMode === 'MASK' || m.normalTexture ? undefined : dualMaterial(m)));
+  return { positions: recentrePositions(g.positions, rig.g.gpu.origin), indices: g.indices, triMaterial: g.triMaterial, materials: mats as DualScene['materials'], tau: rig.kernel.settings.tau, params,
+    normals: g.normals, triFlags: g.triFlags };
 }
 const T3_DEFINES = { RS_REPLAY: 1, RS_SHIFT_TRACE: 1, RS_VBUF_BINDING: '4u', RS_GEO_BINDING: '5u' };
 
@@ -717,6 +719,51 @@ describe('T3-M6: T3-0 / T3-1 / T4 / T3-D LOGIC = 0 on the M6 cases (≥ 10⁶ ro
       }
       for (const c of Object.keys(x)) expect(x[c].logic, c).toBe(0);
       for (const c of run.needX) expect(x[c].rtOk, c).toBeGreaterThanOrEqual(T3M6_MIN);
+      rig.destroy();
+    }, 3_600_000);
+  }
+});
+
+// ------------------------------------------------------------------------------------------------ M7
+
+import { t3M7Scene, type T3M7Variant } from '../scenes/m7-fixtures.ts';
+
+/** M7 T3 variants (docs/decisions/m7-api.md §6.1 T3-M7): smooth shading (reconnection vertices on smooth triangles, the
+ *  dual with interpolated normals) and normal maps (bump-shadowing term, mapped closure normals; the dual skips
+ *  normal-mapped materials) on t3_cases_256 + smooth objects. */
+const T3M7_RUNS: { name: string; base: T3M7Variant; need: string[]; needX: string[] }[] = [
+  { name: 't3_smooth_256 (smooth shading)', base: 't3_smooth_256', need: ['a-area', 'd', 'e'], needX: ['smoothRc'] },
+  { name: 't3_nm_256 (normal maps + smooth shading)', base: 't3_nm_256', need: ['a-area', 'd', 'e'], needX: ['nmRc', 'smoothRc'] },
+];
+const T3M7_MIN = Number(import.meta.env?.VITE_T3M7_MIN ?? 1_000_000);
+
+describe('T3-M7: T3-0 / T3-1 / T4 / T3-D LOGIC = 0 on smooth and normal-mapped reconnections (≥ 10⁶ round trips per counter)', () => {
+  for (const run of T3M7_RUNS) {
+    it(run.name, async () => {
+      const env = (await loadHdri(`${T3_ENV_ID}_1k.hdr`)) ?? synthEnvData(256, 128);
+      const t = await t3M7Scene(run.base, env);
+      const rig = await restirRig(t.scene, 256, 256, {
+        dumpCandidates: true, cam: { camToWorld: t.camera.matrix, yfov: t.camera.yfov }, lightMode: 'A',
+        settings: { maxBounces: t.maxBounces }, env: { nee: true },
+      });
+      const tp = await testPipeline(rig.kernel, 't3m7', T3_WGSL_BODY([]), 't3_main', 4, { ...T3_DEFINES, RS_M6_TRACE: 1 }, ['uint', 'unfilterable-float']);
+      const tag = run.base;
+      const self = t3Report(`T3-0 ${tag}`, await runT3(rig, tp, { mode: 0, partners: 1, frames: 100000, target: T3_TARGET, maxMs: T3_MS / 3 }));
+      const rtRes = await runT3(rig, tp, { mode: 1, partners: 16, frames: 100000, target: T3_TARGET, maxMs: T3_MS, dual: dualScene(rig, t.scene), dualStride: 997 });
+      const rt = t3Report(`T3-1 ${tag}`, rtRes);
+      const x = rtRes.extra!;
+      console.log(`[T3-M7 ${tag} extra] ${JSON.stringify(x)}`);
+      expect(self.logic).toBe(0);
+      expect(rt.logic).toBe(0);
+      expect(rt.jBad).toBe(0);
+      expectPlatformRare(self, rt);
+      for (const b of run.need) {
+        const n = (rtRes.stats.bins[`${b}/k2`]?.fwdOk ?? 0) + (rtRes.stats.bins[`${b}/k>2`]?.fwdOk ?? 0);
+        console.log(`[T3-M7 ${tag}] ${b}: ${n} round trips`);
+        expect(n, b).toBeGreaterThanOrEqual(T3M7_MIN);
+      }
+      for (const c of Object.keys(x)) expect(x[c].logic, c).toBe(0);
+      for (const c of run.needX) expect(x[c].rtOk, c).toBeGreaterThanOrEqual(T3M7_MIN);
       rig.destroy();
     }, 3_600_000);
   }

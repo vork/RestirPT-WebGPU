@@ -2,7 +2,10 @@
 // tangent-space normal maps (RGBA8, Non-Color), and the CPU mirror of the Cycles Normal Map node used by the tests and
 // the analytic expectations. Builds on scene-kit.ts (its MeshBuilder arrays are appended to directly: smooth vertices
 // are shared, so quantizeScene does NOT flag their triangles TRI_FLAT and the package is exported smooth).
-import { MeshBuilder, norm, texture, type V3 } from './kit-core.ts';
+import { norm, texture, type V3 } from './kit-core.ts';
+
+/** The vertex / index arrays of kit-core's MeshBuilder and make-m4.ts's Mesh (smooth vertices are appended directly). */
+export interface MeshArrays { pos: number[]; nrm: number[]; uv: number[]; idx: number[]; mat: number[] }
 import type { TextureData } from '../../src/core/scene/types.ts';
 
 /** Cycles svm_node_normal_map, tangent space (f64 mirror of scene-data.wgsl normal_map_cycles); null = Cycles' fallback. */
@@ -18,15 +21,15 @@ export function normalMapCycles(rgb: readonly number[], s: number, T: readonly n
   return [N[0] / l, N[1] / l, N[2] / l];
 }
 
-const pushV = (mb: MeshBuilder, p: readonly number[], n: readonly number[], uv: readonly number[]): number => {
+const pushV = (mb: MeshArrays, p: readonly number[], n: readonly number[], uv: readonly number[]): number => {
   mb.pos.push(p[0], p[1], p[2]); mb.nrm.push(n[0], n[1], n[2]); mb.uv.push(uv[0], uv[1]);
   return mb.pos.length / 3 - 1;
 };
-const pushT = (mb: MeshBuilder, a: number, b: number, c: number, mat: number) => { mb.idx.push(a, b, c); mb.mat.push(mat); };
+const pushT = (mb: MeshArrays, a: number, b: number, c: number, mat: number) => { mb.idx.push(a, b, c); mb.mat.push(mat); };
 
 /** Smooth UV sphere: shared vertices, analytic normals (outward), glTF UVs (u = φ/2π·su, v = θ/π·sv), seam duplicated,
  *  polar caps cut at θ0 (closed by a flat disk each, so the mesh is closed and has no degenerate fans). */
-export function smoothSphere(mb: MeshBuilder, c: V3, r: number, nLat: number, nLon: number, mat: number, o: { uvScale?: [number, number]; capMat?: number } = {}): void {
+export function smoothSphere(mb: MeshArrays, c: V3, r: number, nLat: number, nLon: number, mat: number, o: { uvScale?: [number, number]; capMat?: number } = {}): void {
   const [su, sv] = o.uvScale ?? [1, 1];
   const th0 = 0.06, th1 = Math.PI - 0.06;
   const at = (i: number, j: number) => base + i * (nLon + 1) + j;
@@ -67,7 +70,7 @@ export function smoothSphere(mb: MeshBuilder, c: V3, r: number, nLat: number, nL
 
 /** Open smooth height-field sheet y = h0 + A·sin(kx·x)·sin(kz·z) over [x0,x1]×[z0,z1] (n×n quads), analytic normals,
  *  UV = (x, z) scaled into [0, su]×[0, sv]. One-sided geometry: the place where Ng·L ≤ 0 < Ns·L is not self-occluded. */
-export function smoothSheet(mb: MeshBuilder, x0: number, x1: number, z0: number, z1: number, h0: number, A: number, kx: number, kz: number,
+export function smoothSheet(mb: MeshArrays, x0: number, x1: number, z0: number, z1: number, h0: number, A: number, kx: number, kz: number,
   n: number, mat: number, o: { uvScale?: [number, number] } = {}): void {
   const [su, sv] = o.uvScale ?? [1, 1];
   const base = mb.pos.length / 3;
@@ -86,7 +89,7 @@ export function smoothSheet(mb: MeshBuilder, x0: number, x1: number, z0: number,
 }
 
 /** Smooth torus around +Y (major R, minor r), shared vertices, analytic normals, UV (φ/2π·su, ψ/2π·sv). Closed. */
-export function smoothTorus(mb: MeshBuilder, c: V3, R: number, r: number, nU: number, nV: number, mat: number, o: { uvScale?: [number, number] } = {}): void {
+export function smoothTorus(mb: MeshArrays, c: V3, R: number, r: number, nU: number, nV: number, mat: number, o: { uvScale?: [number, number] } = {}): void {
   const [su, sv] = o.uvScale ?? [1, 1];
   const base = mb.pos.length / 3;
   for (let i = 0; i <= nU; i++) for (let j = 0; j <= nV; j++) {
