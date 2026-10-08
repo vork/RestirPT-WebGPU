@@ -317,7 +317,21 @@ fn t3_main(@builtin(global_invocation_id) gid: vec3u) {
   let f = src.flags;
   let bin = t3_case(f);
   let skipBit = select((rsDispatch.passId >> (bin & 31u)) & 1u, (rsDispatch.flags >> (16u + (bin & 15u))) & 1u, bin >= 32u);
-  if (skipBit != 0u) { return; }                             // bins already at their target (skip mask)
+  // bins already at their target (skip mask); M6 keep mask (RsDispatch.flags bits 20–22): trials whose stored path has
+  // the selected glass event still run in a closed bin, so the extra counters keep accumulating after the standard bins
+  // reach their targets (a selection of which round trips run; every check is unchanged). Bit 0: ℓ_{k−1} = G_R; bit 1:
+  // ℓ_k = G_R; bit 2: x_k (ℓ_k ∈ {G_R, G_T, NEE}) on a transmissive material, where side flips happen (NEE at x_k: the
+  // light sample is re-evaluated from the other side).
+  if (skipBit != 0u) {
+    let km = (rsDispatch.flags >> 20u) & 7u;
+    let lk = rf_lk(f);
+    var keepX = (select(0u, 1u, rf_lkm1(f) == LOBE_GR) | select(0u, 2u, lk == LOBE_GR)) & km;
+    if ((km & 4u) != 0u && rf_k(f) != 0u && (lk == LOBE_GR || lk == LOBE_GT || lk == LOBE_NEE) && src.rc.x < arrayLength(&sceneTris)) {
+      let mt = sceneMaterials[tri_material(sceneTris[src.rc.x])];
+      if (mt.transmission > 0.0 || (mt.flags & (MAT_GLASS_NODE | MAT_REFRACTION_NODE)) != 0u) { keepX |= 4u; }
+    }
+    if (keepX == 0u) { return; }
+  }
 #if T3_DENSE
   latIdx = atomicLoad(&dual[${DENSE_OFF - 2}u]) + ai;
   let p = vec2u(0u);

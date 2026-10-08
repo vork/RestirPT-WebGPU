@@ -475,3 +475,30 @@ pairing generator (MD3). §27: duplication-map realisation (MD10).
     d-ana 317 694 / 318 721, c-ana 114 024 / 102 571 (≈ 51 per pair for the rarest, so ≈ 1.2·10⁶ at the gate's 24 000
     pairs). restir-temporal 53/53 (the default-size Mode-B cases have every crossing bin rtOk ≥ 149), restir-tframe
     20/20, typecheck, cpu 492.
+- **M6-14 (T3-M6 glass coverage: the glass counters keep running in closed case bins).**
+  - **Symptom.** In the core gate (18-min T3-1) `t3_glass_256` reached grKm1 0.38 M (grK 0.21 M) and `t3_glass_pane_256`
+    sideFlip 0.27 M, against the 10⁶ minimum; every bin LOGIC 0, T3-D LOGIC 0, U-11 J 0 bad. More time would not have
+    helped (M6-10's "needs the gate's 18 min" was wrong by ~2.6×).
+  - **Cause.** runT3 closes a case bin at T3_TARGET = 10⁷ forward-OK round trips (skip mask; the kernel returns before
+    the trial). The common bins close within the first few thousand frames; after that the extra counters only grow in
+    the rare bins still open (none-*, c-tri / d / a-tri / a-sun k > 2). The frame rate (~34–40 fps, set by the per-frame
+    render and the 33.5 M-thread dispatch) hardly depends on how many trials run, so the counts stalled. The side flips
+    in particular are almost all NEE at x_k on the pane (ℓ_k = NEE, cases b / b-env, ℓ_{k−1} = D; a flip at ℓ_k = G_R
+    turns the reflection into a transmission and is not a round trip): instrumented pilot, 6 min T3-1, 0.62 M flips, all
+    within the first ~4000 frames, i.e. until b / b-env closed; none at ℓ_k = G_R.
+  - **Fix (selection; the scenes are unchanged).** A keep mask in RsDispatch.flags bits 20–22 (T3 kernel only;
+    `runT3({ xKeep, xTarget })`): a trial still runs when its case bin is closed if its stored path has ℓ_{k−1} = G_R
+    (bit 0), ℓ_k = G_R (bit 1), or x_k with ℓ_k ∈ {G_R, G_T, NEE} on a transmissive material (bit 2; looked up from the
+    stored x_k primitive). The T3-M6 test derives the mask from `needX` (grKm1 → 0, grK → 1, sideFlip → 2). Every kept
+    trial is the unchanged production shift with the unchanged LOGIC / FP / J / F / σ / T3-D checks; only which round
+    trips run changes (closed bins get more trials, never fewer; xKeep = 0 is the old kernel behaviour). With `xTarget`
+    the run also stays open while a kept counter is below it.
+  - **Pilots (T3-1 3 min).** `t3_glass_256` (bits 0–1): grKm1 0.79 M (127 / frame), grK 3.1 M. `t3_glass_pane_256` with
+    bit 1 only: sideFlip 0.21 M (it stalls as before); with bit 2: 1.37 M (226 / frame, linear in frames), LOGIC 0, FP 0.
+    Scene alternatives tried before the cause was found (taller / tilted / more panes) raised the stalled count at most
+    ~3× and are not needed; a pane tilted 45° about the view axis would give ~6× more flips per frame if ever wanted.
+  - **Gate-form runs (VITE_T3_MS = 18 min, one hold each, 1440 s).** `t3_glass_256`: T3-0 LOGIC 0 / FP 0 (251 M); T3-1
+    43 185 frames, 271 M round trips, LOGIC 0, FP 0, T3-D 1.32 M pairs LOGIC 0, FP 5 (tangent), U-11 J 260 873 checked
+    0 bad; grKm1 5.46 M, grK 21.3 M (extra LOGIC 0). `t3_glass_pane_256`: T3-0 LOGIC 0 / FP 0 (400 M); T3-1 41 445
+    frames, 1.45 G round trips, LOGIC 0, FP 0, T3-D 0.94 M pairs LOGIC 0, FP 1 (tangent), U-11 J 201 911 checked 0 bad;
+    sideFlip 9.38 M (grKm1 3.08 M, grK 594 M; extra LOGIC 0).
