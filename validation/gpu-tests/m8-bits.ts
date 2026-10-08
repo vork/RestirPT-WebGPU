@@ -63,10 +63,10 @@ function moved(lights: LightData[], dx: number): LightData[] {
 }
 
 /** Per frame: `final reservoirs:image:finalize counters:arena counters` hashes. */
-export async function m8BitsCase(c: M8BitsCase): Promise<string[]> {
+export async function m8BitsCase(c: M8BitsCase, opts: { resLayout?: 'aos' | 'soa' } = {}): Promise<string[]> {
   const { scene, cam: cam0 } = await m8BitsScene(c.scene);
   const W = 64, H = 64;
-  const rig = await restirRig(scene, W, H, { preset: c.preset, settings: c.settings, seed: 31, lightMode: c.lightMode, cam: cam0 });
+  const rig = await restirRig(scene, W, H, { preset: c.preset, settings: c.settings, seed: 31, lightMode: c.lightMode, cam: cam0, resLayout: opts.resLayout });
   const k = rig.kernel, device = rig.g.device;
   await k.prepare();
   const out: string[] = [];

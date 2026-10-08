@@ -28,7 +28,11 @@
 
 @group(2) @binding(0) var<storage, read> dbgResSrc: array<vec4u>;
 
+#if RS_RES_SOA
+fn rsdbg_src_plane(i: u32, p: u32) -> vec4u { return dbgResSrc[rs_res_index(i, p, arrayLength(&dbgResSrc) / RS_RES_PLANES)]; }
+#else
 fn rsdbg_src_plane(i: u32, p: u32) -> vec4u { return dbgResSrc[i * RS_RES_PLANES + p]; }
+#endif
 
 /// Position of the surface point (primId, bary u, v) (render frame).
 fn rsdbg_prim_pos(prim: u32, u: f32, v: f32) -> vec3f {

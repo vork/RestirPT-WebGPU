@@ -150,6 +150,8 @@ export interface RestirRigOptions {
   extraSources?: Record<string, string>;
   /** M6 (restir-m6-api.md MD9): light mode of the ReSTIR kernel (default A). */
   lightMode?: LightMode;
+  /** M8 (m8-perf.md §8): reservoir plane order (default the validation 'aos'). */
+  resLayout?: 'aos' | 'soa';
 }
 
 export interface RestirRig {
@@ -165,7 +167,7 @@ export async function restirRig(scene: SceneData, W: number, H: number, o: Resti
   const kernel = await RestirKernel.create(g.device, g.gpu, g.env, {
     settings: restirSettings(o.preset ?? 'initial', o.settings), features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures,
     instrumentation: { dumpCandidates: o.dumpCandidates, initialDefines: o.initialDefines, extraSources: o.extraSources }, env: o.env,
-    lightMode: o.lightMode,
+    lightMode: o.lightMode, resLayout: o.resLayout,
   });
   kernel.setView({ camera: o.cam ?? boxCamera(), width: W, height: H, runSeed: o.seed ?? 11, jitterMode: o.jitterMode ?? JITTER_IID, members: o.members, memberBase: o.memberBase });
   await kernel.prepare();

@@ -132,6 +132,8 @@ export interface RendererOptions {
   envImportanceCap: number;
   /** M5.5: the denoiser toggle of the current mode (denoiser.md §8; remembered per mode in denoiseByMode). */
   denoise: boolean;
+  /** M8 (m8-perf.md): kernel options of the interactive ReSTIR (A/B measurements; default the interactive kernel's). */
+  restirKernel?: { resLayout?: 'aos' | 'soa'; modeBNeedsAreaLights?: boolean };
 }
 
 export interface RendererTargets {
@@ -362,7 +364,7 @@ export class Renderer {
         const pass = await RestirKernel.interactive(this.device, state.gpu, this.env, colorFormat, {
           settings: this.restirSettings(), lightMode: this.options.lightMode, debug,
           env: { nee: this.options.envNee, importanceCap: this.options.envImportanceCap },
-          features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures,
+          features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures, ...this.options.restirKernel,
         });
         const dbg = debug ? await RestirDebugPass.create(pass.kernel, debug) : undefined;
         if (this.lights) pass.setLights(this.lights);
@@ -762,7 +764,7 @@ export class Renderer {
       f.l1 = res.l1;
       f.restir = {
         arena: res.arena, resW: res.res[k.resBase()], resFinal: res.res[k.finalResIndex()],
-        tsBase: RS_WGSL_CONSTS.RS_ARENA_HDR_WORDS + arenaWords(res.pixels, res.alloc.slots).tState,
+        tsBase: RS_WGSL_CONSTS.RS_ARENA_HDR_WORDS + arenaWords(res.pixels, res.alloc.slots).tState, resPlanes: k.resPlaneStride,
         gradient: !!adv && adv.histValid && temporal && k.settings.temporalMis === 'contribution',
         lightingChanged: (fl & RS_WGSL_CONSTS.TF_LIGHTS_SAME) === 0 || (fl & RS_WGSL_CONSTS.TF_ENV_SAME) === 0,
         inverse: k.lastRounds <= 1,

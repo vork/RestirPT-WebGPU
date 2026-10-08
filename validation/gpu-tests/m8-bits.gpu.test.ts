@@ -36,6 +36,18 @@ describe('U-M8-BITS: ReSTIR chains (interactive and validation presets, light mo
   }
 });
 
+// M8 P-7 (m8-perf.md §8): plane-major reservoirs (RS_RES_SOA, the interactive kernel) give the AoS hashes bit for bit
+// (readReservoirs returns AoS words in both layouts).
+describe('U-M8-BITS (SoA): plane-major reservoirs ≡ the pre-M8 build', () => {
+  for (const c of M8_BITS_CASES) {
+    it(c.name, async () => {
+      const h = await m8BitsCase(c, { resLayout: 'soa' });
+      if (RECORD) return;
+      expect(h).toEqual(GOLDEN[c.name]);
+    }, 300_000);
+  }
+});
+
 describe('U-M8-PTBITS: PT batch (validation configuration) ≡ the pre-M8 build', () => {
   for (const [s, m] of PT_CASES) {
     it(`${s} mode ${m}`, async () => {

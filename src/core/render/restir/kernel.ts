@@ -23,7 +23,7 @@ import { envImportanceKey, packEnvParams } from '../env-gpu.ts';
 import { applyEnvLighting, type PtEnvOptions } from '../pt-kernel.ts';
 import { recentrePositions, type SceneGpu } from '../scene-gpu.ts';
 import {
-  RES_BYTES, RESTIR_PARAMS_SIZE, RS_DISPATCH_RING, RS_DISPATCH_SIZE, RS_DISPATCH_STRIDE, RS_TEMPORAL_SIZE, RSC, RS_WGSL_CONSTS as K,
+  RES_BYTES, RES_PLANES, RESTIR_PARAMS_SIZE, RS_DISPATCH_RING, RS_DISPATCH_SIZE, RS_DISPATCH_STRIDE, RS_TEMPORAL_SIZE, RSC, RS_WGSL_CONSTS as K,
   ARENA_HDR_BYTES, arenaWords, nsAlloc, packRestirParams, packRsDispatch, packRsTemporal, queueHdr, type RscName, type RsDispatchCpu,
 } from './layout.ts';
 import { m6Defines, m7NmPlantDefine, numSlotsOf, pairTexSizes, restirFlags, restirSettings, tModeOf, tPlantsOf, validateSettings, type RestirSettings } from './presets.ts';
@@ -75,6 +75,9 @@ export interface RestirKernelOptions {
    *  (nothing a BSDF ray could cross: the two estimators are bitwise equal, U-M8-MODEB). Off by default (every validation
    *  caller keeps the requested text); RestirKernel.interactive (the app) turns it on. */
   modeBNeedsAreaLights?: boolean;
+  /** M8 (m8-perf.md §8, P-7): reservoir planes record-major ('aos', the M4 layout; default: every validation caller) or
+   *  plane-major ('soa', composer define RS_RES_SOA; RestirKernel.interactive). readReservoirs() always returns AoS. */
+  resLayout?: 'aos' | 'soa';
   env?: PtEnvOptions;
   debug?: DebugResources;
   features?: Set<string>;
@@ -192,7 +195,7 @@ export class RestirKernel {
   /** Interactive ReSTIR (renderer mode 'restir'): progressive mean into the renderer's colour target. */
   static async interactive(device: GPUDevice, scene: SceneGpu, env: EnvGpuResources, colorFormat: GPUTextureFormat,
     o: Omit<RestirKernelOptions, 'settings'> & { settings?: Partial<RestirSettings> } = {}): Promise<RestirFramePass> {
-    const k = await RestirKernel.create(device, scene, env, { modeBNeedsAreaLights: true, ...o, settings: { ...restirSettings('interactive'), ...o.settings } });
+    const k = await RestirKernel.create(device, scene, env, { modeBNeedsAreaLights: true, resLayout: 'soa', ...o, settings: { ...restirSettings('interactive'), ...o.settings } });
     await k.pipeline('rs_finalize_frame', {}, colorFormat);
     return new RestirFramePass(k, colorFormat);
   }
@@ -212,7 +215,12 @@ export class RestirKernel {
 
   /** Composer defines shared by every ReSTIR pipeline (+ the pass's own). */
   defines(name: RsPassName, extra: Defines = {}): Defines {
-    return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug, extra: { ...this.m6Defines(), NM_PLANT: m7NmPlantDefine(this.settings, name), ...extra } });
+    return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug, extra: { ...this.m6Defines(), NM_PLANT: m7NmPlantDefine(this.settings, name), ...this.layoutDefines(), ...extra } });
+  }
+  /** M8 P-7: RS_RES_SOA only for plane-major kernels (the key is absent otherwise: the M7 text). */
+  layoutDefines(): Record<string, number> { return this.o.resLayout === 'soa' ? { RS_RES_SOA: 1 } : {}; }
+  /** M8 P-7: u32 words between consecutive planes of a record's plane 0 … (denoiser: 10 AoS, 1 SoA for plane 0). */
+  get resPlaneStride(): number { return this.o.resLayout === 'soa' ? 1 : RES_PLANES;
   }
 
   /** M6 pipeline-variant defines of the current settings / light mode (restir-m6-api.md MD1). */
@@ -693,7 +701,11 @@ export class RestirKernel {
   async readReservoirs(which: 'final' | 0 | 1): Promise<Uint32Array> {
     const res = this.resources;
     const idx = which === 'final' ? this.lastFinal : which;
-    return new Uint32Array(await readBuffer(this.device, res.res[idx], res.pixels * RES_BYTES));
+    const raw = new Uint32Array(await readBuffer(this.device, res.res[idx], res.pixels * RES_BYTES));
+    if (this.o.resLayout !== 'soa') return raw;
+    const n = res.pixels, aos = new Uint32Array(raw.length);   // plane-major → record-major (M8 P-7)
+    for (let p = 0; p < RES_PLANES; p++) for (let i = 0; i < n; i++) aos.set(raw.subarray((p * n + i) * 4, (p * n + i) * 4 + 4), (i * RES_PLANES + p) * 4);
+    return aos;
   }
 
   /** M5 (§3.8): the arena's tState + sfxOut region as u32 words, starting at tState (decode with layout.ts

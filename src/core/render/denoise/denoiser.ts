@@ -26,6 +26,8 @@ export interface DenoiseRestirInput {
   resFinal: GPUBuffer;
   /** Global arena word of tState[0] (64 + 6·P·NS_alloc). */
   tsBase: number;
+  /** u32 index stride of plane 0 between records (M8 P-7: 10 record-major, 1 plane-major; default 10). */
+  resPlanes?: number;
   /** The gradient passes run (temporal frame with valid history, contribution MIS). */
   gradient: boolean;
   /** The change bits open the λ gate (a light / env change between t−1 and t). */
@@ -257,7 +259,7 @@ export class Denoiser {
     this.lastFlags = flags;
     this.sinceChange = (flags & DNF.LAMBDA) || reset ? 0 : Math.min(this.sinceChange + 1, 0xffff);
     if (this.settings.guide && this.settings.resolve && this.sinceChange >= 8) flags |= DNF.GUIDE;
-    this.device.queue.writeBuffer(this.params, 0, packDnParams({ width: t.w, height: t.h, flags, settings: this.settings, tsBase: r?.tsBase ?? 0, resPlanes: 10, sinceChange: this.sinceChange }));
+    this.device.queue.writeBuffer(this.params, 0, packDnParams({ width: t.w, height: t.h, flags, settings: this.settings, tsBase: r?.tsBase ?? 0, resPlanes: r?.resPlanes ?? 10, sinceChange: this.sinceChange }));
     this.writeIterations();
 
     const v = view;
