@@ -37,7 +37,10 @@
 //     `--only id|pkg,…`, `--pilot-only` (pilots + sizing), `--plant-seed-offset 700` (revised predictions, fresh seeds),
 //     `--restir-seed-offset N` (ReSTIR seeds of the sequential units + N; PT references unchanged), `--part gate5
 //     --reuse-run DIR` (recompute the Gate 5 verdicts from an earlier gate5 run's chains, no rendering; M6-12).
-//   npm run validate -- --milestone M0|M1|M2|M3a|M3b|M3c|M4|M5|M5.5|M6 [--only ...] [--pilot-only] [--write-budget] [--part ...]
+// M7: validation/harness/gate-m7.ts (m7-api.md §6) — `--part core|loader|stageA|e2e|r38|plants` (default: all parts):
+//     Gate 0 (U-M7-BITS / U-M7-ARENA, U-NM-1..3, T3-M7, M6/M5/M4 regressions, make-m7 / make-m7-e2e determinism, perf,
+//     M7 app smoke), (vii-L) / (viii-L) / U-TAN-B, Stage A (vii-N, E2E-HDR, A/A), E2E-GLB / E2E-USD, rung 3.8, M7 plants.
+//   npm run validate -- --milestone M0|M1|M2|M3a|M3b|M3c|M4|M5|M5.5|M6|M7 [--only ...] [--pilot-only] [--write-budget] [--part ...]
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -50,6 +53,7 @@ import { milestoneM4 } from './gate-m4.ts';
 import { milestoneM5 } from './gate-m5.ts';
 import { milestoneM55 } from './gate-m55.ts';
 import { milestoneM6, PARTS as M6_PARTS, type Part as M6Part } from './gate-m6.ts';
+import { milestoneM7, PARTS as M7_PARTS, type Part as M7Part } from './gate-m7.ts';
 import { withGpuLockSync } from './gpu-lock.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -399,6 +403,10 @@ const gates: Record<string, () => void> = {
   M6: () => milestoneM6(record, { part: M6_PARTS.includes(args.part as M6Part) ? args.part as M6Part : undefined, only: args.only ? new Set(args.only.split(',')) : undefined,
     pilotOnly: args['pilot-only'], plantSeedOffset: args['plant-seed-offset'] ? Number(args['plant-seed-offset']) : undefined,
     restirSeedOffset: args['restir-seed-offset'] ? Number(args['restir-seed-offset']) : undefined, writeBudget: args['write-budget'], reuseRun: args['reuse-run'] }),
+  M7: () => {
+    if (args.part && !M7_PARTS.includes(args.part as M7Part)) { record(`--part ${args.part}`, false, `unknown; M7 parts: ${M7_PARTS.join(', ')}`); return; }
+    milestoneM7(record, { part: args.part as M7Part | undefined, only: args.only ? new Set(args.only.split(',')) : undefined, pilotOnly: args['pilot-only'], writeBudget: args['write-budget'] });
+  },
 };
 const gate = gates[args.milestone!.toUpperCase()];
 if (!gate) {
