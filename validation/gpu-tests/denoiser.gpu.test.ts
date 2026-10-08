@@ -264,6 +264,43 @@ describe('denoiser passes vs the f64 reference', () => {
     prevRef = ref.state;
   });
 
+  // M8 P-6 (m8-perf.md §7): the lattice-tiled à-trous at steps 1, 2, 4, 8 (super-tiles 8 … 64 px on the 40 × 32 image:
+  // partial super-tiles, residue classes, the image border) against the same f64 reference.
+  it('U-DN-3b dn_atrous (N = 4, lattice tiles at steps 1 / 2 / 4 / 8) vs the f64 reference', async () => {
+    const S4: DenoiserSettings = { ...DENOISER_DEFAULTS, iterations: 4, resolve: false };
+    const cam = camAt(0.013);
+    const px = scene(cam);
+    const radiance = noisy(px, 5), l1 = l1Of(px);
+    const g0 = await gpuState();
+    const prevSt: RefState = { ...g0.st, n: prevRef.n };
+    encodeFrame({ cam, prev: cam, px, radiance, l1, reset: false, settings: S4, kind: 'restir' });
+    const ref = refTemporal({ W, H, px, cam, prevCam: cam, radiance, l1, flags: DNF.HAS_L1, settings: S4 }, prevSt);
+    const fl = refFilter(S4, ref.state, ref.atrous0, px, radiance, l1);
+    const g = await gpuState();
+    const fb = Array.from({ length: P * 3 }, (_, j) => fl.feedback[4 * Math.floor(j / 3) + (j % 3)]);
+    expect(maxErr(Array.from({ length: P * 3 }, (_, j) => g.hist[4 * Math.floor(j / 3) + (j % 3)]), fb, 1e-3).err).toBeLessThan(5e-3);
+    expect(maxErr(g.colour.filter((_, j) => j % 4 !== 3), fl.colour, 1e-3).err).toBeLessThan(5e-3);
+    prevRef = ref.state;
+  });
+
+  // M8 P-6: the tiled step-1 level is bitwise the texture-path dn_atrous (same arithmetic, same order): the frame above
+  // (tiled) is re-encoded as a held frame (DN9: same inputs, same outputs) with dn_atrous at the step-1 level.
+  it('U-DN-3c the tiled step-1 à-trous level ≡ dn_atrous bit for bit', async () => {
+    const a = await gpuState();
+    const dn = rig.dn as unknown as { plan: { name: string; pipeline: GPUComputePipeline }[]; pipelines: Map<string, GPUComputePipeline> };
+    const lvl = dn.plan.find((x) => x.name === 'dn_atrous0')!;
+    expect(lvl.pipeline).toBe(dn.pipelines.get('dn_atrous_tile1'));
+    lvl.pipeline = dn.pipelines.get('dn_atrous')!;
+    const enc = rig.device.createCommandEncoder();
+    expect(rig.dn.encode(enc, { kind: 'restir', advanced: false, reset: false, frameUniforms: rig.fu.buffer, gbuf: rig.gbuf, radiance: rig.radiance, l1: rig.l1, colour: rig.colour, debugGroup: rig.debug.bindGroup })).toBe(true);
+    rig.device.queue.submit([enc.finish()]);
+    const b = await gpuState();
+    lvl.pipeline = dn.pipelines.get('dn_atrous_tile1')!;
+    expect(b.hist).toEqual(a.hist);
+    expect(b.atrous).toEqual(a.atrous);
+    expect(b.colour).toEqual(a.colour);
+  });
+
   it('U-DN-4 dn_gradient / dn_grad_filter: tile sums, λ, and λ driving α', async () => {
     const S: DenoiserSettings = { ...DENOISER_DEFAULTS, iterations: 1, resolve: false };
     const cam = camAt(0.013);

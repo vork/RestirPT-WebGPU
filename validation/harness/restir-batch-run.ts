@@ -54,6 +54,8 @@ export interface RenderRestirBatchesOptions {
   chromeVersion?: string;
   budget?: Partial<SubmitBudget>;
   watertight?: boolean;
+  /** M8 (m8-perf.md §3, gate-m8 stageB): the acceleration structure (default BVH2, as every earlier gate). */
+  bvhKind?: 'bvh2' | 'cwbvh';
   writeMean?: boolean;
 }
 
@@ -83,7 +85,7 @@ export async function renderRestirBatches(ctx: GpuContext, o: RenderRestirBatche
   const tLoad = performance.now();
   const origin = computeRenderOrigin(src.scene.bounds, src.scene.quant);
   const watertight = o.watertight ?? true;
-  const gpu = await SceneGpu.create(device, src.scene, origin, { textureMode: 'validation', watertight, features, wgslLanguageFeatures });
+  const gpu = await SceneGpu.create(device, src.scene, origin, { textureMode: 'validation', watertight, features, wgslLanguageFeatures, ...(o.bvhKind === 'cwbvh' ? { bvhKind: 'cwbvh' as const } : {}) });
   const env = await createEnvResources(device, src.scene.env);
   if (src.frame?.env) writeEnvParams(device, env, src.frame.env);
   const pkgEnvSampling = (src.source.envSampling as string | undefined) ?? 'AUTOMATIC';
@@ -157,7 +159,7 @@ export async function renderRestirBatches(ctx: GpuContext, o: RenderRestirBatche
   const unbiased = UNBIASED_PRESETS.includes(o.preset) && !plantsNamed.length && !(settings.dupmap && settings.temporal);
   const config = {
     kernel: 'restir', preset: o.preset, framesPerBatch: o.framesPerBatch, members: E, width: W, height: H, jitter: 'iid-per-run', filter: 'box-1px',
-    scene: src.source.packageSha256, frame: null, textureMode: 'validation', intersector: watertight ? 'woop-watertight' : 'moller-trumbore',
+    scene: src.source.packageSha256, frame: null, textureMode: 'validation', intersector: watertight ? 'woop-watertight' : 'moller-trumbore', bvh: gpu.bvhKind,
     maxBounces, lightMode, settings, env: envInfo ? { nee: envInfo.nee } : 'none', plant: plant ?? null,
   };
   const configHash = await sha256Hex(new TextEncoder().encode(stable(config)));

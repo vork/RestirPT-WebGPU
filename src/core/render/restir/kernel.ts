@@ -23,7 +23,7 @@ import { envImportanceKey, packEnvParams } from '../env-gpu.ts';
 import { applyEnvLighting, type PtEnvOptions } from '../pt-kernel.ts';
 import { recentrePositions, type SceneGpu } from '../scene-gpu.ts';
 import {
-  RES_BYTES, RESTIR_PARAMS_SIZE, RS_DISPATCH_RING, RS_DISPATCH_SIZE, RS_DISPATCH_STRIDE, RS_TEMPORAL_SIZE, RSC, RS_WGSL_CONSTS as K,
+  RES_BYTES, RES_PLANES, RESTIR_PARAMS_SIZE, RS_DISPATCH_RING, RS_DISPATCH_SIZE, RS_DISPATCH_STRIDE, RS_TEMPORAL_SIZE, RSC, RS_WGSL_CONSTS as K,
   ARENA_HDR_BYTES, arenaWords, nsAlloc, packRestirParams, packRsDispatch, packRsTemporal, queueHdr, type RscName, type RsDispatchCpu,
 } from './layout.ts';
 import { m6Defines, m7NmPlantDefine, numSlotsOf, pairTexSizes, restirFlags, restirSettings, tModeOf, tPlantsOf, validateSettings, type RestirSettings } from './presets.ts';
@@ -71,6 +71,13 @@ export interface RestirView {
 export interface RestirKernelOptions {
   settings: Partial<RestirSettings>;
   lightMode?: LightMode;
+  /** M8 (m8-perf.md §5, P-4): compile light modes B / A′ as the Mode-A pipeline text while no rect / disk light exists
+   *  (nothing a BSDF ray could cross: the two estimators are bitwise equal, U-M8-MODEB). Off by default (every validation
+   *  caller keeps the requested text); RestirKernel.interactive (the app) turns it on. */
+  modeBNeedsAreaLights?: boolean;
+  /** M8 (m8-perf.md §8, P-7): reservoir planes record-major ('aos', the M4 layout; default: every validation caller) or
+   *  plane-major ('soa', composer define RS_RES_SOA; RestirKernel.interactive). readReservoirs() always returns AoS. */
+  resLayout?: 'aos' | 'soa';
   env?: PtEnvOptions;
   debug?: DebugResources;
   features?: Set<string>;
@@ -145,6 +152,7 @@ export class RestirKernel {
     this.rsTemporal = device.createBuffer({ label: 'rs-temporal', size: RS_TEMPORAL_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
     this.lights = new LightsGpu(device, scene.scene, scene.origin, recentrePositions(scene.scene.geometry.positions, scene.origin), { lightMode: this.lightMode, label: 'rs-lights' });
     applyEnvLighting(this.lights, env, this.envOptions);
+    this.variantLightMode = this.desiredVariantLightMode();
     const c = GPUShaderStage.COMPUTE;
     const empty = device.createBindGroupLayout({ label: 'rs-empty', entries: [] });
     this.layouts = {
@@ -187,7 +195,7 @@ export class RestirKernel {
   /** Interactive ReSTIR (renderer mode 'restir'): progressive mean into the renderer's colour target. */
   static async interactive(device: GPUDevice, scene: SceneGpu, env: EnvGpuResources, colorFormat: GPUTextureFormat,
     o: Omit<RestirKernelOptions, 'settings'> & { settings?: Partial<RestirSettings> } = {}): Promise<RestirFramePass> {
-    const k = await RestirKernel.create(device, scene, env, { ...o, settings: { ...restirSettings('interactive'), ...o.settings } });
+    const k = await RestirKernel.create(device, scene, env, { modeBNeedsAreaLights: true, resLayout: 'soa', ...o, settings: { ...restirSettings('interactive'), ...o.settings } });
     await k.pipeline('rs_finalize_frame', {}, colorFormat);
     return new RestirFramePass(k, colorFormat);
   }
@@ -207,11 +215,30 @@ export class RestirKernel {
 
   /** Composer defines shared by every ReSTIR pipeline (+ the pass's own). */
   defines(name: RsPassName, extra: Defines = {}): Defines {
-    return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug, extra: { ...this.m6Defines(), NM_PLANT: m7NmPlantDefine(this.settings, name), ...extra } });
+    return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug, extra: { ...this.m6Defines(), NM_PLANT: m7NmPlantDefine(this.settings, name), ...this.layoutDefines(), ...extra } });
+  }
+  /** M8 P-7: RS_RES_SOA only for plane-major kernels (the key is absent otherwise: the M7 text). */
+  layoutDefines(): Record<string, number> { return this.o.resLayout === 'soa' ? { RS_RES_SOA: 1 } : {}; }
+  /** M8 P-7: u32 words between consecutive planes of a record's plane 0 … (denoiser: 10 AoS, 1 SoA for plane 0). */
+  get resPlaneStride(): number { return this.o.resLayout === 'soa' ? 1 : RES_PLANES;
   }
 
   /** M6 pipeline-variant defines of the current settings / light mode (restir-m6-api.md MD1). */
-  m6Defines(): Record<string, number> { return m6Defines(this.settings, this.lightMode); }
+  m6Defines(): Record<string, number> { return m6Defines(this.settings, this.variantLightMode); }
+  /** The light mode whose pipeline text is compiled (= lightMode unless modeBNeedsAreaLights finds no rect / disk light). */
+  private variantLightMode: LightMode = 'A';
+  private desiredVariantLightMode(): LightMode {
+    return this.o.modeBNeedsAreaLights && this.lightMode !== 'A' && !this.lights.hasAreaLights ? 'A' : this.lightMode;
+  }
+  /** M8 P-4: re-evaluate the compiled light-mode text at a frame boundary (call before checking isPrepared()): a switch
+   *  is a new variant (prepare() compiles it) and resets the temporal history. Returns true when it switched. */
+  syncLightModeVariant(): boolean {
+    const m = this.desiredVariantLightMode();
+    if (m === this.variantLightMode) return false;
+    this.variantLightMode = m;
+    this.frameState.invalidate('light-mode-variant');
+    return true;
+  }
   /** Cache key of the current pipeline variant. */
   variantKey(): string { const d = this.m6Defines(); return `${d.RS_RIS_NEE}${d.RS_MODE_B}${d.RS_DUAL_MV}${d.RS_DUPMAP}${d.RS_PLANT_T2}${d.RS_PLANT_SMOOTH_J}${m7NmPlantDefine(this.settings, 'rs_spatial_shift')}`; }
 
@@ -304,6 +331,7 @@ export class RestirKernel {
     if (m === this.lightMode) return;
     this.lightMode = m;
     this.lights.setLightMode(m);
+    this.variantLightMode = this.desiredVariantLightMode();
     this.g0Key = '';
     this.writeParams();
   }
@@ -673,7 +701,11 @@ export class RestirKernel {
   async readReservoirs(which: 'final' | 0 | 1): Promise<Uint32Array> {
     const res = this.resources;
     const idx = which === 'final' ? this.lastFinal : which;
-    return new Uint32Array(await readBuffer(this.device, res.res[idx], res.pixels * RES_BYTES));
+    const raw = new Uint32Array(await readBuffer(this.device, res.res[idx], res.pixels * RES_BYTES));
+    if (this.o.resLayout !== 'soa') return raw;
+    const n = res.pixels, aos = new Uint32Array(raw.length);   // plane-major → record-major (M8 P-7)
+    for (let p = 0; p < RES_PLANES; p++) for (let i = 0; i < n; i++) aos.set(raw.subarray((p * n + i) * 4, (p * n + i) * 4 + 4), (i * RES_PLANES + p) * 4);
+    return aos;
   }
 
   /** M5 (§3.8): the arena's tState + sfxOut region as u32 words, starting at tState (decode with layout.ts

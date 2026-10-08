@@ -29,7 +29,7 @@ export interface EnvParamsCpu {
 export type EnvTexFormat = 'rgb9e5ufloat' | 'rgba16float' | 'rgba32float';
 export const ENV_FORMAT_BYTES: Record<EnvTexFormat, number> = { rgb9e5ufloat: 4, rgba16float: 8, rgba32float: 16 };
 /** ENV-F result (env-format.gpu.test.ts, Chrome/Metal): compact formats are allowed in validation mode. */
-export const ENV_COMPACT_IN_VALIDATION = false;
+export const ENV_COMPACT_IN_VALIDATION = true;
 
 export interface EnvGpuOptions {
   /** 'validation' (default: harness, tests) or 'interactive' (the app's interactive texture mode). */

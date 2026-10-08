@@ -12,16 +12,24 @@
 //
 // Bindings: the includer declares
 //   var<storage, read> bvh_nodes: array<vec4f>;   var<storage, read> bvh_tris: array<vec4f>;
+// (BVH_CWBVH: bvh_nodes: array<vec4u>)
 // (bvh_tris = the MT layout, or the Woop layout + primId tail with WATERTIGHT; bind the whole buffer),
 // or sets BVH_DECLARE_BINDINGS with BVH_GROUP, BVH_BINDING_NODES, BVH_BINDING_TRIS.
 //
 // Defines: WATERTIGHT (Woop et al. 2013, canonical edge order), BVH_STATS, CUSTOM_ALPHA (the includer then
-// provides fn alpha_pass(primId: u32, u: f32, v: f32) -> bool; true = the hit counts. MASK cutout, plan §1.3).
+// provides fn alpha_pass(primId: u32, u: f32, v: f32) -> bool; true = the hit counts. MASK cutout, plan §1.3),
+// BVH_CWBVH (M8: bvh_nodes / bvh_tris hold the CWBVH of src/core/bvh/cwbvh.ts; bvh/traverse-cwbvh.wgsl replaces
+// bvh_trace, everything else here is shared).
 #include "common/math.wgsl"
 #include "geom/intersect.wgsl"
 
 #if BVH_DECLARE_BINDINGS
+#if BVH_CWBVH
+// CWBVH node words are arbitrary bit patterns (quantized bytes, imask): read as u32, never through f32 (NaN payloads)
+@group($BVH_GROUP) @binding($BVH_BINDING_NODES) var<storage, read> bvh_nodes: array<vec4u>;
+#else
 @group($BVH_GROUP) @binding($BVH_BINDING_NODES) var<storage, read> bvh_nodes: array<vec4f>;
+#endif
 @group($BVH_GROUP) @binding($BVH_BINDING_TRIS) var<storage, read> bvh_tris: array<vec4f>;
 #endif
 
@@ -79,6 +87,9 @@ fn bvh_slab(bmin: vec3f, bmax: vec3f, o: vec3f, rd: vec3f, tlim: f32) -> f32 {
   return select(-1.0, tnear, tnear <= tfar);
 }
 
+#if BVH_CWBVH
+#include "bvh/traverse-cwbvh.wgsl"
+#else
 fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u32) -> Hit {
   var hit = Hit(tmax, 0.0, 0.0, BVH_MISS);
   let rd = vec3f(bvh_safe_rcp(d.x), bvh_safe_rcp(d.y), bvh_safe_rcp(d.z));
@@ -163,6 +174,7 @@ fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u3
   }
   return hit;
 }
+#endif
 
 fn trace_closest_ex(o: vec3f, d: vec3f, tmax: f32, skipA: u32, skipB: u32) -> Hit {
   return bvh_trace(o, d, tmax, false, skipA, skipB);

@@ -190,6 +190,8 @@ export interface LightSlotCpu {
 
 interface SlotState {
   cpu: LightSlotCpu;
+  /** M8 (m8-perf.md §5): the slot holds a rect / disk light (something a BSDF ray can cross in light modes B / A′). */
+  area: boolean;
   ids: number[];
   weights: Float64Array;
   table: AliasTable | undefined;
@@ -413,7 +415,7 @@ export class LightsState {
     }
     const pmfChanged = first || !sameWeights;
     const same = !alwaysFlip && !first && !lightsChanged && !pmfChanged && !reallocated;
-    this.slots[next] = { cpu, ids, weights, table };
+    this.slots[next] = { cpu, area: lights.some((l) => l.type === 'rect' || l.type === 'disk'), ids, weights, table };
     if (!same) this.cur = next;                          // M5 commit: an unchanged state does not flip (TD4)
     this.dirty = this.dirtyAll ? [[0, this.totalWords]] : [[base, base + this.slotWords]];
     this.dirtyAll = false;
@@ -441,6 +443,8 @@ export class LightsState {
 
   /** The slot the GPU sees as `prev` (LightsParams.prev: the non-current slot, or cur before the first flip). */
   get prevSlot(): LightSlotCpu { return (this.slots[this.cur ^ 1] ?? this.slots[this.cur]!).cpu; }
+  /** M8: the current or the previous committed slot holds a rect / disk light. */
+  get areaCurOrPrev(): boolean { return !!this.slots[this.cur]?.area || !!this.slots[this.cur ^ 1]?.area; }
 
   /**
    * CPU mirror of tframe.wgsl lt_translate (restir-temporal-api.md §3.2, TD7): alias entry `entry` of frame `from` in the
@@ -507,6 +511,10 @@ export class LightsGpu {
   }
 
   get lightMode(): LightMode { return this.state.lightMode; }
+  /** M8 (m8-perf.md §5): a rect / disk light is in the last light list given, or in the current / previous committed slot. */
+  get hasAreaLights(): boolean {
+    return this.state.areaCurOrPrev || !!this.lastLights?.some((l) => l.type === 'rect' || l.type === 'disk');
+  }
   setLightMode(m: LightMode): void { this.state.lightMode = m; this.device.queue.writeBuffer(this.params, 0, this.state.paramsBytes()); }
 
   /**

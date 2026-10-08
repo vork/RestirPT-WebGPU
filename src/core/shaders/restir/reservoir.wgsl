@@ -11,6 +11,22 @@
 // Plane indices of a record (§2.2)
 const RP_WF: u32 = 0u;  const RP_SEED: u32 = 1u;  const RP_RC: u32 = 2u;  const RP_WI: u32 = 3u;  const RP_RAD: u32 = 4u;
 const RP_END: u32 = 5u;  const RP_SFX0: u32 = 6u;  const RP_SFX1: u32 = 7u;  const RP_SFX2: u32 = 8u;  const RP_DIAG: u32 = 9u;
+#if RS_RES_SOA
+// M8 (m8-perf.md §8, P-7), the interactive kernel only: the same ten planes, plane-major (plane p of record i at p·n + i,
+// n = records in the buffer), so a pass reading a few planes of neighbouring records touches contiguous memory. Values
+// and every accessor are unchanged (bitwise the AoS results, U-M8-BITS); without RS_RES_SOA the text is the M7 one.
+fn rs_res_index(i: u32, p: u32, n: u32) -> u32 { return p * n + i; }
+#if RS_RES_IN_BINDING
+@group(2) @binding($RS_RES_IN_BINDING) var<storage, read> resIn: array<vec4u>;
+fn resin_plane(i: u32, p: u32) -> vec4u { return resIn[rs_res_index(i, p, arrayLength(&resIn) / RS_RES_PLANES)]; }
+#endif
+#if RS_RES_OUT_BINDING
+@group(2) @binding($RS_RES_OUT_BINDING) var<storage, read_write> resOut: array<vec4u>;
+fn resout_index(i: u32, p: u32) -> u32 { return rs_res_index(i, p, arrayLength(&resOut) / RS_RES_PLANES); }
+fn resout_plane(i: u32, p: u32) -> vec4u { return resOut[resout_index(i, p)]; }
+fn resout_set(i: u32, p: u32, v: vec4u) { resOut[resout_index(i, p)] = v; }
+#endif
+#else
 #if RS_RES_IN_BINDING
 @group(2) @binding($RS_RES_IN_BINDING) var<storage, read> resIn: array<vec4u>;
 fn resin_plane(i: u32, p: u32) -> vec4u { return resIn[i * RS_RES_PLANES + p]; }
@@ -19,6 +35,7 @@ fn resin_plane(i: u32, p: u32) -> vec4u { return resIn[i * RS_RES_PLANES + p]; }
 @group(2) @binding($RS_RES_OUT_BINDING) var<storage, read_write> resOut: array<vec4u>;
 fn resout_plane(i: u32, p: u32) -> vec4u { return resOut[i * RS_RES_PLANES + p]; }
 fn resout_set(i: u32, p: u32, v: vec4u) { resOut[i * RS_RES_PLANES + p] = v; }
+#endif
 #endif
 fn rf_d(f: u32) -> u32 { return f & 0xFu; }
 fn rf_k(f: u32) -> u32 { return (f >> RF_K_SHIFT) & 0xFu; }

@@ -15,6 +15,9 @@ The Chrome lane is authoritative for every gate. dawn.node is a fast pre-check o
 | FMA contraction of a*b+c | True | True |
 | WGSL language features (both lanes) | buffer_view, immediate_address_space, linear_indexing, packed_4x8_integer_dot_product, pointer_composite_access, readonly_and_readwrite_storage_textures, subgroup_id, subgroup_uniformity, swizzle_assignment, texture_and_sampler_let, texture_formats_tier1, uniform_buffer_standard_layout, unrestricted_pointer_parameters | identical to Chrome |
 
+Chrome auto-updated to 155.0.8059.40 on 2026-10-08; the M0 smoke now requires major ≥ 154 instead of exactly 154 (the
+other M0 checks, device limits included, and M1–M3 of `validate --all` passed on 155).
+
 Headless Chrome 154 exposes the hardware Metal adapter without `--enable-unsafe-webgpu` (`npm run smoke:chrome`), so the vitest Chrome lane runs without the flag.
 
 ## Metal quirks

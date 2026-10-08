@@ -1,7 +1,11 @@
 // ENV-F (docs/decisions/data-formats.md §B9, E-3, P2): hardware bilinear filtering (repeat, linear — the env sampler)
 // of the compact env formats (rgb9e5ufloat / rgba16float) vs the SAME texels stored as rgba32float, at 10^6 random uv
 // (incl. the u seam and the poles). Criterion: max |Δ| / L ≤ 2^-20 (L = the f32 result's largest component).
-// Validation mode may use the compact formats only if this passes (env-gpu.ts ENV_COMPACT_IN_VALIDATION).
+// M8 (docs/decisions/m8-perf.md §11): REPORT ONLY. No renderer path samples the env through the hardware filter any
+// more (env.wgsl envTexel: explicit f32 bilinear over textureLoad since restir-temporal-api.md C-10; Q4), so validation
+// mode uses the compact formats (env-gpu.ts ENV_COMPACT_IN_VALIDATION) on the strength of ENV-U7c (env.gpu.test.ts:
+// envRadiance / envBackground bit-identical across formats) and tests/render/env-compact.test.ts (no hardware sampling
+// of texEnv in any shader). This test keeps measuring the hardware filter's precision.
 import { afterAll, describe, expect, it } from 'vitest';
 import { getTestGpu, lane, releaseTestGpu } from './device-factory.ts';
 import { readBuffer } from '../../src/core/gpu/readback.ts';
@@ -101,8 +105,8 @@ describe(`ENV-F compact env formats: hardware filtering = f32 filtering (${lane(
       report[c.name] = r;
       console.log('ENV-F', lane(), c.name, JSON.stringify(r));
       uvBuf.destroy(); outBuf.destroy(); destroyEnvResources(f32); destroyEnvResources(cmp);
-      // Validation mode may only use the compact formats when they filter like f32.
-      if (ENV_COMPACT_IN_VALIDATION) expect(pass_).toBe(true);
+      // report only (see the header): the renderer never filters texEnv in hardware
+      expect(r.lookups).toBe(N);
     }, 300_000);
   }
   afterAll(() => { report.allPass = allPass; });

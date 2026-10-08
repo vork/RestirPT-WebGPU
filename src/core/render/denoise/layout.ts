@@ -68,11 +68,14 @@ export interface DenoiserSettings {
    *  camera) and in motion; 0 = no clipping. */
   taaGammaLight: number;
   taaGammaCam: number;
+  /** M8 P-6 (m8-perf.md §7): the step-1 à-trous level reads its taps from a workgroup-memory tile (bitwise the texture
+   *  path, U-DN-3c). */
+  atrousTile: boolean;
 }
 
 export const DENOISER_DEFAULTS: Readonly<DenoiserSettings> = {
   iterations: 4, alphaMin: 0.2, lambda0: 0.03, lambda1: 0.15, sigmaZ: 1, sigmaN: 128, sigmaL: 4, sigmaA: 0.05, varCorr: 3, resolve: true, nMaxT: 1024, guide: true, invRadius: 3, lumMinN: 4, lumPre: 1, nMax: 64, gradientOnCamera: false,
-  taaLightMax: 32, taaCamMax: 8, taaDilate: true, taaCubic: true, taaGammaLight: 4, taaGammaCam: 1,
+  taaLightMax: 32, taaCamMax: 8, taaDilate: true, taaCubic: true, taaGammaLight: 4, taaGammaCam: 1, atrousTile: true,
 };
 export const DN_MAX_ITERATIONS = 6;
 

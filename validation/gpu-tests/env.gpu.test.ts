@@ -212,7 +212,8 @@ describe(`env (${lane()})`, () => {
     const texels = new Float32Array(W * H * 4);
     for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) texels.set([1 + c + 8 * r, 100 + 17 * c - 9 * r, 2 ** (c % 4) * (r + 1), 1], (r * W + c) * 4);
     const env: EnvironmentData = { name: 'u7', width: W, height: H, texels, strength: 1, tint: [1, 1, 1], rotationZ: 0, visibleToCamera: true };
-    const res = await createEnvResources(device, env, 'env-u7');
+    // the f32 texture (M8: validation mode now picks the smallest exact format; ENV-U7c checks those bit for bit)
+    const res = await createEnvResources(device, env, 'env-u7', { format: 'rgba32float' });
     expect(envMemoryReport(res).textureBytes).toBe(W * H * 16);
 
     const shader = composeWgsl('tests/env-u7.wgsl', { sources: { ...shaderSources, 'tests/env-u7.wgsl': U7_WGSL }, defines: envDefines(0, 0), features, wgslLanguageFeatures });
@@ -357,6 +358,62 @@ describe(`env (${lane()})`, () => {
     expect(maxRel).toBeLessThan(1e-6);
     expect(diff).toBe(0);
     uvBuf.destroy(); out.destroy(); outBg.destroy(); destroyEnvResources(f32res); destroyEnvResources(cmp);
+  });
+  // M8 (docs/decisions/m8-perf.md §11; platform-lanes.md Q4): validation mode uses the smallest exact env format
+  // (ENV_COMPACT_IN_VALIDATION). Every renderer env lookup is envRadiance / envBackground (explicit f32 bilinear over
+  // textureLoad, C-10; tests/render/env-compact.test.ts: no shader samples texEnv through the hardware filter), so the
+  // compact texture gives bitwise the rgba32float results: checked here on every validation env kind.
+  it('ENV-U7c: envRadiance / envBackground with the compact format ≡ rgba32float bit for bit (HDRIs, f16 sun, RGBE, constant)', async () => {
+    const { device, features, wgslLanguageFeatures } = await getTestGpu();
+    const { loadHdri } = await import('./env-fixtures.ts');
+    const shader = composeWgsl('tests/env-u7.wgsl', { sources: { ...shaderSources, 'tests/env-u7.wgsl': U7_WGSL }, defines: envDefines(0, 0), features, wgslLanguageFeatures });
+    const module = await createCheckedShaderModule(device, shader, 'env-u7c');
+    const pipeline = await device.createComputePipelineAsync({ layout: 'auto', compute: { module, entryPoint: 'main' } });
+    const mk = (name: string, W: number, H: number, f: (x: number, y: number) => number[]): EnvironmentData => {
+      const t = new Float32Array(W * H * 4);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) t.set([...f(x, y), 1], 4 * (y * W + x));
+      return { name, width: W, height: H, texels: t, strength: 1, tint: [1, 1, 1], rotationZ: 0.3, visibleToCamera: true };
+    };
+    const rr = xorshift(5);
+    const envs: (EnvironmentData | undefined)[] = [
+      ...(await Promise.all(['studio_small_09_1k.hdr', 'overcast_soil_puresky_1k.hdr', 'kloofendal_48d_partly_cloudy_puresky_1k.hdr'].map((f) => loadHdri(f)))),
+      mk('c0s-sun', 512, 256, (x, y) => (x === 7 && y === 100 ? [1e4, 1e4, 1e4] : [0, 0, 0])),
+      mk('rgbe', 256, 128, () => { const e = Math.floor(rr() * 30) - 15; return [0, 0, 0].map(() => Math.floor(rr() * 512) * 2 ** (e - 8)); }),
+      mk('constant', 64, 32, () => [0.8, 0.8, 0.8]),
+    ];
+    const N = 100_000;
+    const rnd = xorshift(99);
+    const uvs = new Float32Array(2 * N);
+    for (let i = 0; i < N; i++) { const k = i % 4; uvs.set([k === 0 ? (rnd() - 0.5) * 0.01 : rnd(), k === 1 ? rnd() * 0.01 : k === 2 ? 1 - rnd() * 0.01 : rnd()], 2 * i); }
+    const uvBuf = device.createBuffer({ size: uvs.byteLength, usage: GPUBufferUsage.STORAGE, mappedAtCreation: true });
+    new Float32Array(uvBuf.getMappedRange()).set(uvs); uvBuf.unmap();
+    const out = device.createBuffer({ size: N * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+    const outBg = device.createBuffer({ size: N * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+    const run = async (res: Awaited<ReturnType<typeof createEnvResources>>) => {
+      const bg = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [...envBindGroupEntries(res, 0), { binding: 3, resource: { buffer: uvBuf } }, { binding: 4, resource: { buffer: out } }, { binding: 5, resource: { buffer: outBg } }] });
+      const enc = device.createCommandEncoder();
+      const pass = enc.beginComputePass(); pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.dispatchWorkgroups(Math.ceil(N / 64)); pass.end();
+      device.queue.submit([enc.finish()]);
+      return [new Uint32Array(await readBuffer(device, out, N * 16)), new Uint32Array(await readBuffer(device, outBg, N * 16))] as const;
+    };
+    const report: Record<string, unknown> = {};
+    let checked = 0;
+    for (const e of envs) {
+      if (!e) continue;
+      const a = await createEnvResources(device, e, 'env-u7c-f32', { format: 'rgba32float' });
+      const b = await createEnvResources(device, e, 'env-u7c-val');   // validation mode (the default): smallest exact format
+      const [ra, ba] = await run(a);
+      const [rb, bb] = await run(b);
+      let diff = 0;
+      for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i] || ba[i] !== bb[i]) diff++;
+      report[e.name] = { format: b.format, mismatches: diff };
+      expect(diff, `${e.name} (${b.format})`).toBe(0);
+      checked++;
+      destroyEnvResources(a); destroyEnvResources(b);
+    }
+    console.log('ENV-U7c', lane(), JSON.stringify(report));
+    expect(checked).toBeGreaterThanOrEqual(3);
+    uvBuf.destroy(); out.destroy(); outBg.destroy();
   });
   it('env-grid overlay: axis discs, rings and horizon', async () => {
     const { device, features, wgslLanguageFeatures } = await getTestGpu();

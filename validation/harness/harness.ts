@@ -7,6 +7,7 @@ import { renderRestirBatches, type RenderRestirBatchesOptions, type RenderRestir
 import { renderRestirChains, type RenderRestirChainsOptions, type RenderRestirChainsReport } from './restir-chain-run.ts';
 import { exportAndUpload } from './export-package.ts';
 import { renderDenoise, type RenderDenoiseOptions, type RenderDenoiseReport } from './denoise-run.ts';
+import { renderPerf, type PerfOptions, type PerfReport } from './perf-run.ts';
 import { fetchScenePackage, type ExportScenePackageOptions } from '../../src/core/scene/scene-package.ts';
 import { denoiserT16State } from '../../src/core/render/denoise/registry.ts';
 
@@ -36,6 +37,8 @@ export interface Harness {
   /** M5.5 (docs/decisions/denoiser.md §11): the denoiser evaluation on the interactive renderer (not a validation
    *  readback: the renderer and its denoiser are destroyed before it returns). */
   renderDenoise(opts: RenderDenoiseOptions): Promise<RenderDenoiseReport>;
+  /** M8 (docs/decisions/m8-perf.md §1): interactive frame / per-pass / denoiser timing (not a validation readback). */
+  renderPerf(opts: PerfOptions): Promise<PerfReport>;
   /** M2: re-export a scene package (read from `packageUrl`) to validation/out/<run>/ (bridge round trip). */
   reexportPackage(packageUrl: string, run: string, overrides?: Partial<ExportScenePackageOptions>): Promise<{ files: string[]; sha256: string }>;
 }
@@ -142,6 +145,11 @@ const harness: Harness = {
   async renderDenoise(opts) {
     const ctx = await getContext();
     return renderDenoise(ctx, opts);
+  },
+
+  async renderPerf(opts) {
+    const ctx = await getContext();
+    return renderPerf(ctx, opts);
   },
 
   async reexportPackage(packageUrl, run, overrides = {}) {

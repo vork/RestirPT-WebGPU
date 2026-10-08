@@ -408,7 +408,7 @@ export class RestirDebugPass {
     });
     const layout = kernel.device.createPipelineLayout({ label: 'rs-debug', bindGroupLayouts: [kernel.layouts.g0, kernel.layouts.g1Scene, g2, kernel.layouts.g3] });
     const defines = {
-      ...restirCommonDefines(kernel.scene.defines(1), true),
+      ...restirCommonDefines(kernel.scene.defines(1), true), ...kernel.layoutDefines(),
       RS_ARENA_BINDING: '1u', RS_ARENA_RW: false, RS_VBUF_BINDING: '2u', RS_GEO_BINDING: '3u', RS_PAIRTEX_BINDING: '4u',
       RS_VBUF_PREV_BINDING: '5u',
     };

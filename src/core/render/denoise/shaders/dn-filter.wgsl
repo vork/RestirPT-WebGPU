@@ -246,4 +246,108 @@ fn dn_atrous(@builtin(global_invocation_id) gid: vec3u) {
     textureStore(atrousOut, p, res);
   }
 }
+
+// M8 (m8-perf.md §7, P-6): à-trous levels of step s = DN_TILE_STEP ∈ {1, 2, 4} with a workgroup-memory tile (the
+// denoiser uses it for s = 1: −35 % on that level; s = 2 measured neutral, s = 4 slower: a 20 KB tile costs occupancy). Every tap
+// p + s·d (|d| ≤ 2) of the 8 × 8 group lies in one contiguous (8 + 4s)² tile, loaded once (144 / 256 / 576 tap and colour
+// texels instead of 64 × 24 texture reads); the per-tap arithmetic, its order and every skip rule are dn_atrous' (keep
+// the two in sync); dn_zgrad / dn_var3 (±1 pixel) keep their texture reads. A strided-lattice variant (one residue class per group) lost the cache locality of
+// neighbouring threads and was slower (m8-perf.md §7).
+#if DN_TILE_STEP
+const DN_AT_S: u32 = u32($DN_TILE_STEP);
+const DN_AT_T: u32 = 8u + 4u * DN_AT_S;   // tile side
+var<workgroup> atTap: array<vec4u, DN_AT_T * DN_AT_T>;
+var<workgroup> atCol: array<vec4f, DN_AT_T * DN_AT_T>;
+var<workgroup> atLum: array<f32, DN_AT_T * DN_AT_T>;
+
+@compute @workgroup_size(8, 8, 1)
+fn dn_atrous_tile(@builtin(workgroup_id) wid: vec3u, @builtin(local_invocation_id) lid: vec3u, @builtin(local_invocation_index) li: u32) {
+  let stp = DN_AT_S;
+  let o = vec2i(wid.xy * 8u);                          // first pixel of the group
+  let pre = dn.lumPre > 0u && it.iter == 0u;          // DN-13: later levels filter already-smoothed values
+  for (var k = li; k < DN_AT_T * DN_AT_T; k += 64u) {
+    let q = o + vec2i(i32(k % DN_AT_T), i32(k / DN_AT_T)) - vec2i(2 * i32(DN_AT_S));
+    if (dn_in_image(q)) {
+      atTap[k] = textureLoad(tapTex, q, 0);
+      atCol[k] = textureLoad(atrousIn, q, 0);
+      if (pre) { atLum[k] = textureLoad(lumG, q, 0).x; }
+    }
+  }
+  workgroupBarrier();
+  let p = o + vec2i(lid.xy);
+  if (any(vec2u(p) >= dn.size)) { return; }
+  let gid = vec2u(p);
+  let ci = (lid.y + 2u * DN_AT_S) * DN_AT_T + lid.x + 2u * DN_AT_S;
+  let c = atCol[ci];
+  let tc = atTap[ci];
+  let gc = tc.xy;
+  let zc = dn_guide_dist(gc);
+  let isFinal = (it.flags & DNI_FINAL) != 0u;
+  if (!(zc > 0.0)) {                                    // background: pass the input through
+    if (isFinal) { textureStore(colourOut, p, vec4f(dn_fp16v(textureLoad(inputTex, p, 0).rgb), 1.0)); }
+    else { textureStore(atrousOut, p, c); }
+    if ((it.flags & DNI_FEEDBACK) != 0u) { textureStore(histOut, p, vec4f(0.0)); }
+    return;
+  }
+  var res = c;
+  if ((it.flags & DNI_COPY) == 0u) {
+    let nc = dn_guide_normal(gc);
+    let zg = dn_zgrad(tapTex, p, zc);
+    let ac = dn_tap_alb(tc);
+    // DN-9: with a converged output (static camera and lighting, n_t ≥ 8 at both pixels) the luminance stop compares
+    // the demodulated previous output instead of this frame's noisy values: weights that depend on the noise being
+    // filtered pull the mean toward the mode of right-skewed Monte-Carlo noise (the residual darkening of DN-7).
+    let gl = dn_tap_guide(tc);
+    let useGuide = gl >= 0.0;
+    var lc = luminance(c.rgb);
+    if (useGuide) { lc = gl; } else if (pre) { lc = atLum[ci]; }
+    let invA = select(0.0, 1.0 / dn.sigmaA, dn.sigmaA > 0.0);
+    // DN-12: no luminance stop on young histories (resets, disocclusions): with few, right-skewed samples, weights that
+    // depend on the noisy values pull the mean toward the mode (−25 % on a reset after an added spot light)
+    let lumStop = textureLoad(momCur, p, 0).z >= dn.lumMinN;
+    let phiL = select(1e30, dn.sigmaL * sqrt(max(dn_var3(p), 0.0)) + 1e-6, lumStop);
+    let invPhiL = DN_LOG2E / phiL;
+    let kA = invA / 3.0 * DN_LOG2E;
+    let st = i32(stp);
+    var sc = vec3f(0.0);
+    var sv = 0.0;
+    var sw = 0.0;
+    for (var dy = -2; dy <= 2; dy++) {
+      for (var dx = -2; dx <= 2; dx++) {
+        let h = dn_b3(dx) * dn_b3(dy);   // no dynamically indexed array: it would live in private memory
+        if (dx == 0 && dy == 0) { sc += h * c.rgb; sv += h * h * c.a; sw += h; continue; }
+        let d = vec2i(dx, dy) * st;
+        let q = p + d;
+        if (!dn_in_image(q)) { continue; }
+        let qi = u32(i32(ci) + (dy * i32(DN_AT_T) + dx) * st);
+        let tq = atTap[qi];
+        let gq = tq.xy;
+        let zq = dn_guide_dist(gq);
+        if (!(zq > 0.0)) { continue; }
+        let lg = dn_lw_geo(zc, zg, nc, zq, dn_guide_normal(gq), vec2f(d));
+        if (lg < DN_LW_GEO_MIN) { continue; }   // DN-15: a negligible geometric weight: skip the colour
+        let cq = atCol[qi];
+        let da = dn_tap_alb(tq) - ac;
+        let glq = dn_tap_guide(tq);
+        var lq: f32;
+        if (useGuide && glq >= 0.0) { lq = glq; } else if (pre) { lq = atLum[qi]; } else { lq = luminance(cq.rgb); }
+        let w = h * exp2(lg - abs(lc - lq) * invPhiL - (abs(da.x) + abs(da.y) + abs(da.z)) * kA);   // DN-5 albedo stop
+        sc += w * cq.rgb;
+        sv += w * w * cq.a;
+        sw += w;
+      }
+    }
+    res = vec4f(sc / sw, sv / (sw * sw));
+  }
+  res = vec4f(dn_fp16v(res.rgb), dn_fp16(res.a));
+  if ((it.flags & DNI_FEEDBACK) != 0u) { textureStore(histOut, p, vec4f(res.rgb, 0.0)); }
+  debug_write3(gid, DNV_LEVEL0 + it.iter, res.rgb);
+  if (isFinal) {
+    let L1 = textureLoad(l1Tex, p, 0).rgb;
+    textureStore(colourOut, p, vec4f(dn_fp16v(res.rgb * textureLoad(albTex, p, 0).rgb + L1), 1.0));
+  } else {
+    textureStore(atrousOut, p, res);
+  }
+}
+#endif
 #endif

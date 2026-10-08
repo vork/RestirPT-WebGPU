@@ -79,7 +79,10 @@ export function buildPanel(app: App): PanelHandle {
     .on('change', (e) => app.setResolution(e.value));
   rF.addBinding(r, 'colorFormat', { label: 'color format', options: { rgba32float: 'rgba32float', rgba16float: 'rgba16float' } })
     .on('change', (e) => app.setColorFormat(e.value as ColorFormat));
-  rF.addBinding(p, 'filter', { label: 'upscale', options: { bilinear: 'bilinear', nearest: 'nearest' } });
+  rF.addBinding(p, 'filter', { label: 'upscale', options: { 'bicubic (Catmull-Rom)': 'bicubic', bilinear: 'bilinear', nearest: 'nearest' } });
+  // M8 dynamic resolution (docs/decisions/m8-perf.md §9)
+  rF.addBinding(r, 'dynamicResolution', { label: 'dynamic res' }).on('change', (e) => app.setDynamicResolution(e.value));
+  rF.addBinding(r, 'targetMs', { label: 'target ms', min: 8, max: 100, step: 1 }).on('change', (e) => app.setDynamicResolution(r.dynamicResolution, e.value));
   rF.addBinding(p, 'exposureEV', { label: 'exposure (EV)', min: -10, max: 10, step: 0.1 });
   rF.addBinding(p, 'tonemap', { label: 'view transform', options: { 'Standard (Blender, exact)': 'standard', 'AgX (approx)': 'agx', 'ACES fit (approx)': 'aces', 'Raw (linear)': 'raw' } });
   rF.addBinding(p, 'highlightNonFinite', { label: 'NaN/Inf magenta' });

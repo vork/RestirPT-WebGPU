@@ -87,7 +87,11 @@ export const STAGE_A_UNITS: StageAUnit[] = [
 ];
 const AA_A_PKG = 'm7_nm_flat_256';
 
-export interface SeqUnit { id: string; part: 'r38'; rung: string; pkg: string; label: string; preset: RestirPresetName; settings?: Partial<RestirSettings>; lightMode: 'A' | 'B' }
+export interface SeqUnit {
+  id: string; part: 'r38' | 'stageB'; rung: string; pkg: string; label: string; preset: RestirPresetName; settings?: Partial<RestirSettings>; lightMode: 'A' | 'B';
+  /** Extra ReSTIR run-batches arguments (M8 gate: --bvh cwbvh); not part of the pilot cache key unless `pilotTag` says so. */
+  extraArgs?: string[];
+}
 const U = (tag: string, pkg: string, label: string, preset: RestirPresetName, o: Partial<SeqUnit> = {}): SeqUnit =>
   ({ id: `${pkg}@3.8-${tag}`, part: 'r38', rung: '3.8', pkg, label, preset, lightMode: 'A', ...o });
 export const SEQ_UNITS: SeqUnit[] = [
@@ -337,7 +341,7 @@ function ptRefRun(pkg: string, spp: number, B: number, seed: number, estSeconds:
     ['--package', pkgDirM7(pkg), '--kernel', 'pt', '--spp', String(spp), '--batches', String(B), '--seed', String(seed)], B, add, `PT reference ${pkg} (${spp} spp x ${B}, seed ${seed})`, estSeconds);
 }
 
-function seqUnit(u: SeqUnit, dir: string, runId: string, nU: number, add: Add, pilotOnly: boolean): Record<string, any> {
+export function seqUnit(u: SeqUnit, dir: string, runId: string, nU: number, add: Add, pilotOnly: boolean): Record<string, any> {
   const t0 = performance.now();
   const base = { unit: u.id, kind: 'seq', part: u.part, rung: u.rung, scene: u.pkg, label: u.label, preset: u.preset, settings: u.settings ?? {}, lightMode: u.lightMode, tier: 'tight' };
   const z = sizeUnit(u.pkg, u.preset, u.settings, add, u.id);
@@ -350,7 +354,7 @@ function seqUnit(u: SeqUnit, dir: string, runId: string, nU: number, add: Add, p
   const expect = restirSettings(u.preset, u.settings ?? {});
   const run = (seed: number, sub: string) => {
     console.log(`\n--- ReSTIR ${u.id}: ${z.frames} frames x ${z.B}, seed ${seed}`);
-    return runBatches([...rsArgs(u.pkg, u.preset, u.settings), '--spp', String(z.frames), '--batches', String(z.B), '--seed', String(seed)],
+    return runBatches([...rsArgs(u.pkg, u.preset, u.settings), ...(u.extraArgs ?? []), '--spp', String(z.frames), '--batches', String(z.B), '--seed', String(seed)],
       `${runId}-${sub}`.replace(/[^\w.-]+/g, '_').slice(0, 120), path.join(dir, 'restir', safe(sub)), { B: z.B, estSeconds: z.seconds * 1.2 });
   };
   const first = run(SEEDS.restir, u.id);

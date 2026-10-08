@@ -131,7 +131,7 @@ async function main(): Promise<number> {
     report.smoke = smoke;
 
     check('webgpu adapter available', smoke.adapterAvailable, usedUnsafeFlag ? 'needed --enable-unsafe-webgpu' : 'no unsafe flag');
-    check('chrome major 154', /^154\./.test(chromeVersion), chromeVersion);
+    check('chrome major >= 154', Number(chromeVersion.split('.')[0]) >= 154, chromeVersion);  // auto-updates: 155.0.8059.40 passed M1-M3 in validate --all (2026-10-08)
     check('hardware Metal context', smoke.ok, smoke.error);
     const ctx = smoke.context as { vendor?: string; architecture?: string; limits?: Record<string, number> } | undefined;
     if (ctx) {

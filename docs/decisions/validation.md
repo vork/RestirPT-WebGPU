@@ -711,3 +711,49 @@ ReSTIR-interactive finite, views 320–327 written.
 - MetalRoughSpheres' +0.07 % D3-type systematic: a Mode-B variant (light MIS on) of the E2E unit would separate the
   Mode-A near-specular NEE tails from a model difference.
 - B-SM-J was not detectable on finely tessellated meshes (M7-11); the low-poly scene is the plant's home.
+
+# M8: performance (docs/decisions/m8-perf.md; PLAN §5 M8)
+
+`npm run validate -- --milestone M8 --part core|stageB|perf` runs `validation/harness/gate-m8.ts`; `npm run validate --
+--all` runs every milestone gate M0 … M8 in order, each in its own process (PLAN §5 M8 exit).
+
+**What M8 changes for validation.** Every validation path keeps BVH2, the AoS reservoir planes, the requested light-mode
+text and the texture-path à-trous: the CWBVH, P-4, the SoA planes and the tiled à-trous are interactive-only variants
+behind composer defines / options whose keys are absent in validation (U-M7-BITS: every validation pipeline still
+composes to the M6 text). The one validation-path change is `ENV_COMPACT_IN_VALIDATION = true` (the env texture in the
+smallest exact format), bitwise neutral by ENV-U7c. The interactive variants are bitwise the pre-M8 results
+(U-M8-BITS AoS / SoA, U-M8-MODEB, U-DN-3c); the CWBVH is hit-equivalent to BVH2 (T12) and is checked end to end in
+Stage B (part stageB).
+
+**Code hashes.** The PT closure hash changed (traverse.wgsl gained the `BVH_CWBVH` include, scene-gpu / the BVH worker
+the CWBVH option, env-gpu the format rule) although the validation outputs are bitwise unchanged; cached PT references
+keyed by an older hash (M4–M7) are re-rendered by `--all` (no hash aliasing was introduced).
+
+**M8 gate result (2026-10-08, code 2f393dd = 76ee705 + the ABBA perf ordering; PT code 7ca99daa6ec4, ReSTIR fced7bf07351).**
+Runs under `validation/out/`: core `m8-gate-core-20261008-133740`, stageB `m8-gate-stageB-20261008-134328`, perf
+`m8-gate-perf-20261008-135504` (ABBA; the first perf run `m8-gate-perf-20261008-134944` measured M8 before pre-M8 and is
+superseded).
+
+| Part | Result |
+|---|---|
+| core (Gate 0) | 12/12: typecheck, cpu lane (U-M7-BITS: every validation pipeline = the M6 text; cwbvh encoder; dynres; env-compact static check; every earlier CPU test), python tests, m8-bits (U-M8-BITS AoS and SoA = the pre-M8 goldens on 6 cases, U-M8-PTBITS 5, U-M8-MODEB 3, P-4 switching), bvh (T12 on BVH2 and CWBVH, MT and Woop: unexplained 0, hit equivalence, watertight 0, self-hits 0, seams 0), denoiser (incl. U-DN-3b / 3c), env (ENV-U7c 0 mismatches on 6 envs), env-format (report), env-sampling, normal-map, M5.5 app smoke 35/35, M7 app smoke |
+| stageB (CWBVH end to end, δ 0.2 % / 1 %) | 3/3, no re-run, multiplier 1: m7_nm_smooth_256 offline-m6 Mode A Δ_Y −0.0057 % (MDB 0.016 %), worst tile −0.14 %; m7_nm_smooth_B_256 Mode B −0.0054 % (0.023 %), −0.09 %; m7_nm_env_256 −0.0057 % (0.030 %), +0.13 %; T16 incl. `config.bvh = cwbvh` |
+| perf (recorded) | m8-perf.md §14: targets met on Cornell, m6_crossings (540p; 720p 52.1 ms in a slow session, 44.7 ms at the baseline), m7_nm_smooth; Sponza + HDRI missed (78.7 ms at 540p N=3, −12 % vs pre-M8); dyn-res 0.625: 31.9 ms |
+
+The CWBVH units use the M7 rung-3.8 seeds and sizes on the same packages, so they are close to M7's BVH2 values
+(−0.0051 / −0.0054 / −0.0057 %): the hit-equivalent structure reproduces the estimator, as T12 predicts.
+
+**`validate --all`.** Launched on 1b37d25 (run `validate-all-20261008-140328`, started 2026-10-08 16:03 CEST); it re-renders the
+M4–M7 PT references whose cache keys hold an older PT code hash and re-runs every Stage-A / Stage-B ladder (≈ 40 GPU
+hours by budget.json). Its summary: `validation/out/validate-all-20261008-140328/summary.json`. The M0 / M1 lane steps
+run their own milestone's GPU suites only (M0: smoke.gpu.test.ts in node-dawn and Chrome under the GPU lock; M1: bvh /
+env / textures / primary): the full lanes now contain every later suite, which need their own gates' env, timeouts and
+lock holds. Result: stopped on 2026-10-08 by the user's decision after M0–M2 and part of M3 (168 steps passed; M1 10/10,
+M2 24/24; M0 8/9: the only failure was the Chrome-version pin, Chrome having auto-updated to 155, now relaxed to
+major ≥ 154, platform-lanes.md). The rest was not run on the M8 code; the validation path's bitwise identity to eda22be
+(U-M8-BITS, U-M7-BITS) and the CWBVH Stage-B units above stand in for it. Run `validate --all` before relying on M8
+for anything those gates cover.
+
+**Open items.** D-M8-1 (96 B / 120 B quantized layout), D-M8-4 (40 B G-buffer), Sponza's targets (D-M8-6: a wavefront split
+of the path tree, a cheaper RIS target), rs_primary reusing the M1 V-buffer (≈ 1.4 ms on Sponza), tinybvh WASM once
+emscripten is available, the app's maxBounces default (3) vs PLAN §1.10 (2).

@@ -40,7 +40,12 @@
 // M7: validation/harness/gate-m7.ts (m7-api.md §6) — `--part core|loader|stageA|e2e|r38|plants` (default: all parts):
 //     Gate 0 (U-M7-BITS / U-M7-ARENA, U-NM-1..3, T3-M7, M6/M5/M4 regressions, make-m7 / make-m7-e2e determinism, perf,
 //     M7 app smoke), (vii-L) / (viii-L) / U-TAN-B, Stage A (vii-N, E2E-HDR, A/A), E2E-GLB / E2E-USD, rung 3.8, M7 plants.
-//   npm run validate -- --milestone M0|M1|M2|M3a|M3b|M3c|M4|M5|M5.5|M6|M7 [--only ...] [--pilot-only] [--write-budget] [--part ...]
+// M8: validation/harness/gate-m8.ts (docs/decisions/m8-perf.md §13) — `--part core|stageB|perf`: Gate 0 (U-M7-BITS
+//     validation text, U-M8-BITS / PTBITS / MODEB, T12 on BVH2 + CWBVH incl. hit equivalence, U-DN-3b/3c, ENV-U7c, the
+//     M5.5 / M7 app smokes), Stage B CWBVH end to end, the PLAN M8 targets (recorded; misses are deviations).
+// --all: every milestone gate M0 … M8 in order, each in its own process (PLAN §5 M8 exit), validation/out/validate-all-*/.
+//   npm run validate -- --milestone M0|M1|M2|M3a|M3b|M3c|M4|M5|M5.5|M6|M7|M8 [--only ...] [--pilot-only] [--write-budget] [--part ...]
+//   npm run validate -- --all
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -54,13 +59,14 @@ import { milestoneM5 } from './gate-m5.ts';
 import { milestoneM55 } from './gate-m55.ts';
 import { milestoneM6, PARTS as M6_PARTS, type Part as M6Part } from './gate-m6.ts';
 import { milestoneM7, PARTS as M7_PARTS, type Part as M7Part } from './gate-m7.ts';
+import { milestoneM8, PARTS as M8_PARTS, type Part as M8Part } from './gate-m8.ts';
 import { withGpuLockSync } from './gpu-lock.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const { values: args } = parseArgs({ options: {
   milestone: { type: 'string', default: 'M0' }, only: { type: 'string' },
   'pilot-only': { type: 'boolean', default: false }, 'write-budget': { type: 'boolean', default: false },
-  'prerender-ptrefs': { type: 'boolean', default: false }, part: { type: 'string' }, 'reuse-chains': { type: 'string' }, plants: { type: 'string' }, 'plant-seed-offset': { type: 'string' }, 'restir-seed-offset': { type: 'string' }, 'reuse-run': { type: 'string' },
+  'prerender-ptrefs': { type: 'boolean', default: false }, part: { type: 'string' }, all: { type: 'boolean', default: false }, 'reuse-chains': { type: 'string' }, plants: { type: 'string' }, 'plant-seed-offset': { type: 'string' }, 'restir-seed-offset': { type: 'string' }, 'reuse-run': { type: 'string' },
 } });
 
 interface Step { name: string; ok: boolean; detail?: string }
@@ -93,10 +99,19 @@ function budgetPopulated(text: string): string | null {
   return missing.length ? `no s/4096spp @512² for ${missing.map(([s, k]) => `${s} b=${k}`).join(', ')}` : null;
 }
 
+// M8 (validate --all): the M0 / M1 lane steps run their own milestone's GPU suites. The full chrome / node-dawn lanes now
+// hold every later suite (T3 holds of up to 24 min, chains), which their own gates run with the settings they need
+// (env, timeouts, GPU-lock holds); run with the default 120 s timeout they cannot pass.
+const M0_GPU_TESTS = ['validation/gpu-tests/smoke.gpu.test.ts'];
+const M1_GPU_TESTS = ['bvh', 'env', 'textures', 'primary'].map((f) => `validation/gpu-tests/${f}.gpu.test.ts`);
+
 function milestoneM0(): void {
   run('typecheck', 'npx', ['tsc', '--noEmit']);
-  run('vitest cpu + node-dawn', 'npx', ['vitest', 'run', '--project', 'cpu', '--project', 'node-dawn']);
-  run('vitest chrome', 'npx', ['vitest', 'run', '--project', 'chrome']);
+  run('vitest cpu', 'npx', ['vitest', 'run', '--project', 'cpu']);
+  withGpuLockSync('validate-m0', () => {
+    run('vitest node-dawn (M0 smoke: lane diff)', 'npx', ['vitest', 'run', '--project', 'node-dawn', ...M0_GPU_TESTS]);
+    run('vitest chrome (M0 smoke: lane diff)', 'npx', ['vitest', 'run', '--project', 'chrome', ...M0_GPU_TESTS]);
+  });
   // Takes the GPU lock itself around the allocation probes.
   run('chrome smoke', 'npx', ['tsx', 'validation/harness/run-chrome.ts', '--smoke']);
   file('validation/budget.json', budgetPopulated);
@@ -127,7 +142,7 @@ function milestoneM1(): void {
   run('typecheck', 'npx', ['tsc', '--noEmit']);
   run('vitest cpu (ENV-U1 RGBE/EXR vs OIIO, loader, BVH, layouts)', 'npx', ['vitest', 'run', '--project', 'cpu']);
   withGpuLockSync('validate-m1', () => {
-    run('vitest node-dawn (pre-check)', 'npx', ['vitest', 'run', '--project', 'node-dawn']);
+    run('vitest node-dawn (pre-check of the M1 suites)', 'npx', ['vitest', 'run', '--project', 'node-dawn', ...M1_GPU_TESTS]);
     run('T12 BVH brute force / watertight / offsets / overflow (chrome)', 'npx', ['vitest', 'run', '--project', 'chrome', 'validation/gpu-tests/bvh.gpu.test.ts']);
     run('ENV-U2 mapping + ENV-U7 bilinear/pole-wrap (chrome)', 'npx', ['vitest', 'run', '--project', 'chrome', 'validation/gpu-tests/env.gpu.test.ts']);
     run('textures validation/interactive paths (chrome)', 'npx', ['vitest', 'run', '--project', 'chrome', 'validation/gpu-tests/textures.gpu.test.ts']);
@@ -408,6 +423,32 @@ const gates: Record<string, () => void> = {
     milestoneM7(record, { part: args.part as M7Part | undefined, only: args.only ? new Set(args.only.split(',')) : undefined, pilotOnly: args['pilot-only'], writeBudget: args['write-budget'] });
   },
 };
+gates.M8 = () => {
+  if (args.part && !M8_PARTS.includes(args.part as M8Part)) { record(`--part ${args.part}`, false, `unknown; M8 parts: ${M8_PARTS.join(', ')}`); return; }
+  milestoneM8(record, { part: args.part as M8Part | undefined, only: args.only ? new Set(args.only.split(',')) : undefined });
+};
+
+// PLAN §5 M8 exit: `validate --all` = every milestone gate in order (unbiased validation mode; the M6 Gate-5 and M5.5
+// parts measure the biased interactive options against their budgets), each in its own process; one summary.
+const ALL_MILESTONES = ['M0', 'M1', 'M2', 'M3a', 'M3b', 'M3c', 'M4', 'M5', 'M5.5', 'M6', 'M7', 'M8'];
+if (args.all) {
+  const runId = `validate-all-${stamp()}`;
+  const dir = path.join(ROOT, 'validation/out', runId);
+  mkdirSync(dir, { recursive: true });
+  const t0 = performance.now();
+  const res: { milestone: string; ok: boolean; exit: number | null; seconds: number }[] = [];
+  for (const m of ALL_MILESTONES) {
+    console.log(`\n===== validate --all: ${m} =====`);
+    const t = performance.now();
+    const r = spawnSync('npx', ['tsx', 'validation/harness/validate.ts', '--milestone', m], { cwd: ROOT, stdio: 'inherit' });
+    res.push({ milestone: m, ok: r.status === 0, exit: r.status, seconds: Math.round((performance.now() - t) / 1000) });
+    writeFileSync(path.join(dir, 'summary.json'), `${JSON.stringify({ run: runId, milestones: res, ok: res.every((x) => x.ok), total_s: Math.round((performance.now() - t0) / 1000) }, null, 1)}\n`);
+  }
+  for (const x of res) console.log(`${x.ok ? 'PASS' : 'FAIL'}  ${x.milestone} (exit ${x.exit}, ${x.seconds} s)`);
+  console.log(`\n=== validate --all: ${res.filter((x) => x.ok).length}/${res.length} milestones green; ${path.relative(ROOT, dir)}/summary.json ===`);
+  process.exit(res.every((x) => x.ok) ? 0 : 1);
+}
+
 const gate = gates[args.milestone!.toUpperCase()];
 if (!gate) {
   console.error(`unknown milestone ${args.milestone}; known: ${Object.keys(gates).join(', ')}`);

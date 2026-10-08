@@ -521,8 +521,13 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
   }
 
   // persist Σw and the candidate count (D10); finalise W on the last chunk
+#if RS_RES_SOA
+  resOut[resout_index(ai, RP_RAD)].w = bitcast<u32>(wSum);
+  resOut[resout_index(ai, RP_DIAG)].x = nCand;
+#else
   resOut[ai * RS_RES_PLANES + RP_RAD].w = bitcast<u32>(wSum);
   resOut[ai * RS_RES_PLANES + RP_DIAG].x = nCand;
+#endif
 #if RS_DUMP_CANDIDATES
   if (treeBase == 0u) { candDump[rs_atlas_pixels() * RS_DUMP_CAP * RS_DUMP_WORDS + ai] = nDump; }
 #endif
@@ -530,12 +535,21 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
     let lumF = luminance(rp_F(resout_plane(ai, RP_WF)));
     if (!(wSum > 0.0) || res_empty(resout_plane(ai, RP_SEED).z) || !(lumF > 0.0)) {
       res_write_empty(ai, key, false);
+#if RS_RES_SOA
+      resOut[resout_index(ai, RP_RAD)].w = bitcast<u32>(wSum);
+      resOut[resout_index(ai, RP_DIAG)].x = nCand;
+#else
       resOut[ai * RS_RES_PLANES + RP_RAD].w = bitcast<u32>(wSum);
       resOut[ai * RS_RES_PLANES + RP_DIAG].x = nCand;
+#endif
     } else {
       let W = wSum / (f32(rsParams.numTrees) * lumF);
       if (!rs_pos_finite(W)) { rs_count(RSC_W_NONFINITE, 1u); }
+#if RS_RES_SOA
+      resOut[resout_index(ai, RP_WF)].x = bitcast<u32>(W);
+#else
       resOut[ai * RS_RES_PLANES + RP_WF].x = bitcast<u32>(W);
+#endif
     }
     rsdbg_reservoir(p.px, ai, 1u);
   }

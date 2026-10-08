@@ -26,6 +26,8 @@ export interface DenoiseRestirInput {
   resFinal: GPUBuffer;
   /** Global arena word of tState[0] (64 + 6·P·NS_alloc). */
   tsBase: number;
+  /** u32 index stride of plane 0 between records (M8 P-7: 10 record-major, 1 plane-major; default 10). */
+  resPlanes?: number;
   /** The gradient passes run (temporal frame with valid history, contribution MIS). */
   gradient: boolean;
   /** The change bits open the λ gate (a light / env change between t−1 and t). */
@@ -163,6 +165,7 @@ export class Denoiser {
       mk('dn_temporal', 'denoise/dn-temporal.wgsl', 'dn_temporal', this.layouts.temporal, {}),
       mk('dn_variance', 'denoise/dn-filter.wgsl', 'dn_variance', this.layouts.variance, { DN_VARIANCE: true }),
       mk('dn_atrous', 'denoise/dn-filter.wgsl', 'dn_atrous', this.layouts.atrous, { DN_ATROUS: true }),
+      mk('dn_atrous_tile1', 'denoise/dn-filter.wgsl', 'dn_atrous_tile', this.layouts.atrous, { DN_ATROUS: true, DN_TILE_STEP: '1' }),
       mk('dn_resolve', 'denoise/dn-resolve.wgsl', 'dn_resolve', this.layouts.resolve, { COLOR_FORMAT: this.colorFormat }),
     ]);
   }
@@ -256,7 +259,7 @@ export class Denoiser {
     this.lastFlags = flags;
     this.sinceChange = (flags & DNF.LAMBDA) || reset ? 0 : Math.min(this.sinceChange + 1, 0xffff);
     if (this.settings.guide && this.settings.resolve && this.sinceChange >= 8) flags |= DNF.GUIDE;
-    this.device.queue.writeBuffer(this.params, 0, packDnParams({ width: t.w, height: t.h, flags, settings: this.settings, tsBase: r?.tsBase ?? 0, resPlanes: 10, sinceChange: this.sinceChange }));
+    this.device.queue.writeBuffer(this.params, 0, packDnParams({ width: t.w, height: t.h, flags, settings: this.settings, tsBase: r?.tsBase ?? 0, resPlanes: r?.resPlanes ?? 10, sinceChange: this.sinceChange }));
     this.writeIterations();
 
     const v = view;
@@ -280,9 +283,11 @@ export class Denoiser {
     plan.push({ name: 'dn_variance', pipeline: this.pipelines.get('dn_variance')!, wg,
       g1: this.group(`variance:${cur}`, this.layouts.variance, [v(t.atrous[0]), v(t.mom[cur]), v(t.geo[cur]), v(t.atrous[1]), v(t.lumG), v(t.alb[cur]), v(t.l1[cur]), v(t.taa[prev]), v(t.tap)]) });
     const its = atrousPlan(this.settings.iterations);
-    its.forEach(([iter], i) => {
+    its.forEach(([iter, step], i) => {
       const src = (i + 1) % 2, dst = i % 2;   // dn_variance wrote atrous[1]: iteration 0 reads 1 and writes 0, …
-      plan.push({ name: `dn_atrous${iter}`, pipeline: this.pipelines.get('dn_atrous')!, wg,
+      // M8 P-6 (m8-perf.md §7): the step-1 level reads its taps from a workgroup-memory tile (steps 2 / 4 measured neutral /
+      // slower: the kernel takes DN_TILE_STEP 1, 2 or 4)
+      plan.push({ name: `dn_atrous${iter}`, pipeline: this.pipelines.get(step === 1 && this.settings.atrousTile ? 'dn_atrous_tile1' : 'dn_atrous')!, wg,
         g1: this.group(`atrous:${i}:${cur}:${oid(f.colour)}:${oid(radiance)}:${oid(l1)}`, this.layouts.atrous, [
           v(t.atrous[src]), v(t.tap), { buffer: this.iterBufs[i] }, v(t.atrous[dst]), v(t.hist[cur]), v(t.out), v(radiance), v(t.l1[cur]), v(t.alb[cur]), v(t.mom[cur]), v(t.lumG),
         ]) });
