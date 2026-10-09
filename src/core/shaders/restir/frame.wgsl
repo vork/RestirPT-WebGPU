@@ -100,8 +100,9 @@ fn rs_pix(px: vec2u) -> RsPix {
   p.px = px;
   let W = rsParams.memberSize.x;
   let H = rsParams.memberSize.y;
-#if RS_PAIR_TABLE
+#if RS_PAIR_TABLE && RS_PAIRTEX_BINDING
   // perf2 WP-5: one member and px inside its tile (mcol = mrow = m = 0): the same fields without the divisions.
+  // Spatial passes only (the pairing-texture passes): elsewhere it grew the refresh kernels' spill (+16 B).
   if (rsParams.memberCount == 1u && px.x < W && px.y < H) {
     p.valid = px.x < rsParams.atlasSize.x && px.y < rsParams.atlasSize.y && px.y >= rsDispatch.rowBase && px.y < rsDispatch.rowEnd
       && rsParams.memberCols > 0u;
