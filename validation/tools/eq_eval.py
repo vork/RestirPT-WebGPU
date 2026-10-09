@@ -27,7 +27,8 @@ summary    aggregate the metrics.json files of one configuration: per scene and 
            t confidence half-width (seed-to-seed, n seeds) of every scalar metric.
 decide     the WP-Q rule for candidates against the baseline summary: equal quality iff, in every sequence of a scene,
            denoised LDR-FLIP and denoised motion-compensated temporal std (tstd, all pixels) are not above the baseline's seed-to-seed 95 % CI
-           (mean + half-width; below it is better and passes) AND raw relMSE x ms (relMSE averaged over the sequences, ms =
+           (mean + half-width; below it is better and passes) AND raw relMSE x ms (relMSE 0.1 %-trimmed by default, as the
+           plain mean is dominated by single fireflies; averaged over the sequences, ms =
            run-perf frame time, candidate = baseline ms x the same-session ABBA ratio) is not worse than the baseline's
            beyond its seed-to-seed CI (the strict comparison is reported as pass_strict). Writes decision.json and, for
            every scene, a ms-vs-denoised-FLIP Pareto plot (pareto_<scene>.png).
@@ -298,7 +299,7 @@ def cmd_decide(a: argparse.Namespace) -> int:
     cands = [json.loads(Path(p).read_text()) for p in a.candidates.split(",") if p]
     perf = json.loads(Path(a.perf).read_text()) if a.perf else {}
     res: dict = {"rule": "denoised LDR-FLIP and denoised motion-compensated temporal std (tstd, all pixels) <= baseline mean + seed-to-seed 95% CI half-width in every "
-                         "sequence, and raw relMSE (mean over sequences) x frame ms <= (baseline relMSE + its seed-to-seed 95% CI) x baseline ms; candidate ms = baseline ms x same-session ABBA ratio", "baseline": base["config"], "candidates": {}}
+                         "sequence, and raw relMSE (0.1%-trimmed by default; mean over sequences) x frame ms <= (baseline relMSE + its seed-to-seed 95% CI) x baseline ms; candidate ms = baseline ms x same-session ABBA ratio", "baseline": base["config"], "candidates": {}}
     for c in cands:
         cr: dict = {"scenes": {}}
         all_ok = True
@@ -324,14 +325,14 @@ def cmd_decide(a: argparse.Namespace) -> int:
                 sr["sequences"][seq] = q
             # per-seed raw relMSE averaged over the sequences (seed k of every sequence), its mean and 95 % CI half-width
             def seed_avg(summ: dict) -> np.ndarray:
-                v = [np.array(summ["scenes"][sc][q]["metrics"]["relmse_raw"]["values"]) for q in seqs if q in summ["scenes"][sc]]
+                v = [np.array(summ["scenes"][sc][q]["metrics"][a.relmse_key]["values"]) for q in seqs if q in summ["scenes"][sc]]
                 k = min(len(x) for x in v)
                 return np.mean([x[:k] for x in v], axis=0)
             vb, vc = seed_avg(base), seed_avg(c)
             rb, rc = float(vb.mean()), float(vc.mean())
             rb_ci = float(t975(len(vb)) * vb.std(ddof=1) / np.sqrt(len(vb))) if len(vb) > 1 else 0.0
             mb, mc = perf_ms(perf, base["config"], sc), perf_ms(perf, c["config"], sc)
-            sr["relmse_raw"] = {"base": rb, "base_ci": rb_ci, "cand": rc, "cand_ci": float(t975(len(vc)) * vc.std(ddof=1) / np.sqrt(len(vc))) if len(vc) > 1 else 0.0}
+            sr["relmse_raw"] = {"key": a.relmse_key, "base": rb, "base_ci": rb_ci, "cand": rc, "cand_ci": float(t975(len(vc)) * vc.std(ddof=1) / np.sqrt(len(vc))) if len(vc) > 1 else 0.0}
             sr["ms"] = {"base": mb, "cand": mc}
             if mb is not None and mc is not None:
                 # not worse beyond the baseline's seed-to-seed CI (raw relMSE is heavy-tailed: fireflies), strict ratio reported
@@ -421,6 +422,9 @@ def main() -> int:
     d.add_argument("--perf")
     d.add_argument("--out", required=True)
     d.add_argument("--plot-dir", dest="plot_dir")
+    d.add_argument("--relmse-key", dest="relmse_key", default="relmse_raw_trim",
+                   help="raw relMSE metric of the relMSE x ms rule (default the 0.1 %%-trimmed one: the plain mean is dominated by single "
+                        "fireflies, Sponza baseline per-image values 0.4 ... 17)")
     a = p.parse_args()
     if a.cmd == "run" and a.label:
         rc = cmd_run(a)
