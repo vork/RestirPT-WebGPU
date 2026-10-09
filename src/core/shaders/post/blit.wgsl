@@ -2,6 +2,9 @@
 // Beauty: linear 'color' -> resolve_display (exposure + view transform) per source texel, then nearest / bilinear /
 // bicubic (M8: Catmull-Rom with an anti-ringing clamp, the app default).
 // Debug: debugOut already holds display-encoded false colour. Output target: bgra8unorm (no hardware sRGB).
+// perf2 WP-7g (BLIT_PRETONED, the app default): the beauty is tonemapped once per internal texel by post/tonemap.wgsl
+// into dispTex; bicubic then takes 9 bilinear taps of it (Catmull-Rom's middle weight pairs merged into one tap per
+// axis) plus the 2 × 2 anti-ringing clamp, and a 1:1 present reads one texel (every filter is the identity there).
 #include "post/resolve.wgsl"
 
 struct BlitParams {
@@ -21,10 +24,13 @@ const BLIT_SPLIT: u32 = 4u;
 const BLIT_NONFINITE: u32 = 8u;
 const BLIT_PROBE: u32 = 16u;
 const BLIT_BICUBIC: u32 = 32u;
+const BLIT_PRETONED: u32 = 64u;   // perf2 WP-7g: the beauty comes from dispTex (tonemapped once)
 
 @group(0) @binding(0) var colorTex: texture_2d<f32>;
 @group(0) @binding(1) var debugTex: texture_2d<f32>;
 @group(0) @binding(2) var<uniform> P: BlitParams;
+@group(0) @binding(3) var dispTex: texture_2d<f32>;   // WP-7g: display-encoded beauty (internal resolution)
+@group(0) @binding(4) var dispSmp: sampler;           // WP-7g: bilinear, clamp-to-edge
 
 @vertex
 fn vs_fullscreen(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
@@ -33,6 +39,7 @@ fn vs_fullscreen(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
 }
 
 fn beauty_texel(p: vec2i) -> vec3f {
+  if ((P.flags & BLIT_PRETONED) != 0u) { return textureLoad(dispTex, p, 0).rgb; }
   let c = textureLoad(colorTex, p, 0).rgb;
   if ((P.flags & BLIT_NONFINITE) != 0u && !all_finite3(c)) { return vec3f(1.0, 0.0, 1.0); }
   return resolve_display(c, P.exposure, P.tonemap);
@@ -74,8 +81,43 @@ fn sample_bicubic(s: vec2f, dbgView: bool) -> vec3f {
   return clamp(acc, lo, hi);
 }
 
+/// WP-7g: the same Catmull-Rom from 9 bilinear taps of dispTex: per axis the outer texels b − 1 and b + 2 (b = floor(s −
+/// ½)) at their centres and one tap between b and b + 1 at offset w2 / (w1 + w2) (w1, w2 > 0 for Catmull-Rom), weighted
+/// w1 + w2. Clamped to the 2 × 2 nearest texels as sample_bicubic.
+fn sample_bicubic9(s: vec2f) -> vec3f {
+  let t = s - 0.5;
+  let b = floor(t);
+  let f = t - b;
+  let wx = catmull_rom_w(f.x);
+  let wy = catmull_rom_w(f.y);
+  let mx = wx.y + wx.z;
+  let my = wy.y + wy.z;
+  let inv = 1.0 / vec2f(P.srcSize);
+  let x = vec3f(b.x - 0.5, b.x + 0.5 + wx.z / mx, b.x + 2.5) * inv.x;   // texel centre i at i + 0.5
+  let y = vec3f(b.y - 0.5, b.y + 0.5 + wy.z / my, b.y + 2.5) * inv.y;
+  let ax = vec3f(wx.x, mx, wx.w);
+  let ay = vec3f(wy.x, my, wy.w);
+  var acc = vec3f(0.0);
+  for (var j = 0; j < 3; j++) {
+    var row = vec3f(0.0);
+    for (var i = 0; i < 3; i++) { row += ax[i] * textureSampleLevel(dispTex, dispSmp, vec2f(x[i], y[j]), 0.0).rgb; }
+    acc += ay[j] * row;
+  }
+  let i0 = vec2i(b);
+  let hiC = vec2i(P.srcSize) - 1;
+  let c00 = textureLoad(dispTex, clamp(i0, vec2i(0), hiC), 0).rgb;
+  let c10 = textureLoad(dispTex, clamp(i0 + vec2i(1, 0), vec2i(0), hiC), 0).rgb;
+  let c01 = textureLoad(dispTex, clamp(i0 + vec2i(0, 1), vec2i(0), hiC), 0).rgb;
+  let c11 = textureLoad(dispTex, clamp(i0 + vec2i(1, 1), vec2i(0), hiC), 0).rgb;
+  return clamp(acc, min(min(c00, c10), min(c01, c11)), max(max(c00, c10), max(c01, c11)));
+}
+
 fn sample_src(s: vec2f, dbgView: bool) -> vec3f {
-  if ((P.flags & BLIT_BICUBIC) != 0u) { return sample_bicubic(s, dbgView); }
+  if (all(P.srcSize == P.dstSize) && (P.flags & BLIT_PRETONED) != 0u) { return fetch_src(vec2i(floor(s)), dbgView); }   // WP-7g 1:1
+  if ((P.flags & BLIT_BICUBIC) != 0u) {
+    if (!dbgView && (P.flags & BLIT_PRETONED) != 0u) { return sample_bicubic9(s); }
+    return sample_bicubic(s, dbgView);
+  }
   if ((P.flags & BLIT_BILINEAR) == 0u) { return fetch_src(vec2i(floor(s)), dbgView); }
   let t = s - 0.5;
   let i0 = vec2i(floor(t));

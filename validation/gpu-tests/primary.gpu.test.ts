@@ -93,7 +93,7 @@ async function rig(scene: SceneData, W: number, H: number, watertight = true): P
   const renderer = await Renderer.create({
     device, debugLayout: debug.layout, features, wgslLanguageFeatures,
     buildBvh: async (p, i) => buildBvh(p, i, { mt: true, woop: true }),
-  }, { watertight });
+  }, { watertight, restirKernel: { perfFlags: {} } });   // the 80 B G-buffer (perf2 WP-7d GBUF_48 stores 48 B: wp7-bits.gpu.test.ts)
   renderer.resize({ width: W, height: H, color, colorFormat: 'rgba32float', depth, frameUniforms: fu.buffer });
   const origin = computeRenderOrigin(scene.bounds, scene.quant);
   await renderer.setScene(scene, origin);

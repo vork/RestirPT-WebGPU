@@ -12,6 +12,9 @@
 
 var<workgroup> dupSeeds: array<vec2u, 1024>;
 var<workgroup> dupOk: array<u32, 1024>;
+#if RS_DUPMAP_S64
+const DUP_S64_NONE: u32 = 0xFFFFFFFFu;
+#endif
 
 /// rs_pix without the row-band test (the window reads neighbours outside the dispatch's band).
 fn rs_pix_any(px: vec2u) -> RsPix {
@@ -40,7 +43,11 @@ fn rs_dupmap(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocatio
     let tx = lid.x * 2u + (k & 1u);
     let ty = lid.y * 2u + (k >> 1u);
     let a = org + vec2i(i32(tx), i32(ty));
+#if RS_DUPMAP_S64
+    var v = vec3u(DUP_S64_NONE, DUP_S64_NONE, 0u);              // perf2 WP-7b: no sample id = the sentinel seed
+#else
     var v = vec3u(0u);
+#endif
     if (a.x >= 0 && a.y >= 0 && u32(a.x) < rsParams.atlasSize.x && u32(a.y) < rsParams.atlasSize.y) {
       let q = rs_pix_any(vec2u(a));
       if (q.valid) {
@@ -56,7 +63,25 @@ fn rs_dupmap(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocatio
   let c = vec2u(lid.x + DUP_HALF, lid.y + DUP_HALF);
   let me = dupOk[c.y * 32u + c.x];
   var n = 0u;
+#if RS_DUPMAP_S64
+  // perf2 WP-7b: with one ensemble member every tile texel with a sample id is in p's member, so the member test is
+  // implied and one 64-bit compare per tap counts the duplicates: texels without a sample id hold the sentinel seed,
+  // which a real seed never equals unless p's own seed is the sentinel (then the general loop below runs). The centre
+  // always matches itself (−1). memberCount is uniform; the fallback is per pixel and practically never taken.
+  let sd0 = dupSeeds[c.y * 32u + c.x];
+  let fast = rsParams.memberCount == 1u && me != 0u && any(sd0 != vec2u(DUP_S64_NONE));
+  if (fast) {
+    var m = 0u;
+    for (var dy = 0u; dy <= 2u * DUP_HALF; dy++) {
+      for (var dx = 0u; dx <= 2u * DUP_HALF; dx++) {
+        m += select(0u, 1u, all(dupSeeds[(lid.y + dy) * 32u + lid.x + dx] == sd0));
+      }
+    }
+    n = m - 1u;
+  } else if (me != 0u) {
+#else
   if (me != 0u) {
+#endif
     let sd = dupSeeds[c.y * 32u + c.x];
     for (var dy = 0u; dy <= 2u * DUP_HALF; dy++) {
       for (var dx = 0u; dx <= 2u * DUP_HALF; dx++) {

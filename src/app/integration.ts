@@ -216,7 +216,11 @@ function addRendererPanel(app: App, r: Renderer): void {
   // M3a reference path tracer (PT), M4+ ReSTIR PT, and the M1 albedo placeholder; bounce count and Russian roulette.
   tip(f.addBinding(o, 'renderMode', { label: 'integrator', options: { 'PT (reference)': 'pt', 'ReSTIR PT': 'restir', 'albedo only': 'albedo' }, index: i++ }),
     'PT: the reference path tracer (progressive). ReSTIR PT: path resampling, settings in the ReSTIR folder.')
-    .on('change', () => { if (o.renderMode === 'restir') void r.prepareRestir(); app.resetHistory(); app.panel?.refresh(); });
+    .on('change', () => {
+      // perf2 WP-7g: compile the denoiser together with the ReSTIR kernel (it is on by default in ReSTIR-interactive)
+      if (o.renderMode === 'restir') { void r.prepareRestir(); if (r.denoiseWanted()) void r.prepareDenoiser(); }
+      app.resetHistory(); app.panel?.refresh();
+    });
   // M3b light modes (plan §1.4): A = analytic lights NEE-only (smooth mirrors / glass never show them, no caustics);
   // B = area lights hittable by BSDF rays (pass-through, MIS); A′ = hittable only after a delta lobe (same expectation as B)
   tip(f.addBinding(o, 'lightMode', { label: 'light mode', options: { 'B: hittable + MIS': 'B', 'A: NEE only': 'A', 'A′: hittable after δ lobes': 'A′' }, index: i++ }),

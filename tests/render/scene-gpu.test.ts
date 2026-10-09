@@ -2,7 +2,7 @@
 // pass composition for every variant axis, and the vertex/triangle/material packers.
 import { describe, expect, it } from 'vitest';
 import { composeWgsl } from '../../src/core/gpu/wgsl-composer.ts';
-import { GBUF_TEXEL_BYTES, PRIMARY_PARAMS_SIZE } from '../../src/core/render/renderer.ts';
+import { GBUF48_TEXEL_BYTES, GBUF_TEXEL_BYTES, PRIMARY_PARAMS_SIZE, gbufTexelBytes } from '../../src/core/render/renderer.ts';
 import {
   MATERIAL_LAYOUT, MAT_ALPHA_MASK, MAT_V1, TRI_FLAGS_SHIFT, packMaterials, packTris, recentrePositions,
 } from '../../src/core/render/scene-gpu.ts';
@@ -67,6 +67,17 @@ describe('M1 scene / G-buffer layouts', () => {
     expect(L.get('GBufTexel')!.size).toBe(GBUF_TEXEL_BYTES);
     expect(L.get('GBufTexel')!.offsets).toMatchObject({ ng: 0, thr: 12, ns: 16, viewZ: 28, pos: 32, matId: 44, albedo: 48, flags: 60, motion: 64 });
     expect(L.get('PrimaryParams')!.size).toBe(PRIMARY_PARAMS_SIZE);
+  });
+
+  it('perf2 WP-7d: GBUF_48 stores GBufStore (48 B) and keeps GBufTexel for the primary pass itself', () => {
+    const L48 = structLayouts(primary({ GBUF_48: 1 }));
+    expect(L48.get('GBufStore')!.size).toBe(GBUF48_TEXEL_BYTES);
+    expect(L48.get('GBufStore')!.offsets).toEqual({ pos: 0, flags: 12, ns: 16, motionX: 28, albedo: 32, motionY: 44 });
+    expect(L48.get('GBufTexel')!.size).toBe(GBUF_TEXEL_BYTES);
+    expect(primary({ GBUF_48: 1 })).toContain('array<GBufStore>');
+    expect(primary()).not.toContain('GBufStore');
+    expect(gbufTexelBytes('GBUF_48')).toBe(48);
+    expect(gbufTexelBytes(undefined)).toBe(80);
   });
 
   it('primary composes for every variant axis', () => {

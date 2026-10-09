@@ -38,6 +38,13 @@ the packages never collide:
 | `MAT_VARIANTS` | WP-8 | bitwise | material compile variants |
 | `RS_PRIMARY_EXT` | WP-7e | unbiased | rs_primary reads the M1 V-buffer |
 | `RS_HALF_RATE` | D6 | biased | half-rate path trees (interactive toggle only) |
+| `DN_GRAD_SKIP` | WP-7a | bitwise | denoiser: dn_gradient / dn_grad_filter skipped when no pass reads λ (host only) |
+| `RS_DUPMAP_S64` | WP-7b | bitwise | rs_dupmap: one 64-bit seed compare per tap (memberCount 1, sentinel texels) |
+| `PRIM_SKIP_BEAUTY` | WP-7c | bitwise | M1 primary: no placeholder beauty when ReSTIR / PT overwrites the colour target |
+| `RS_SKIP_DISPLAY` | WP-7c | bitwise | rs_finalize_frame: no accumulation / colour store when the denoiser displays |
+| `GBUF_48` | WP-7d | bitwise | lossless 48 B G-buffer (M1 primary, denoiser) |
+| `DN_ZGRAD_TEX` | WP-7f | bitwise | denoiser: the à-trous depth gradient written once by dn_variance |
+| `DN_COLOUR_EARLY` | WP-7f | bitwise | denoiser: the à-trous colour load before the geometric skip test |
 
 Each entry has `wp`, `cls` (`bitwise` / `unbiased` / `biased`), optional `except` (`'P9'`, `'counters'`), `landed`
 (the WGSL exists) and `release` (on in the app by default).
@@ -48,6 +55,9 @@ Each entry has `wp`, `cls` (`bitwise` / `unbiased` / `biased`), optional `except
   Unknown names throw; `0` / `false` entries are dropped; keys are sorted.
 - `RestirKernel.perfDefines()` returns the composer defines. A flag that is off is **absent**, never `NAME: 0`. The
   composer treats an undefined identifier in `#if` as false, so a flag-free kernel composes the pre-perf2 text.
+- WP-7 added the names of its app-only items (the M1 primary, the interactive finalize, the denoiser). The denoiser's
+  pipelines get the renderer's set too (`Denoiser.create({ perfFlags })`; the renderer recompiles the denoiser when the
+  set changes).
 - The defines reach every ReSTIR pipeline: `kernel.defines()` (all standard passes and stages), `customDefines()` (the
   T3 / test pipelines), the debug views (`RestirDebugPass`, compiled once at creation), and the renderer's M1 primary
   pass (`Renderer.compile`, key `format|stats|flags`).

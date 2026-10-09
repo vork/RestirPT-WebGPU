@@ -9,6 +9,7 @@ import {
 import { INTERACTIVE_PINNED, RESTIR_PRESETS, restirSettings } from '../../src/core/render/restir/presets.ts';
 import { INTERACTIVE_APP_DEFAULTS, restirAppSettings } from '../../src/core/render/renderer.ts';
 import { shaderSources } from '../../src/core/shaders/index.ts';
+import { denoiseSources } from '../../src/core/render/denoise/denoiser.ts';
 
 /** perf2-plan.md WP-0 step 1 (+ RS_HALF_RATE, user decision D6). */
 const RESERVED = ['RS_VIS_MERGE', 'RS_RIS_HOIST', 'RS_NEE_SITE', 'RS_LAST_ANYHIT', 'RS_RIS_PREPASS', 'RS_ENV_WRAP', 'RS_ENV_PRESAMPLE',
@@ -17,10 +18,12 @@ const RESERVED = ['RS_VIS_MERGE', 'RS_RIS_HOIST', 'RS_NEE_SITE', 'RS_LAST_ANYHIT
   'RS_REFRESH_VIS',  // WP-1's optional refresh merge (perf2-plan.md WP-1 "separate flag")
   'BVH_CONST_LOOPS', 'CW_EXP_OR',   // WP-3c (constant-bound traversal loops) and WP-3e (exponent-OR decode), added by WP-3
   // added by WP-5 (separately measurable parts of #6 / #16)
-  'RS_MIS_TRIM', 'RS_PAIR_TABLE'];
+  'RS_MIS_TRIM', 'RS_PAIR_TABLE',
+  // WP-7 a–d, f (app-only passes)
+  'DN_GRAD_SKIP', 'RS_DUPMAP_S64', 'PRIM_SKIP_BEAUTY', 'RS_SKIP_DISPLAY', 'GBUF_48', 'DN_ZGRAD_TEX', 'DN_COLOUR_EARLY'];
 
 describe('perf-flag registry', () => {
-  it('reserves every WP-0 name and RS_HALF_RATE', () => {
+  it('reserves every WP-0 name, RS_HALF_RATE and the WP-7 names', () => {
     expect([...PERF_FLAG_NAMES].sort()).toEqual([...RESERVED].sort());
   });
   it('classes: results-changing flags are the plan\'s unbiased items and the biased D6 toggle', () => {
@@ -36,7 +39,7 @@ describe('perf-flag registry', () => {
   });
   it('every flag a shader #if references is marked landed', () => {
     const used = new Set<string>();
-    for (const src of Object.values(shaderSources)) {
+    for (const src of [...Object.values(shaderSources), ...Object.values(denoiseSources)]) {
       for (const line of src.split('\n')) {
         const m = /^\s*#(?:if|elif)\b(.*)$/.exec(line);
         if (!m) continue;

@@ -23,7 +23,11 @@
 @group(1) @binding(1) var taaPrev: texture_2d<f32>;
 @group(1) @binding(2) var geoCur: texture_2d<u32>;
 @group(1) @binding(3) var geoPrev: texture_2d<u32>;
+#if GBUF_48
+@group(1) @binding(4) var<storage, read> gbuf: array<GBufStore>;   // perf2 WP-7d
+#else
 @group(1) @binding(4) var<storage, read> gbuf: array<GBufTexel>;
+#endif
 @group(1) @binding(5) var lambdaTex: texture_2d<f32>;
 @group(1) @binding(6) var momCur: texture_2d<f32>;
 @group(1) @binding(7) var taaOut: texture_storage_2d<rgba32float, write>;   // f32: 1/n_t accumulation (DN-7)
@@ -57,7 +61,11 @@ fn taa_history(p: vec2u, hit: bool, idx: u32) -> vec4f {
   }
   let g = gbuf[mi];
   if ((g.flags & GB_MOTION_VALID) == 0u) { return vec4f(0.0); }
+#if GBUF_48
+  let sp = vec2f(p) + vec2f(g.motionX, g.motionY);
+#else
   let sp = vec2f(p) + g.motion;
+#endif
   let b = floor(sp);
   let f = sp - b;
   var acc = vec4f(0.0);
