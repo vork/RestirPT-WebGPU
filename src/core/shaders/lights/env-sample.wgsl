@@ -30,11 +30,7 @@ fn env_Hm() -> u32 { return 1u << (lightsParams.envLog2W - 1u); }
 
 /// Realized density in (u, v) of cell (i, j) (f32 as stored).
 fn env_pdf_uv(i: u32, j: u32) -> f32 {
-#if RS_LIGHT_REC4
-  return bitcast<f32>(rec_u32(lightsParams.envPdfOff + i * env_Wm() + j));
-#else
   return bitcast<f32>(records[lightsParams.envPdfOff + i * env_Wm() + j]);
-#endif
 }
 
 /// Cell (j, i) of a texture coordinate (u, v) ∈ [0, 1]² (u = 1 only from envUV at −X; clamped).
@@ -87,18 +83,10 @@ fn env_draw_cell(h0: u32, h1: u32) -> vec2u {
   let log2H = log2W - 1u;
   let W = 1u << log2W;
   let i0 = h0 >> (32u - log2H);                       // log2H ≥ 1 (W_m ≥ 4): never a shift by 32
-#if RS_LIGHT_REC4
-  let er = rec_u32(lightsParams.envRowOff + i0);
-#else
   let er = records[lightsParams.envRowOff + i0];
-#endif
   let i = select(er >> 16u, i0, (h0 & 0xffffu) < (er & 0xffffu));
   let j0 = h1 >> (32u - log2W);
-#if RS_LIGHT_REC4
-  let ec = rec_u32(lightsParams.envColOff + i * W + j0);
-#else
   let ec = records[lightsParams.envColOff + i * W + j0];
-#endif
   let j = select(ec >> 16u, j0, (h1 & 0xffffu) < (ec & 0xffffu));
   return vec2u(i, j);
 }

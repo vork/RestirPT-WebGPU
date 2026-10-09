@@ -176,7 +176,7 @@ describe('LightsState: records, slots, maps, deterministic pmf', () => {
     expect(pp[12]).not.toBe(pp[0]); // prev slot differs from cur
   });
 
-  it('perf2 WP-4a (RS_LIGHT_REC4): records and alias pairs 16 B-aligned; rect/disk index list per slot in the uniform', () => {
+  it('perf2 WP-4a: records and alias pairs 16 B-aligned; rect/disk index list per slot in the uniform', () => {
     const s = make();
     const disk = L({ id: 9, type: 'disk', sizeX: 1 });
     const steps = [lights, [...lights, disk], lights.filter((l) => l.type !== 'rect')];

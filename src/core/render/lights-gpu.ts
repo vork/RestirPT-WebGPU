@@ -186,13 +186,14 @@ export function packLightRecord(l: LightData, origin: readonly number[], out: Da
 export interface LightSlotCpu {
   lightOff: number; lightCount: number; aliasOff: number; aliasLog2: number; pmfOff: number;
   nAnalytic: number; nEntries: number; envEntry: number; curToPrevOff: number; prevToCurOff: number;
-  /** perf2 WP-4a (RS_LIGHT_REC4): the slot's rect / disk index list (light indices in stable-id order) and its
-   *  length. Written always; the uniform carries them in the former pad words, which flag-free text never reads. */
+  /** perf2 WP-4a (for WP-2e's single Mode-B emission site): the slot's rect / disk index list (light indices in
+   *  stable-id order) and its length. Written always; the uniform carries them in the former pad words, which flag-free text never reads. */
   areaOff: number; areaCount: number;
 }
 
 /** perf2 WP-4a: word offsets rounded up to 16 B, so every light record (28 words) and every alias pair starts on a
- *  vec4 boundary (lights.wgsl RS_LIGHT_REC4 reads `records` as array<vec4u>). Results-neutral: shaders only ever see
+ *  vec4 boundary (lets a shader read `records` as array<vec4u>; the RS_LIGHT_REC4 vec4 light_load was dropped: it
+ *  changed bits under relaxed math, U-M8-BITS alpha-full-m6-A). Results-neutral: shaders only ever see
  *  the offsets through LightsParams. */
 const align4 = (w: number): number => (w + 3) & ~3;
 

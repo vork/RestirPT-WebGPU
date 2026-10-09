@@ -46,7 +46,6 @@ export const PERF_FLAGS = {
   RS_LAST_ANYHIT: reserved('WP-2c', 'bitwise', 'last continuation ray as any-hit (Mode-A text, no TRI_EMISSIVE)', ['counters']),
   RS_RIS_PREPASS: reserved('WP-2d', 'unbiased', 'lean RIS pre-pass rs_ris_nee (interactive, trees=1); record in the pixel\'s RP_DIAG plane'),
   RS_ENV_WRAP: { ...reserved('WP-4a', 'bitwise', 'envTexel select-wrap instead of emulated i32 modulos (lights/env.wgsl)'), landed: true },
-  RS_LIGHT_REC4: { ...reserved('WP-4a', 'bitwise', '`records` as array<vec4u>: light records as 7 vec4u loads, alias pairs as one; rect/disk index list in LightSlot (for WP-2e)'), landed: true },
   RS_ENV_PRESAMPLE: reserved('WP-4b', 'unbiased', 'env-presampled light tiles inside the RIS pre-pass (adds correlation)'),
   CW_TRI_BUDGET: reserved('WP-3', 'bitwise', 'CWBVH K=2 triangle budget'),
   BVH_ALPHA_BIT: reserved('WP-3', 'bitwise', 'alpha bit in the MT triangle record; CUSTOM_ALPHA compiled out without MASK'),

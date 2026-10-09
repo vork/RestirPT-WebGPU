@@ -21,8 +21,6 @@
 fn lut_fetch(i: u32) -> f32 {
 #if LUT_DECLARE_BINDING
   return records[i];
-#elif LUT_RECORDS_KIND == 1 && RS_LIGHT_REC4
-  return bitcast<f32>(records[i >> 2u][i & 3u]);      // perf2 WP-4a: lights.wgsl declares records as array<vec4u>
 #elif LUT_RECORDS_KIND == 1
   return bitcast<f32>(records[i]);
 #elif LUT_RECORDS_KIND == 2
