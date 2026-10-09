@@ -261,8 +261,12 @@ export class RestirKernel {
   }
   /** M8 P-7: RS_RES_SOA only for plane-major kernels (the key is absent otherwise: the M7 text). */
   layoutDefines(): Record<string, number> { return this.o.resLayout === 'soa' ? { RS_RES_SOA: 1 } : {}; }
-  /** perf2: composer defines of the kernel's perf flags (empty without flags: the validation text). */
-  perfDefines(): Record<string, number> { return perfFlagDefines(this.perfFlagSet); }
+  /** perf2: composer defines of the kernel's perf flags (empty without flags: the validation text). WP-8: with
+   *  MAT_VARIANTS, also the scene's material-variant keys (SceneGpu.materialVariantDefines; static per scene). */
+  perfDefines(): Record<string, number> {
+    const d = perfFlagDefines(this.perfFlagSet);
+    return this.perfFlagSet.MAT_VARIANTS ? { ...d, ...this.scene.materialVariantDefines() } : d;
+  }
   /** perf2: the normalised perf-flag set of the kernel. */
   get perfFlags(): PerfFlags { return this.perfFlagSet; }
   /** perf2: switch the perf flags (a new pipeline variant: `await prepare()` before the next frame; the temporal history

@@ -117,13 +117,52 @@ fn tex_srgb_to_linear4(c: vec4f) -> vec4f {
 fn tex_slot_valid(s: TexSlot) -> bool { return (s.info & TEX_VALID) != 0u; }
 fn tex_slot_uv_set(s: TexSlot) -> u32 { return select(0u, 1u, (s.info & TEX_UVSET1) != 0u); }
 fn tex_slot_uv(s: TexSlot, uv: vec2f) -> vec2f {
+#if TEX_NO_XFORM
+  return uv;                     // perf2 WP-8 (MAT_VARIANTS): every valid slot of the scene is the identity transform
+#else
   let h = vec3f(uv, 1.0);
   return vec2f(dot(s.xf0, h), dot(s.xf1, h));
+#endif
 }
+#if MAT_VARIANTS
+/// perf2 WP-8: tex_slot_uv from the two transform rows (field-wise material loads, material-eval.wgsl).
+fn tex_xf_uv(xf0: vec3f, xf1: vec3f, uv: vec2f) -> vec2f {
+  let h = vec3f(uv, 1.0);
+  return vec2f(dot(xf0, h), dot(xf1, h));
+}
+#endif
 
 #if TEX_ARRAYS > 0
 // Sampler switch for one array (textures and samplers are legal WGSL function parameters).
 fn tex_sample_arr(t: texture_2d_array<f32>, si: u32, uv: vec2f, layer: u32, lod: f32) -> vec4f {
+#if MAT_VARIANTS
+  var r: vec4f;
+  switch si {
+#if TEX_SAMPLERS > 1
+    case 1u: { r = textureSampleLevel(t, texSmp1, uv, layer, lod); }
+#endif
+#if TEX_SAMPLERS > 2
+    case 2u: { r = textureSampleLevel(t, texSmp2, uv, layer, lod); }
+#endif
+#if TEX_SAMPLERS > 3
+    case 3u: { r = textureSampleLevel(t, texSmp3, uv, layer, lod); }
+#endif
+#if TEX_SAMPLERS > 4
+    case 4u: { r = textureSampleLevel(t, texSmp4, uv, layer, lod); }
+#endif
+#if TEX_SAMPLERS > 5
+    case 5u: { r = textureSampleLevel(t, texSmp5, uv, layer, lod); }
+#endif
+#if TEX_SAMPLERS > 6
+    case 6u: { r = textureSampleLevel(t, texSmp6, uv, layer, lod); }
+#endif
+#if TEX_SAMPLERS > 7
+    case 7u: { r = textureSampleLevel(t, texSmp7, uv, layer, lod); }
+#endif
+    default: { r = textureSampleLevel(t, texSmp0, uv, layer, lod); }
+  }
+  return r;
+#else
   switch si {
 #if TEX_SAMPLERS > 1
     case 1u: { return textureSampleLevel(t, texSmp1, uv, layer, lod); }
@@ -148,12 +187,80 @@ fn tex_sample_arr(t: texture_2d_array<f32>, si: u32, uv: vec2f, layer: u32, lod:
 #endif
     default: { return textureSampleLevel(t, texSmp0, uv, layer, lod); }
   }
+#endif
+}
+#endif
+
+#if MAT_VARIANTS
+/// perf2 WP-8 (MAT_VARIANTS): the raw filtered texel of a VALID slot's (array, layer, sampler) word `info` at st (already
+/// transformed); the array / sampler switches assign instead of returning (no tint_volatile_zero guards).
+fn tex_fetch(info: u32, st: vec2f, lod: f32) -> vec4f {
+#if TEX_ARRAYS > 0
+  let ai = info & 0xfu;
+  let layer = (info >> 4u) & 0x7ffu;
+  let si = (info >> 15u) & 0x7u;
+  var r: vec4f;
+  switch ai {
+#if TEX_ARRAYS > 1
+    case 1u: { r = tex_sample_arr(texArr1, si, st, layer, lod); }
+#endif
+#if TEX_ARRAYS > 2
+    case 2u: { r = tex_sample_arr(texArr2, si, st, layer, lod); }
+#endif
+#if TEX_ARRAYS > 3
+    case 3u: { r = tex_sample_arr(texArr3, si, st, layer, lod); }
+#endif
+#if TEX_ARRAYS > 4
+    case 4u: { r = tex_sample_arr(texArr4, si, st, layer, lod); }
+#endif
+#if TEX_ARRAYS > 5
+    case 5u: { r = tex_sample_arr(texArr5, si, st, layer, lod); }
+#endif
+#if TEX_ARRAYS > 6
+    case 6u: { r = tex_sample_arr(texArr6, si, st, layer, lod); }
+#endif
+#if TEX_ARRAYS > 7
+    case 7u: { r = tex_sample_arr(texArr7, si, st, layer, lod); }
+#endif
+#if TEX_ARRAYS > 8
+    case 8u: { r = tex_sample_arr(texArr8, si, st, layer, lod); }
+#endif
+#if TEX_ARRAYS > 9
+    case 9u: { r = tex_sample_arr(texArr9, si, st, layer, lod); }
+#endif
+#if TEX_ARRAYS > 10
+    case 10u: { r = tex_sample_arr(texArr10, si, st, layer, lod); }
+#endif
+#if TEX_ARRAYS > 11
+    case 11u: { r = tex_sample_arr(texArr11, si, st, layer, lod); }
+#endif
+#if TEX_ARRAYS > 12
+    case 12u: { r = tex_sample_arr(texArr12, si, st, layer, lod); }
+#endif
+#if TEX_ARRAYS > 13
+    case 13u: { r = tex_sample_arr(texArr13, si, st, layer, lod); }
+#endif
+#if TEX_ARRAYS > 14
+    case 14u: { r = tex_sample_arr(texArr14, si, st, layer, lod); }
+#endif
+#if TEX_ARRAYS > 15
+    case 15u: { r = tex_sample_arr(texArr15, si, st, layer, lod); }
+#endif
+    default: { r = tex_sample_arr(texArr0, si, st, layer, lod); }
+  }
+  return r;
+#else
+  return vec4f(1.0);
+#endif
 }
 #endif
 
 /** Raw (still encoded) filtered texel of a slot at the given LOD. Invalid slot → vec4f(1). */
 fn tex_sample_raw(s: TexSlot, uv: vec2f, lod: f32) -> vec4f {
-#if TEX_ARRAYS > 0
+#if MAT_VARIANTS
+  if (!tex_slot_valid(s)) { return vec4f(1.0); }
+  return tex_fetch(s.info, tex_slot_uv(s, uv), lod);
+#elif TEX_ARRAYS > 0
   if (!tex_slot_valid(s)) { return vec4f(1.0); }
   let st = tex_slot_uv(s, uv);
   let ai = s.info & 0xfu;

@@ -148,6 +148,51 @@ fn bctx_has(c: BsdfCtx, bit: u32) -> bool { return (c.bits & bit) != 0u; }
 fn bctx_a2(c: BsdfCtx) -> f32 { return c.alpha * c.alpha; }
 fn bctx_rough(c: BsdfCtx) -> f32 { return sqrt(sqrt(bctx_a2(c))); }   // sqrt(sqrt(α_x α_y)) (= r): LUT x axis
 fn bctx_singular(c: BsdfCtx) -> bool { return bctx_has(c, BC_SINGULAR); }
+#if MAT_VARIANTS
+
+// perf2 WP-8 (MAT_VARIANTS, interactive only): model tests with the models the scene's material table cannot produce
+// folded to constants (SceneGpu.materialVariantDefines(): MAT_NO_V1, MAT_ONLY_V1, MAT_NO_GLASS_NODE, MAT_NO_REFRACTION,
+// MAT_NO_PGLASS = no Principled transmission, MAT_NO_G = no class-G closure at all). An absent key keeps the runtime test,
+// so a flag-only define set (no scene keys) is the full model set. Every MatEval comes from material_eval.
+fn mv_model_v1(model: u32) -> bool {
+#if MAT_NO_V1
+  return false;
+#elif MAT_ONLY_V1
+  return true;
+#else
+  return model == BSDF_MODEL_V1;
+#endif
+}
+fn mv_model_glass_node(model: u32) -> bool {
+#if MAT_NO_GLASS_NODE
+  return false;
+#else
+  return model == BSDF_MODEL_GLASS_NODE;
+#endif
+}
+fn mv_model_refraction(model: u32) -> bool {
+#if MAT_NO_REFRACTION
+  return false;
+#else
+  return model == BSDF_MODEL_REFRACTION_NODE;
+#endif
+}
+fn mv_model_pglass(model: u32) -> bool {
+#if MAT_NO_PGLASS
+  return false;
+#else
+  return model == BSDF_MODEL_GLASS;
+#endif
+}
+/// bctx_has(c, BC_HAS_G); false when no material of the scene allocates a glass closure.
+fn mv_has_g(c: BsdfCtx) -> bool {
+#if MAT_NO_G
+  return false;
+#else
+  return bctx_has(c, BC_HAS_G);
+#endif
+}
+#endif
 
 fn bsdf_prepare(m: MatEval, V: vec3f) -> BsdfCtx {
   var c: BsdfCtx;
@@ -163,6 +208,15 @@ fn bsdf_prepare(m: MatEval, V: vec3f) -> BsdfCtx {
   c.alpha = r * r;
   if (!(bctx_a2(c) > BSDF_ROUGHNESS_SQ_THRESH)) { c.bits |= BC_SINGULAR; }
   let mu = dot(V, c.ns);
+#if MAT_VARIANTS
+  if (mv_model_v1(m.model)) {
+    c = bsdf_setup_v1(m, c);
+  } else if (mv_model_glass_node(m.model)) {
+    c = bsdf_setup_glass_node(m, c, mu);
+  } else if (mv_model_refraction(m.model)) {
+    c = bsdf_setup_refraction_node(m, c);
+  } else {
+#else
   if (m.model == BSDF_MODEL_V1) {
     c = bsdf_setup_v1(m, c);
   } else if (m.model == BSDF_MODEL_GLASS_NODE) {
@@ -170,12 +224,17 @@ fn bsdf_prepare(m: MatEval, V: vec3f) -> BsdfCtx {
   } else if (m.model == BSDF_MODEL_REFRACTION_NODE) {
     c = bsdf_setup_refraction_node(m, c);
   } else {
+#endif
     c = bsdf_setup_v2(m, c, mu);            // model 1, and model 2 (+ glass closure, v2.wgsl step 2)
   }
   // the setups left the raw Cycles sample weights in q_*: guard allocated lobes (q > 0), then normalise
   let swd = select(0.0, max(c.q_d, BSDF_SW_GUARD), bctx_has(c, BC_HAS_D));
   let sws = select(0.0, max(c.q_s, BSDF_SW_GUARD), bctx_has(c, BC_HAS_S));
+#if MAT_VARIANTS
+  let swg = select(0.0, max(c.q_g, BSDF_SW_GUARD), mv_has_g(c));
+#else
   let swg = select(0.0, max(c.q_g, BSDF_SW_GUARD), bctx_has(c, BC_HAS_G));
+#endif
   let sum = swd + sws + swg;
   c.sw_sum = sum;
   c.q_d = 0.0;
@@ -191,7 +250,11 @@ fn bsdf_prepare(m: MatEval, V: vec3f) -> BsdfCtx {
 
 /// Fresnel-weighted closure weight of class S at the microfacet (V·H = cos_hi).
 fn bsdf_F_S(c: BsdfCtx, cos_hi: f32) -> vec3f {
+#if MAT_VARIANTS
+  if (mv_model_v1(c.model)) { return c.s_a; }
+#else
   if (c.model == BSDF_MODEL_V1) { return c.s_a; }
+#endif
   var F = vec3f(0.0);
   if (bctx_has(c, BC_HAS_METAL)) { F += c.w_m * fresnel_f82(cos_hi, c.s_a, c.s_b); }
   if (bctx_has(c, BC_HAS_SPEC)) { F += c.w_s * fresnel_gen_schlick_ior(cos_hi, c.eta_s, c.f0_s); }
@@ -241,7 +304,7 @@ fn bsdf_eval_ctx(c: BsdfCtx, V: vec3f, L: vec3f) -> LobeEvals {
       e.p_s = select(0.0, c.q_s * g.pdf, cos_ng >= 0.0);     // bsdf_microfacet.h:757-761
     }
   }
-  if (bctx_has(c, BC_HAS_G)) {
+  if (bctx_has(c, BC_HAS_G)) {   // perf2 WP-8: kept under MAT_NO_G (compiling it out changed the bits: f_g / p_g then fold)
     let g = glass_eval(c, V, L);
     e.f_g = g.f;
     e.p_g = c.q_g * g.pdfV;
@@ -351,7 +414,11 @@ fn bsdf_query(m: MatEval, V: vec3f, L: vec3f, lobe: u32) -> BsdfQuery {
     }
     case LOBE_GT: {
       if (isT) { q.f_lobe = e.f_g; q.p_joint = e.p_g; }
+#if MAT_VARIANTS
+      q.supp = mv_has_g(c) && !bctx_singular(c) && (e.g_side & 3u) == 3u;
+#else
       q.supp = bctx_has(c, BC_HAS_G) && !bctx_singular(c) && (e.g_side & 3u) == 3u;
+#endif
     }
     case LOBE_NEE: { q.f_lobe = q.f_all; q.p_joint = 1.0; }
     case LOBE_NONE: { q.p_joint = 1.0; }
@@ -381,6 +448,24 @@ fn lobe_roughness(m: MatEval, lobe: u32) -> f32 {
   let r = saturate(m.roughness);
   let a = r * r;
   let rS = select(r, 0.0, !(a * a > BSDF_ROUGHNESS_SQ_THRESH));
+#if MAT_VARIANTS
+  var o = FLT_MAX;                    // perf2 WP-8: no return inside the switch (no tint_volatile_zero guard)
+  switch lobe {
+    case LOBE_D: { o = 1.0; }
+    case LOBE_S, LOBE_GR: { o = rS; }
+    case LOBE_GT: {
+      let eta = glass_eta_side(m.ior, (m.flags & MATEVAL_BACKFACING) != 0u);
+      o = select(rS, 0.0, abs(eta - 1.0) < GLASS_ETA_SINGULAR_EPS);
+    }
+    case LOBE_NEE: {
+      let rd = select(0.0, 1.0, (m.flags & MATEVAL_HAS_D) != 0u);
+      let rs = select(0.0, rS, (m.flags & (MATEVAL_HAS_S | MATEVAL_HAS_G)) != 0u);
+      o = max(rd, rs);
+    }
+    default: { }                      // light / env vertex: always rough (never IEEE Inf, plan §1.7)
+  }
+  return o;
+#else
   switch lobe {
     case LOBE_D: { return 1.0; }
     case LOBE_S, LOBE_GR: { return rS; }
@@ -395,6 +480,7 @@ fn lobe_roughness(m: MatEval, lobe: u32) -> f32 {
     }
     default: { return FLT_MAX; }      // light / env vertex: always rough (never IEEE Inf, plan §1.7)
   }
+#endif
 }
 
 /// One-sample mixture sampler. u = (u_lobe, u_h1, u_h2, u_rt) (math.md#rng-layout; u_rt is the glass R/T decision,
@@ -407,7 +493,11 @@ fn bsdf_sample(m: MatEval, V: vec3f, u: vec4f) -> BsdfSample {
   s.lobe = LOBE_NONE;
   let c = bsdf_prepare(m, V);
   if (!(c.q_d + c.q_s + c.q_g > 0.0)) { return s; }
+#if MAT_VARIANTS
+  if (mv_has_g(c) && !(u.x < c.q_d + c.q_s)) {
+#else
   if (bctx_has(c, BC_HAS_G) && !(u.x < c.q_d + c.q_s)) {
+#endif
     s.lobe = LOBE_GR;
     let gs = glass_sample(c, V, u.yzw);
     s.L = gs.L;
@@ -490,7 +580,11 @@ fn bsdf_flags(m: MatEval, V: vec3f) -> u32 {
   var f = m.flags & MATEVAL_BACKFACING;
   let hasD = bctx_has(c, BC_HAS_D);
   let hasS = bctx_has(c, BC_HAS_S);
+#if MAT_VARIANTS
+  let hasG = mv_has_g(c);
+#else
   let hasG = bctx_has(c, BC_HAS_G);
+#endif
   let sing = bctx_singular(c);
   if (hasD || ((hasS || hasG) && !sing)) { f |= MATEVAL_HAS_NON_DELTA; }
   if (hasD && !hasS && !hasG) { f |= MATEVAL_DIFFUSE_ONLY; }
