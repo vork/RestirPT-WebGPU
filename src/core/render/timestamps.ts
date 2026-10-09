@@ -16,7 +16,8 @@ export class GpuTimestamps {
   private active: Slot | undefined;
   private readonly history = new Map<string, { v: number[]; i: number; lastSeen: number }>();
   private frame = 0;
-  /** Latest per-frame total (ms), and number of frames skipped because every ring slot was busy. */
+  /** Latest per-frame GPU span (ms, first timed begin to last timed end; see attributeFrame), and number of frames
+   *  skipped because every ring slot was busy. */
   lastTotalMs = 0;
   skipped = 0;
 
@@ -74,19 +75,17 @@ export class GpuTimestamps {
       const t = new BigInt64Array(s.buf.getMappedRange(0, names.length * 16).slice(0));
       s.buf.unmap();
       s.state = 'free';
-      let total = 0;
-      const perName = new Map<string, number>();
-      names.forEach((name, i) => {
-        const d = Number(t[2 * i + 1] - t[2 * i]) / 1e6;
-        const ms = Number.isFinite(d) && d > 0 && d < 1e4 ? d : 0;
-        perName.set(name, (perName.get(name) ?? 0) + ms);
-        total += ms;
-      });
-      for (const [name, ms] of perName) this.push(name, ms, frame);
-      this.push('total', total, frame);
-      this.lastTotalMs = total;
+      const r = attributeFrame(names.map((name, i) => ({ name, begin: t[2 * i], end: t[2 * i + 1] })));
+      for (const [name, ms] of r.perName) this.push(name, ms, frame);
+      this.push('untimed', r.untimedMs, frame);
+      this.push('total', r.spanMs, frame);
+      this.lastTotalMs = r.spanMs;
+      this.lastRaw = r.raw;
     }).catch(() => { s.state = 'free'; });
   }
+
+  /** The last resolved frame's raw pairs (ms relative to the earliest valid begin), for diagnostics. */
+  lastRaw: { name: string; begin: number; end: number }[] = [];
 
   private push(name: string, ms: number, frame: number): void {
     let h = this.history.get(name);
@@ -96,11 +95,12 @@ export class GpuTimestamps {
     h.lastSeen = frame;
   }
 
-  /** Rolling averages (ms) over the last ≤32 measured frames; passes unseen for 120 frames are dropped. */
+  /** Rolling averages (ms) over the last ≤32 measured frames; passes unseen for 30 frames are dropped (a mode switch
+   *  leaves no stale line that is not part of the current frame's span). */
   averages(): { name: string; ms: number; samples: number }[] {
     const out: { name: string; ms: number; samples: number }[] = [];
     for (const [name, h] of this.history) {
-      if (this.frame - h.lastSeen > 120) { this.history.delete(name); continue; }
+      if (this.frame - h.lastSeen > 30) { this.history.delete(name); continue; }
       out.push({ name, ms: h.v.reduce((a, b) => a + b, 0) / Math.max(1, h.v.length), samples: h.v.length });
     }
     return out;
@@ -111,6 +111,44 @@ export class GpuTimestamps {
     this.resolveBuf?.destroy();
     for (const s of this.ring) s.buf.destroy();
   }
+}
+
+/**
+ * Attribute one frame's timestamp pairs (one command buffer, passes executed in order). Two effects make the raw
+ * begin–end pairs misleading:
+ * - Q3 (platform-lanes.md): the ReSTIR passes (and the in-frame denoiser) carry no timestampWrites, so their GPU time
+ *   is invisible to the per-pass pairs;
+ * - on Metal a render pass's begin sample is taken when its vertex stage starts, which may overlap the preceding
+ *   compute work (the present blit's begin landed before the ReSTIR passes, so "present" read the whole untimed span).
+ * Each pass therefore starts no earlier than the end of the timed pass that finished before it (pairs ordered by end),
+ * and `untimedMs` = span − Σ passes, where span = the first timed begin to the last timed end. Ties on the end
+ * (timestamps are quantised) keep the reservation order, which callers make the encode order. Pairs that were never
+ * written (0) or are inverted are dropped; a reserved pair whose pass is not encoded resolves to stale values, so
+ * reserve only passes that are encoded.
+ */
+export function attributeFrame(pairs: { name: string; begin: bigint; end: bigint }[]): {
+  perName: Map<string, number>; spanMs: number; untimedMs: number; raw: { name: string; begin: number; end: number }[];
+} {
+  const valid = pairs.filter((p) => p.begin > 0n && p.end >= p.begin && Number(p.end - p.begin) < 1e10)
+    .sort((a, b) => (a.end < b.end ? -1 : a.end > b.end ? 1 : 0));   // stable: ties keep the reservation order
+  const perName = new Map<string, number>();
+  for (const p of pairs) perName.set(p.name, 0);
+  if (!valid.length) return { perName, spanMs: 0, untimedMs: 0, raw: [] };
+  const t0 = valid.reduce((m, p) => (p.begin < m ? p.begin : m), valid[0].begin);
+  const start = valid[0].begin;
+  let prevEnd = start, sum = 0;
+  for (const p of valid) {
+    const b = p.begin > prevEnd ? p.begin : prevEnd;
+    const ms = Number(p.end - b) / 1e6;
+    perName.set(p.name, (perName.get(p.name) ?? 0) + ms);
+    sum += ms;
+    prevEnd = p.end;
+  }
+  const spanMs = Number(prevEnd - start) / 1e6;
+  return {
+    perName, spanMs, untimedMs: Math.max(0, spanMs - sum),
+    raw: valid.map((p) => ({ name: p.name, begin: Number(p.begin - t0) / 1e6, end: Number(p.end - t0) / 1e6 })),
+  };
 }
 
 /** CPU frame-time rolling average (for fps). */
