@@ -74,6 +74,9 @@ const K6 = RS_M6_CONSTS;
 /** perf2 WP-5 constants (shaders/restir/queue.wgsl under RS_DENSE_SLOTS / RS_BOOST_GATE; tests/restir/queue.test.ts):
  *  q3 = the dense non-replay spatial slot items (top end of q0's item region); header word 30 = the boost gate. */
 export const WP5_CONSTS = { RS_Q_DENSE: 3, RS_HDR_BOOST_GATE: 30, RSD_BOOST_OPEN: 4096 } as const;
+/** perf2 WP-6 constant (shaders/restir/tframe.wgsl under RS_TSEL_FOLD): RsDispatch flag RSD_TFOLD = T3 phase B folded
+ *  into T4 (contribution MIS without a check mode). */
+export const WP6_CONSTS = { RSD_TFOLD: 1048576 } as const;
 
 export const RS_TECH = { nee: K.RS_TECH_NEE, bsdfTri: K.RS_TECH_BSDF_TRI, bsdfAnalytic: K.RS_TECH_BSDF_ANALYTIC, bsdfEnv: K.RS_TECH_BSDF_ENV } as const;
 export const RS_TECH_NAMES = ['NEE', 'BSDF_TRI', 'BSDF_ANALYTIC', 'BSDF_ENV'] as const;
@@ -321,6 +324,19 @@ export const TSW = {
 /** words[] index of tState[ai] word w / sfxOut[dir][ai] word w (mirror of tframe.wgsl ts_word / sfx_word). */
 export const tsWord = (P: number, NS: number, ai: number, w: number): number => arenaWords(P, NS).tState + TS_WORDS * ai + w;
 export const sfxWord = (P: number, NS: number, dir: number, ai: number, w: number): number => arenaWords(P, NS).sfxOut + 16 * ai + 8 * dir + w;
+/** perf2 WP-6 (RS_TSTATE_SOA): the GPU tState region is word-major (word w of pixel ai at w·P + ai). These
+ *  convert the first TS_WORDS·P words of a readTemporalState()-shaped array between that and the record-major layout
+ *  every CPU decoder uses (sfxOut and the rest are unchanged). */
+export function tStateSoaToAos(words: Uint32Array, P: number): Uint32Array {
+  const out = words.slice();
+  for (let w = 0; w < TS_WORDS; w++) for (let ai = 0; ai < P; ai++) out[TS_WORDS * ai + w] = words[w * P + ai];
+  return out;
+}
+export function tStateAosToSoa(words: Uint32Array, P: number): Uint32Array {
+  const out = words.slice();
+  for (let w = 0; w < TS_WORDS; w++) for (let ai = 0; ai < P; ai++) out[w * P + ai] = words[TS_WORDS * ai + w];
+  return out;
+}
 /** Queue item base (within the item region) and capacity of queue q (tframe.wgsl queue_item_base / queue_capacity_q). */
 export const queueItemBase = (P: number, q: number): number => (q === 2 ? P : 0);
 export const queueCapacityQ = (P: number, NS: number, q: number): number => (q === 0 ? P * NS : P);

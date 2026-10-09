@@ -42,7 +42,12 @@ const DN_M_CAP: f32 = 1e4;
 var<workgroup> wgSum: array<vec4f, 64>;
 var<workgroup> wgSum2: array<vec4f, 64>;
 
+#if RS_TSTATE_SOA
+// perf2 WP-6: word-major tState; DnParams word 26 (pad6) = the tState word stride P (denoiser.ts tsStride)
+fn ts(ai: u32, w: u32) -> u32 { return arenaWords[dn.tsBase + w * dn.pad6 + ai]; }
+#else
 fn ts(ai: u32, w: u32) -> u32 { return arenaWords[dn.tsBase + TS_WORDS * ai + w]; }
+#endif
 fn tsf(ai: u32, w: u32) -> f32 { return bitcast<f32>(ts(ai, w)); }
 /// The path lost its contribution for a lighting reason (removed light / zero pmf, newly occluded, zero).
 fn dn_light_zero(code: u32) -> bool { let sc = code & 0xFFu; return sc == SC_O0_LIGHT || sc == SC_OCCLUDED || sc == SC_ZERO; }

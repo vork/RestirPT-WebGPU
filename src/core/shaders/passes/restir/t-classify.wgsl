@@ -40,6 +40,57 @@ fn rs_t_classify(@builtin(global_invocation_id) gid: vec3u) {
   let cP = min(rsParams.cCap, cPrev);
 #endif
   var flags = TS_QVALID | select(0u, TS_PICK_RING, pk.tap != 0u);
+#if RS_TSTATE_SOA
+  // perf2 WP-6 (RS_TSTATE_SOA): every tState word written once (the words T1 knows now here, the forward-shift words
+  // and the flags after the shift); the final words equal the #else text's
+#if RS_DUAL_MV
+  let dual = pk.tap >= 10u;
+  if (dual) { flags |= TS_DUAL_PICK; }
+  ts_storef(p.ai, TSW_CP, select(cP, min(cP, DMV_C_CAP), dual));
+#else
+  ts_storef(p.ai, TSW_CP, cP);
+#endif
+  ts_store(p.ai, TSW_QPRIME, qP);
+  ts_storef(p.ai, TSW_CPREV, cPrev);
+  ts_clear_inv(p.ai);
+  rs_count(RSC_T_QVALID, 1u);
+  let src = tsrc_load(qP, 0u, SFX_FWD, RS_FS_CUR);
+  ts_store(p.ai, TSW_XPENTRY, src.xpEntry);
+  var fF = vec3f(0.0);
+  var fJ = JW_FAILED;
+  var fCode = rs_slot_code(SC_EMPTY_SRC, RCT_NONE, 0u, 0.0);
+  var fJP = 0.0;
+  if (src.base.empty) {
+  } else if (src.undefinedLight) {
+    fCode = rs_slot_code(SC_O0_LIGHT, RCT_NONE, 0u, 0.0);
+    fJP = src.jp;
+    tcount_fwd(fCode);
+    if (tsfx_light_refused(SFX_FWD, qP)) { rs_count(RSC_T_LIGHT_CLASS, 1u); }
+  } else if (res_needs_replay(src.base.flags)) {
+    fJ = JW_PENDING;
+    fCode = rs_slot_code(SC_PENDING, RCT_NONE, 0u, 0.0);
+    queue_append(RS_Q_FWD, queue_item_word(p.ai, 0u));
+    flags |= TS_FWD_QUEUED;
+    rs_count(RSC_T_FWD_QUEUED, 1u);
+  } else {
+    let o = temporal_shift(src, tdst_cur(p));
+    // = ts_store_fwd
+    let ok = rs_slot_code_sc(o.code) == SC_OK;
+    fF = select(vec3f(0.0), o.F, ok);
+    fJ = select(JW_FAILED, bitcast<u32>(o.J), ok);
+    fCode = o.code;
+    fJP = o.jP;
+    tcount_fwd(o.code);
+    flags |= TS_FWD_DONE;
+  }
+  ts_storef(p.ai, TSW_FWDF, fF.x);
+  ts_storef(p.ai, TSW_FWDF + 1u, fF.y);
+  ts_storef(p.ai, TSW_FWDF + 2u, fF.z);
+  ts_store(p.ai, TSW_FWDJ, fJ);
+  ts_store(p.ai, TSW_FWDCODE, fCode);
+  ts_storef(p.ai, TSW_JP, fJP);
+  ts_store(p.ai, TSW_FLAGS, flags);
+#else
 #if RS_DUAL_MV
   // MD11 amendment DMV-1: a dual-MV q′ carries c_p = min(DMV_C_CAP, c_prev) (its history belongs to another surface
   // point; with c_p up to cCap its importance ratio p̂_q·J/p̂_q′ was amplified up to cCap-fold, the ix-d f40 tail)
@@ -77,4 +128,5 @@ fn rs_t_classify(@builtin(global_invocation_id) gid: vec3u) {
     flags |= TS_FWD_DONE;
   }
   ts_store(p.ai, TSW_FLAGS, flags);
+#endif
 }

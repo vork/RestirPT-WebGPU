@@ -4,7 +4,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { readBuffer } from '../../src/core/gpu/readback.ts';
 import { EnsembleCollector, decodeEnsStats, ensStatsLayout } from '../../src/core/render/restir/ensemble.ts';
-import { RS_WGSL_CONSTS as K, RES_WORDS, RW, TS_CONSTS, TS_WORDS, TSW, arenaWords, rfPack } from '../../src/core/render/restir/layout.ts';
+import { RS_WGSL_CONSTS as K, RES_WORDS, RW, TS_CONSTS, TS_WORDS, TSW, arenaWords, rfPack, tStateAosToSoa } from '../../src/core/render/restir/layout.ts';
 import { readNpz, writeNpz } from '../../src/core/render/restir/npz.ts';
 import { gaussLayer, pairLayer, pairPartner, pairTransform } from '../../src/core/render/restir/pairing.ts';
 import { GAUSS_PAIR_SIZES, PAIR_TEX_SIZES } from '../../src/core/render/restir/presets.ts';
@@ -819,7 +819,8 @@ describe('T3-3-boost: reciprocal disocclusion boost (restir-temporal-api.md TD21
     const run = async (dis: (ai: number) => boolean) => {
       const words = new Uint32Array(TS_WORDS * P);
       for (let ai = 0; ai < P; ai++) words[TS_WORDS * ai + TSW.flags] = dis(ai) ? TS_CONSTS.TS_DISOCC : TS_CONSTS.TS_QVALID;
-      rig.g.device.queue.writeBuffer(k.resources.arena, 256 + 4 * aw.tState, words);
+      // perf2 WP-6 (RS_TSTATE_SOA forced): the GPU tState region is word-major
+      rig.g.device.queue.writeBuffer(k.resources.arena, 256 + 4 * aw.tState, k.perfFlags.RS_TSTATE_SOA ? tStateAosToSoa(words, P) : words);
       const r = await rig.frames(1, t);
       const body = await arenaBody(rig);
       const acc = (ai: number, s: number) => body[aw.slots + 4 * (ai * NS + s) + 3] >>> 0 !== K.JW_NOT_ACCEPTED;

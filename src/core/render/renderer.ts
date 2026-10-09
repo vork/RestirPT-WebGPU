@@ -838,7 +838,7 @@ export class Renderer {
       f.l1 = res.l1;
       f.restir = {
         arena: res.arena, resW: res.res[k.resBase()], resFinal: res.res[k.finalResIndex()],
-        tsBase: RS_WGSL_CONSTS.RS_ARENA_HDR_WORDS + arenaWords(res.pixels, res.alloc.slots).tState, resPlanes: k.resPlaneStride,
+        tsBase: RS_WGSL_CONSTS.RS_ARENA_HDR_WORDS + arenaWords(res.pixels, res.alloc.slots).tState, tsStride: res.pixels, resPlanes: k.resPlaneStride,
         gradient: !!adv && adv.histValid && temporal && k.settings.temporalMis === 'contribution',
         lightingChanged: (fl & RS_WGSL_CONSTS.TF_LIGHTS_SAME) === 0 || (fl & RS_WGSL_CONSTS.TF_ENV_SAME) === 0,
         inverse: k.lastRounds <= 1,

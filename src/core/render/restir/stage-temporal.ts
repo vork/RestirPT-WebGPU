@@ -9,9 +9,22 @@
 // restir-api.md Changelog C7 (one chunk per row band; RsDispatch.treeBase / treeCount = item base / count), so the
 // result is bitwise independent of row bands and chunks (U-TR-2). Unit labels start with the pass kind (E1).
 import type { RestirKernel, RestirStage, WorkUnit } from './kernel.ts';
-import { RS_WGSL_CONSTS as K, WP5_CONSTS } from './layout.ts';
+import { RS_WGSL_CONSTS as K, WP5_CONSTS, WP6_CONSTS } from './layout.ts';
 import { refreshFwdUnits, refreshInvUnits } from './refresh.ts';
 import { TEMPORAL_PASSES, type RsPassName } from './resources.ts';
+
+/** perf2 WP-6: phase B folds into T4 (RSD_TFOLD) for contribution MIS without a check mode (Talbot, recompute and
+ *  robust keep phase B). */
+export function tselFoldActive(k: RestirKernel): boolean {
+  const s = k.settings;
+  return !!k.perfFlags.RS_TSEL_FOLD && s.temporalMis === 'contribution' && (s.temporalCheck ?? 'none') === 'none';
+}
+
+/** A ReSTIR debug view (400–499) or the probe is on: T3 phase B still runs (RSD_TFOLD: debug records only). */
+function restirDebugActive(k: RestirKernel): boolean {
+  const d = k.o.debug?.settings;
+  return !!d && ((d.mode >= 400 && d.mode < 500) || d.probeEnabled);
+}
 
 export class TemporalStage implements RestirStage {
   async prepare(k: RestirKernel): Promise<void> {
@@ -43,7 +56,7 @@ export class TemporalStage implements RestirStage {
         },
       }));
     };
-    const indirect = (label: string, name: RsPassName, pipe: GPUComputePipeline, g2: GPUBindGroup, q: number, passId: number) => {
+    const indirect = (label: string, name: RsPassName, pipe: GPUComputePipeline, g2: GPUBindGroup, q: number, passId: number, flags = 0) => {
       for (let ci = 0; ci < nChunks; ci++) {
         const items = chunk > 0 ? chunk : P;
         units.push({
@@ -51,11 +64,13 @@ export class TemporalStage implements RestirStage {
           encode: (enc) => {
             const d = { t, passId, treeBase: ci * chunk, treeCount: chunk };
             k.encodePass(enc, 'rs_args', args, gArgs, { ...d, flags: q << K.RSD_QUEUE_SHIFT }, [1, 1]);
-            k.encodePass(enc, name, pipe, g2, d, { indirect: res.args, offset: 16 * q });
+            // perf2 WP-6: T4 carries RSD_TFOLD (0 for every other use)
+            k.encodePass(enc, name, pipe, g2, flags ? { ...d, flags } : d, { indirect: res.args, offset: 16 * q });
           },
         });
       }
     };
+    const fold = !!k.perfFlags.RS_TSEL_FOLD;
     const boostGate = !!k.perfFlags.RS_BOOST_GATE;
     const clearQueues = (enc: GPUCommandEncoder) => {
       enc.clearBuffer(res.arena, 16 * K.RS_Q_FWD, 8);
@@ -75,8 +90,13 @@ export class TemporalStage implements RestirStage {
     perPixel('rs_t_select_a', 'rs_t_select', select, gSelect, { passId: K.RS_PASS_TEMPORAL, round: 0 });
     if (!hist) return units;
     units.push(...refreshInvUnits(k, t));
-    indirect('rs_t_inverse', 'rs_t_inverse', inverse, gInverse, K.RS_Q_INV, K.RS_PASS_T_INV);
-    perPixel('rs_t_select_b', 'rs_t_select', select, gSelect, { passId: K.RS_PASS_TEMPORAL, round: 1, flags: K.RSD_PHASE_B });
+    // perf2 WP-6 (RS_TSEL_FOLD): phase B folded into T4 for contribution MIS (RSD_TFOLD, tselFoldActive); the phase-B
+    // dispatch then only records the debug views and is emitted only while a ReSTIR view or the probe is on
+    const tfold = fold && tselFoldActive(k) ? WP6_CONSTS.RSD_TFOLD : 0;
+    indirect('rs_t_inverse', 'rs_t_inverse', inverse, gInverse, K.RS_Q_INV, K.RS_PASS_T_INV, tfold);
+    if (!tfold || restirDebugActive(k)) {
+      perPixel('rs_t_select_b', 'rs_t_select', select, gSelect, { passId: K.RS_PASS_TEMPORAL, round: 1, flags: K.RSD_PHASE_B | tfold });
+    }
     return units;
   }
 

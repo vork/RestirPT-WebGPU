@@ -140,7 +140,11 @@ fn pair_boost_accept(a0: bool, disP: bool, disQ: bool) -> bool { return a0 && (d
 #if RS_ARENA_BINDING
 /// dis(ai): no valid q′ this frame (T1's tState flags; TS_DISOCC also covers the no-history frames, TS_NO_HIST).
 fn pair_disoccluded(ai: u32) -> bool {
+#if RS_TSTATE_SOA
+  let w = 6u * rs_atlas_pixels() * rs_ns_alloc() + PAIR_TSW_FLAGS * rs_atlas_pixels() + ai;   // perf2 WP-6: word-major tState
+#else
   let w = 6u * rs_atlas_pixels() * rs_ns_alloc() + PAIR_TS_WORDS * ai + PAIR_TSW_FLAGS;
+#endif
   return (arena_word(w) & PAIR_TS_DISOCC) != 0u;
 }
 #if RS_BOOST_GATE

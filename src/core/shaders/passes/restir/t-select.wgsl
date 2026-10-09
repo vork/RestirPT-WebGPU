@@ -254,6 +254,10 @@ fn rs_t_select(@builtin(global_invocation_id) gid: vec3u) {
     if ((flags & TS_QVALID) == 0u) { rsdbg_temporal(p.px, p.ai, 0u); return; }   // TD13: res[w][q] untouched
     tsel_phase_a(p, flags);
   } else if ((flags & TS_INV_QUEUED) != 0u) {
+#if RS_TSEL_FOLD
+    // RSD_TFOLD: T4 finished the pixel (phase B folded into T4); this dispatch only records the debug views / probe
+    if ((rsDispatch.flags & RSD_TFOLD) != 0u) { rsdbg_temporal(p.px, p.ai, 1u); return; }
+#endif
     tsel_phase_b(p, flags);
   }
 }
