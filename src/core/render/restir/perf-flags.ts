@@ -41,8 +41,8 @@ const reserved = (wp: string, cls: PerfFlagClass, what: string, except?: PerfFla
 /** The registry. Order is documentation only (keys are sorted wherever they form a key / define set). */
 export const PERF_FLAGS = {
   RS_VIS_MERGE: reserved('WP-1', 'bitwise', 'one trace_any_ex call site in shift_finish_vis (forced-inf, forced-local, ENV and reconnect merged via selects)'),
-  RS_RIS_HOIST: { ...reserved('WP-2a', 'bitwise', 'bsdf_prepare hoisted out of the RIS candidate loop; dead nee_draw at B=1 skipped'), landed: true },
-  RS_NEE_SITE: { ...reserved('WP-2b', 'bitwise', 'rs_initial: one NEE visibility site (visible + visibleInf + k=B retest) and one post-hit retest site'), landed: true },
+  RS_RIS_HOIST: { ...reserved('WP-2a', 'bitwise', 'bsdf_prepare hoisted out of the RIS candidate loop; dead nee_draw at B=1 skipped'), landed: true, release: true },
+  RS_NEE_SITE: { ...reserved('WP-2b', 'bitwise', 'rs_initial: one NEE visibility site (visible + visibleInf + k=B retest) and one post-hit retest site'), landed: true, release: true },
   RS_LAST_ANYHIT: reserved('WP-2c', 'bitwise', 'last continuation ray as any-hit (Mode-A text, no TRI_EMISSIVE)', ['counters']),
   RS_RIS_PREPASS: reserved('WP-2d', 'unbiased', 'lean RIS pre-pass rs_ris_nee (interactive, trees=1); record in the pixel\'s RP_DIAG plane'),
   RS_ENV_WRAP: reserved('WP-4a', 'bitwise', 'envTexel select-wrap instead of emulated i32 modulos'),
