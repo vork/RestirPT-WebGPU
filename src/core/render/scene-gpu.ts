@@ -17,7 +17,7 @@ import { uploadBvh, type BvhData, type BvhGpuBuffers } from '../bvh/layout.ts';
 import { buildCwbvhFromMesh, uploadCwbvh } from '../bvh/cwbvh.ts';
 import type { Defines } from '../gpu/wgsl-composer.ts';
 import { materialUvWords, packVertexArena, VERTEX_BYTES_F32, VERTEX_BYTES_Q, type VertexArena } from '../gpu/vertex-format.ts';
-import type { MaterialData, SceneData, SceneGeometry, SceneQuant } from '../scene/types.ts';
+import { TRI_ALPHA_MASK, type MaterialData, type SceneData, type SceneGeometry, type SceneQuant } from '../scene/types.ts';
 import { sceneHasNormalMaps } from '../scene/tangents.ts';
 import { createGpuTextures, packTexSlot, type GpuTextures, type TexturePathMode } from './textures-gpu.ts';
 
@@ -164,9 +164,40 @@ async function defaultBuilder(positions: Float32Array, indices: Uint32Array, opt
   return buildBvh(positions, indices, { mt: true, woop: true });
 }
 
-/** BVH2 or CWBVH buffers of a built BvhData (the CWBVH when present). */
-function uploadAccel(device: GPUDevice, bvh: BvhData, opts: { watertight: boolean; label?: string }): BvhGpuBuffers {
-  return bvh.cwbvh ? uploadCwbvh(device, bvh.cwbvh, opts) : uploadBvh(device, bvh, opts);
+/** True when a triangle of the geometry is TRI_ALPHA_MASK (the only triangles alpha_pass can reject). */
+export function hasAlphaMask(triFlags: Uint32Array): boolean {
+  for (let t = 0; t < triFlags.length; t++) if (triFlags[t] & TRI_ALPHA_MASK) return true;
+  return false;
+}
+
+/** MT record word that holds the MASK bit (e1.w: [v0 | primId] [e1 | here] [e2 | 0], layout.ts). */
+export const MT_ALPHA_WORD = 7;
+
+/**
+ * perf2 WP-3b (BVH_ALPHA_BIT): a copy of the MT triangle records (BVH2 or CWBVH order; each record carries its primId in
+ * word 3) with bit 0 of e1.w set for TRI_ALPHA_MASK triangles, so the traversal calls alpha_pass only for them. e1.w is
+ * zero in the builder's records and read by no other WGSL text (the MT intersector loads e1.xyz), so the records are
+ * written this way whether or not the flag is on. Null when no triangle is MASK (the records are uploaded unchanged).
+ */
+export function mtRecordsWithAlphaBit(tris: Float32Array, triFlags: Uint32Array): Float32Array | null {
+  if (!hasAlphaMask(triFlags)) return null;
+  const out = tris.slice();
+  const u = new Uint32Array(out.buffer, out.byteOffset, out.length);
+  for (let w = 0; w < u.length; w += 12) {
+    const prim = u[w + 3];
+    if (prim < triFlags.length && (triFlags[prim] & TRI_ALPHA_MASK)) u[w + MT_ALPHA_WORD] = 1;
+  }
+  return out;
+}
+
+/** BVH2 or CWBVH buffers of a built BvhData (the CWBVH when present); MT records carry the MASK bit (WP-3b). */
+function uploadAccel(device: GPUDevice, bvh: BvhData, opts: { watertight: boolean; label?: string }, triFlags: Uint32Array): BvhGpuBuffers {
+  if (bvh.cwbvh) {
+    const tris = opts.watertight ? null : mtRecordsWithAlphaBit(bvh.cwbvh.tris, triFlags);
+    return uploadCwbvh(device, tris ? { ...bvh.cwbvh, tris } : bvh.cwbvh, opts);
+  }
+  const tris = opts.watertight ? null : mtRecordsWithAlphaBit(bvh.tris, triFlags);
+  return uploadBvh(device, tris ? { ...bvh, tris } : bvh, opts);
 }
 
 function storageBuffer(device: GPUDevice, data: ArrayBufferView | ArrayBuffer, label: string, minBytes: number): GPUBuffer {
@@ -224,7 +255,7 @@ export class SceneGpu {
     let up: { bvhBuffers: BvhGpuBuffers; vertices: GPUBuffer; tris: GPUBuffer; materials: GPUBuffer } | undefined;
     let thrown: unknown;
     try {
-      const bvhBuffers = uploadAccel(device, bvh, { watertight: opts.watertight, label });
+      const bvhBuffers = uploadAccel(device, bvh, { watertight: opts.watertight, label }, g.triFlags);
       keep(bvhBuffers.nodes); keep(bvhBuffers.tris);
       up = {
         bvhBuffers,
@@ -255,13 +286,16 @@ export class SceneGpu {
   }
 
   get watertight(): boolean { return this.bvhBuffers.watertight; }
+  /** No triangle is TRI_ALPHA_MASK (static geometry: computed once). */
+  get noAlphaMask(): boolean { return (this.noMask ??= !hasAlphaMask(this.scene.geometry.triFlags)); }
+  private noMask?: boolean;
   get bvhKind(): BvhKind { return this.bvh.cwbvh ? 'cwbvh' : 'bvh2'; }
 
   /** Switch MT <-> Woop (re-uploads only the triangle layout; the caller recompiles with the new defines). */
   setWatertight(on: boolean): void {
     if (on === this.watertight) return;
     const old = this.bvhBuffers;
-    const next = uploadAccel(this.device, this.bvh, { watertight: on, label: 'scene' });
+    const next = uploadAccel(this.device, this.bvh, { watertight: on, label: 'scene' }, this.scene.geometry.triFlags);
     old.tris.destroy();
     next.nodes.destroy();
     this.bvhBuffers = { ...next, nodes: old.nodes };
@@ -276,6 +310,8 @@ export class SceneGpu {
       // M8: only CWBVH scenes get the key (every BVH2 define set is the M7 one, U-M7-BITS)
       ...(this.bvh.cwbvh ? { BVH_CWBVH: true } : {}),
       CUSTOM_ALPHA: true,
+      // perf2 WP-3b: no MASK triangle (alpha_pass is constant true); read only under the BVH_ALPHA_BIT flag
+      ...(this.noAlphaMask ? { BVH_NO_ALPHA: true } : {}),
       VERTEX_FORMAT: this.vertexArena.format,
       ...this.textures.defines(group, SCENE_BINDING.textureBase),
       // M7: only scenes with a normal-mapped material get the key (the define set of every other scene is the M6 one)

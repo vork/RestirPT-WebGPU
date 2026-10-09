@@ -24,6 +24,8 @@ the packages never collide:
 | `CW_TRI_BUDGET` | WP-3 | bitwise | CWBVH triangle budget (value = K, e.g. `CW_TRI_BUDGET=2`) |
 | `BVH_ALPHA_BIT` | WP-3 | bitwise | alpha bit in the MT record |
 | `BVH2_PRIV_STACK` | WP-3 | bitwise | module-private traversal stack (BVH2 only) |
+| `BVH_CONST_LOOPS` | WP-3 | bitwise | constant-bound traversal loops (added by WP-3, step 3c) |
+| `CW_EXP_OR` | WP-3 | bitwise | CWBVH exponent-OR child-box byte decode (added by WP-3, step 3e) |
 | `RS_DENSE_SLOTS` | WP-5 | bitwise | dense spatial slot-item queue |
 | `RS_BOOST_GATE` | WP-5 | bitwise | boost-slot gating |
 | `RS_TSEL_FOLD` | WP-6 | bitwise | T4 split / phase B folded into T4 |

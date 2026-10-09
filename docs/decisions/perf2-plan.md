@@ -253,6 +253,25 @@ The first-week quick-win set is #1, #2, #9 (dn_gradient part) and #14. All are b
   - 3e: T12 against brute force with 0 unexplained differences under the existing tie rule; the `cwbvh.test.ts` mirror; gate-m8 stageB.
   - V-PERF, including the isolated T12 perf kernels.
 - **Conflicts:** `scene-gpu.ts` with WP-8, as additive define lines; merge WP-3 first.
+- **Delivered (WP-3 a–e, branch perf2-wp3):** five bitwise flags, all released (`RELEASE_PERF_FLAGS`; the registry got a
+  `value` for parametrised release flags, CW_TRI_BUDGET ships as K = 2). The flag-free traversal text is byte-identical
+  (64 define sets), so every validation text is unchanged.
+  - `CW_TRI_BUDGET=K` (3a): one CWBVH loop, at most K triangles per iteration, a node step only once the triangle group is
+    empty: the same node / triangle order and iteration count. Paired loads not tried. T12 sweep (Sponza, 1080p rays): K=1
+    loses on primary rays (+11 %), K=2/3 win 4–6 % on incoherent rays; on top of CW_EXP_OR K=2 is best (−9…−10 %).
+  - `BVH_ALPHA_BIT` (3b): MASK bit in MT record e1.w (scene-gpu.ts writes it always; no other text reads e1.w);
+    alpha_pass only for flagged records; the scene key `BVH_NO_ALPHA` (no MASK triangle) removes the alpha test.
+  - `BVH_CONST_LOOPS` (3c, new name): constant bounds on the iteration loop, the BVH2 leaf loop (127) and the CWBVH group
+    loop (24). No effect on CWBVH when CW_TRI_BUDGET is on (that loop is already bounded).
+  - `BVH2_PRIV_STACK` (3d): the BVH2 half of bvh-private-stack.patch.
+  - `CW_EXP_OR` (3e, new name): exponent-OR byte decode (f16 1024 + b, exact). Leaf-1 DP input and prefetch not done.
+  - Verification: per-ray bit equality vs the flag-free traversal (bvh.gpu.test.ts "perf2 WP-3": 10⁶ random + 960×540
+    camera rays, procedural + Sponza, MT / Woop, BVH2 / CWBVH, BVH_STATS counters included; alpha hook; MASK-bit records;
+    cyclic-graph overflow / itercap) 0 differences; m8-bits (all 27, CWBVH + Sponza-lite) twice with the flags, U-M4-BITS /
+    U-M5-BITS with the flags, VITE_STRESS on the CWBVH (VITE_STRESS_CWBVH=1) twice with identical counters, 0 faults.
+  - ABBA 540p N3, 2 blocks (validation/out/perf2-wp3): Sponza all CW flags −5.2 ms (K2+EXP −1.4 frame / −4.4 Σpasses,
+    ALPHA −0.44); nm_smooth all BVH2 flags −4.3 ms (PRIV −2.9, ALPHA −2.1, CONST −1.3); Cornell −0.6 (PRIV −0.9, ALPHA
+    −0.44, CONST −0.44). Spill: Cornell hot kernels −400…−900 B (PRIV_STACK); Sponza ±16 B wobble (net −48 B, shift +16 B).
 
 ### WP-4 Lights and environment
 - **4a (parallel, S–M, bitwise):**
