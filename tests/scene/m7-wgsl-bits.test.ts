@@ -15,6 +15,7 @@ import { RS_PASSES, restirCommonDefines, restirDefines, type RsPassName } from '
 import { envDefines } from '../../src/core/render/env-gpu.ts';
 import { lutDefines } from '../../src/core/render/luts/lut-layout.ts';
 import { LUT_RECORDS_BASE } from '../../src/core/render/lights-gpu.ts';
+import { PERF_FLAG_NAMES } from '../../src/core/render/restir/perf-flags.ts';
 
 const RECORD = process.env.M7_WGSL_RECORD === '1';
 const FEATURES = new Set(['subgroups', 'shader-f16', 'timestamp-query', 'float32-filterable', 'texture-formats-tier2', 'texture-formats-tier1']);
@@ -29,7 +30,12 @@ const SCENES: Record<string, Defines> = { q: sceneDefines(1, false), qtex: scene
 
 const norm = (code: string) => code.split('\n').map((l) => l.replace(/\/\/.*$/, '').replace(/\s+/g, ' ').trim()).filter((l) => l.length > 0).join('\n');
 const h = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 16);
-const compose = (file: string, defines: Defines) => h(norm(composeWgsl(file, { sources: shaderSources, defines, features: FEATURES, wgslLanguageFeatures: LANG }).code));
+/** perf2 (perf2-api.md, V-BIT item 1): every define set of the validation texts is collected; none may carry a perf flag. */
+const seenDefineKeys = new Set<string>();
+const compose = (file: string, defines: Defines) => {
+  for (const k of Object.keys(defines)) seenDefineKeys.add(k);
+  return h(norm(composeWgsl(file, { sources: shaderSources, defines, features: FEATURES, wgslLanguageFeatures: LANG }).code));
+};
 
 const M6_VARIANTS: Record<string, Defines> = {
   off: {}, ris: { RS_RIS_NEE: 1 }, modeB: { RS_MODE_B: 1 }, temporal: { RS_DUAL_MV: 1, RS_DUPMAP: 1 }, t2: { RS_PLANT_T2: 1 },
@@ -88,6 +94,12 @@ describe('U-M7-BITS: scenes without normal maps compose to the M6 WGSL', () => {
     expect(changed, `entries whose text changed: ${changed.slice(0, 20).join(', ')}`).toEqual([]);
     expect(Object.keys(t).length).toBe(GOLDEN_COUNT);
     expect(digest(t)).toBe(GOLDEN_DIGEST);
+  });
+  it('perf2: no perf-flag key in any validation define set (flags reach only interactive / forced kernels)', () => {
+    seenDefineKeys.clear();
+    m7Hashes();
+    expect(seenDefineKeys.size).toBeGreaterThan(20);
+    expect([...seenDefineKeys].filter((k) => (PERF_FLAG_NAMES as string[]).includes(k))).toEqual([]);
   });
   it('NORMAL_MAP: false is the same text as no NORMAL_MAP key', () => {
     expect(digest(m7Hashes({ NORMAL_MAP: false }))).toBe(digest(m7Hashes()));

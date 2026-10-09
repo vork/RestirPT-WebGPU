@@ -33,10 +33,12 @@ import { SpatialStage } from './stage-spatial.ts';
 import { EnsembleStage } from './ensemble.ts';
 import { TemporalStage } from './stage-temporal.ts';
 import { FrameStateTracker, type ConfigHashInput, type RestirAdvance, type RestirFrameState, type RestirInteractiveAdvance } from './frame-state.ts';
+import { RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagDefines, perfFlagsKey, type PerfFlags, type PerfFlagsInput } from './perf-flags.ts';
 
 export type { RestirSettings } from './presets.ts';
 export type { RestirAdvance, RestirFrameState } from './frame-state.ts';
 export { RESTIR_PRESETS } from './presets.ts';
+export { PERF_FLAGS, RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagDefines, perfFlagsKey, type PerfFlagName, type PerfFlags, type PerfFlagsInput } from './perf-flags.ts';
 
 export interface WorkUnit { label: string; costHint: number; encode(enc: GPUCommandEncoder): void }
 /** A stage of the frame graph (spatial = WP-C stage-spatial.ts, ensemble = WP-C ensemble.ts). `prepare` compiles its
@@ -45,7 +47,7 @@ export interface RestirStage { frameUnits(k: RestirKernel, t: number): WorkUnit[
 export interface RestirFrameOut {
   accum?: GPUBuffer; counters?: GPUBuffer; colorTarget?: GPUTexture; ensemble?: boolean;
   /** Interactive progressive mean (RestirFramePass). */
-  interactive?: { advanced: boolean; accumulate: boolean };
+  interactive?: { advanced: boolean; accumulate: boolean; /** perf2 WP-7c (RS_SKIP_DISPLAY): the denoiser writes the colour target */ noDisplay?: boolean };
 }
 
 export interface RestirQueueHeader { counter: number; n: number; capacity: number; overflow: number }
@@ -78,6 +80,10 @@ export interface RestirKernelOptions {
   /** M8 (m8-perf.md §8, P-7): reservoir planes record-major ('aos', the M4 layout; default: every validation caller) or
    *  plane-major ('soa', composer define RS_RES_SOA; RestirKernel.interactive). readReservoirs() always returns AoS. */
   resLayout?: 'aos' | 'soa';
+  /** perf2 (docs/decisions/perf2-api.md): interactive-only optimisation defines from the registry in perf-flags.ts.
+   *  Default: none (every validation caller); RestirKernel.interactive defaults to RELEASE_PERF_FLAGS. Part of
+   *  variantKey(); setPerfFlags() switches them at a frame boundary (recompile + history reset). */
+  perfFlags?: PerfFlagsInput;
   env?: PtEnvOptions;
   debug?: DebugResources;
   features?: Set<string>;
@@ -139,12 +145,15 @@ export class RestirKernel {
   private readonly g2Layouts = new Map<string, GPUBindGroupLayout>();
   private readonly pipelines = new Map<string, Promise<GPUComputePipeline>>();
   private prepared = '';
+  /** perf2: the normalised perf-flag set (sorted; absent = off). */
+  private perfFlagSet: PerfFlags = {};
 
   /** Light mode (M6 MD9: A, B or A′; B / A′ compile the crossing variant RS_MODE_B). */
   lightMode: LightMode;
 
   private constructor(readonly device: GPUDevice, readonly scene: SceneGpu, private env: EnvGpuResources, readonly o: RestirKernelOptions) {
     this.lightMode = o.lightMode ?? 'A';
+    this.perfFlagSet = normalizePerfFlags(o.perfFlags);
     this.settings = restirSettings(undefined, o.settings);
     this.envOptions = { ...o.env };
     this.frame = new FrameUniformBuffer(device);
@@ -195,7 +204,9 @@ export class RestirKernel {
   /** Interactive ReSTIR (renderer mode 'restir'): progressive mean into the renderer's colour target. */
   static async interactive(device: GPUDevice, scene: SceneGpu, env: EnvGpuResources, colorFormat: GPUTextureFormat,
     o: Omit<RestirKernelOptions, 'settings'> & { settings?: Partial<RestirSettings> } = {}): Promise<RestirFramePass> {
-    const k = await RestirKernel.create(device, scene, env, { modeBNeedsAreaLights: true, resLayout: 'soa', ...o, settings: { ...restirSettings('interactive'), ...o.settings } });
+    const k = await RestirKernel.create(device, scene, env, {
+      modeBNeedsAreaLights: true, resLayout: 'soa', ...o, perfFlags: o.perfFlags ?? RELEASE_PERF_FLAGS, settings: { ...restirSettings('interactive'), ...o.settings },
+    });
     await k.pipeline('rs_finalize_frame', {}, colorFormat);
     return new RestirFramePass(k, colorFormat);
   }
@@ -215,10 +226,23 @@ export class RestirKernel {
 
   /** Composer defines shared by every ReSTIR pipeline (+ the pass's own). */
   defines(name: RsPassName, extra: Defines = {}): Defines {
-    return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug, extra: { ...this.m6Defines(), NM_PLANT: m7NmPlantDefine(this.settings, name), ...this.layoutDefines(), ...extra } });
+    return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug, extra: { ...this.m6Defines(), NM_PLANT: m7NmPlantDefine(this.settings, name), ...this.layoutDefines(), ...this.perfDefines(), ...extra } });
   }
   /** M8 P-7: RS_RES_SOA only for plane-major kernels (the key is absent otherwise: the M7 text). */
   layoutDefines(): Record<string, number> { return this.o.resLayout === 'soa' ? { RS_RES_SOA: 1 } : {}; }
+  /** perf2: composer defines of the kernel's perf flags (empty without flags: the validation text). */
+  perfDefines(): Record<string, number> { return perfFlagDefines(this.perfFlagSet); }
+  /** perf2: the normalised perf-flag set of the kernel. */
+  get perfFlags(): PerfFlags { return this.perfFlagSet; }
+  /** perf2: switch the perf flags (a new pipeline variant: `await prepare()` before the next frame; the temporal history
+   *  resets, as for a light-mode variant switch). Returns true when the set changed. */
+  setPerfFlags(f: PerfFlagsInput): boolean {
+    const next = normalizePerfFlags(f);
+    if (perfFlagsKey(next) === perfFlagsKey(this.perfFlagSet)) return false;
+    this.perfFlagSet = next;
+    this.frameState.invalidate('perf-flags');
+    return true;
+  }
   /** M8 P-7: u32 words between consecutive planes of a record's plane 0 … (denoiser: 10 AoS, 1 SoA for plane 0). */
   get resPlaneStride(): number { return this.o.resLayout === 'soa' ? 1 : RES_PLANES;
   }
@@ -240,7 +264,11 @@ export class RestirKernel {
     return true;
   }
   /** Cache key of the current pipeline variant. */
-  variantKey(): string { const d = this.m6Defines(); return `${d.RS_RIS_NEE}${d.RS_MODE_B}${d.RS_DUAL_MV}${d.RS_DUPMAP}${d.RS_PLANT_T2}${d.RS_PLANT_SMOOTH_J}${m7NmPlantDefine(this.settings, 'rs_spatial_shift')}`; }
+  variantKey(): string {
+    const d = this.m6Defines();
+    const pf = perfFlagsKey(this.perfFlagSet);   // perf2: '' without flags (the pre-perf2 key)
+    return `${d.RS_RIS_NEE}${d.RS_MODE_B}${d.RS_DUAL_MV}${d.RS_DUPMAP}${d.RS_PLANT_T2}${d.RS_PLANT_SMOOTH_J}${m7NmPlantDefine(this.settings, 'rs_spatial_shift')}${pf ? `|${pf}` : ''}`;
+  }
 
   /** Compile (once) the pipeline of a standard pass; `extra` defines give test variants (their own cache key). */
   pipeline(name: RsPassName, extra: Defines = {}, colorFormat?: GPUTextureFormat): Promise<GPUComputePipeline> {
@@ -487,7 +515,7 @@ export class RestirKernel {
   }
   /** Defines of a custom pipeline (scene + env + lights + LUTs + the given pass bindings; DEBUG_NO_BINDINGS). */
   customDefines(extra: Defines, scene = true): Defines {
-    return { ...restirCommonDefines(scene ? this.scene.defines(SCENE_GROUP) : undefined, false), ...this.m6Defines(), ...extra };
+    return { ...restirCommonDefines(scene ? this.scene.defines(SCENE_GROUP) : undefined, false), ...this.m6Defines(), ...this.perfDefines(), ...extra };
   }
   /** Encode a custom pipeline with the kernel's G0 (+ one RsDispatch) and G1. */
   encodeCustom(enc: GPUCommandEncoder, pipeline: GPUComputePipeline, g2: GPUBindGroup, d: Partial<RsDispatchCpu>, work: [number, number], scene = true): void {
@@ -659,7 +687,7 @@ export class RestirKernel {
     if (!out.accum || !out.counters) throw new Error('RestirKernel.frameUnits: out.accum and out.counters are required');
     const colour = interactive && out.colorTarget ? this.colourView(out.colorTarget) : undefined;
     const fin = this.pipelineSync(fname, interactive ? this.colorFormat : undefined);
-    const fflags = interactive ? ((out.interactive!.accumulate ? K.RSD_ACCUMULATE : 0) | (out.interactive!.advanced ? K.RSD_ADVANCED : 0)) : 0;
+    const fflags = interactive ? ((out.interactive!.accumulate ? K.RSD_ACCUMULATE : 0) | (out.interactive!.advanced ? K.RSD_ADVANCED : 0) | this.noDisplayBit(out.interactive!.noDisplay)) : 0;
     const g2 = res.g2(fname, this.lastFinal, { accum: out.accum, counters: out.counters, colour });
     for (const [r0, r1] of bands) {
       units.push({
@@ -670,6 +698,9 @@ export class RestirKernel {
     if (a.members > 1 || out.ensemble) units.push(...this.ensemble.frameUnits(this, t));
     return units;
   }
+
+  /** perf2 WP-7c: RSD_NO_DISPLAY (finalize.wgsl, RS_SKIP_DISPLAY only; 0 without the flag). */
+  noDisplayBit(noDisplay: boolean | undefined): number { return noDisplay && this.perfFlagSet.RS_SKIP_DISPLAY ? K_RSD_NO_DISPLAY : 0; }
 
   /** One view per interactive colour target (M5 T-D, restir-temporal-api.md Changelog D-4): a fresh createView() per
    *  frame gave the finalize bind group a new cache key every frame (the resources' group cache grew without bound).
@@ -745,6 +776,9 @@ export class RestirKernel {
   }
 }
 
+/** perf2 WP-7c: RsDispatch.flags bit of finalize.wgsl's RSD_NO_DISPLAY (RS_SKIP_DISPLAY text only). */
+export const K_RSD_NO_DISPLAY = 128;
+
 export interface RestirFrameTargets { width: number; height: number; color: GPUTexture; frameUniforms: GPUBuffer }
 
 /** Interactive ReSTIR pass (renderer mode 'restir'; mirrors PtFramePass). One submit per frame: encode() resets the
@@ -783,7 +817,7 @@ export class RestirFramePass {
   }
 
   /** Encode after the renderer's primary pass (frame uniforms already hold this frame's camera / seed / flags). */
-  encode(encoder: GPUCommandEncoder, frame: { advanced: boolean; accumulate: boolean }, timestampWrites?: GPUComputePassTimestampWrites): boolean {
+  encode(encoder: GPUCommandEncoder, frame: { advanced: boolean; accumulate: boolean; noDisplay?: boolean }, timestampWrites?: GPUComputePassTimestampWrites): boolean {
     const t = this.targets;
     if (!t || !this.accum) return false;
     this.kernel.beginSubmit();
@@ -800,14 +834,14 @@ export class RestirFramePass {
   /** M5 paused frame with temporal on (restir-temporal-api.md TD20, Changelog D-2; T-D): no ReSTIR pass runs (the
    *  history must never be consumed twice); only rs_finalize_frame re-displays the last frame's estimate (rsShade /
    *  res[finalResIndex()], rsL1 of the current parity: untouched since) without adding a sample. */
-  encodeHold(encoder: GPUCommandEncoder, frame: { accumulate: boolean }): boolean {
+  encodeHold(encoder: GPUCommandEncoder, frame: { accumulate: boolean; noDisplay?: boolean }): boolean {
     const t = this.targets, k = this.kernel;
     if (!t || !this.accum) return false;
     k.beginSubmit();
     const a = k.resources.alloc;
     const g2 = k.resources.g2('rs_finalize_frame', k.finalResIndex(), { accum: this.accum, counters: this.counters, colour: k.colourView(t.color) });
     k.encodePass(encoder, 'rs_finalize_frame', k.pipelineSync('rs_finalize_frame', this.colorFormat), g2,
-      { t: 0, passId: 0, round: k.lastRounds, flags: frame.accumulate ? K.RSD_ACCUMULATE : 0, rowBase: 0, rowEnd: a.atlasH }, k.perPixelWorkgroups(0, a.atlasH));
+      { t: 0, passId: 0, round: k.lastRounds, flags: (frame.accumulate ? K.RSD_ACCUMULATE : 0) | k.noDisplayBit(frame.noDisplay), rowBase: 0, rowEnd: a.atlasH }, k.perPixelWorkgroups(0, a.atlasH));
     return true;
   }
 

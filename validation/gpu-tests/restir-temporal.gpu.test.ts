@@ -16,7 +16,7 @@ import { SceneGpu } from '../../src/core/render/scene-gpu.ts';
 import { createEnvResources, destroyEnvResources, writeEnvParams } from '../../src/core/render/env-gpu.ts';
 import { JITTER_IID, JITTER_NONE, computeRenderOrigin, type CameraState, type JitterMode } from '../../src/core/render/frame-uniforms.ts';
 import { releaseTestGpu } from './device-factory.ts';
-import { allLightsScene, bitFixtureScene, boxCamera, gpuScene, light, readTexture4, restirRig, storageBuffer } from './restir-fixtures.ts';
+import { allLightsScene, bitFixtureScene, boxCamera, gpuScene, light, readTexture4, restirRig, testPerfFlags, storageBuffer } from './restir-fixtures.ts';
 import { shaderSources } from '../../src/core/shaders/index.ts';
 import type { LightData } from '../../src/core/scene/types.ts';
 import { lightMatrixToward, material, quadScene } from './pt-fixtures.ts';
@@ -41,7 +41,7 @@ const scOf = (code: number) => code & 0xff;
 describe('canary + T6(a) GPU: tmis_* (WGSL f32) ≡ f64 reference', () => {
   it('known answer, then 2^16 random inputs incl. zeros, capped c_p, denormal-free extremes', async () => {
     const g = await gpuScene(bitFixtureScene('c0c'));
-    const k = await RestirKernel.create(g.device, g.gpu, g.env, { settings: restirSettings('temporal'), features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
+    const k = await RestirKernel.create(g.device, g.gpu, g.env, { settings: restirSettings('temporal'), perfFlags: testPerfFlags(), features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
     k.setView({ camera: boxCamera(), width: 8, height: 8, runSeed: 1 });
     const device = g.device;
     const N = 1 << 16;
@@ -100,7 +100,7 @@ describe('canary + T6(a) GPU: tmis_* (WGSL f32) ≡ f64 reference', () => {
 describe('U-TQ-1 GPU: temporal queues', () => {
   it('Q_f / Q_i appends (RS_TEMPORAL queue_append), rs_args per queue, every item consumed once, overflow iff counter > P', async () => {
     const g = await gpuScene(bitFixtureScene('c0c'));
-    const k = await RestirKernel.create(g.device, g.gpu, g.env, { settings: restirSettings('temporal'), features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
+    const k = await RestirKernel.create(g.device, g.gpu, g.env, { settings: restirSettings('temporal'), perfFlags: testPerfFlags(), features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
     const W = 16, H = 8, P = W * H;
     k.setView({ camera: boxCamera(), width: W, height: H, runSeed: 1 });
     await k.pipeline('rs_args');
@@ -574,7 +574,7 @@ async function robustSequence(pkgName: string, o: { tPlant?: RestirSettings['tPl
   const envs = [env];
   if (f0.env) writeEnvParams(device, env, f0.env.params);
   const settings = restirSettings('full', { maxBounces: p.render.maxBounces ?? 3, temporalCheck: 'robust', ...(o.tPlant ? { tPlant: o.tPlant } : {}) });
-  const k = await RestirKernel.create(device, gpu, env, { settings, lightMode: 'A', env: { nee: (p.json.env?.sampling ?? 'AUTOMATIC') !== 'NONE' }, features, wgslLanguageFeatures });
+  const k = await RestirKernel.create(device, gpu, env, { settings, lightMode: 'A', env: { nee: (p.json.env?.sampling ?? 'AUTOMATIC') !== 'NONE' }, perfFlags: testPerfFlags(), features, wgslLanguageFeatures });
   const W = p.render.width, H = p.render.height;
   k.setView({ camera: { camToWorld: Array.from(f0.camera.camToWorld), yfov: f0.camera.yfov }, width: W, height: H, runSeed: 7002, members: T6B_MEMBERS, jitterMode: JITTER_IID });
   await k.prepare();

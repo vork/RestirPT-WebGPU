@@ -1,6 +1,8 @@
 // Fixtures of the temporal GPU tests (restir-temporal-api.md §6.1; T-B): camera paths in the box scene, a chain driver
 // (advance() + frameUnits per frame, one submit per frame, TD26), tState / reservoir readback and CPU decoders.
 // OWNER T-B.
+// perf2 (perf2-api.md): rigs built with restirRig / testPerfFlags() carry VITE_PERF_FLAGS, and the custom check
+// pipelines below compose with k.customDefines() (the kernel's perf flags) — T3 round trips with flags forced on.
 import { readBuffer } from '../../src/core/gpu/readback.ts';
 import type { EnvParamsCpu } from '../../src/core/render/env-gpu.ts';
 import type { CameraState } from '../../src/core/render/frame-uniforms.ts';

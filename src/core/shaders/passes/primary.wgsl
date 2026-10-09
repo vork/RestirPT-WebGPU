@@ -24,13 +24,20 @@ struct PrimaryParams {
 }
 const PRIM_ACCUMULATE: u32 = 1u;   // progressive mean on; else the output is this frame's sample
 const PRIM_ADVANCED: u32 = 2u;     // the frame advanced (not paused): add this frame's sample to the mean
+#if PRIM_SKIP_BEAUTY
+const PRIM_NO_BEAUTY: u32 = 4u;    // perf2 WP-7c: a ReSTIR / PT frame overwrites the colour target: no beauty, no accumulation
+#endif
 
 @group(0) @binding(4) var<uniform> prim: PrimaryParams;
 
 @group(2) @binding(0) var colorOut: texture_storage_2d<$COLOR_FORMAT, write>;
 @group(2) @binding(1) var depthOut: texture_storage_2d<r32float, write>;
 @group(2) @binding(2) var vbufOut: texture_storage_2d<rgba32uint, write>;
+#if GBUF_48
+@group(2) @binding(3) var<storage, read_write> gbuf: array<GBufStore>;   // perf2 WP-7d
+#else
 @group(2) @binding(3) var<storage, read_write> gbuf: array<GBufTexel>;
+#endif
 @group(2) @binding(4) var<storage, read_write> accum: array<vec4f>;   // rgb sum, w = sample count
 
 const PROBE_TAG_HIT: u32 = 16u;     // (t, u, v, bits(primId))
@@ -111,15 +118,36 @@ fn primary(@builtin(global_invocation_id) gid: vec3u) {
   }
 
   // Progressive mean (placeholder beauty until M3a): restart on history reset / camera motion.
+#if PRIM_SKIP_BEAUTY
+  // perf2 WP-7c: the accumulation is left stale while skipped; the renderer restarts it (no PRIM_ACCUMULATE) on the
+  // first frame that shows this beauty again
+  let beauty = (prim.flags & PRIM_NO_BEAUTY) == 0u;
+  var a = vec4f(0.0);
+  if (beauty) {
+    let restart = (frame.flags & (FRAME_RESET_HISTORY | FRAME_CAMERA_MOVED)) != 0u || (prim.flags & PRIM_ACCUMULATE) == 0u;
+    a = select(accum[idx], vec4f(0.0), restart);
+    if (restart || (prim.flags & PRIM_ADVANCED) != 0u) { a += vec4f(color, 1.0); }
+    accum[idx] = a;
+  }
+#else
   let restart = (frame.flags & (FRAME_RESET_HISTORY | FRAME_CAMERA_MOVED)) != 0u || (prim.flags & PRIM_ACCUMULATE) == 0u;
   var a = select(accum[idx], vec4f(0.0), restart);
   if (restart || (prim.flags & PRIM_ADVANCED) != 0u) { a += vec4f(color, 1.0); }
   accum[idx] = a;
+#endif
 
+#if GBUF_48
+  gbuf[idx] = gbuf_store(g);
+#else
   gbuf[idx] = g;
+#endif
   textureStore(vbufOut, pixel, vb);
   textureStore(depthOut, pixel, vec4f(g.viewZ, 0.0, 0.0, 0.0));
+#if PRIM_SKIP_BEAUTY
+  if (beauty) { textureStore(colorOut, pixel, vec4f(a.rgb / max(a.w, 1.0), 1.0)); }
+#else
   textureStore(colorOut, pixel, vec4f(a.rgb / max(a.w, 1.0), 1.0));
+#endif
 
   gbuffer_debug_write(pixel, g, hit.primId, bary, uv, select(0.0, hit.t, isHit), stats, chk);
   if (debug_active(DBG_ENV_GRID)) {

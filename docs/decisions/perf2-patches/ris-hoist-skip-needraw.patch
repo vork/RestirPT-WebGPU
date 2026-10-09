@@ -1,0 +1,61 @@
+--- a/src/core/shaders/material/bsdf.wgsl
++++ b/src/core/shaders/material/bsdf.wgsl
+@@ -358,6 +358,16 @@
+     default: { }
+   }
+   return q;
++}
++
++/// bsdf_query(m, V, L, LOBE_NEE).f_all from a prepared context (perf probe).
++fn bsdf_f_all_ctx(c: BsdfCtx, V: vec3f, L: vec3f) -> vec3f {
++  let e = bsdf_eval_ctx(c, V, L);
++  var f = e.f_d + e.f_s + e.f_g;
++#if NORMAL_MAP
++  f = select(vec3f(0.0), f, e.bump);
++#endif
++  return f;
+ }
+ 
+ /// Per-lobe perceptual roughness for the reconnection predicate R_k (math.md#lobe-codes; gap-bsdf §7.4; glass §5.4).
+--- a/src/core/shaders/path/pathtree.wgsl
++++ b/src/core/shaders/path/pathtree.wgsl
+@@ -272,8 +272,7 @@
+ #if RS_RIS_NEE
+         // M6 (restir-m6-api.md MD4): RIS over the pixel's light tile at x₁ replaces the single alias draw; W_NEE joins
+         // the source weight, M(1) = risM enters every MIS weight at B = 1 as p2/M (MD5)
+-        var ep = nee_draw(lightsParams.cur, rs_path_hash(seed, B, SLOT_SEL), rs_path_hash(seed, B, SLOT_SEL2),
+-                          vec3u(rs_path_hash(seed, B, SLOT_L0), rs_path_hash(seed, B, SLOT_L1), rs_path_hash(seed, B, SLOT_L2)));
++        var ep: NeeEndpoint;
+         var wNee = 1.0;
+         var tileMult = 0.0;
+         if (B == 1u) {
+@@ -281,6 +280,9 @@
+           ep = rsel.ep;
+           wNee = rsel.W;
+           tileMult = rsel.mult;
++        } else {
++          ep = nee_draw(lightsParams.cur, rs_path_hash(seed, B, SLOT_SEL), rs_path_hash(seed, B, SLOT_SEL2),
++                        vec3u(rs_path_hash(seed, B, SLOT_L0), rs_path_hash(seed, B, SLOT_L1), rs_path_hash(seed, B, SLOT_L2)));
+         }
+         let ls = nee_eval(cur.pos, ep);
+         // PLANT U8-8 (validation only): the UCW in mixed measures, W^RIS·p1_σ instead of W^RIS·q (area / triangle picks)
+--- a/src/core/shaders/restir/ris-nee.wgsl
++++ b/src/core/shaders/restir/ris-nee.wgsl
+@@ -49,6 +49,7 @@
+   let tb = rs_tiles_base() + (mIdx * RS_TILES + ris_tile_of(p.local, p.member)) * RS_TILE_SIZE;
+   var wSum = 0.0;
+   var rSel = 0.0;
++  let c0 = bsdf_prepare(m, V);
+   for (var j = 0u; j < M; j++) {
+     let h = pcg4d(vec4u(seed.x, seed.y, j, STREAM_RIS_NEE));
+     let entry = rsArena.words[tb + (h.x & (RS_TILE_SIZE - 1u))];
+@@ -57,8 +58,7 @@
+     let ls = nee_eval(x.pos, ep);
+     var r = 0.0;
+     if (ls.valid && ls.prim != xPrim && any(ls.Lambda > vec3f(0.0))) {
+-      let q = bsdf_query(m, V, ls.dir, LOBE_NEE);
+-      r = luminance(q.f_all * ls.Lambda) / ls.q;
++      r = luminance(bsdf_f_all_ctx(c0, V, ls.dir) * ls.Lambda) / ls.q;
+     }
+     if (ris_update(&wSum, r, rs_rand(key, RS_PASS_RIS_NEE, (s << 20u) | j))) {
+       out.ep = ep;

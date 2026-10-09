@@ -1,0 +1,73 @@
+--- a/src/core/shaders/bvh/traverse.wgsl
++++ b/src/core/shaders/bvh/traverse.wgsl
+@@ -90,6 +90,7 @@
+ #if BVH_CWBVH
+ #include "bvh/traverse-cwbvh.wgsl"
+ #else
++var<private> bvh_pstack: array<u32, 32>;
+ fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u32) -> Hit {
+   var hit = Hit(tmax, 0.0, 0.0, BVH_MISS);
+   let rd = vec3f(bvh_safe_rcp(d.x), bvh_safe_rcp(d.y), bvh_safe_rcp(d.z));
+@@ -97,7 +98,6 @@
+   let wr = woop_setup(d);
+   let nTris4 = arrayLength(&bvh_tris);
+ #endif
+-  var stack: array<u32, 32>;
+   var sp = 0u;
+   var node = 0u; // child ref: interior index, or leaf (LEAF_BIT set)
+   var iter = 0u;
+@@ -155,7 +155,7 @@
+         let leftFirst = tl <= tr;
+         node = select(right, left, leftFirst);
+         if (sp < BVH_STACK_SIZE) {
+-          stack[sp] = select(left, right, leftFirst);
++          bvh_pstack[sp] = select(left, right, leftFirst);
+           sp += 1u;
+ #if BVH_STATS
+           bvh_flags = max(bvh_flags, (bvh_flags & 0xffu) | (sp << 8u));
+@@ -170,7 +170,7 @@
+     }
+     if (sp == 0u) { break; }
+     sp -= 1u;
+-    node = stack[sp];
++    node = bvh_pstack[sp];
+   }
+   return hit;
+ }
+--- a/src/core/shaders/bvh/traverse-cwbvh.wgsl
++++ b/src/core/shaders/bvh/traverse-cwbvh.wgsl
+@@ -15,6 +15,8 @@
+ fn cw_bytes4(x: u32) -> vec4f { return vec4f((vec4u(x) >> vec4u(0u, 8u, 16u, 24u)) & vec4u(0xffu)); }
+ fn cw_node(i: u32) -> vec4u { return bvh_nodes[i]; }
+ 
++var<private> bvh_pstack: array<vec2u, 16>;
++
+ fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u32) -> Hit {
+   var hit = Hit(tmax, 0.0, 0.0, BVH_MISS);
+   let rd = vec3f(bvh_safe_rcp(d.x), bvh_safe_rcp(d.y), bvh_safe_rcp(d.z));
+@@ -24,7 +26,6 @@
+ #endif
+   let oct = select(0u, 4u, d.x < 0.0) | select(0u, 2u, d.y < 0.0) | select(0u, 1u, d.z < 0.0);
+   let octinv4 = (7u - oct) * 0x01010101u;
+-  var stack: array<vec2u, 16>;
+   var sp = 0u;
+   var ng = vec2u(0u, 0x80000000u);   // the root: slot bit 31 of a virtual parent, imask 0 ⇒ node 0
+   var tg = vec2u(0u, 0u);
+@@ -41,7 +42,7 @@
+       ng.y &= ~(1u << cbi);
+       if (ng.y > 0x00ffffffu) {
+         if (sp < 16u) {
+-          stack[sp] = ng;
++          bvh_pstack[sp] = ng;
+           sp += 1u;
+ #if BVH_STATS
+           bvh_flags = max(bvh_flags, (bvh_flags & 0xffu) | (sp << 8u));
+@@ -141,7 +142,7 @@
+     if (ng.y <= 0x00ffffffu) {
+       if (sp == 0u) { break; }
+       sp -= 1u;
+-      ng = stack[sp];
++      ng = bvh_pstack[sp];
+     }
+   }
+   return hit;

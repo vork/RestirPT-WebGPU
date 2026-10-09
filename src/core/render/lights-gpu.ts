@@ -186,7 +186,16 @@ export function packLightRecord(l: LightData, origin: readonly number[], out: Da
 export interface LightSlotCpu {
   lightOff: number; lightCount: number; aliasOff: number; aliasLog2: number; pmfOff: number;
   nAnalytic: number; nEntries: number; envEntry: number; curToPrevOff: number; prevToCurOff: number;
+  /** perf2 WP-4a (for WP-2e's single Mode-B emission site): the slot's rect / disk index list (light indices in
+   *  stable-id order) and its length. Written always; the uniform carries them in the former pad words, which flag-free text never reads. */
+  areaOff: number; areaCount: number;
 }
+
+/** perf2 WP-4a: word offsets rounded up to 16 B, so every light record (28 words) and every alias pair starts on a
+ *  vec4 boundary (lets a shader read `records` as array<vec4u>; the RS_LIGHT_REC4 vec4 light_load was dropped: it
+ *  changed bits under relaxed math, U-M8-BITS alpha-full-m6-A). Results-neutral: shaders only ever see
+ *  the offsets through LightsParams. */
+const align4 = (w: number): number => (w + 3) & ~3;
 
 interface SlotState {
   cpu: LightSlotCpu;
@@ -288,7 +297,8 @@ export class LightsState {
     this.triOff = LUT_RECORDS_BASE + LUT_LAYOUT.floats;
     this.primMapOff = this.triOff + 2 * nTri;
     const capN = 2 ** capLog2;
-    this.slotWords = capLights * LIGHT_REC_WORDS + 2 * capN + capN + 2 * capLights;
+    // lights | alias pairs | pmf | curToPrev | prevToCur | rect/disk list (perf2 WP-4a), 16 B-aligned
+    this.slotWords = align4(capLights * LIGHT_REC_WORDS + 2 * capN + capN + 3 * capLights);
     // Env tables (static): rowAlias | colAlias | pdfUV.
     this.envTable = envTable;
     const envBase = this.primMapOff + Math.max(1, nPrim);
@@ -297,7 +307,7 @@ export class LightsState {
     this.envColOff = envBase + (envTable?.Hm ?? 0);
     this.envPdfOff = this.envColOff + cells;
     this.envLog2W = envTable?.log2W ?? 0;
-    const s0 = this.envPdfOff + cells;
+    const s0 = align4(this.envPdfOff + cells);
     this.slotBase = [s0, s0 + this.slotWords];
     this.totalWords = s0 + 2 * this.slotWords;
     this.records = new Uint32Array(this.totalWords);
@@ -345,6 +355,7 @@ export class LightsState {
     const pmfOff = aliasOff + 2 * capN;
     const curToPrevOff = pmfOff + capN;
     const prevToCurOff = curToPrevOff + this.capLights;
+    const areaOff = prevToCurOff + this.capLights;
     const dv = new DataView(this.records.buffer);
     const f32 = new Float32Array(this.records.buffer);
 
@@ -382,10 +393,13 @@ export class LightsState {
     const curIndex = new Map(ids.map((id, i) => [id, i]));
     for (let i = 0; i < nA; i++) this.records[curToPrevOff + i] = prevIndex.get(ids[i]) ?? NO_ENTRY;
     for (let i = 0; i < prevIds.length; i++) this.records[prevToCurOff + i] = curIndex.get(prevIds[i]) ?? NO_ENTRY;
+    // perf2 WP-4a: rect / disk lights (the only analytic lights a ray can cross), stable-id order (WP-2e consumer).
+    let areaCount = 0;
+    for (let i = 0; i < nA; i++) if (lights[i].type === 'rect' || lights[i].type === 'disk') this.records[areaOff + areaCount++] = i;
 
     const cpu: LightSlotCpu = {
       lightOff, lightCount: nA, aliasOff, aliasLog2: log2, pmfOff, nAnalytic: nA, nEntries: table ? nE : 0,
-      envEntry: table && hasEnvEntry ? nA + nT : NO_ENV_ENTRY, curToPrevOff, prevToCurOff,
+      envEntry: table && hasEnvEntry ? nA + nT : NO_ENV_ENTRY, curToPrevOff, prevToCurOff, areaOff, areaCount,
     };
     // Change bits (word 26) against the predecessor record of the same stable id (M5 TD5); word 27 = 0. Words 26/27 are
     // excluded from lightsChanged (they are derived).
@@ -415,7 +429,7 @@ export class LightsState {
     }
     const pmfChanged = first || !sameWeights;
     const same = !alwaysFlip && !first && !lightsChanged && !pmfChanged && !reallocated;
-    this.slots[next] = { cpu, area: lights.some((l) => l.type === 'rect' || l.type === 'disk'), ids, weights, table };
+    this.slots[next] = { cpu, area: areaCount > 0, ids, weights, table };
     if (!same) this.cur = next;                          // M5 commit: an unchanged state does not flip (TD4)
     this.dirty = this.dirtyAll ? [[0, this.totalWords]] : [[base, base + this.slotWords]];
     this.dirtyAll = false;
@@ -430,7 +444,7 @@ export class LightsState {
     const buf = new ArrayBuffer(LIGHTS_PARAMS_SIZE);
     const u = new Uint32Array(buf);
     const put = (o: number, s: LightSlotCpu) => {
-      u.set([s.lightOff, s.lightCount, s.aliasOff, s.aliasLog2, s.pmfOff, s.nAnalytic, s.nEntries, s.envEntry, s.curToPrevOff, s.prevToCurOff, 0, 0], o);
+      u.set([s.lightOff, s.lightCount, s.aliasOff, s.aliasLog2, s.pmfOff, s.nAnalytic, s.nEntries, s.envEntry, s.curToPrevOff, s.prevToCurOff, s.areaOff, s.areaCount], o);
     };
     const cur = this.slots[this.cur]!.cpu;
     const prev = this.slots[this.cur ^ 1]?.cpu ?? cur;

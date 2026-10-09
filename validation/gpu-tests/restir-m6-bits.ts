@@ -3,10 +3,11 @@
 // the final reservoirs, the frame's mean image, the finalize counters and the arena counters of every frame. The
 // goldens in restir-m6.gpu.test.ts were recorded with this file on the unmodified M5 build (VITE_M6_BITS_RECORD=1).
 // Cases cover: static history ('full' preset), a moving light + camera + env rotation (refresh, J_P, inverse shifts),
-// the interactive preset as it was in M5 (RR, boost 3, cCap 5; reset-free chain) and Talbot.
+// the interactive preset as it was in M5 (RR, boost 3, cCap 5; reset-free chain; perf2 WP-0: knobs pinned with
+// INTERACTIVE_PINNED, the preset's values) and Talbot.
 import { readBuffer } from '../../src/core/gpu/readback.ts';
 import type { LightData, SceneData } from '../../src/core/scene/types.ts';
-import { M6_OFF, type RestirPresetName } from '../../src/core/render/restir/presets.ts';
+import { INTERACTIVE_PINNED, M6_OFF, type RestirPresetName } from '../../src/core/render/restir/presets.ts';
 import { allLightsScene, bitFixtureScene, boxCamera, hashF32, restirRig } from './restir-fixtures.ts';
 
 export interface M5BitsCase {
@@ -18,7 +19,7 @@ export interface M5BitsCase {
 export const M5_BITS_CASES: M5BitsCase[] = [
   { name: 'xq-full-static', scene: 'x_quads', preset: 'full', settings: { maxBounces: 3 }, frames: 5 },
   { name: 'all-full-motion', scene: 'all', preset: 'full', settings: { maxBounces: 3 }, frames: 6, motion: { from: 3, dx: 0.04, dyaw: 0.01, envRot: 0.05 } },
-  { name: 'xq-interactive-M5', scene: 'x_quads', preset: 'interactive', settings: { maxBounces: 3, rounds: 1, slots: 3, boostSlots: 3, cCap: 5, rr: true, rrMinBounces: 3, temporal: true, ...M6_OFF }, frames: 5, motion: { from: 2, dx: 0.03, dyaw: 0.0 } },
+  { name: 'xq-interactive-M5', scene: 'x_quads', preset: 'interactive', settings: { maxBounces: 3, ...INTERACTIVE_PINNED, rounds: 1, slots: 3, boostSlots: 3, cCap: 5, rr: true, rrMinBounces: 3, temporal: true, ...M6_OFF }, frames: 5, motion: { from: 2, dx: 0.03, dyaw: 0.0 } },
   { name: 'all-talbot', scene: 'all', preset: 'full', settings: { maxBounces: 2, temporalMis: 'talbot' }, frames: 4, motion: { from: 2, dx: 0.05, dyaw: 0.0 } },
 ];
 

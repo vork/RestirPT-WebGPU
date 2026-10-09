@@ -71,6 +71,10 @@ export const RS_M6_CONSTS = {
 } as const;
 const K6 = RS_M6_CONSTS;
 
+/** perf2 WP-5 constants (shaders/restir/queue.wgsl under RS_DENSE_SLOTS / RS_BOOST_GATE; tests/restir/queue.test.ts):
+ *  q3 = the dense non-replay spatial slot items (top end of q0's item region); header word 30 = the boost gate. */
+export const WP5_CONSTS = { RS_Q_DENSE: 3, RS_HDR_BOOST_GATE: 30, RSD_BOOST_OPEN: 4096 } as const;
+
 export const RS_TECH = { nee: K.RS_TECH_NEE, bsdfTri: K.RS_TECH_BSDF_TRI, bsdfAnalytic: K.RS_TECH_BSDF_ANALYTIC, bsdfEnv: K.RS_TECH_BSDF_ENV } as const;
 export const RS_TECH_NAMES = ['NEE', 'BSDF_TRI', 'BSDF_ANALYTIC', 'BSDF_ENV'] as const;
 /** Lobe codes (bsdf.wgsl LOBE_*). */

@@ -176,6 +176,30 @@ describe('LightsState: records, slots, maps, deterministic pmf', () => {
     expect(pp[12]).not.toBe(pp[0]); // prev slot differs from cur
   });
 
+  it('perf2 WP-4a: records and alias pairs 16 B-aligned; rect/disk index list per slot in the uniform', () => {
+    const s = make();
+    const disk = L({ id: 9, type: 'disk', sizeX: 1 });
+    const steps = [lights, [...lights, disk], lights.filter((l) => l.type !== 'rect')];
+    for (const set of steps) {
+      s.update(set);
+      for (const sl of [s.curSlot, s.prevSlot]) {
+        expect(sl.lightOff % 4).toBe(0);
+        expect(sl.aliasOff % 4).toBe(0);
+      }
+      expect(s.totalWords % 4).toBe(0);
+      const sl = s.curSlot;
+      const kinds = Array.from({ length: sl.lightCount }, (_, i) => s.records[sl.lightOff + i * LIGHT_REC_WORDS + LIGHT_REC.type]);
+      const want = kinds.flatMap((k, i) => (k === LT.rect || k === LT.disk ? [i] : []));
+      expect(Array.from(s.records.subarray(sl.areaOff, sl.areaOff + sl.areaCount))).toEqual(want);
+      expect(sl.areaOff).toBeGreaterThanOrEqual(sl.prevToCurOff + s.capLights);
+      expect(sl.areaOff + s.capLights).toBeLessThanOrEqual(s.slotBase[s.cur] + s.slotWords);
+      const p = new Uint32Array(s.paramsBytes());
+      expect([p[10], p[11]]).toEqual([sl.areaOff, sl.areaCount]);
+      expect([p[22], p[23]]).toEqual([s.prevSlot.areaOff, s.prevSlot.areaCount]);
+    }
+    expect(s.curSlot.areaCount).toBe(0);
+  });
+
   it('identical inputs give bitwise-identical records (deterministic rebuild)', () => {
     const a = make(), b = make();
     a.update(lights); b.update([...lights].reverse());

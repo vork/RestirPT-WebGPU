@@ -12,8 +12,24 @@
 // 8ε (ε = 2^-24): the slab slack factor (see bvh_trace)
 const CW_SLACK: f32 = 4.76837158203125e-7;
 /// The four bytes of a word as f32 (slots 0–3 of a half).
+#if CW_EXP_OR
+// perf2 WP-3e: exponent-OR byte decode. A byte b in the mantissa of the f16 1024.0 (0x6400) is the half 1024 + b
+// exactly; unpacking two halves and subtracting 1024 gives the bytes as f32, bit-equal to the integer conversion.
+fn cw_bytes4(x: u32) -> vec4f {
+  let lo = unpack2x16float((x & 0x00ff00ffu) | 0x64006400u) - vec2f(1024.0);
+  let hi = unpack2x16float(((x >> 8u) & 0x00ff00ffu) | 0x64006400u) - vec2f(1024.0);
+  return vec4f(lo.x, hi.x, lo.y, hi.y);
+}
+#else
 fn cw_bytes4(x: u32) -> vec4f { return vec4f((vec4u(x) >> vec4u(0u, 8u, 16u, 24u)) & vec4u(0xffu)); }
+#endif
 fn cw_node(i: u32) -> vec4u { return bvh_nodes[i]; }
+#if CW_TRI_BUDGET
+// perf2 WP-3a: triangles tested per outer iteration; the outer bound never ends traversal before the iteration cap does
+// (a node step leaves at most 24 triangle bits, so at most 24 outer iterations per node step)
+const CW_TRI_K: u32 = $CW_TRI_BUDGETu;
+const CW_OUTER_CAP: u32 = (BVH_ITER_CAP + 2u) * 24u;
+#endif
 
 fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u32) -> Hit {
   var hit = Hit(tmax, 0.0, 0.0, BVH_MISS);
@@ -29,9 +45,29 @@ fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u3
   var ng = vec2u(0u, 0x80000000u);   // the root: slot bit 31 of a virtual parent, imask 0 ⇒ node 0
   var tg = vec2u(0u, 0u);
   var iter = 0u;
+#if CW_TRI_BUDGET
+  // perf2 WP-3a: one loop; a node step (or the pop that precedes it) only once the triangle group is empty, then at most
+  // CW_TRI_K triangles per iteration. Same node / triangle order and the same iteration count (node steps) as the nested
+  // loops of the #else text, so every hit, any-hit answer, flag and BVH_STATS counter is unchanged.
+  for (var s = 0u; s < CW_OUTER_CAP; s += 1u) {
+    if (tg.y == 0u) {
+      if (ng.y <= 0x00ffffffu) {
+        if (sp == 0u) { break; }
+        sp -= 1u;
+        ng = stack[sp];
+      }
+#elif BVH_CONST_LOOPS
+  // perf2 WP-3c: constant loop bound (no Tint loop guard); iteration iter + 1 of the old loop, same cap and flag
+  for (; iter <= BVH_ITER_CAP; iter += 1u) {
+#else
   loop {
+#endif
+#if BVH_CONST_LOOPS && !CW_TRI_BUDGET
+    if (iter == BVH_ITER_CAP) { bvh_flags |= BVH_FLAG_ITERCAP; break; }
+#else
     iter += 1u;
     if (iter > BVH_ITER_CAP) { bvh_flags |= BVH_FLAG_ITERCAP; break; }
+#endif
 #if BVH_STATS
     bvh_st_steps += 1u;
 #endif
@@ -108,8 +144,17 @@ fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u3
       tg = ng;
       ng = vec2u(0u);
     }
+#if CW_TRI_BUDGET
+    }
+    for (var k = 0u; k < CW_TRI_K; k += 1u) {
+      if (tg.y == 0u) { break; }
+#elif BVH_CONST_LOOPS
+    for (var k = 0u; k < 24u; k += 1u) {   // a triangle group has at most 24 bits
+      if (tg.y == 0u) { break; }
+#else
     loop {
       if (tg.y == 0u) { break; }
+#endif
       let ti = firstLeadingBit(tg.y);
       tg.y &= ~(1u << ti);
       let i = tg.x + ti;
@@ -126,23 +171,36 @@ fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u3
       let prim = bitcast<u32>(bvh_tris[nTris4 - 1u - (i >> 2u)][i & 3u]); // primId tail, read from the end
 #else
       let v0 = bvh_tris[base];
+#if BVH_ALPHA_BIT
+      let e1 = bvh_tris[base + 1u];   // e1.w: the MASK bit (bit 0) written by scene-gpu.ts (perf2 WP-3b)
+      let r = isect_mt(o, d, v0.xyz, e1.xyz, bvh_tris[base + 2u].xyz, hit.t);
+#else
       let r = isect_mt(o, d, v0.xyz, bvh_tris[base + 1u].xyz, bvh_tris[base + 2u].xyz, hit.t);
+#endif
       if (!r.ok) { continue; }
       let prim = bitcast<u32>(v0.w);
 #endif
       if (prim == skipA || prim == skipB || prim == BVH_MISS) { continue; }
+#if BVH_ALPHA_BIT && BVH_NO_ALPHA
+      // perf2 WP-3b: no MASK triangle in the scene (scene-gpu.ts): alpha_pass is constant true
+#elif BVH_ALPHA_BIT && !WATERTIGHT
+      if ((bitcast<u32>(e1.w) & 1u) != 0u && !alpha_pass(prim, r.u, r.v)) { continue; }
+#else
       if (!alpha_pass(prim, r.u, r.v)) { continue; }
+#endif
 #if GLASS_PLANT == 5
       if (any_hit && glass_plant_transparent(prim)) { continue; }   // Gate-1 plant B-shadow (validation only)
 #endif
       hit = Hit(r.t, r.u, r.v, prim);
       if (any_hit) { return hit; }
     }
+#if !CW_TRI_BUDGET
     if (ng.y <= 0x00ffffffu) {
       if (sp == 0u) { break; }
       sp -= 1u;
       ng = stack[sp];
     }
+#endif
   }
   return hit;
 }

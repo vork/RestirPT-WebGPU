@@ -19,7 +19,11 @@ fn sr_item(i: u32) {
   let ai = queue_item_ai(w);
   let s = queue_item_slot(w);
   let p = rs_pix(vec2u(ai % rsParams.atlasSize.x, ai / rsParams.atlasSize.x));
+#if RS_PAIR_TABLE
+  let pr = pair_partner_wg(p.local, p.member, rs_t(), rsDispatch.round, s);
+#else
   let pr = pair_partner(p.local, p.member, rs_t(), rsDispatch.round, s);
+#endif
   var o: ShiftOut;
   if (p.valid && pr.valid) {
 #if RS_PLANT_T2
@@ -36,6 +40,9 @@ fn sr_item(i: u32) {
 
 @compute @workgroup_size(64)
 fn rs_spatial_replay(@builtin(workgroup_id) wid: vec3u, @builtin(num_workgroups) nwg: vec3u, @builtin(local_invocation_index) li: u32) {
+#if RS_PAIR_TABLE
+  pair_xf_prepare(li, rsDispatch.round);
+#endif
   let i = queue_item_chunk(0u, wid, nwg, li, rsDispatch.treeBase, rsDispatch.treeCount);
   if (i != 0xFFFFFFFFu) { sr_item(i); }
   workgroupBarrier();

@@ -1,0 +1,35 @@
+--- a/src/core/shaders/material/bsdf.wgsl
++++ b/src/core/shaders/material/bsdf.wgsl
+@@ -331,8 +331,12 @@
+ }
+ 
+ fn bsdf_query(m: MatEval, V: vec3f, L: vec3f, lobe: u32) -> BsdfQuery {
++  return bsdf_query_c(bsdf_prepare(m, V), V, L, lobe);
++}
++
++/// bsdf_query from a context prepared for the same (m, V) (bsdf_prepare is a pure function of (m, V)).
++fn bsdf_query_c(c: BsdfCtx, V: vec3f, L: vec3f, lobe: u32) -> BsdfQuery {
+   var q: BsdfQuery;
+-  let c = bsdf_prepare(m, V);
+   let e = bsdf_eval_ctx(c, V, L);
+   q.f_all = e.f_d + e.f_s + e.f_g;
+ #if NORMAL_MAP
+--- a/src/core/shaders/restir/ris-nee.wgsl
++++ b/src/core/shaders/restir/ris-nee.wgsl
+@@ -49,6 +49,7 @@
+   let tb = rs_tiles_base() + (mIdx * RS_TILES + ris_tile_of(p.local, p.member)) * RS_TILE_SIZE;
+   var wSum = 0.0;
+   var rSel = 0.0;
++  let bctx = bsdf_prepare(m, V);   // loop-invariant (m, V)
+   for (var j = 0u; j < M; j++) {
+     let h = pcg4d(vec4u(seed.x, seed.y, j, STREAM_RIS_NEE));
+     let entry = rsArena.words[tb + (h.x & (RS_TILE_SIZE - 1u))];
+@@ -57,7 +58,7 @@
+     let ls = nee_eval(x.pos, ep);
+     var r = 0.0;
+     if (ls.valid && ls.prim != xPrim && any(ls.Lambda > vec3f(0.0))) {
+-      let q = bsdf_query(m, V, ls.dir, LOBE_NEE);
++      let q = bsdf_query_c(bctx, V, ls.dir, LOBE_NEE);
+       r = luminance(q.f_all * ls.Lambda) / ls.q;
+     }
+     if (ris_update(&wSum, r, rs_rand(key, RS_PASS_RIS_NEE, (s << 20u) | j))) {

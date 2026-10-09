@@ -1,0 +1,116 @@
+--- a/src/core/render/restir/kernel.ts
++++ b/src/core/render/restir/kernel.ts
+@@ -214,7 +214,11 @@
+   }
+ 
+   /** Composer defines shared by every ReSTIR pipeline (+ the pass's own). */
++  /** rv-risnee prototype: RIS-NEE as its own pre-pass (one tree per pixel, no candidate dump). */
++  risSplit(): boolean { return this.settings.risNee && this.settings.trees === 1 && !this.o.instrumentation?.dumpCandidates && (globalThis as { RV_NO_SPLIT?: boolean }).RV_NO_SPLIT !== true; }
++  risPre: GPUComputePipeline | undefined;
+   defines(name: RsPassName, extra: Defines = {}): Defines {
++    if (name === 'rs_initial' && this.risSplit() && !('RS_RIS_PREPASS' in extra)) extra = { ...extra, RS_RIS_SPLIT: 1 };
+     return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug, extra: { ...this.m6Defines(), NM_PLANT: m7NmPlantDefine(this.settings, name), ...this.layoutDefines(), ...extra } });
+   }
+   /** M8 P-7: RS_RES_SOA only for plane-major kernels (the key is absent otherwise: the M7 text). */
+@@ -287,6 +291,7 @@
+     if (this.settings.risNee) base.push('rs_light_tiles');
+     if (this.settings.dupmap && this.settings.temporal) base.push('rs_dupmap');
+     await Promise.all(base.map((n) => this.pipeline(n)));
++    if (this.risSplit()) this.risPre = await this.pipeline('rs_initial', { RS_RIS_PREPASS: 1 });
+     if (this.colorFormat) await this.pipeline('rs_finalize_frame', {}, this.colorFormat);
+     if (this.settings.rounds > 0) await this.spatial.prepare?.(this);
+     if ((this.view?.members ?? 1) > 1) await this.ensemble.prepare?.(this);
+@@ -467,10 +472,10 @@
+    * args buffer + offset. Per-pixel passes use perPixelWorkgroups(rowBase, rowEnd).
+    */
+   encodePass(enc: GPUCommandEncoder, name: RsPassName, pipeline: GPUComputePipeline, g2: GPUBindGroup, d: Partial<RsDispatchCpu>,
+-    work: [number, number] | { indirect: GPUBuffer; offset: number }, timestampWrites?: GPUComputePassTimestampWrites): void {
++    work: [number, number] | { indirect: GPUBuffer; offset: number }, timestampWrites?: GPUComputePassTimestampWrites, label?: string): void {
+     const def = RS_PASSES[name];
+     const off = this.dispatchSlot(d);
+-    const pass = enc.beginComputePass({ label: name, timestampWrites });
++    const pass = enc.beginComputePass({ label: label ?? name, timestampWrites });
+     pass.setPipeline(pipeline);
+     pass.setBindGroup(0, this.ensureG0(), [off]);
+     pass.setBindGroup(1, def.scene ? this.g1Scene : this.g1Empty);
+@@ -627,6 +632,13 @@
+       const tc = Math.min(chunk, s.trees - tb);
+       const flags = (tb === 0 ? K.RSD_FIRST_CHUNK : 0) | (tb + tc >= s.trees ? K.RSD_FINAL_CHUNK : 0);
+       for (const [r0, r1] of bands) {
++        if (this.risSplit()) {
++          const pre = this.risPre!;
++          units.push({
++            label: `rs_ris_nee[${tb}+${tc}][${r0}]`, costHint: a.atlasW * (r1 - r0),
++            encode: (enc) => this.encodePass(enc, initName, pre, res.g2(initName, w), { t, passId: K.RS_PASS_INITIAL, treeBase: tb, treeCount: tc, flags, rowBase: r0, rowEnd: r1 }, this.perPixelWorkgroups(r0, r1), undefined, 'rs_ris_nee'),
++          });
++        }
+         units.push({
+           label: `rs_initial[${tb}+${tc}][${r0}]`, costHint: a.atlasW * (r1 - r0) * tc * (s.maxBounces + 1),
+           encode: (enc) => {
+--- a/src/core/shaders/passes/restir/initial.wgsl
++++ b/src/core/shaders/passes/restir/initial.wgsl
+@@ -9,11 +9,30 @@
+ #include "path/pathtree.wgsl"
+ #include "debug/restir-views.wgsl"
+ 
++#if RS_RIS_PREPASS
++// rv-risnee prototype: the RIS-NEE selection at x1 (tree treeBase) as its own pass; record -> resOut plane RP_DIAG
++fn ris_prepass(p: RsPix, key: vec2u, s: u32) {
++  let vb = rs_vbuf(p.px);
++  let camPos = rs_cam_pos();
++  let seed = rs_tree_seed(key, s);
++  var cur = vertex_from_ids(vb.x, bitcast<f32>(vb.y), bitcast<f32>(vb.z), camPos);
++  var V = normalize(camPos - cur.pos);
++  let m = material_eval(cur, V);
++  if ((m.flags & MATEVAL_HAS_NON_DELTA) != 0u) {
++    let r = ris_nee_select(p, key, seed, s, cur, vb.x, m, V);
++    resout_set(p.ai, RP_DIAG, vec4u(r.ep.entry, r.ep.a, r.ep.b, bitcast<u32>(r.W)));
++  }
++}
++#endif
++
+ @compute @workgroup_size(8, 8, 1)
+ fn rs_initial(@builtin(global_invocation_id) gid: vec3u) {
+   let p = rs_pix(vec2u(gid.x, gid.y + rsDispatch.rowBase));
+   if (!p.valid) { return; }
+   let key = rs_frame_key(p.member, rs_t(), p.localIdx);
++#if RS_RIS_PREPASS
++  if (rs_vbuf(p.px).x != 0xFFFFFFFFu) { ris_prepass(p, key, rsDispatch.treeBase); }
++#else
+   let first = (rsDispatch.flags & RSD_FIRST_CHUNK) != 0u;
+   let lastChunk = (rsDispatch.flags & RSD_FINAL_CHUNK) != 0u;
+   if (rs_vbuf(p.px).x == 0xFFFFFFFFu) {
+@@ -22,4 +41,5 @@
+     return;
+   }
+   pathtree_run(p, key, rsDispatch.treeBase, rsDispatch.treeCount, first, lastChunk);
++#endif
+ }
+--- a/src/core/shaders/path/pathtree.wgsl
++++ b/src/core/shaders/path/pathtree.wgsl
+@@ -210,6 +210,9 @@
+ 
+ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk: bool, finalChunk: bool) {
+   let ai = p.ai;
++#if RS_RIS_SPLIT
++  let risRec = resout_plane(ai, RP_DIAG);                 // rv-risnee prototype: the pre-pass record (trees = 1)
++#endif
+   if (firstChunk) { res_write_empty(ai, key, false); }
+   var wSum = bitcast<f32>(resout_plane(ai, RP_RAD).w);
+   var nCand = resout_plane(ai, RP_DIAG).x;
+@@ -277,10 +280,15 @@
+         var wNee = 1.0;
+         var tileMult = 0.0;
+         if (B == 1u) {
++#if RS_RIS_SPLIT
++          ep = NeeEndpoint(risRec.x, risRec.y, risRec.z);
++          wNee = bitcast<f32>(risRec.w);
++#else
+           let rsel = ris_nee_select(p, key, seed, s, cur, curPrim, m, V);
+           ep = rsel.ep;
+           wNee = rsel.W;
+           tileMult = rsel.mult;
++#endif
+         }
+         let ls = nee_eval(cur.pos, ep);
+         // PLANT U8-8 (validation only): the UCW in mixed measures, W^RIS·p1_σ instead of W^RIS·q (area / triangle picks)

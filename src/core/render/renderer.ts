@@ -55,6 +55,7 @@ import { RestirDebugPass, RestirHud } from './restir/debug.ts';
 import { Denoiser, type DenoiseFrame } from './denoise/denoiser.ts';
 import { denoiseModeKey, denoiserAllowed, denoiserDefault, type DenoiserSettings } from './denoise/layout.ts';
 import { arenaWords, RS_WGSL_CONSTS } from './restir/layout.ts';
+import { RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagDefines, perfFlagsKey, type PerfFlagsInput } from './restir/perf-flags.ts';
 
 /** App ReSTIR modes (PLAN §3, restir-temporal-api.md §3.7): ReSTIR-interactive (interactive preset: temporal, RR, boost
  *  3), ReSTIR-unbiased (the `full` preset: temporal, RR off, no boost), ReSTIR-2022-criteria (interactive preset with the
@@ -73,8 +74,17 @@ export const RESTIR_APP_MODES: Record<RestirAppMode, string> = {
 export function restirAppSettings(mode: RestirAppMode, maxBounces: number, temporal = true, features: Partial<RestirSettings> = {}): RestirSettings {
   const base = mode === 'offline' ? RESTIR_PRESETS['offline-m6'] : mode === 'unbiased' ? RESTIR_PRESETS['full-m6']
     : mode === 'initial' ? { ...RESTIR_PRESETS.interactive, rounds: 0 } : RESTIR_PRESETS.interactive;
-  return { ...DEFAULT_RESTIR_SETTINGS, ...base, criteria: mode === 'criteria2022' ? '2022' : 'enhanced', maxBounces, temporal, ...features };
+  const app = mode === 'interactive' ? INTERACTIVE_APP_DEFAULTS : {};
+  return { ...DEFAULT_RESTIR_SETTINGS, ...base, ...app, criteria: mode === 'criteria2022' ? '2022' : 'enhanced', maxBounces, temporal, ...features };
 }
+
+/** perf2 (perf2-plan.md §5 user decisions, WP-10 rule): app-level defaults of app mode 'interactive', applied over the
+ *  interactive preset by restirAppSettings. The presets stay unchanged, so validation and the bits rigs (whose
+ *  interactive knobs are pinned: INTERACTIVE_PINNED in presets.ts) never see these. Decisions land here one by one with
+ *  their evidence — D3 (duplication map off) as `dupmap: false` after its Stage-B chain; D1 / D2 / D4 (rrMinBounces,
+ *  risM, slots) only where WP-Q's equal-quality rule holds. The panel's feature toggles (restirFeatures) still override
+ *  them per session. Empty: today's app = the interactive preset. */
+export const INTERACTIVE_APP_DEFAULTS: Readonly<Partial<RestirSettings>> = Object.freeze({});
 
 /** M6 feature toggles of the app (restir-m6-api.md MD13): overrides of the mode's preset (empty = the preset's). */
 export type RestirFeatureOverrides = Partial<Pick<RestirSettings, 'pairing' | 'risNee' | 'dualMv' | 'dupmap'>>;
@@ -86,9 +96,15 @@ export function resolveBvhKind(k: BvhKind | 'auto', scene: SceneData): BvhKind {
 }
 
 export const GBUF_TEXEL_BYTES = 80;
+/** perf2 WP-7d: the stored texel with GBUF_48 (GBufStore in gbuffer.wgsl). */
+export const GBUF48_TEXEL_BYTES = 48;
+/** Bytes of one stored G-buffer texel under a perf-flag set. */
+export const gbufTexelBytes = (flags: PerfFlagsInput): number => (normalizePerfFlags(flags).GBUF_48 ? GBUF48_TEXEL_BYTES : GBUF_TEXEL_BYTES);
 export const PRIMARY_PARAMS_SIZE = 16;
 export const PRIM_ACCUMULATE = 1;
 export const PRIM_ADVANCED = 2;
+/** perf2 WP-7c (PRIM_SKIP_BEAUTY text only): no placeholder beauty / accumulation this frame. */
+export const PRIM_NO_BEAUTY = 4;
 /** τ in thr = τ·R²_pri (math.md#rc-predicate). */
 export const THR_TAU = 2e-4;
 const ENV_BINDING_BASE = 1;
@@ -138,7 +154,13 @@ export interface RendererOptions {
   /** M5.5: the denoiser toggle of the current mode (denoiser.md §8; remembered per mode in denoiseByMode). */
   denoise: boolean;
   /** M8 (m8-perf.md): kernel options of the interactive ReSTIR (A/B measurements; default the interactive kernel's). */
-  restirKernel?: { resLayout?: 'aos' | 'soa'; modeBNeedsAreaLights?: boolean };
+  restirKernel?: {
+    resLayout?: 'aos' | 'soa'; modeBNeedsAreaLights?: boolean;
+    /** perf2 (docs/decisions/perf2-api.md): perf flags of the interactive ReSTIR kernel and the M1 primary pass
+     *  (default RELEASE_PERF_FLAGS). A change recompiles at the next frame (the PT beauty shows meanwhile) and resets the
+     *  temporal history. */
+    perfFlags?: PerfFlagsInput;
+  };
 }
 
 export interface RendererTargets {
@@ -310,9 +332,13 @@ export class Renderer {
       // M6: the light mode and the feature toggles are pipeline variants (MD1, MD9): recompiled lazily by prepare()
       // until it is compiled the frames show the PT beauty (encodeRestir), never a half-switched kernel
       rs.pass.kernel.setLightMode(this.options.lightMode);
+      rs.pass.kernel.setPerfFlags(this.perfFlags());
       rs.pass.setSettings(this.restirSettings());
       await this.prepareRestirVariant(rs);
     }
+    // perf2 WP-7d: a perf-flag change can change the G-buffer texel size (GBUF_48)
+    const tg = this.targets;
+    if (tg && tg.gbuf.size !== tg.t.width * tg.t.height * gbufTexelBytes(this.perfFlags())) this.resize(tg.t);
     if (!this.sceneData) return;
     if (texChanged || wtChanged) await this.setScene(this.sceneData, this.origin);
   }
@@ -369,7 +395,7 @@ export class Renderer {
         const pass = await RestirKernel.interactive(this.device, state.gpu, this.env, colorFormat, {
           settings: this.restirSettings(), lightMode: this.options.lightMode, debug,
           env: { nee: this.options.envNee, importanceCap: this.options.envImportanceCap },
-          features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures, ...this.options.restirKernel,
+          features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures, ...this.options.restirKernel, perfFlags: this.perfFlags(),
         });
         const dbg = debug ? await RestirDebugPass.create(pass.kernel, debug) : undefined;
         if (this.lights) pass.setLights(this.lights);
@@ -412,6 +438,9 @@ export class Renderer {
     return restirAppSettings(this.options.restirMode, this.options.maxBounces, this.options.temporal, this.options.restirFeatures);
   }
 
+  /** perf2: the perf flags of the interactive kernels (options.restirKernel.perfFlags, default RELEASE_PERF_FLAGS). */
+  perfFlags(): PerfFlagsInput { return this.options.restirKernel?.perfFlags ?? RELEASE_PERF_FLAGS; }
+
   /** The interactive ReSTIR pass (undefined until renderMode 'restir' compiled it). */
   get restir(): RestirFramePass | undefined { return this.state?.rs?.pass; }
   get restirHud(): RestirHud | undefined { return this.state?.rs?.hud; }
@@ -427,7 +456,11 @@ export class Renderer {
     return (await this.compileRestir(s, this.targets.t.colorFormat))?.pass;
   }
 
-  private variantKey(colorFormat: string, stats: boolean): string { return `${colorFormat}|${stats ? 'stats' : 'plain'}`; }
+  /** Primary pipeline key `format|stats[|perf flags]` (perf2: the flag part only when flags are set). */
+  private variantKey(colorFormat: string, stats: boolean): string {
+    const pf = perfFlagsKey(this.perfFlags());
+    return `${colorFormat}|${stats ? 'stats' : 'plain'}${pf ? `|${pf}` : ''}`;
+  }
 
   private g2Layout(colorFormat: GPUTextureFormat): GPUBindGroupLayout {
     let l = this.g2Layouts.get(colorFormat);
@@ -452,14 +485,14 @@ export class Renderer {
   private compile(state: SceneState, key: string): Promise<GPUComputePipeline | undefined> {
     const existing = state.pending.get(key);
     if (existing) return existing;
-    const [colorFormat, stats] = key.split('|');
+    const [colorFormat, stats, pf] = key.split('|');
     const p = (async () => {
       try {
         const shader = composeWgsl('passes/primary.wgsl', {
           sources: shaderSources,
           defines: {
             COLOR_FORMAT: colorFormat, BVH_STATS: stats === 'stats',
-            ...state.gpu.defines(SCENE_GROUP), ...envDefines(0, ENV_BINDING_BASE),
+            ...state.gpu.defines(SCENE_GROUP), ...envDefines(0, ENV_BINDING_BASE), ...perfFlagDefines(pf),
           },
           features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures,
         });
@@ -550,13 +583,15 @@ export class Renderer {
     const old = this.targets;
     const n = t.width * t.height;
     const sameSize = old && old.t.width === t.width && old.t.height === t.height;
-    const gbuf = sameSize ? old.gbuf : this.device.createBuffer({ label: 'gbuffer', size: n * GBUF_TEXEL_BYTES, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+    const gbBytes = n * gbufTexelBytes(this.perfFlags());   // perf2 WP-7d: 48 B texels with GBUF_48
+    const gbuf = sameSize && old.gbuf.size === gbBytes ? old.gbuf : this.device.createBuffer({ label: 'gbuffer', size: gbBytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
     const accum = sameSize ? old.accum : this.device.createBuffer({ label: 'accum', size: n * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
     const vbuf = sameSize ? old.vbuf : this.device.createTexture({
       label: 'vbuffer', size: [t.width, t.height], format: 'rgba32uint',
       usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
     });
-    if (old && !sameSize) { old.gbuf.destroy(); old.accum.destroy(); old.vbuf.destroy(); }
+    if (old && old.gbuf !== gbuf) old.gbuf.destroy();
+    if (old && !sameSize) { old.accum.destroy(); old.vbuf.destroy(); }
     const group = this.device.createBindGroup({
       label: 'primary-g2',
       layout: this.g2Layout(t.colorFormat),
@@ -611,11 +646,6 @@ export class Renderer {
     }
     pipe ??= s.pipelines.get(plainKey);
     if (!pipe) { void this.compile(s, plainKey); return false; }
-    const u32 = new Uint32Array(this.paramScratch);
-    const f32 = new Float32Array(this.paramScratch);
-    u32[0] = (this.options.accumulate ? PRIM_ACCUMULATE : 0) | (frame.advanced ? PRIM_ADVANCED : 0);
-    f32[1] = this.options.thrTau;
-    this.device.queue.writeBuffer(this.params, 0, this.paramScratch);
     const pass = encoder.beginComputePass({ label: 'primary', timestampWrites: timestamps?.() });
     pass.setPipeline(pipe);
     pass.setBindGroup(0, tg.frameGroup);
@@ -627,12 +657,13 @@ export class Renderer {
     // PT beauty after the primary pass (same jitter/seed; overwrites the placeholder colour). Skipped for BVH-stat views.
     let restirDone = false;
     this.frameAdv = undefined;
+    const dn = this.denoiseWanted() && !frame.noPt && !isBvhStatsView(frame.debugMode);
     if (this.options.renderMode === 'restir' && !frame.noPt && !isBvhStatsView(frame.debugMode)) {
       if (!s.rs) void this.compileRestir(s, tg.t.colorFormat);
-      else restirDone = this.encodeRestir(encoder, s.rs, frame.advanced, !!frame.resetTemporal, tg.t.frameUniforms, rsTimestamps);
+      else restirDone = this.encodeRestir(encoder, s.rs, frame.advanced, !!frame.resetTemporal, tg.t.frameUniforms, rsTimestamps,
+        dn && this.denoiserCurrent(tg.t.colorFormat));
     }
     let ptDone = false;
-    const dn = this.denoiseWanted() && !frame.noPt && !isBvhStatsView(frame.debugMode);
     if ((this.options.renderMode === 'pt' || (this.options.renderMode === 'restir' && !restirDone)) && s.pt && !frame.noPt && !isBvhStatsView(frame.debugMode)) {
       // M5.5: the denoiser needs the PT's 1-spp frame sample (accumulate | denoise, PLAN §3 step 7)
       s.pt.encode(encoder, { advanced: frame.advanced, accumulate: this.options.accumulate && !(dn && this.options.renderMode === 'pt' && this.denoiser) }, ptTimestamps?.());
@@ -642,6 +673,7 @@ export class Renderer {
     if (dn && (restirDone || (ptDone && this.options.renderMode === 'pt'))) {
       this.denoisedLastFrame = this.encodeDenoiser(encoder, s, tg, frame, restirDone ? 'restir' : 'pt');
     }
+    this.writePrimaryParams(frame.advanced, restirDone || ptDone);
     if (frame.advanced) this.advancedFrames++;
     if (isEnvDebugView(frame.debugMode) && s.pt) {
       if (!s.envDebug) void this.compileEnvDebug(s);
@@ -654,14 +686,36 @@ export class Renderer {
     return true;
   }
 
+  /** PrimaryParams of this frame, written after the frame's later passes are encoded (queue writes land before the
+   *  submit). perf2 WP-7c (PRIM_SKIP_BEAUTY): when a ReSTIR / PT frame overwrites the colour target the primary skips its
+   *  placeholder beauty and accumulation; the first frame that shows it again restarts the accumulation. */
+  private writePrimaryParams(advanced: boolean, overwritten: boolean): void {
+    const skip = overwritten && !!normalizePerfFlags(this.perfFlags()).PRIM_SKIP_BEAUTY;
+    const restart = !skip && this.primBeautyStale;
+    this.primBeautyStale = skip || (this.primBeautyStale && !restart);
+    const u32 = new Uint32Array(this.paramScratch);
+    const f32 = new Float32Array(this.paramScratch);
+    u32[0] = (this.options.accumulate && !restart ? PRIM_ACCUMULATE : 0) | (advanced ? PRIM_ADVANCED : 0) | (skip ? PRIM_NO_BEAUTY : 0);
+    f32[1] = this.options.thrTau;
+    this.device.queue.writeBuffer(this.params, 0, this.paramScratch);
+  }
+  private primBeautyStale = false;
+  /** perf2 WP-7c (RS_SKIP_DISPLAY): the ReSTIR accumulation was skipped (the denoiser displayed): restart it on the next
+   *  frame shown without the denoiser. */
+  private rsDisplayStale = false;
+
   /**
    * ReSTIR frame: counters clear + code-view fill, (M5: advanceInteractive), the kernel's passes, shift views, arena
    * header copy (one encoder). M5 temporal: a paused frame only re-displays the last frame (TD20); `resetTemporal`
    * resets the history (and the HUD error totals).
    */
   private encodeRestir(encoder: GPUCommandEncoder, rs: RestirState, advanced: boolean, resetTemporal: boolean, frameUniforms: GPUBuffer,
-    ts?: () => GPUComputePassTimestampWrites | undefined): boolean {
+    ts?: () => GPUComputePassTimestampWrites | undefined, denoised = false): boolean {
     const k = rs.pass.kernel;
+    // perf2 WP-7c (RS_SKIP_DISPLAY): the denoiser overwrites the colour target: the finalize skips the display
+    const noDisplay = denoised && !!k.perfFlags.RS_SKIP_DISPLAY;
+    const accumulate = this.options.accumulate && !(this.rsDisplayStale && !noDisplay);
+    const shown = (ok: boolean) => { if (ok) this.rsDisplayStale = noDisplay; return ok; };
     // A light-mode / feature toggle switches the kernel's pipeline variant at once and compiles it asynchronously
     // (setOptions awaits it, but frames keep coming): until it is compiled the PT beauty is shown (before advancing the
     // temporal state, so the history is not consumed by a frame that never ran).
@@ -671,7 +725,7 @@ export class Renderer {
     try { arena = k.resources.arena; } catch { return false; }
     const temporal = !!k.settings.temporal;
     if (temporal && !advanced) {
-      if (!rs.pass.encodeHold(encoder, { accumulate: this.options.accumulate })) return false;
+      if (!shown(rs.pass.encodeHold(encoder, { accumulate, noDisplay }))) return false;
       rs.heldFrames++;
       return true;
     }
@@ -682,7 +736,7 @@ export class Renderer {
     }
     rs.hud.encodeBegin(encoder, arena);
     rs.dbg?.encodeBegin(encoder);
-    const ok = rs.pass.encode(encoder, { advanced, accumulate: this.options.accumulate }, ts?.());
+    const ok = shown(rs.pass.encode(encoder, { advanced, accumulate, noDisplay }, ts?.()));
     if (!ok) return false;
     rs.dbg?.encodeViews(encoder, { rounds: k.lastRounds });
     rs.hud.encodeEnd(encoder, k.resources.arena, adv);
@@ -725,7 +779,7 @@ export class Renderer {
     if (this.denoiserPending) return this.denoiserPending;
     const p = (async () => {
       try {
-        const d = await Denoiser.create(this.device, { debugLayout: this.ctx.debugLayout, colorFormat, features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures });
+        const d = await Denoiser.create(this.device, { debugLayout: this.ctx.debugLayout, colorFormat, features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures, perfFlags: this.perfFlags() });
         d.setSettings(this.pendingDenoiserSettings);
         this.denoiser?.destroy();
         this.denoiser = d;
@@ -747,17 +801,24 @@ export class Renderer {
   async prepareDenoiser(): Promise<Denoiser | undefined> {
     const tg = this.targets;
     if (!tg) return undefined;
-    if (this.denoiser?.colorFormat === tg.t.colorFormat) return this.denoiser;
+    if (this.denoiserCurrent(tg.t.colorFormat)) return this.denoiser;
     return this.compileDenoiser(tg.t.colorFormat);
   }
 
-  private encodeDenoiser(enc: GPUCommandEncoder, s: SceneState, tg: TargetState,
-    frame: { advanced: boolean; debugGroup: GPUBindGroup; resetTemporal?: boolean; resetHistory?: boolean }, kind: 'restir' | 'pt'): boolean {
+  /** The denoiser is compiled for this colour format and the current perf flags (perf2: WP-7's denoiser flags). */
+  private denoiserCurrent(colorFormat: GPUTextureFormat): boolean {
     const d = this.denoiser;
-    if (!d || d.colorFormat !== tg.t.colorFormat) { void this.compileDenoiser(tg.t.colorFormat); return false; }
+    return !!d && d.colorFormat === colorFormat && d.perfFlagsKey === perfFlagsKey(this.perfFlags());
+  }
+
+  private encodeDenoiser(enc: GPUCommandEncoder, s: SceneState, tg: TargetState,
+    frame: { advanced: boolean; debugGroup: GPUBindGroup; debugMode?: number; resetTemporal?: boolean; resetHistory?: boolean }, kind: 'restir' | 'pt'): boolean {
+    const d = this.denoiser;
+    if (!d || !this.denoiserCurrent(tg.t.colorFormat)) { void this.compileDenoiser(tg.t.colorFormat); return false; }
     d.resize(tg.t.width, tg.t.height);
     const f: DenoiseFrame = {
       kind, advanced: frame.advanced, reset: !!frame.resetHistory, frameUniforms: tg.t.frameUniforms, gbuf: tg.gbuf, colour: tg.t.color, debugGroup: frame.debugGroup,
+      debugMode: frame.debugMode,
     };
     if (kind === 'restir') {
       const k = s.rs!.pass.kernel;
@@ -786,8 +847,12 @@ export class Renderer {
   afterSubmit(): void {
     const d = this.denoiser;
     if (!d || !this.denoisedLastFrame || this.advancedFrames % 30 !== 0) return;
+    // perf2 WP-7g: once per advanced frame count (a pause on a multiple of 30 re-timed on every held vsync)
+    if (this.advancedFrames === this.lastTimedFrame) return;
+    this.lastTimedFrame = this.advancedFrames;
     void d.time(1);
   }
+  private lastTimedFrame = -1;
 
   private compileShadingDebug(s: SceneState): Promise<ShadingDebugPass | undefined> {
     s.shadingDebugPending ??= ShadingDebugPass.create(this.device, s.gpu, this.ctx.debugLayout, { features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures })

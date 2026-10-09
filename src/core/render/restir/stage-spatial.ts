@@ -11,8 +11,11 @@
 // M5 boost (OWNER T-D; restir-temporal-api.md TD21, §3.7): with temporal on, numSlots = slots + boostSlots (presets.ts
 // numSlotsOf); the boost slots are ordinary slots for replay / shift / resample, so the replay chunk size and the cost
 // hints count every slot (a chunk sized by `slots` alone would leave boost items PENDING).
+// perf2 WP-5 (docs/decisions/perf2-plan.md §2 WP-5; kernel.perfFlags): RS_DENSE_SLOTS clears q3 {counter, n} with q0
+// and replaces the per-pixel rs_spatial_shift by rs_args(q3) + a 2D indirect item dispatch per chunk (one chunk per row
+// band, as the replay); RS_BOOST_GATE / RS_MIS_TRIM / RS_PAIR_TABLE are WGSL-only.
 import type { RestirKernel, RestirStage, WorkUnit } from './kernel.ts';
-import { RS_WGSL_CONSTS as K } from './layout.ts';
+import { RS_WGSL_CONSTS as K, WP5_CONSTS } from './layout.ts';
 import { uploadGaussPairTex, uploadPairTex } from './pairing.ts';
 import { GAUSS_PAIR_SIZES, PAIR_TEX_SIZES, numSlotsOf } from './presets.ts';
 import type { RsPassName } from './resources.ts';
@@ -56,14 +59,22 @@ export class SpatialStage implements RestirStage {
     const units: WorkUnit[] = [];
     const NS = numSlotsOf(s);
     const slotWork = (r0: number, r1: number) => a.atlasW * (r1 - r0) * NS;
+    const dense = !!k.perfFlags.RS_DENSE_SLOTS;
+    const qDense = WP5_CONSTS.RS_Q_DENSE;
+    // RS_BOOST_GATE: the gate word is only meaningful on a frame whose T1 ran (an advanced temporal frame); otherwise
+    // every spatial dispatch carries RSD_BOOST_OPEN (tState is stale then, as is the word).
+    const gateOpen = k.perfFlags.RS_BOOST_GATE && !(k.currentAdvance && s.temporal && a.temporal) ? WP5_CONSTS.RSD_BOOST_OPEN : 0;
     for (let r = 0; r < s.rounds; r++) {
       const inIdx = (k.resBase() + r) % 2;
       const final = r === s.rounds - 1;
-      const d = { t, passId: K.RS_PASS_SPATIAL + r, round: r };
+      const d = { t, passId: K.RS_PASS_SPATIAL + r, round: r, flags: gateOpen };
       bands.forEach(([r0, r1], bi) => units.push({
         label: `rs_pair_accept[${r}][${r0}]`, costHint: slotWork(r0, r1),
         encode: (enc) => {
-          if (bi === 0) enc.clearBuffer(res.arena, 0, 8);
+          if (bi === 0) {
+            enc.clearBuffer(res.arena, 0, 8);
+            if (dense) enc.clearBuffer(res.arena, 16 * qDense, 8);
+          }
           k.encodePass(enc, 'rs_pair_accept', accept, res.g2('rs_pair_accept', inIdx), { ...d, rowBase: r0, rowEnd: r1 }, k.perPixelWorkgroups(r0, r1));
         },
       }));
@@ -78,7 +89,16 @@ export class SpatialStage implements RestirStage {
           k.encodePass(enc, 'rs_spatial_replay', replay, res.g2('rs_spatial_replay', inIdx), dc, { indirect: res.args, offset: 0 });
         },
       }));
-      for (const [r0, r1] of bands) {
+      if (dense) {
+        bands.forEach(([r0, r1], ci) => units.push({
+          label: `rs_spatial_shift[${r}][${ci}]`, costHint: slotWork(r0, r1) * 2,
+          encode: (enc) => {
+            const dc = { ...d, treeBase: ci * chunk, treeCount: chunk };
+            k.encodePass(enc, 'rs_args', args, res.g2('rs_args'), { ...dc, flags: (qDense << K.RSD_QUEUE_SHIFT) | gateOpen }, [1, 1]);
+            k.encodePass(enc, 'rs_spatial_shift', shift, res.g2('rs_spatial_shift', inIdx), dc, { indirect: res.args, offset: 16 * qDense });
+          },
+        }));
+      } else for (const [r0, r1] of bands) {
         units.push({
           label: `rs_spatial_shift[${r}][${r0}]`, costHint: slotWork(r0, r1) * 2,
           encode: (enc) => k.encodePass(enc, 'rs_spatial_shift', shift, res.g2('rs_spatial_shift', inIdx), { ...d, rowBase: r0, rowEnd: r1 }, k.perPixelWorkgroups(r0, r1)),
@@ -88,7 +108,7 @@ export class SpatialStage implements RestirStage {
         units.push({
           label: `rs_spatial_resample[${r}][${r0}]`, costHint: slotWork(r0, r1),
           encode: (enc) => k.encodePass(enc, 'rs_spatial_resample', resample, res.g2('rs_spatial_resample', inIdx),
-            { ...d, flags: final ? K.RSD_FINAL_ROUND : 0, rowBase: r0, rowEnd: r1 }, k.perPixelWorkgroups(r0, r1)),
+            { ...d, flags: (final ? K.RSD_FINAL_ROUND : 0) | gateOpen, rowBase: r0, rowEnd: r1 }, k.perPixelWorkgroups(r0, r1)),
         });
       }
     }

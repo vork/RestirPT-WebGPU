@@ -12,6 +12,9 @@
 
 @compute @workgroup_size(8, 8, 1)
 fn rs_spatial_resample(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_index) li: u32) {
+#if RS_PAIR_TABLE
+  pair_xf_prepare(li, rsDispatch.round);
+#endif
   let p = rs_pix(vec2u(gid.x, gid.y + rsDispatch.rowBase));
   let finalRound = (rsDispatch.flags & RSD_FINAL_ROUND) != 0u;
   if (p.valid) {

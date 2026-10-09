@@ -11,7 +11,8 @@ import { fetchScenePackage } from '../../src/core/scene/scene-package.ts';
 import { releaseTestGpu } from './device-factory.ts';
 import { loadHdri, synthEnvData } from './env-fixtures.ts';
 import { T3_ENV_ID, t3Scene, type T3Variant } from '../scenes/make-m4.ts';
-import { allLightsScene, boxCamera, boxScene, gpuScene, light, readTexture4, restirRig, type RestirRig } from './restir-fixtures.ts';
+import { perfFlagsKey } from '../../src/core/render/restir/perf-flags.ts';
+import { allLightsScene, boxCamera, boxScene, gpuScene, light, readTexture4, restirRig, testPerfFlags, type RestirRig } from './restir-fixtures.ts';
 import {
   DENSE_INIT_WGSL, DENSE_OFF, T3S, T3_BIN_NAMES, T3_CASES, T3_DUAL_CAP, T3_DUAL_WORDS, T3_NBINS, T3_STATS_WORDS, T3_VIOL_CAP, T3_VIOL_WORDS, T3_WGSL, bitsToF32, decodeT3Stats, readU32, storageBuffer, testPipeline,
   type T3Stats, type TestPipeline,
@@ -81,7 +82,7 @@ describe('U-RC-1: rcPairTest (Enhanced and 2022) ≡ the f64 dual on random pair
   for (const crit of ['enhanced', '2022'] as const) {
     it(`${crit}: 2^20 random pairs, LOGIC disagreements = 0`, async () => {
       const g = await gpuScene(boxScene([light({ id: 1, type: 'point', power: 50 })]));
-      const k = await RestirKernel.create(g.device, g.gpu, g.env, { settings: restirSettings('initial', { criteria: crit }), features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
+      const k = await RestirKernel.create(g.device, g.gpu, g.env, { settings: restirSettings('initial', { criteria: crit }), perfFlags: testPerfFlags(), features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
       k.setView({ camera: boxCamera(), width: 8, height: 8, runSeed: 1, jitterMode: JITTER_IID });
       const tp = await testPipeline(k, 'rc-test', RC_HARNESS, 'main', 1);
       const N = 256 * 64 * 64;
@@ -524,7 +525,7 @@ fn main() {
 describe('U-13: sampler-support indicator with N ≠ Ng (math.md#support-indicator)', () => {
   it('BSDF-sampled segment with Ng·L < 0 < N·L: supp = 0 (the shift declares O0_SUPPORT / O0_LOBE: F = 0); NEE segment: no indicator, f > 0', async () => {
     const g = await gpuScene(boxScene([light({ id: 1, type: 'point', power: 50 })]));
-    const k = await RestirKernel.create(g.device, g.gpu, g.env, { settings: restirSettings('initial'), features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
+    const k = await RestirKernel.create(g.device, g.gpu, g.env, { settings: restirSettings('initial'), perfFlags: testPerfFlags(), features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures });
     k.setView({ camera: boxCamera(), width: 8, height: 8, runSeed: 1, jitterMode: JITTER_IID });
     const tp = await testPipeline(k, 'u13', U13_WGSL, 'main', 1);
     const out = storageBuffer(g.device, 64);
@@ -638,7 +639,7 @@ describe('T3 PLATFORM discriminator (VITE_DISC)', () => {
   }, 3_600_000);
 });
 
-/** VITE_STRESS = "variant[,variant…]:frames": production passes (rs_spatial_replay / rs_spatial_shift / resample,
+/** VITE_STRESS = "variant[,variant…]:frames" (perf2: plus VITE_PERF_FLAGS=… to force perf flags on): production passes (rs_spatial_replay / rs_spatial_shift / resample,
  *  3 rounds × 6 slots, 1 tree) on the T3 fixtures; the arena counters of a slot-index / control-flow fault
  *  (RSC_PENDING_LEFT, RSC_SLOT_MISMATCH, RSC_SHIFT_NONFINITE) must stay 0. */
 describe('Production shift passes: platform-fault stress (VITE_STRESS)', () => {
@@ -653,6 +654,8 @@ describe('Production shift passes: platform-fault stress (VITE_STRESS)', () => {
       const rig = await restirRig(t.scene, 256, 256, {
         preset: 'offline', cam: { camToWorld: t.camera.matrix, yfov: t.camera.yfov },
         settings: { maxBounces: t.maxBounces, trees: 1, rounds: 3, slots: 6, diskRadius: 10 },
+        // perf2 WP-3: VITE_STRESS_CWBVH=1 runs the stress on the CWBVH (MT, the app's traversal)
+        ...(import.meta.env?.VITE_STRESS_CWBVH ? { gpu: { bvhKind: 'cwbvh' as const, watertight: false } } : {}),
       });
       const tot = { pendingLeft: 0, slotMismatch: 0, shiftNonFinite: 0, accepted: 0, queued: 0 };
       const codes = new Array(16).fill(0);
@@ -661,7 +664,7 @@ describe('Production shift passes: platform-fault stress (VITE_STRESS)', () => {
         for (const k of Object.keys(tot) as (keyof typeof tot)[]) tot[k] += r.arena.rsc[k];
         r.arena.codes.forEach((c, i) => { codes[i] += c; });
       }
-      console.log(`[STRESS ${variant}] frames=${frames} ${JSON.stringify(tot)} codes=${codes.map((c, i) => (c ? `${SC_NAMES[i]}:${c}` : '')).filter(Boolean).join(' ')}`);
+      console.log(`[STRESS ${variant}] bvh=${rig.g.gpu.bvhKind} frames=${frames} perfFlags=${perfFlagsKey(rig.kernel.perfFlags) || '-'} ${JSON.stringify(tot)} codes=${codes.map((c, i) => (c ? `${SC_NAMES[i]}:${c}` : '')).filter(Boolean).join(' ')}`);
       expect(tot.pendingLeft + tot.slotMismatch + tot.shiftNonFinite).toBe(0);
       rig.destroy();
     }

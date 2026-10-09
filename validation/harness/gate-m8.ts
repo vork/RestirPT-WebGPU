@@ -22,6 +22,9 @@ import { fileURLToPath } from 'node:url';
 import { codeHashes } from './gate-m4.ts';
 import { M7_PKGS, seqUnit, type SeqUnit } from './gate-m7.ts';
 import { withGpuLockSync } from './gpu-lock.ts';
+import { pinnedJob, withExtra } from './run-perf.ts';
+import type { PerfOptions } from './perf-run.ts';
+import type { RestirSettings } from '../../src/core/render/restir/presets.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const PY = path.join(ROOT, 'validation/.venv/bin/python');
@@ -93,20 +96,21 @@ function perf(dir: string, add: Add): Record<string, any> {
     nm_smooth: { scene: '/validation/out/m7/scenes/m7_nm_smooth_256/', lightAnim: { index: 0, amp: 0.05 } },
   };
   if (!existsSync(path.join(ROOT, 'validation/out/m6/scenes/m6_crossings_B_256/scene.json'))) sh('npx', ['tsx', 'validation/scenes/make-m6.ts', '--only', 'm6_crossings_B_256'], () => false);
-  const cfgs: { id: string; w: number; h: number; extra: Record<string, unknown>; target: number }[] = [
-    { id: '540p N3', w: 960, h: 540, extra: {}, target: 35 },
-    { id: '540p N1+moving', w: 960, h: 540, extra: { restir: { slots: 1 } }, target: 32 },
-    { id: '720p N3', w: 1280, h: 720, extra: {}, target: 51 },
+  // perf2 WP-0: every job pins the interactive knobs (run-perf.ts pinnedJob: INTERACTIVE_PINNED + the scene's maxBounces)
+  const cfgs: { id: string; w: number; h: number; restir?: Partial<RestirSettings>; target: number }[] = [
+    { id: '540p N3', w: 960, h: 540, target: 35 },
+    { id: '540p N1+moving', w: 960, h: 540, restir: { slots: 1 }, target: 32 },
+    { id: '720p N3', w: 1280, h: 720, target: 51 },
     // the dynamic-resolution controller's 0.625 level of 540p (m8-perf.md §9), its 33 ms target
-    { id: '336p N3 (dyn-res 0.625)', w: 600, h: 336, extra: {}, target: 33 },
+    { id: '336p N3 (dyn-res 0.625)', w: 600, h: 336, target: 33 },
   ];
-  const jobs: Record<string, unknown>[] = [];
+  const jobs: PerfOptions[] = [];
   // ABBA order per (scene, config): a sustained run slows down over time (thermal / drift, m8-perf.md §2), so each side
   // is measured once early and once late and the two are averaged
   for (const [name, s] of Object.entries(scenes)) for (const c of cfgs) for (const [tag, base, rep] of [['M8', {}, 0], ['pre-M8', PRE_M8, 0], ['pre-M8', PRE_M8, 1], ['M8', {}, 1]] as const) {
     const moving = c.id.includes('moving');
-    jobs.push({ scene: s.scene, ...(s.env ? { env: s.env } : {}), width: c.w, height: c.h, frames: 64, label: `${name} ${c.id} ${tag} r${rep}`, ...base, ...c.extra,
-      ...(moving ? { lightAnim: s.lightAnim } : {}) });
+    jobs.push(withExtra({ ...pinnedJob(name, c.restir), width: c.w, height: c.h, frames: 64, label: `${name} ${c.id} ${tag} r${rep}`,
+      ...(moving ? { lightAnim: s.lightAnim } : {}) }, base as Partial<PerfOptions>));
   }
   const jf = path.join(dir, 'perf-jobs.json');
   writeFileSync(path.join(ROOT, jf), JSON.stringify(jobs, null, 1));

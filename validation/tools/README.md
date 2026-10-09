@@ -220,3 +220,11 @@ Stage defaults (plan §7.3):
    - `--curve`, with slope ≈ −1 and BNR present;
    - `--calibrate`;
    - CLI exit codes, including the loosened-δ warning.
+
+## perf/ — perf2 profiling tools
+
+`validation/tools/perf/` holds the perf2 profiling tools: the headless-Chrome profiling driver (`prof-driver.ts`), the
+Dawn shader-dump splitter and MSL lint, Metal System Trace exports (pass times, spill bytes), ABBA analysis, background
+GPU load, and the report-only `spill-lint.ts` command (spill bytes per pipeline + MSL lint). Usage, inputs and the
+perf-flag registry they work with: [docs/decisions/perf2-api.md](../../docs/decisions/perf2-api.md) §4. They are not
+part of any gate.

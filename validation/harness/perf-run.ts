@@ -16,6 +16,7 @@ import { DENOISER_DEFAULTS, type DenoiserSettings } from '../../src/core/render/
 import { FrameUniformBuffer, JITTER_IID, boundsDiagonal, computeRenderOrigin, type CameraState } from '../../src/core/render/frame-uniforms.ts';
 import { Renderer, type RendererOptions } from '../../src/core/render/renderer.ts';
 import type { RestirSettings } from '../../src/core/render/restir/presets.ts';
+import { RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagsKey, type PerfFlagsInput } from '../../src/core/render/restir/perf-flags.ts';
 import { fetchScenePackage } from '../../src/core/scene/scene-package.ts';
 import { loadScene } from '../../src/core/scene/load-scene.ts';
 import { loadEnvironment } from '../../src/core/scene/env/load-env.ts';
@@ -38,6 +39,10 @@ export interface PerfOptions {
   renderer?: Partial<RendererOptions>;
   /** ReSTIR feature / settings overrides (e.g. { slots: 1 }) over the interactive preset. */
   restir?: Partial<RestirSettings>;
+  /** perf2 (perf2-api.md): perf flags of this job ('A,B=2', a name list or { NAME: value }); default the app's
+   *  (RELEASE_PERF_FLAGS). Applied to the interactive ReSTIR kernel and the M1 primary (renderer.restirKernel.perfFlags);
+   *  recorded in the report. */
+  perfFlags?: PerfFlagsInput;
   denoise?: boolean;
   denoiser?: Partial<DenoiserSettings>;
   /** Moving light: light `index` moves by amp·sin(0.09·i) metres along world x every frame. */
@@ -54,6 +59,8 @@ export interface PerfReport {
   ok: boolean; label: string; errors: string[];
   scene: string; width: number; height: number; triangles: number; lights: number; env: boolean;
   settings: unknown; rendererOptions: unknown;
+  /** perf2: the perf-flag key the job ran with (the release set when the job set none; empty = no flags). */
+  perfFlags?: string;
   frame: { meanMs: number; medianMs: number; minMs: number; maxMs: number; blocks: number[]; frames: number };
   latency?: { meanMs: number; medianMs: number; rtMs: number; frames: number };
   passes?: { name: string; meanMs: number; count: number }[];
@@ -75,6 +82,26 @@ function lookAt(eye: number[], tgt: number[]): number[] {
   const rn = Math.hypot(...r); for (let i = 0; i < 3; i++) r[i] /= rn;
   const u = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]];
   return [r[0], r[1], r[2], 0, u[0], u[1], u[2], 0, -f[0], -f[1], -f[2], 0, eye[0], eye[1], eye[2], 1];
+}
+
+/** The perf setup of a glTF without camera / lights (Sponza): camera along the long axis at 20 % height looking across
+ *  70 % of it (yfov 55°), one warm 2000 W point light at the centre (25 % height) unless autoSetup is false, the HDRI
+ *  (validation load mode) when given. Shared with the perf2 Sponza-lite bits case (validation/gpu-tests/m8-bits.ts). */
+export async function loadGltfPerfScene(url: string, o: { env?: string; autoSetup?: boolean } = {}): Promise<{ scene: SceneData; camera: CameraState }> {
+  let scene = (await loadScene(url)).scene;
+  const b = scene.bounds, e = [0, 1, 2].map((i) => b.max[i] - b.min[i]), c = [0, 1, 2].map((i) => 0.5 * (b.min[i] + b.max[i]));
+  const long = e[0] >= e[2] ? 0 : 2;
+  const eye = [...c], tgt = [...c];
+  eye[1] = tgt[1] = b.min[1] + 0.2 * e[1];
+  eye[long] = c[long] + 0.35 * e[long]; tgt[long] = c[long] - 0.35 * e[long];
+  const camera: CameraState = { camToWorld: lookAt(eye, tgt), yfov: (55 * Math.PI) / 180, znear: 1e-4 };
+  if (o.autoSetup !== false) {
+    const store = ensureLightStore(scene);
+    store.add({ type: 'point', power: 2000, color: [1, 0.85, 0.7], matrix: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, c[0], b.min[1] + 0.25 * e[1], c[2], 1]) });
+    scene = { ...scene, lights: store.list().map((l) => ({ ...l })) as LightData[] };
+  }
+  if (o.env) scene = { ...scene, env: (await loadEnvironment(o.env, { mode: 'validation' })).env };
+  return { scene, camera };
 }
 
 /** Proxy encoder: every compute pass starts a new real command encoder (the previous one is finished and kept). */
@@ -112,19 +139,7 @@ export async function renderPerf(ctx: GpuContext, o: PerfOptions): Promise<PerfR
   let camera: CameraState;
   let pkgBounces: number | undefined;
   if (isGltf) {
-    scene = (await loadScene(o.scene)).scene;
-    const b = scene.bounds, e = [0, 1, 2].map((i) => b.max[i] - b.min[i]), c = [0, 1, 2].map((i) => 0.5 * (b.min[i] + b.max[i]));
-    const long = e[0] >= e[2] ? 0 : 2;
-    const eye = [...c], tgt = [...c];
-    eye[1] = tgt[1] = b.min[1] + 0.2 * e[1];
-    eye[long] = c[long] + 0.35 * e[long]; tgt[long] = c[long] - 0.35 * e[long];
-    camera = { camToWorld: lookAt(eye, tgt), yfov: (55 * Math.PI) / 180, znear: 1e-4 };
-    if (o.autoSetup !== false) {
-      const store = ensureLightStore(scene);
-      store.add({ type: 'point', power: 2000, color: [1, 0.85, 0.7], matrix: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, c[0], b.min[1] + 0.25 * e[1], c[2], 1]) });
-      scene = { ...scene, lights: store.list().map((l) => ({ ...l })) as LightData[] };
-    }
-    if (o.env) scene = { ...scene, env: (await loadEnvironment(o.env, { mode: 'validation' })).env };
+    ({ scene, camera } = await loadGltfPerfScene(o.scene, { env: o.env, autoSetup: o.autoSetup }));
   } else {
     const p = await fetchScenePackage(o.scene);
     scene = p.scene;
@@ -150,6 +165,7 @@ export async function renderPerf(ctx: GpuContext, o: PerfOptions): Promise<PerfR
     maxBounces: Math.max(pkgBounces ?? 3, hasGlass ? 4 : 0),
     restirFeatures: { ...(o.restir ?? {}) } as RendererOptions['restirFeatures'], ...o.renderer,
   };
+  if (o.perfFlags !== undefined) ropts.restirKernel = { ...ropts.restirKernel, perfFlags: normalizePerfFlags(o.perfFlags) };
   const r = await Renderer.create({ device, debugLayout: debug.layout, debug, features: ctx.features, wgslLanguageFeatures: ctx.wgslLanguageFeatures }, ropts);
   const origin = computeRenderOrigin(scene.bounds, scene.quant);
   const fu = new FrameUniformBuffer(device);
@@ -157,7 +173,7 @@ export async function renderPerf(ctx: GpuContext, o: PerfOptions): Promise<PerfR
   const depth = device.createTexture({ label: 'perf-depth', size: [W, H], format: 'r32float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
   const report: PerfReport = {
     ok: false, label: o.label ?? '', errors, scene: o.scene, width: W, height: H, triangles: scene.geometry.indices.length / 3, lights: scene.lights.length, env: !!scene.env,
-    settings: undefined, rendererOptions: ropts, frame: { meanMs: NaN, medianMs: NaN, minMs: NaN, maxMs: NaN, blocks: [], frames: 0 },
+    settings: undefined, rendererOptions: ropts, perfFlags: perfFlagsKey(ropts.restirKernel?.perfFlags ?? RELEASE_PERF_FLAGS), frame: { meanMs: NaN, medianMs: NaN, minMs: NaN, maxMs: NaN, blocks: [], frames: 0 },
     adapter: describeContext(ctx), userAgent: navigator.userAgent, createdAt: new Date().toISOString(), wallS: 0,
   };
   try {

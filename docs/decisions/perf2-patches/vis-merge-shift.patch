@@ -1,0 +1,35 @@
+--- a/src/core/shaders/restir/shift.wgsl
++++ b/src/core/shaders/restir/shift.wgsl
+@@ -496,18 +496,23 @@
+                     visPos: vec3f, visN: vec3f, visPrim: u32, visInf: bool, endOcc: bool) -> ShiftOut {
+   var o = shift_finish(F, J, jNum, true);
+   if (rs_slot_code_sc(o.code) != SC_OK) { return o; }
+-  var vis = true;
+-  if (cs == SH_FORCED) {                                 // = nee_visible(y, yPrim, ls) (endpoint.wgsl), from the kept fields
+-    if (visInf) { vis = visibleInf(y.pos, y.ng, yPrim, wP); }
+-    else { vis = visible(y.pos, y.ng, yPrim, visPos, visN, visPrim); }
+-  }
+-  else if (cs == SH_ENV) { vis = visibleInf(y.pos, y.ng, yPrim, wP); }
++  let inf = cs == SH_ENV || (cs == SH_FORCED && visInf);
+ #if RS_MODE_B
+-  else if ((cs == SH_N1 || cs == SH_B1) && endOcc) { vis = false; }   // N1 / B1-ana end occluded under frame dst.fs (refresh)
++  let occ = (cs == SH_N1 || cs == SH_B1) && endOcc;
+ #else
+-  else if (cs == SH_N1 && endOcc) { vis = false; }      // M5 (§3.4): N1 end occluded under frame dst.fs (refresh)
++  let occ = cs == SH_N1 && endOcc;
+ #endif
+-  else { vis = visible(y.pos, y.ng, yPrim, xk.pos, xk.ng, xkPrim); }
++  var vis = false;
++  if (!occ) {
++    let fz = cs == SH_FORCED;
++    let b = select(xk.pos, visPos, fz);
++    let nb = select(xk.ng, visN, fz);
++    let primB = select(xkPrim, visPrim, fz);
++    let w = select(b - y.pos, wP, inf);
++    let a2 = vis_offset(y.pos, y.ng, w);
++    let b2 = vis_offset(b, nb, -w);
++    vis = !trace_any_ex(a2, select(b2 - a2, wP, inf), select(1.0 - VIS_EPS, FLT_MAX, inf), yPrim, select(primB, BVH_MISS, inf));
++  }
+   if (!vis) { return shift_finish(F, J, jNum, false); }
+   return o;
+ }
