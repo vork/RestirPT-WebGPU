@@ -188,14 +188,16 @@ async function main(): Promise<number> {
       const r = window.__integration!.renderer()!;
       const a = window.__app!;
       const dev = a.device, n = a.targets.width * a.targets.height;
-      const st = dev.createBuffer({ size: n * 80, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+      const bytes = r.gbuffer!.size;   // 80 B texels, or 48 B with perf2 WP-7d GBUF_48 (flags at word 15 / 3)
+      const stride = bytes / n / 4, fw = stride === 20 ? 15 : 3;
+      const st = dev.createBuffer({ size: bytes, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
       const e = dev.createCommandEncoder();
-      e.copyBufferToBuffer(r.gbuffer!, 0, st, 0, n * 80);
+      e.copyBufferToBuffer(r.gbuffer!, 0, st, 0, bytes);
       dev.queue.submit([e.finish()]);
       await st.mapAsync(GPUMapMode.READ);
       const u = new Uint32Array(st.getMappedRange());
       let miss = 0;
-      for (let i = 0; i < n; i++) if ((u[i * 20 + 15] & 1) === 0) miss++;
+      for (let i = 0; i < n; i++) if ((u[i * stride + fw] & 1) === 0) miss++;
       st.destroy();
       return miss / n;
     });

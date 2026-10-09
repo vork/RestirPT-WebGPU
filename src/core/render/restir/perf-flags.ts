@@ -60,13 +60,13 @@ export const PERF_FLAGS = {
   MAT_VARIANTS: reserved('WP-8', 'bitwise', 'material compile variants (models present in the scene only), TEX_XFORM, branch-free LUT lerp'),
   RS_PRIMARY_EXT: reserved('WP-7e', 'unbiased', 'rs_primary reads the M1 V-buffer (bits(t) in vbuf.w) instead of tracing again (ulp edge ties)'),
   // WP-7 a–d, f (added by WP-7; app-only passes: the M1 primary, the interactive finalize, the denoiser)
-  DN_GRAD_SKIP: { ...reserved('WP-7a', 'bitwise', 'denoiser: dn_gradient / dn_grad_filter skipped on frames where no pass reads λ (host only)'), landed: true },
-  RS_DUPMAP_S64: { ...reserved('WP-7b', 'bitwise', 'rs_dupmap: branch-free 64-bit seed compare (memberCount == 1, sentinel tile texels)'), landed: true },
-  PRIM_SKIP_BEAUTY: { ...reserved('WP-7c', 'bitwise', 'M1 primary: no placeholder beauty / accumulation when a ReSTIR or PT frame overwrites the colour target'), landed: true },
-  RS_SKIP_DISPLAY: { ...reserved('WP-7c', 'bitwise', 'rs_finalize_frame: no accumulation / colour store when the denoiser writes the colour target'), landed: true },
-  GBUF_48: { ...reserved('WP-7d', 'bitwise', 'lossless 48 B G-buffer {pos, flags, ns, motion.x, albedo, motion.y} (M1 primary, denoiser)'), landed: true },
-  DN_ZGRAD_TEX: { ...reserved('WP-7f', 'bitwise', 'denoiser: the depth gradient written once by dn_variance, read by every à-trous level'), landed: true },
-  DN_COLOUR_EARLY: { ...reserved('WP-7f', 'bitwise', 'denoiser: the à-trous colour load issued before the geometric skip test'), landed: true },
+  DN_GRAD_SKIP: { ...reserved('WP-7a', 'bitwise', 'denoiser: dn_gradient / dn_grad_filter skipped on frames where no pass reads λ (host only)'), landed: true, release: true },
+  RS_DUPMAP_S64: { ...reserved('WP-7b', 'bitwise', 'rs_dupmap: branch-free 64-bit seed compare (memberCount == 1, sentinel tile texels)'), landed: true, release: true },
+  PRIM_SKIP_BEAUTY: { ...reserved('WP-7c', 'bitwise', 'M1 primary: no placeholder beauty / accumulation when a ReSTIR or PT frame overwrites the colour target'), landed: true, release: true },
+  RS_SKIP_DISPLAY: { ...reserved('WP-7c', 'bitwise', 'rs_finalize_frame: no accumulation / colour store when the denoiser writes the colour target'), landed: true, release: true },
+  GBUF_48: { ...reserved('WP-7d', 'bitwise', 'lossless 48 B G-buffer {pos, flags, ns, motion.x, albedo, motion.y} (M1 primary, denoiser)'), landed: true, release: true },
+  DN_ZGRAD_TEX: { ...reserved('WP-7f', 'bitwise', 'denoiser: the depth gradient written once by dn_variance, read by every à-trous level'), landed: true, release: true },
+  DN_COLOUR_EARLY: { ...reserved('WP-7f', 'bitwise', 'denoiser: the à-trous colour load issued before the geometric skip test'), landed: true, release: true },
   RS_HALF_RATE: reserved('D6', 'biased', 'half-rate path trees (history-age selection); interactive toggle only, never in validation'),
 } as const satisfies Record<string, PerfFlagDef>;
 
