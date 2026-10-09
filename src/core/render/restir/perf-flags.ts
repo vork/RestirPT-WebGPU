@@ -45,7 +45,7 @@ export const PERF_FLAGS = {
   RS_NEE_SITE: reserved('WP-2b', 'bitwise', 'rs_initial: one NEE visibility site (visible + visibleInf + k=B retest) and one post-hit retest site'),
   RS_LAST_ANYHIT: reserved('WP-2c', 'bitwise', 'last continuation ray as any-hit (Mode-A text, no TRI_EMISSIVE)', ['counters']),
   RS_RIS_PREPASS: reserved('WP-2d', 'unbiased', 'lean RIS pre-pass rs_ris_nee (interactive, trees=1); record in the pixel\'s RP_DIAG plane'),
-  RS_ENV_WRAP: reserved('WP-4a', 'bitwise', 'envTexel select-wrap instead of emulated i32 modulos'),
+  RS_ENV_WRAP: { ...reserved('WP-4a', 'bitwise', 'envTexel select-wrap instead of emulated i32 modulos (lights/env.wgsl)'), landed: true },
   RS_ENV_PRESAMPLE: reserved('WP-4b', 'unbiased', 'env-presampled light tiles inside the RIS pre-pass (adds correlation)'),
   CW_TRI_BUDGET: reserved('WP-3', 'bitwise', 'CWBVH K=2 triangle budget'),
   BVH_ALPHA_BIT: reserved('WP-3', 'bitwise', 'alpha bit in the MT triangle record; CUSTOM_ALPHA compiled out without MASK'),

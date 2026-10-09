@@ -13,6 +13,11 @@ import type { EnvironmentData } from '../../src/core/scene/types.ts';
 import { loadEnvironment } from '../../src/core/scene/env/load-env.ts';
 import { decodeHdr } from '../../src/core/scene/env/hdr.ts';
 import { encodeHdr, prng } from '../../tests/env/rgbe-synth.ts';
+import { perfFlagDefines } from '../../src/core/render/restir/perf-flags.ts';
+import { testPerfFlags } from './restir-fixtures.ts';
+
+/** VITE_PERF_FLAGS (perf2-api.md §1) also reach ENV-U7 / U7b / U7c: RS_ENV_WRAP=1 runs them on the select-wrap text. */
+const FORCED_FLAGS = perfFlagDefines(testPerfFlags());
 
 // ---- f64 reference: literal port of Cycles kernel/camera/projection.h + util/projection.h ----
 type V3 = [number, number, number];
@@ -216,7 +221,7 @@ describe(`env (${lane()})`, () => {
     const res = await createEnvResources(device, env, 'env-u7', { format: 'rgba32float' });
     expect(envMemoryReport(res).textureBytes).toBe(W * H * 16);
 
-    const shader = composeWgsl('tests/env-u7.wgsl', { sources: { ...shaderSources, 'tests/env-u7.wgsl': U7_WGSL }, defines: envDefines(0, 0), features, wgslLanguageFeatures });
+    const shader = composeWgsl('tests/env-u7.wgsl', { sources: { ...shaderSources, 'tests/env-u7.wgsl': U7_WGSL }, defines: { ...envDefines(0, 0), ...FORCED_FLAGS }, features, wgslLanguageFeatures });
     const module = await createCheckedShaderModule(device, shader, 'env-u7');
     const pipeline = await device.createComputePipelineAsync({ layout: 'auto', compute: { module, entryPoint: 'main' } });
 
@@ -310,7 +315,7 @@ describe(`env (${lane()})`, () => {
     const env = await loadHdri('studio_small_09_1k.hdr');
     if (!env) { console.warn('ENV-U7b: studio_small_09_1k.hdr missing; skipped'); return; }
     const W = env.width, H = env.height, t = env.texels;
-    const shader = composeWgsl('tests/env-u7.wgsl', { sources: { ...shaderSources, 'tests/env-u7.wgsl': U7_WGSL }, defines: envDefines(0, 0), features, wgslLanguageFeatures });
+    const shader = composeWgsl('tests/env-u7.wgsl', { sources: { ...shaderSources, 'tests/env-u7.wgsl': U7_WGSL }, defines: { ...envDefines(0, 0), ...FORCED_FLAGS }, features, wgslLanguageFeatures });
     const module = await createCheckedShaderModule(device, shader, 'env-u7b');
     const pipeline = await device.createComputePipelineAsync({ layout: 'auto', compute: { module, entryPoint: 'main' } });
     const rnd = xorshift(4242);
@@ -366,7 +371,7 @@ describe(`env (${lane()})`, () => {
   it('ENV-U7c: envRadiance / envBackground with the compact format ≡ rgba32float bit for bit (HDRIs, f16 sun, RGBE, constant)', async () => {
     const { device, features, wgslLanguageFeatures } = await getTestGpu();
     const { loadHdri } = await import('./env-fixtures.ts');
-    const shader = composeWgsl('tests/env-u7.wgsl', { sources: { ...shaderSources, 'tests/env-u7.wgsl': U7_WGSL }, defines: envDefines(0, 0), features, wgslLanguageFeatures });
+    const shader = composeWgsl('tests/env-u7.wgsl', { sources: { ...shaderSources, 'tests/env-u7.wgsl': U7_WGSL }, defines: { ...envDefines(0, 0), ...FORCED_FLAGS }, features, wgslLanguageFeatures });
     const module = await createCheckedShaderModule(device, shader, 'env-u7c');
     const pipeline = await device.createComputePipelineAsync({ layout: 'auto', compute: { module, entryPoint: 'main' } });
     const mk = (name: string, W: number, H: number, f: (x: number, y: number) => number[]): EnvironmentData => {
@@ -414,6 +419,94 @@ describe(`env (${lane()})`, () => {
     console.log('ENV-U7c', lane(), JSON.stringify(report));
     expect(checked).toBeGreaterThanOrEqual(3);
     uvBuf.destroy(); out.destroy(); outBg.destroy();
+  });
+  // perf2 WP-4a RS_ENV_WRAP (perf2-plan.md WP-4 4a; perf2-api.md §1): envTexel's repeat wrap as selects (general
+  // modulo only outside xi ∈ [−dim, 2·dim)) ≡ the modulo text bit for bit: per env (odd and power-of-two sizes, the
+  // 1×1 placeholder, two 1k HDRIs) and texel format (rgba32float and the compact formats), over the edge uv values
+  // 0, 1, ±0.5/dim, 1 ± 0.5/dim, ±1/dim, texel centres / edges and their f32 neighbours, values far outside [0, 1]
+  // (fallback branch, saturating f32 → i32), signed zero, denormals and random uv in [−3, 4]².
+  it('ENV-U7w: RS_ENV_WRAP select-wrap ≡ modulo wrap bit for bit (envRadiance, envBackground; edge and out-of-range uv)', async () => {
+    const { device, features, wgslLanguageFeatures } = await getTestGpu();
+    const { loadHdri } = await import('./env-fixtures.ts');
+    const mkPipe = async (flag: boolean) => {
+      const shader = composeWgsl('tests/env-u7.wgsl', { sources: { ...shaderSources, 'tests/env-u7.wgsl': U7_WGSL },
+        defines: { ...envDefines(0, 0), ...(flag ? { RS_ENV_WRAP: 1 } : {}) }, features, wgslLanguageFeatures });
+      const module = await createCheckedShaderModule(device, shader, `env-u7w-${flag}`);
+      return device.createComputePipelineAsync({ layout: 'auto', compute: { module, entryPoint: 'main' } });
+    };
+    const [pOff, pOn] = await Promise.all([mkPipe(false), mkPipe(true)]);
+    const mk = (name: string, W: number, H: number, f: (x: number, y: number) => number[]): EnvironmentData => {
+      const t = new Float32Array(W * H * 4);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) t.set([...f(x, y), 1], 4 * (y * W + x));
+      return { name, width: W, height: H, texels: t, strength: 1, tint: [1, 1, 1], rotationZ: 0.3, visibleToCamera: true };
+    };
+    const distinct = (W: number) => (x: number, y: number) => [1 + x + W * y, 100 + 17 * x - 9 * y, 2 ** (x % 4) * (y + 1)];
+    const envs: (EnvironmentData | undefined)[] = [
+      mk('u7-8x4', 8, 4, distinct(8)), mk('odd-5x3', 5, 3, distinct(5)), mk('one-1x1', 1, 1, () => [0.25, 0.5, 2]),
+      mk('wide-2x1', 2, 1, distinct(2)),
+      ...(await Promise.all(['studio_small_09_1k.hdr', 'kloofendal_48d_partly_cloudy_puresky_1k.hdr'].map((f) => loadHdri(f)))),
+    ];
+    const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
+    const nb = (x: number): number[] => {               // x (as f32) and its two f32 neighbours
+      f32[0] = x; const b = u32[0], o = [f32[0]];
+      if (x !== 0) { u32[0] = b + 1; o.push(f32[0]); u32[0] = b - 1; o.push(f32[0]); }
+      return o;
+    };
+    const axis = (n: number): number[] => {
+      const base = [0, -0, 1, 0.5 / n, -0.5 / n, 1 + 0.5 / n, 1 - 0.5 / n, 1 / n, -1 / n, 1 + 1 / n, 0.5, 2 / n, (n - 0.5) / n];
+      const vals = base.flatMap(nb);
+      for (let k = 0; k <= Math.min(n, 9); k++) vals.push(...nb(k / n), ...nb((k + 0.5) / n));
+      return vals;
+    };
+    const wild = [-1, -0.999, 2, 2.5, -2.5, 3, -3, 1e3, -1e3, 1e7, -1e7, 3e9, -3e9, 3.4e38, -3.4e38, 1e-40, -1e-40, 1e-30];
+    const report: Record<string, unknown> = {};
+    let checked = 0;
+    for (const e of envs) {
+      if (!e) continue;
+      const W = e.width, H = e.height;
+      const us = [...axis(W), ...wild], vs = [...axis(H), ...wild];
+      const pts: number[] = [];
+      for (const u of us) for (const v of vs) pts.push(u, v);
+      const rnd = xorshift(31 + W);
+      for (let i = 0; i < 50_000; i++) pts.push(rnd() * 7 - 3, rnd() * 7 - 3);
+      for (let i = 0; i < 50_000; i++) pts.push(rnd(), rnd());
+      const uvs = new Float32Array(pts);
+      const n = uvs.length / 2;
+      // CPU estimate of how many lookups take the general-modulo fallback (x0 outside [−dim, 2·dim) on either axis)
+      let fallback = 0;
+      for (let i = 0; i < n; i++) {
+        const xu = Math.floor(uvs[2 * i] * W - 0.5), xv = Math.floor(uvs[2 * i + 1] * H - 0.5);
+        if (Number.isFinite(xu) && Number.isFinite(xv) && (xu < -W || xu >= 2 * W || xv < -H || xv >= 2 * H)) fallback++;
+      }
+      const uvBuf = device.createBuffer({ size: uvs.byteLength, usage: GPUBufferUsage.STORAGE, mappedAtCreation: true });
+      new Float32Array(uvBuf.getMappedRange()).set(uvs); uvBuf.unmap();
+      const out = device.createBuffer({ size: n * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+      const outBg = device.createBuffer({ size: n * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+      const run = async (pipeline: GPUComputePipeline, res: Awaited<ReturnType<typeof createEnvResources>>) => {
+        const bg = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [...envBindGroupEntries(res, 0), { binding: 3, resource: { buffer: uvBuf } }, { binding: 4, resource: { buffer: out } }, { binding: 5, resource: { buffer: outBg } }] });
+        const enc = device.createCommandEncoder();
+        const pass = enc.beginComputePass(); pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.dispatchWorkgroups(Math.ceil(n / 64)); pass.end();
+        device.queue.submit([enc.finish()]);
+        return [new Uint32Array(await readBuffer(device, out, n * 16)), new Uint32Array(await readBuffer(device, outBg, n * 16))] as const;
+      };
+      const perFormat: Record<string, number> = {};
+      for (const opts of [{ format: 'rgba32float' as const }, { mode: 'interactive' as const }]) {
+        const res = await createEnvResources(device, e, 'env-u7w', opts);
+        const [ra, ba] = await run(pOff, res);
+        const [rb, bb] = await run(pOn, res);
+        let diff = 0;
+        for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i] || ba[i] !== bb[i]) diff++;
+        perFormat[res.format] = diff;
+        expect(diff, `${e.name} (${res.format})`).toBe(0);
+        destroyEnvResources(res);
+      }
+      report[`${e.name} ${W}x${H}`] = { n, fallback, mismatches: perFormat };
+      expect(fallback).toBeGreaterThan(0);
+      checked++;
+      uvBuf.destroy(); out.destroy(); outBg.destroy();
+    }
+    console.log('ENV-U7w', lane(), JSON.stringify(report));
+    expect(checked).toBeGreaterThanOrEqual(5);
   });
   it('env-grid overlay: axis discs, rings and horizon', async () => {
     const { device, features, wgslLanguageFeatures } = await getTestGpu();
