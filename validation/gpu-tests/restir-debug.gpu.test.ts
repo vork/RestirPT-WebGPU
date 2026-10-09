@@ -37,7 +37,7 @@ import { RS_PASSES, restirCommonDefines } from '../../src/core/render/restir/res
 import { composeWgsl } from '../../src/core/gpu/wgsl-composer.ts';
 import { shaderSources } from '../../src/core/shaders/index.ts';
 import { releaseTestGpu } from './device-factory.ts';
-import { allLightsScene, bitFixtureScene, boxCamera, gpuScene, readTexture4, restirRig, storageBuffer, type GpuScene } from './restir-fixtures.ts';
+import { allLightsScene, bitFixtureScene, boxCamera, gpuScene, readTexture4, restirRig, storageBuffer, testPerfFlags, type GpuScene } from './restir-fixtures.ts';
 
 afterAll(releaseTestGpu);
 
@@ -72,6 +72,7 @@ async function debugRig(W: number, H: number, preset: RestirPresetName, over: Pa
   debug.resize(W, H);
   const kernel = await RestirKernel.create(device, g.gpu, g.env, {
     settings: restirSettings(preset, over), debug, features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures,
+    perfFlags: testPerfFlags(),   // perf2: VITE_PERF_FLAGS (e.g. WP-7b RS_DUPMAP_S64 on U-DUP-VIEW)
   });
   kernel.setView({ camera: boxCamera(), width: W, height: H, runSeed: 11, jitterMode: JITTER_IID });
   await kernel.prepare();

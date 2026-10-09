@@ -19,6 +19,12 @@ import {
   emptyState, lum, refFilter, refLambda, refPairs, refResolveStatic, refTemporal, st16, rayDir, type RefPixel, type RefState, type RefTState, type V3,
 } from '../../tests/denoise/dn-ref.ts';
 import { getTestGpu, releaseTestGpu } from './device-factory.ts';
+import { testPerfFlags } from './restir-fixtures.ts';
+import { normalizePerfFlags } from '../../src/core/render/restir/perf-flags.ts';
+
+/** perf2 (perf2-api.md): VITE_PERF_FLAGS reaches the denoiser's pipelines (WP-7: GBUF_48, DN_ZGRAD_TEX, …). */
+const PERF = normalizePerfFlags(testPerfFlags());
+const GB48 = !!PERF.GBUF_48;
 
 afterAll(releaseTestGpu);
 
@@ -47,8 +53,18 @@ function scene(cam: CameraState): RefPixel[] {
   }
   return px;
 }
-/** GBufTexel array (80 B; passes/gbuffer.wgsl). `motion`: per-pixel motion vectors (GB_MOTION_VALID set). */
+/** GBufTexel array (80 B; passes/gbuffer.wgsl). `motion`: per-pixel motion vectors (GB_MOTION_VALID set). With GBUF_48
+ *  the stored GBufStore (48 B: pos, flags, ns, motion.x, albedo, motion.y). */
 function gbufBytes(px: RefPixel[], motion?: [number, number][]): ArrayBuffer {
+  if (GB48) {
+    const b = new ArrayBuffer(P * 48), f = new Float32Array(b), u = new Uint32Array(b);
+    px.forEach((p, i) => {
+      const o = i * 12;
+      f.set(p.pos, o); u[o + 3] = p.hit ? GB_HIT : 0; f.set(p.ns, o + 4); f.set(p.albedo, o + 8);
+      if (motion) { f[o + 7] = motion[i][0]; f[o + 11] = motion[i][1]; u[o + 3] |= 4; }   // GB_MOTION_VALID
+    });
+    return b;
+  }
   const b = new ArrayBuffer(P * 80), f = new Float32Array(b), u = new Uint32Array(b);
   px.forEach((p, i) => {
     const o = i * 20;
@@ -71,13 +87,13 @@ beforeAll(async () => {
   await debug.init();
   debug.resize(W, H);
   debug.update({ ...debug.settings, mode: 0 }, 0);
-  const dn = await Denoiser.create(device, { debugLayout: debug.layout, colorFormat: 'rgba32float', features, wgslLanguageFeatures });
+  const dn = await Denoiser.create(device, { debugLayout: debug.layout, colorFormat: 'rgba32float', features, wgslLanguageFeatures, perfFlags: PERF });
   dn.resize(W, H);
   const tex = (label: string, usage: number) => device.createTexture({ label, size: [W, H], format: 'rgba32float', usage });
   const T = GPUTextureUsage;
   rig = {
     device, dn, debug, fu: new FrameUniformBuffer(device),
-    gbuf: device.createBuffer({ size: P * 80, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }),
+    gbuf: device.createBuffer({ size: P * (GB48 ? 48 : 80), usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }),
     radiance: tex('radiance', T.TEXTURE_BINDING | T.COPY_DST | T.COPY_SRC), l1: tex('l1', T.TEXTURE_BINDING | T.COPY_DST),
     colour: tex('colour', T.STORAGE_BINDING | T.TEXTURE_BINDING | T.COPY_SRC | T.COPY_DST),
     arena: device.createBuffer({ size: (64 + 20 * P) * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }),

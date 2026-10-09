@@ -8,8 +8,9 @@ import { composeWgsl, createCheckedShaderModule } from '../../gpu/wgsl-composer.
 import { shaderSources } from '../../shaders/index.ts';
 import { registerDenoiser, unregisterDenoiser } from './registry.ts';
 import {
-  DENOISER_DEFAULTS, DN_ITER_SIZE, DN_PARAMS_SIZE, DNF, atrousPlan, dnTiles, packDnParams, type DenoiserSettings,
+  DENOISER_DEFAULTS, DN_ITER_SIZE, DN_PARAMS_SIZE, DN_VIEW, DNF, atrousPlan, dnTiles, packDnParams, type DenoiserSettings,
 } from './layout.ts';
+import { normalizePerfFlags, perfFlagDefines, perfFlagsKey, type PerfFlags, type PerfFlagsInput } from '../restir/perf-flags.ts';
 
 const modules = import.meta.glob('./shaders/*.wgsl', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
 /** The denoiser's WGSL under the keys 'denoise/<file>' (composed with the shared shader sources). */
@@ -52,6 +53,8 @@ export interface DenoiseFrame {
   colour: GPUTexture;
   restir?: DenoiseRestirInput;
   debugGroup: GPUBindGroup;
+  /** The active debug view (perf2 WP-7a: view 527, the gradient pairs, keeps dn_gradient running). */
+  debugMode?: number;
 }
 
 export interface DenoiserTiming { totalMs: number; passes: { name: string; ms: number }[] }
@@ -62,6 +65,8 @@ interface Targets {
   w: number; h: number;
   hist: [GPUTexture, GPUTexture]; mom: [GPUTexture, GPUTexture]; alb: [GPUTexture, GPUTexture]; l1: [GPUTexture, GPUTexture]; taa: [GPUTexture, GPUTexture]; out: GPUTexture; lumG: GPUTexture; tap: GPUTexture; geo: [GPUTexture, GPUTexture]; atrous: [GPUTexture, GPUTexture];
   gradTile: GPUTexture; gradTile2: GPUTexture; lambda: GPUTexture; input?: GPUTexture;
+  /** perf2 WP-7f (DN_ZGRAD_TEX): the centre depth gradient of every hit pixel (dn_variance → dn_atrous). */
+  zg?: GPUTexture;
 }
 
 const C = 0x4;   // GPUShaderStage.COMPUTE (no WebGPU global at import time: the CPU tests import the renderer)
@@ -89,6 +94,10 @@ export class Denoiser {
   private cur = 0;
   private needsReset = true;
   private plan: PlanPass[] = [];
+  /** perf2 WP-7a (DN_GRAD_SKIP): the full plan of the last advanced frame (gradient passes included when the frame is
+   *  eligible) and whether its gradient passes are in `plan`. */
+  private planFull: PlanPass[] = [];
+  private planGrad = false;
   private planG0: GPUBindGroup | undefined;
   private planDebug: GPUBindGroup | undefined;
   private lastFlags = 0;
@@ -108,8 +117,15 @@ export class Denoiser {
   private timingBusy = false;
   private querySet: GPUQuerySet | undefined;
 
+  /** perf2 (perf2-api.md): the perf flags the pipelines were composed with (the renderer's set; WP-7 reads DN_GRAD_SKIP,
+   *  GBUF_48, DN_ZGRAD_TEX, DN_COLOUR_EARLY). A different set needs a new Denoiser (Renderer.encodeDenoiser). */
+  readonly perfFlags: PerfFlags;
+  readonly perfFlagsKey: string;
+
   private constructor(readonly device: GPUDevice, readonly debugLayout: GPUBindGroupLayout, readonly colorFormat: GPUTextureFormat,
-    private readonly o: { features?: Set<string>; wgslLanguageFeatures?: Set<string> }) {
+    private readonly o: { features?: Set<string>; wgslLanguageFeatures?: Set<string>; perfFlags?: PerfFlagsInput }) {
+    this.perfFlags = normalizePerfFlags(o.perfFlags);
+    this.perfFlagsKey = perfFlagsKey(this.perfFlags);
     this.params = device.createBuffer({ label: 'dn-params', size: DN_PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.iterBufs = Array.from({ length: 7 }, (_, i) => device.createBuffer({ label: `dn-iter${i}`, size: DN_ITER_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }));
     this.g0Layout = device.createBindGroupLayout({ label: 'dn-g0', entries: entries([{ buffer: { type: 'uniform' } }, { buffer: { type: 'uniform', minBindingSize: DN_PARAMS_SIZE } }]) });
@@ -125,11 +141,12 @@ export class Denoiser {
           { texture: tex() }, { storageTexture: st('rgba32float') }, { texture: tex() }, { storageTexture: st('rgba32float') }]),
       }),
       variance: device.createBindGroupLayout({ label: 'dn-variance', entries: entries([{ texture: tex() }, { texture: tex() }, { texture: tex('uint') }, { storageTexture: st('rgba16float') }, { storageTexture: st('r32float') },
-        { texture: tex() }, { texture: tex() }, { texture: tex() }, { storageTexture: st('rgba32uint') }]) }),
+        { texture: tex() }, { texture: tex() }, { texture: tex() }, { storageTexture: st('rgba32uint') }, ...(this.perfFlags.DN_ZGRAD_TEX ? [{ storageTexture: st('rg32float') }] : [])]) }),
       atrous: device.createBindGroupLayout({
         label: `dn-atrous-${colorFormat}`,
         entries: entries([{ texture: tex() }, { texture: tex('uint') }, { buffer: { type: 'uniform', minBindingSize: DN_ITER_SIZE } }, { storageTexture: st('rgba16float') },
-          { storageTexture: st('rgba16float') }, { storageTexture: st('rgba16float') }, { texture: tex() }, { texture: tex() }, { texture: tex() }, { texture: tex() }, { texture: tex() }]),
+          { storageTexture: st('rgba16float') }, { storageTexture: st('rgba16float') }, { texture: tex() }, { texture: tex() }, { texture: tex() }, { texture: tex() }, { texture: tex() },
+          ...(this.perfFlags.DN_ZGRAD_TEX ? [{ texture: tex() }] : [])]),
       }),
       resolve: device.createBindGroupLayout({
         label: `dn-resolve-${colorFormat}`,
@@ -142,7 +159,7 @@ export class Denoiser {
     registerDenoiser(this, () => `A-SVGF-lite (${this.kind ?? 'idle'}, ${this.settings.iterations} iterations)`);
   }
 
-  static async create(device: GPUDevice, o: { debugLayout: GPUBindGroupLayout; colorFormat: GPUTextureFormat; features?: Set<string>; wgslLanguageFeatures?: Set<string> }): Promise<Denoiser> {
+  static async create(device: GPUDevice, o: { debugLayout: GPUBindGroupLayout; colorFormat: GPUTextureFormat; features?: Set<string>; wgslLanguageFeatures?: Set<string>; perfFlags?: PerfFlagsInput }): Promise<Denoiser> {
     const d = new Denoiser(device, o.debugLayout, o.colorFormat, o);
     await d.compile();
     return d;
@@ -151,7 +168,7 @@ export class Denoiser {
   private async compile(): Promise<void> {
     const sources = { ...shaderSources, ...denoiseSources };
     const mk = async (key: string, file: string, entry: string, layout: GPUBindGroupLayout, defines: Record<string, boolean | string>) => {
-      const shader = composeWgsl(file, { sources, defines, features: this.o.features, wgslLanguageFeatures: this.o.wgslLanguageFeatures });
+      const shader = composeWgsl(file, { sources, defines: { ...defines, ...perfFlagDefines(this.perfFlags) }, features: this.o.features, wgslLanguageFeatures: this.o.wgslLanguageFeatures });
       const module = await createCheckedShaderModule(this.device, shader, key);
       const pipe = await this.device.createComputePipelineAsync({
         label: key, layout: this.device.createPipelineLayout({ label: key, bindGroupLayouts: [this.g0Layout, layout, this.empty, this.debugLayout] }),
@@ -192,9 +209,11 @@ export class Denoiser {
     this.t = {
       w, h, hist: pair('dn-hist', 'rgba16float'), mom: pair('dn-mom', 'rgba16float'), alb: pair('dn-alb', 'rgba32float'), l1: pair('dn-l1', 'rgba32float'), taa: pair('dn-taa', 'rgba32float'), out: mk('dn-out', 'rgba16float'), lumG: mk('dn-lumg', 'r32float'), tap: mk('dn-tap', 'rgba32uint'), geo: pair('dn-geo', 'rg32uint'), atrous: pair('dn-atrous', 'rgba16float'),
       gradTile: mk('dn-grad-tile', 'rgba32float', [tx, ty]), gradTile2: mk('dn-grad-tile2', 'rgba32float', [tx, ty]), lambda: mk('dn-lambda', 'r32float', [tx, ty]),
+      ...(this.perfFlags.DN_ZGRAD_TEX ? { zg: mk('dn-zgrad', 'rg32float') } : {}),
     };
     this.groups.clear();
     this.plan = [];
+    this.planFull = [];
     this.needsReset = true;
   }
 
@@ -231,6 +250,10 @@ export class Denoiser {
     const t = this.t;
     if (!t || t.w !== f.colour.width || t.h !== f.colour.height) return false;
     if (!f.advanced && this.plan.length && this.planG0 && f.debugGroup === this.planDebug) {
+      // WP-7a: the pairs view (527) switched on / off while held: the same plan with / without the gradient passes
+      // (same flags and parameters: the passes are pure, λ is read only under DNF_LAMBDA / DNF_LAMBDA_CAM)
+      const g = this.gradRuns(this.lastFlags, f.debugMode);
+      if (g !== this.planGrad) this.selectPlan(g);
       this.encodePlan(enc, this.planG0, f.debugGroup);   // held frame (DN9): same parity, same inputs, same outputs
       return true;
     }
@@ -281,7 +304,7 @@ export class Denoiser {
         { buffer: r?.resFinal ?? this.dummyBuf }, v(t.atrous[0]), v(t.hist[cur]), v(t.mom[cur]), v(t.geo[cur]), v(t.alb[prev]), v(t.alb[cur]), v(t.l1[prev]), v(t.l1[cur]),
       ]) });
     plan.push({ name: 'dn_variance', pipeline: this.pipelines.get('dn_variance')!, wg,
-      g1: this.group(`variance:${cur}`, this.layouts.variance, [v(t.atrous[0]), v(t.mom[cur]), v(t.geo[cur]), v(t.atrous[1]), v(t.lumG), v(t.alb[cur]), v(t.l1[cur]), v(t.taa[prev]), v(t.tap)]) });
+      g1: this.group(`variance:${cur}`, this.layouts.variance, [v(t.atrous[0]), v(t.mom[cur]), v(t.geo[cur]), v(t.atrous[1]), v(t.lumG), v(t.alb[cur]), v(t.l1[cur]), v(t.taa[prev]), v(t.tap), ...(t.zg ? [v(t.zg)] : [])]) });
     const its = atrousPlan(this.settings.iterations);
     its.forEach(([iter, step], i) => {
       const src = (i + 1) % 2, dst = i % 2;   // dn_variance wrote atrous[1]: iteration 0 reads 1 and writes 0, …
@@ -290,17 +313,33 @@ export class Denoiser {
       plan.push({ name: `dn_atrous${iter}`, pipeline: this.pipelines.get(step === 1 && this.settings.atrousTile ? 'dn_atrous_tile1' : 'dn_atrous')!, wg,
         g1: this.group(`atrous:${i}:${cur}:${oid(f.colour)}:${oid(radiance)}:${oid(l1)}`, this.layouts.atrous, [
           v(t.atrous[src]), v(t.tap), { buffer: this.iterBufs[i] }, v(t.atrous[dst]), v(t.hist[cur]), v(t.out), v(radiance), v(t.l1[cur]), v(t.alb[cur]), v(t.mom[cur]), v(t.lumG),
+          ...(t.zg ? [v(t.zg)] : []),
         ]) });
     });
     plan.push({ name: 'dn_resolve', pipeline: this.pipelines.get('dn_resolve')!, wg,
       g1: this.group(`resolve:${cur}:${oid(f.colour)}:${oid(f.gbuf)}:${(flags & DNF.GRADIENT) ? 1 : 0}`, this.layouts.resolve, [
         v(t.out), v(t.taa[prev]), v(t.geo[cur]), v(t.geo[prev]), { buffer: f.gbuf }, (flags & DNF.GRADIENT) ? v(t.lambda) : v(this.dummyTex), v(t.mom[cur]), v(t.taa[cur]), v(f.colour),
       ]) });
-    this.plan = plan;
+    this.planFull = plan;
+    this.selectPlan(this.gradRuns(flags, f.debugMode));
     this.planG0 = this.group(`g0:${oid(f.frameUniforms)}`, this.g0Layout, [{ buffer: f.frameUniforms }, { buffer: this.params }]);
     this.planDebug = f.debugGroup;
     this.encodePlan(enc, this.planG0, f.debugGroup);
     return true;
+  }
+
+  /** perf2 WP-7a (DN_GRAD_SKIP): dn_gradient / dn_grad_filter only produce λ (dnLambda) and the pairs view; dn_temporal
+   *  and dn_resolve read λ only under DNF_LAMBDA, or DNF_LAMBDA_CAM with a moving camera. Without either flag (static
+   *  lighting, gradientOnCamera off) and without view 527 the passes are skipped. The flags (DNF_GRADIENT, DNF_INVERSE, …)
+   *  are unchanged, so every other pass computes exactly the same values; the HUD still reads DNF_GRADIENT. */
+  private gradRuns(flags: number, debugMode: number | undefined): boolean {
+    if (!(flags & DNF.GRADIENT)) return false;
+    if (!this.perfFlags.DN_GRAD_SKIP) return true;
+    return !!(flags & (DNF.LAMBDA | DNF.LAMBDA_CAM)) || debugMode === DN_VIEW.pairs;
+  }
+  private selectPlan(grad: boolean): void {
+    this.planGrad = grad;
+    this.plan = grad ? this.planFull : this.planFull.filter((p) => p.name !== 'dn_gradient' && p.name !== 'dn_grad_filter');
   }
 
   private encodePlan(enc: GPUCommandEncoder, g0: GPUBindGroup, dbg: GPUBindGroup, ts?: GPUQuerySet): void {
@@ -392,6 +431,7 @@ export class Denoiser {
     const t = this.t;
     if (!t) return;
     for (const x of [...t.hist, ...t.mom, ...t.alb, ...t.l1, ...t.taa, t.out, t.lumG, t.tap, ...t.geo, ...t.atrous, t.gradTile, t.gradTile2, t.lambda]) x.destroy();
+    t.zg?.destroy();
     t.input?.destroy();
     this.t = undefined;
   }

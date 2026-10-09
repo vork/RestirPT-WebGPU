@@ -588,6 +588,7 @@ export class App {
       { active: ds.mode !== 0, split: ds.split, splitPos: ds.splitPos, probe: ds.probeEnabled, probePixel: ds.probePixel },
       r.overlay ? { overlay: this.overlay, camera: cur } : undefined,
       this.timestamps.pass('present'),
+      { toneTimestampWrites: this.timestamps.pass('tonemap') },   // perf2 WP-7g
     );
     this.probe.encodeCopy(enc, this.debug.buffer, this.frameCounter);
     this.timestamps.resolve(enc);

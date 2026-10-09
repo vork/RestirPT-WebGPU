@@ -60,6 +60,9 @@ fn dn_tap_guide(t: vec4u) -> f32 { return unpack2x16float(t.w).y; }
 @group(1) @binding(6) var l1Cur: texture_2d<f32>;
 @group(1) @binding(7) var taaPrev: texture_2d<f32>;
 @group(1) @binding(8) var tapOut: texture_storage_2d<rgba32uint, write>;
+#if DN_ZGRAD_TEX
+@group(1) @binding(9) var zgOut: texture_storage_2d<rg32float, write>;   // perf2 WP-7f: dn_zgrad of hit pixels
+#endif
 
 /// DN-14: everything an à-trous tap reads besides its colour, written once per frame as one rgba32uint texel:
 /// x, y = the dnGeo guide (f32 distance, oct normal); z, w = binary16 (ā.r, ā.g), (ā.b, g) with g = the DN-9 luminance
@@ -110,11 +113,23 @@ fn dn_variance(@builtin(global_invocation_id) gid: vec3u) {
   if (!(zc > 0.0)) { textureStore(atrousOut, p, c); textureStore(lumGOut, p, vec4f(0.0)); textureStore(tapOut, p, vec4u(0u)); return; }
   textureStore(tapOut, p, dn_tap(p, gc));
   let n = textureLoad(momCur, p, 0).z;
+#if DN_ZGRAD_TEX
+  // perf2 WP-7f: the à-trous levels read this instead of recomputing it from dnTap (whose guide words equal dnGeo's
+  // wherever the centre is a hit, and are 0 = "no hit" elsewhere, as dnGeo's: the same value)
+  let zg0 = dn_zgrad(geoCur, p, zc);
+  textureStore(zgOut, p, vec4f(zg0, 0.0, 0.0));
+  textureStore(lumGOut, p, vec4f(dn_lum_guide(p, zc, zg0, dn_guide_normal(gc)), 0.0, 0.0, 0.0));
+#else
   textureStore(lumGOut, p, vec4f(dn_lum_guide(p, zc, dn_zgrad(geoCur, p, zc), dn_guide_normal(gc)), 0.0, 0.0, 0.0));
+#endif
   var v = c.a;
   if (n < 4.0) {
     let nc = dn_guide_normal(gc);
+#if DN_ZGRAD_TEX
+    let zg = zg0;
+#else
     let zg = dn_zgrad(geoCur, p, zc);
+#endif
     var s = vec3f(0.0);   // Σw, Σw·l, Σw·l²
     for (var dy = -3; dy <= 3; dy++) {
       for (var dx = -3; dx <= 3; dx++) {
@@ -153,6 +168,9 @@ const DNI_COPY: u32 = 4u;       // no filtering (0 iterations)
 @group(1) @binding(8) var albTex: texture_2d<f32>;
 @group(1) @binding(9) var momCur: texture_2d<f32>;    // DN-12: the colour-history length n
 @group(1) @binding(10) var lumG: texture_2d<f32>;     // DN-13: the prefiltered luminance guide
+#if DN_ZGRAD_TEX
+@group(1) @binding(11) var zgTex: texture_2d<f32>;    // perf2 WP-7f: dn_zgrad of the centre, from dn_variance
+#endif
 
 
 /// 3×3 Gaussian of the variance around p (SVGF prefilter of the luminance edge stop).
@@ -189,7 +207,11 @@ fn dn_atrous(@builtin(global_invocation_id) gid: vec3u) {
   var res = c;
   if ((it.flags & DNI_COPY) == 0u) {
     let nc = dn_guide_normal(gc);
+#if DN_ZGRAD_TEX
+    let zg = textureLoad(zgTex, p, 0).xy;
+#else
     let zg = dn_zgrad(tapTex, p, zc);
+#endif
     let ac = dn_tap_alb(tc);
     // DN-9: with a converged output (static camera and lighting, n_t ≥ 8 at both pixels) the luminance stop compares
     // the demodulated previous output instead of this frame's noisy values: weights that depend on the noise being
@@ -218,12 +240,17 @@ fn dn_atrous(@builtin(global_invocation_id) gid: vec3u) {
         let q = p + d;
         if (!dn_in_image(q)) { continue; }
         let tq = textureLoad(tapTex, q, 0);
+#if DN_COLOUR_EARLY
+        let cq = textureLoad(atrousIn, q, 0);   // perf2 WP-7f: issued with the tap read (latency overlaps the weight)
+#endif
         let gq = tq.xy;
         let zq = dn_guide_dist(gq);
         if (!(zq > 0.0)) { continue; }
         let lg = dn_lw_geo(zc, zg, nc, zq, dn_guide_normal(gq), vec2f(d));
         if (lg < DN_LW_GEO_MIN) { continue; }   // DN-15: a negligible geometric weight: skip the colour and tap reads
+#if !DN_COLOUR_EARLY
         let cq = textureLoad(atrousIn, q, 0);
+#endif
         let da = dn_tap_alb(tq) - ac;
         let glq = dn_tap_guide(tq);
         var lq: f32;
@@ -292,7 +319,11 @@ fn dn_atrous_tile(@builtin(workgroup_id) wid: vec3u, @builtin(local_invocation_i
   var res = c;
   if ((it.flags & DNI_COPY) == 0u) {
     let nc = dn_guide_normal(gc);
+#if DN_ZGRAD_TEX
+    let zg = textureLoad(zgTex, p, 0).xy;
+#else
     let zg = dn_zgrad(tapTex, p, zc);
+#endif
     let ac = dn_tap_alb(tc);
     // DN-9: with a converged output (static camera and lighting, n_t ≥ 8 at both pixels) the luminance stop compares
     // the demodulated previous output instead of this frame's noisy values: weights that depend on the noise being

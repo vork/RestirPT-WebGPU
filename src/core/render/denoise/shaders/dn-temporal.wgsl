@@ -14,7 +14,11 @@
 #include "denoise/dn-common.wgsl"
 #include "passes/gbuffer.wgsl"
 
+#if GBUF_48
+@group(1) @binding(0) var<storage, read> gbuf: array<GBufStore>;   // perf2 WP-7d
+#else
 @group(1) @binding(0) var<storage, read> gbuf: array<GBufTexel>;
+#endif
 @group(1) @binding(1) var inputTex: texture_2d<f32>;
 @group(1) @binding(2) var l1Tex: texture_2d<f32>;
 @group(1) @binding(3) var geoPrev: texture_2d<u32>;

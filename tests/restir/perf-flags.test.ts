@@ -9,14 +9,17 @@ import {
 import { INTERACTIVE_PINNED, RESTIR_PRESETS, restirSettings } from '../../src/core/render/restir/presets.ts';
 import { INTERACTIVE_APP_DEFAULTS, restirAppSettings } from '../../src/core/render/renderer.ts';
 import { shaderSources } from '../../src/core/shaders/index.ts';
+import { denoiseSources } from '../../src/core/render/denoise/denoiser.ts';
 
 /** perf2-plan.md WP-0 step 1 (+ RS_HALF_RATE, user decision D6). */
 const RESERVED = ['RS_VIS_MERGE', 'RS_RIS_HOIST', 'RS_NEE_SITE', 'RS_LAST_ANYHIT', 'RS_RIS_PREPASS', 'RS_ENV_WRAP', 'RS_ENV_PRESAMPLE',
   'CW_TRI_BUDGET', 'BVH_ALPHA_BIT', 'BVH2_PRIV_STACK', 'RS_DENSE_SLOTS', 'RS_BOOST_GATE', 'RS_TSEL_FOLD', 'RS_TSTATE_SOA', 'RS_AGG_COUNTERS',
-  'RS_NO_PLANTS', 'RS_NO_DIAG', 'MAT_VARIANTS', 'RS_PRIMARY_EXT', 'RS_HALF_RATE'];
+  'RS_NO_PLANTS', 'RS_NO_DIAG', 'MAT_VARIANTS', 'RS_PRIMARY_EXT', 'RS_HALF_RATE',
+  // WP-7 a–d, f (app-only passes)
+  'DN_GRAD_SKIP', 'RS_DUPMAP_S64', 'PRIM_SKIP_BEAUTY', 'RS_SKIP_DISPLAY', 'GBUF_48', 'DN_ZGRAD_TEX', 'DN_COLOUR_EARLY'];
 
 describe('perf-flag registry', () => {
-  it('reserves every WP-0 name and RS_HALF_RATE', () => {
+  it('reserves every WP-0 name, RS_HALF_RATE and the WP-7 names', () => {
     expect([...PERF_FLAG_NAMES].sort()).toEqual([...RESERVED].sort());
   });
   it('classes: results-changing flags are the plan\'s unbiased items and the biased D6 toggle', () => {
@@ -32,7 +35,7 @@ describe('perf-flag registry', () => {
   });
   it('every flag a shader #if references is marked landed', () => {
     const used = new Set<string>();
-    for (const src of Object.values(shaderSources)) {
+    for (const src of [...Object.values(shaderSources), ...Object.values(denoiseSources)]) {
       for (const line of src.split('\n')) {
         const m = /^\s*#(?:if|elif)\b(.*)$/.exec(line);
         if (!m) continue;

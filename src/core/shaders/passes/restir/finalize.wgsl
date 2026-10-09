@@ -15,6 +15,9 @@
 
 const RS_CNT_NONFINITE: u32 = 0u;
 const RS_CNT_NEGATIVE: u32 = 3u;
+#if RS_SKIP_DISPLAY
+const RSD_NO_DISPLAY: u32 = 128u;   // perf2 WP-7c (kernel.ts K_RSD_NO_DISPLAY): the denoiser writes the colour target
+#endif
 
 fn rs_finalize_radiance(p: RsPix) -> vec3f {
   let L1 = textureLoad(rsL1, p.px, 0).rgb;
@@ -49,6 +52,11 @@ fn rs_finalize_frame(@builtin(global_invocation_id) gid: vec3u) {
   var c = rs_finalize_radiance(p);
   if (!all_finite3(c)) { c = vec3f(0.0); atomicAdd(&counters[RS_CNT_NONFINITE], 1u); }
   textureStore(rsFrameOut, p.px, vec4f(c, 1.0));
+#if RS_SKIP_DISPLAY
+  // perf2 WP-7c: the accumulation is left stale while the denoiser displays; the renderer restarts it (no
+  // RSD_ACCUMULATE) on the first frame shown without the denoiser
+  if ((rsDispatch.flags & RSD_NO_DISPLAY) != 0u) { return; }
+#endif
   let restart = (frame.flags & (FRAME_RESET_HISTORY | FRAME_CAMERA_MOVED)) != 0u || (rsDispatch.flags & RSD_ACCUMULATE) == 0u;
   var a = select(accum[p.localIdx], vec4f(0.0), restart);
   if (restart || (rsDispatch.flags & RSD_ADVANCED) != 0u) { a += vec4f(c, 1.0); }
