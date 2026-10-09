@@ -8,12 +8,17 @@
 //   mode 'timing'    the denoiser GPU time from separate timing submits (Q3) after `warmup` frames, at any resolution
 // plus meta.json (settings, per-frame denoiser flags, finalize counters, adapter). The renderer (and its denoiser) is
 // destroyed at the end, so a validation run on the same page afterwards sees no live denoiser (T16, harness.ts).
+// perf2 WP-Q (docs/decisions/perf2-plan.md, the equal-quality harness): `renderer` / `restir` overrides (the app's
+// Mode B, CWBVH, decision configurations such as { risM: 16 }), opaque `perfFlags` (WP-0's RestirKernelOptions.perfFlags
+// registry; passed through as restirKernel.perfFlags) and oscillating camera / light motion whose phase knots put the
+// evaluation frames on the base state (one PT reference serves the static, pan and light sequences).
 import { describeContext, type GpuContext } from '../../src/core/gpu/device.ts';
 import { encodePFM } from '../../src/core/io/pfm.ts';
 import { DebugResources, DebugViewRegistry } from '../../src/core/render/debug-views.ts';
 import { DENOISER_DEFAULTS, type DenoiserSettings } from '../../src/core/render/denoise/layout.ts';
 import { FrameUniformBuffer, JITTER_IID, JITTER_NONE, JITTER_R2, boundsDiagonal, computeRenderOrigin, r2Jitter, type CameraState } from '../../src/core/render/frame-uniforms.ts';
-import { Renderer, type RestirAppMode } from '../../src/core/render/renderer.ts';
+import { Renderer, type RendererOptions, type RestirAppMode } from '../../src/core/render/renderer.ts';
+import type { RestirSettings } from '../../src/core/render/restir/presets.ts';
 import { fetchScenePackage, resolvePackageFrame } from '../../src/core/scene/scene-package.ts';
 import { packageSha256, uploadFile } from './export-package.ts';
 
@@ -43,6 +48,18 @@ export interface RenderDenoiseOptions {
   /** Animated light (edge study): light `index`'s power scaled by 1 + amp·sin(0.7·i) on every frame (amp 1e-3: a change
    *  every frame that the change bits see, with a negligible image change), or `move` metres of sinusoidal x motion. */
   lightAnim?: { index: number; amp: number; move?: number };
+  /** WP-Q oscillating motion: offset = amp·sin(2π φ(i)), φ piecewise linear through knots[k] ↦ k (held at the ends),
+   *  so the knots (e.g. 0,16,32,48,63) are on the base state while the camera / light moves at its peak speed there.
+   *  `panOsc`: metres along the camera's right axis; `lightOsc`: metres of world-x motion of light `index`. */
+  panOsc?: { amp: number; knots: number[] };
+  lightOsc?: { index: number; amp: number; knots: number[] };
+  /** WP-Q: renderer options over this runner's defaults (validation textures, Woop, BVH2, light mode 'A'), e.g. the
+   *  app's { lightMode: 'B', bvhKind: 'auto' }. */
+  renderer?: Partial<RendererOptions>;
+  /** WP-Q: ReSTIR settings over the app mode's preset (restirFeatures; any RestirSettings field, e.g. risM, slots). */
+  restir?: Partial<RestirSettings>;
+  /** WP-Q: opaque perf-flag names for WP-0's registry (RestirKernelOptions.perfFlags via RendererOptions.restirKernel). */
+  perfFlags?: string[];
   /** Debug AOV capture: upload view `id` of frame `frame` as aov_<id>_f<frame>.pfm (rgb = the AOV's xyz). */
   debugViews?: { ids: number[]; frames: number[] };
   /** 'timing': warm-up frames, timing submits and re-runs per submit. */
@@ -101,6 +118,16 @@ async function readTexture4(device: GPUDevice, tex: GPUTexture): Promise<Uint32A
   return out;
 }
 
+/** amp·sin(2π φ(i)) with φ piecewise linear through knots[k] ↦ k; exactly 0 on the knots (and before / after them). */
+export function oscOffset(o: { amp: number; knots: number[] }, i: number): number {
+  const k = o.knots;
+  if (i <= k[0] || i >= k[k.length - 1]) return 0;
+  let j = 0;
+  while (i >= k[j + 1]) j++;
+  if (i === k[j]) return 0;
+  return o.amp * Math.sin(2 * Math.PI * (i - k[j]) / (k[j + 1] - k[j]));
+}
+
 export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): Promise<RenderDenoiseReport> {
   const t0 = performance.now();
   const errors: string[] = [];
@@ -111,16 +138,20 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
   const W = o.width ?? p.render.width, H = o.height ?? p.render.height;
   const seqFrames = p.sequence?.frameCount;
   const pkgFrame = (i: number): number => o.pkgFrames?.[i] ?? (seqFrames ? Math.min(i, seqFrames - 1) : -1);
-  if ((p.lightMode ?? 'A') !== 'A') throw new Error(`${o.package}: light mode ${p.lightMode}; renderDenoise renders Mode A packages only (its renderer runs lightMode 'A')`);
+  const lightMode = o.renderer?.lightMode ?? 'A';
+  if (!o.renderer?.lightMode && (p.lightMode ?? 'A') !== 'A') throw new Error(`${o.package}: light mode ${p.lightMode}; renderDenoise renders Mode A unless renderer.lightMode is given`);
 
   const debug = new DebugResources(device, new DebugViewRegistry());
   await debug.init();
   debug.resize(W, H);
   const settings0 = { ...DENOISER_DEFAULTS, ...o.denoiser };
-  const r = await Renderer.create({ device, debugLayout: debug.layout, debug, features: ctx.features, wgslLanguageFeatures: ctx.wgslLanguageFeatures }, {
+  const restirKernel = o.perfFlags?.length ? { ...o.renderer?.restirKernel, perfFlags: o.perfFlags } as RendererOptions['restirKernel'] : o.renderer?.restirKernel;
+  const ropts: Partial<RendererOptions> = {
     textureMode: 'validation', watertight: true, renderMode: 'restir', restirMode: o.restirMode ?? 'interactive', temporal: true, accumulate: !!o.accumulate,
-    maxBounces: p.render.maxBounces ?? 3, lightMode: 'A', envNee: (p.json.env?.sampling ?? 'AUTOMATIC') !== 'NONE',
-  });
+    maxBounces: p.render.maxBounces ?? 3, envNee: (p.json.env?.sampling ?? 'AUTOMATIC') !== 'NONE',
+    ...o.renderer, lightMode, restirFeatures: { ...o.renderer?.restirFeatures, ...o.restir } as RendererOptions['restirFeatures'], ...(restirKernel ? { restirKernel } : {}),
+  };
+  const r = await Renderer.create({ device, debugLayout: debug.layout, debug, features: ctx.features, wgslLanguageFeatures: ctx.wgslLanguageFeatures }, ropts);
   const origin = computeRenderOrigin(p.scene.bounds, p.scene.quant);
   const fu = new FrameUniformBuffer(device);
   const color = device.createTexture({ label: 'dn-eval-colour', size: [W, H], format: 'rgba32float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST });
@@ -158,7 +189,18 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
         const k = Math.min(Math.max(i, o.pan.from), o.pan.to) - o.pan.from;
         for (let a = 0; a < 3; a++) cam.camToWorld[12 + a] += k * o.pan.dx * cam.camToWorld[a];
       }
-      if (o.lightAnim) {
+      if (o.panOsc) {
+        const s = oscOffset(o.panOsc, i);
+        if (s !== 0) for (let a = 0; a < 3; a++) cam.camToWorld[12 + a] += s * cam.camToWorld[a];
+      }
+      if (o.lightOsc) {
+        const lo = o.lightOsc, s = oscOffset(lo, i);
+        r.setLights(st.lights.map((l, k) => {
+          if (k !== lo.index || s === 0) return l;
+          const m = new Float32Array(l.matrix); m[12] += s;
+          return { ...l, matrix: m };
+        }));
+      } else if (o.lightAnim) {
         const la = o.lightAnim;
         r.setLights(st.lights.map((l, k) => {
           if (k !== la.index) return l;
@@ -280,8 +322,8 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
     const meta = {
       kind: 'denoise-eval', mode: o.mode, run: o.run, package: o.package, packageSha256: hash.sha256, seed: o.seed, width: W, height: H, frames: total,
       pkgFrames: Array.from({ length: total }, (_, i) => pkgFrame(i)), evalFrames: o.evalFrames ?? [], tiles: o.mode === 'recovery' ? { tile: TILE, x: tilesX, y: tilesY, layout: 'f32 [frame][tile][dn, raw]' } : undefined,
-      renderer: { renderMode: 'restir', restirMode: o.restirMode ?? 'interactive', settings: r.restir?.settings, textureMode: 'validation', intersector: 'woop-watertight', jitter: 'iid', accumulate: false },
-      denoiser: { on: denoise, settings: r.denoiser?.settings, perFrame }, jitter: o.jitter ?? 'iid', accumulate: !!o.accumulate, pan: o.pan, lightAnim: o.lightAnim, vbuf: { primIdMismatch: vbufMismatch, maxBaryDiff: vbufMaxBary }, timing, finalizeCounters: fin,
+      renderer: { renderMode: 'restir', restirMode: o.restirMode ?? 'interactive', settings: r.restir?.settings, textureMode: ropts.textureMode, intersector: ropts.watertight ? 'woop-watertight' : 'moller-trumbore', jitter: 'iid', accumulate: false, lightMode, bvhKind: ropts.bvhKind ?? 'bvh2', overrides: o.renderer, restir: o.restir, perfFlags: o.perfFlags ?? [] },
+      denoiser: { on: denoise, settings: r.denoiser?.settings, perFrame }, jitter: o.jitter ?? 'iid', accumulate: !!o.accumulate, pan: o.pan, lightAnim: o.lightAnim, panOsc: o.panOsc, lightOsc: o.lightOsc, vbuf: { primIdMismatch: vbufMismatch, maxBaryDiff: vbufMaxBary }, timing, finalizeCounters: fin,
       adapterInfo: { vendor: info.vendor, architecture: info.architecture, description: info.description }, chromeVersion: o.chromeVersion, userAgent: navigator.userAgent,
       files, ok: errors.length === 0, errors, timings: { totalMs: performance.now() - t0 }, createdAt: new Date().toISOString(),
     };
