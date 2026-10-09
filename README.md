@@ -29,9 +29,11 @@ Cornell box by a camera-visible rectangle light under the ceiling.
   - σ 16 Gaussian pairing maps;
   - RIS-NEE light tiles;
   - dual motion vectors;
-  - the duplication map with an adaptive confidence cap. This one is biased and is on only in the interactive preset.
+  - the duplication map with an adaptive confidence cap. This one is biased; it is off by default, so
+    ReSTIR-interactive is unbiased out of the box (it can be switched on for less temporal noise).
 
-  Russian roulette at initial sampling is also part of the Enhanced set.
+  Russian roulette at initial sampling is also part of the Enhanced set. ReSTIR-interactive applies it after bounce 2
+  (ReSTIR › Enhanced features › RR after bounce).
 - **Light modes.**
   - **B** (default): area lights are hit by BSDF rays and combined with NEE by MIS.
   - **A**: analytic lights are reached by NEE only, so smooth mirrors and glass never show them and there are no
@@ -191,7 +193,7 @@ Top-level folders, in order. Expert sub-folders start collapsed.
 | **Lights** | Add / place, selection, gizmo mode, duplicate / delete / undo / redo, the selected light's properties, emissive meshes |
 | **Animation** | Play, time mode, fps, duration, loop. *Keys*, *Presets*, *Save / load* |
 | **Render** | Integrator (PT / ReSTIR PT / albedo), light mode, max bounces, Russian roulette, accumulate, pause / step / restart accumulation. *Output*: internal resolution, exposure, view transform (Standard is Blender-exact), upscale filter, HUD. *Sampling*: pixel jitter (i.i.d. by default), freeze seed / frame. *Advanced*: texture path (interactive mips / validation exact texels), watertight intersection, colour format, NaN/Inf highlight, overlay |
-| **ReSTIR** | Preset, temporal reuse, freeze / reset temporal history. *Enhanced features*: pairing maps, RIS-NEE, dual motion vectors, duplication map. Arena status (replay fraction, queues, shift outcomes, error counters), pixel inspector |
+| **ReSTIR** | Preset, temporal reuse, freeze / reset temporal history. *Enhanced features*: pairing maps, RIS-NEE, dual motion vectors, duplication map (off by default), RR after bounce. Arena status (replay fraction, queues, shift outcomes, error counters), pixel inspector |
 | **Denoiser** | On / off, à-trous iterations, α min, σ luminance, σ albedo, temporal resolve, reset. *Temporal gradient*: λ₀, λ₁, gradient on camera motion. Status with GPU time |
 | **Debug views** | Category, then view, with a legend (id, kind, writing pass, colour key for code views), and the stage tap. *View mapping*: range, log, colormap, absolute value, split with the beauty image. *Pixel probe* |
 | **Validation** | *Compare with Cycles*: view mode, exposure, relative-error and t-map settings, batch capture, load reference EXRs. Dev only: *Cycles reference render* (export, render headless in Blender, auto-load) and *Export scene package* |
@@ -215,7 +217,8 @@ Correctness comes first. Every milestone ends with a gate: `npm run validate -- 
 - **Gate 3 / Stage B**: our ReSTIR ≡ our PT. This runs as a ladder of rungs (3.1–3.11), from initial candidates
   through spatial, temporal, dynamic, Enhanced, glass, alpha, smooth-shading and Mode-B scenes. The ladder stops at
   the first failing rung.
-- **Gate 5**: bias budget of the one biased option, the duplication map. Its limit is Enhanced's 3.25 %.
+- **Gate 5**: bias budget of the one biased option, the duplication map (off by default in the app). Its limit is
+  Enhanced's 3.25 %.
 
 **Equivalence testing.** Equivalence is tested, not just "no significant difference": TOST with α = 0.01 per side.
 The margins δ:

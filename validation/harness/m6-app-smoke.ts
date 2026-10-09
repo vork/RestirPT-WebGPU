@@ -1,7 +1,8 @@
 // M6 app smoke (restir-m6-api.md §4 Gate 0, MD9, MD13): the real app in headless Chrome at 540p on the Cornell box with a
 // point and a rect light added through the editor, ReSTIR-interactive.
-//   defaults     light mode B (the product default after rung 3.11, MD9 / Q4) for the PT and ReSTIR; the interactive preset
-//                carries the σ 16 pairing maps, RIS-NEE, dual MVs and the duplication map; the HUD shows them
+//   defaults     light mode B (the product default after rung 3.11, MD9 / Q4) for the PT and ReSTIR; ReSTIR-interactive
+//                carries the σ 16 pairing maps, RIS-NEE, dual MVs, and (perf2 D1 / D3 app defaults) RR after bounce 2 with
+//                the duplication map off; the HUD shows them
 //   toggles      every M6 feature off and on again (pipeline variants recompile; finite image, no error)
 //   light modes  A, A′, B in ReSTIR (variants; finite, no error; the HUD names the mode)
 //   views        pairing offset / reciprocity and duplication count / cap (471–479) render finite AOVs; 471, 477, 478
@@ -86,10 +87,11 @@ async function run(page: Page, OUT: string): Promise<void> {
   const d = await page.evaluate(() => {
     const r = window.__integration!.renderer()!;
     const s = r.restirSettings();
-    return { lightMode: r.options.lightMode, pairing: s.pairing, risNee: s.risNee, dualMv: s.dualMv, dupmap: s.dupmap, cCap: s.cCap };
+    return { lightMode: r.options.lightMode, pairing: s.pairing, risNee: s.risNee, dualMv: s.dualMv, dupmap: s.dupmap, cCap: s.cCap, rr: s.rr, rrMinBounces: s.rrMinBounces };
   });
   check('light mode B is the default (PT and ReSTIR; MD9 / Q4)', d.lightMode === 'B', JSON.stringify(d));
-  check('interactive preset: σ 16 pairing, RIS-NEE, dual MVs, duplication map, c_cap 5 (TD-I1)', d.pairing === 'gauss' && d.risNee === true && d.dualMv === true && d.dupmap === true && d.cCap === 5, JSON.stringify(d));
+  // perf2 §5 (D1, D3): the app defaults over the preset are RR after bounce 2 and the duplication map off (unbiased)
+  check('interactive app defaults: σ 16 pairing, RIS-NEE, dual MVs, c_cap 5 (TD-I1), duplication map off (D3), RR after bounce 2 (D1)', d.pairing === 'gauss' && d.risNee === true && d.dualMv === true && d.dupmap === false && d.cCap === 5 && d.rr === true && d.rrMinBounces === 2, JSON.stringify(d));
   await page.evaluate(async () => {
     const r = window.__integration!.renderer()!;
     r.options.renderMode = 'restir';
@@ -102,7 +104,8 @@ async function run(page: Page, OUT: string): Promise<void> {
   const h0 = await hud(page);
   const e0 = await errState(page);
   check('ReSTIR-interactive (M6) renders finite, error-free', s0.nonFinite === 0 && s0.mean > 0 && !e0.rs && !e0.err && e0.gpu.length === 0, `mean ${s0.mean.toExponential(3)} ${e0.rs ?? ''}`);
-  check('HUD shows the M6 line (Mode B, gauss σ 16, RIS-NEE M 32, dual MV, dup map)', /M6: Mode B\s+pairing gauss σ 16\s+RIS-NEE M 32\s+dual MV on\s+dup map on/.test(h0), h0.split('\n').find((l) => /M6:/.test(l)) ?? 'no M6 line');
+  check('HUD shows the M6 line (Mode B, gauss σ 16, RIS-NEE M 32, dual MV, dup map off) and RR>2', /M6: Mode B\s+pairing gauss σ 16\s+RIS-NEE M 32\s+dual MV on\s+dup map off/.test(h0) && / RR>2 /.test(h0),
+    h0.split('\n').filter((l) => /M6:|RR>/.test(l)).join(' / ') || 'no M6 line');
   await page.locator('#view').screenshot({ path: path.join(OUT, 'cornell-m6-interactive.png') });
 
   // ---- feature toggles

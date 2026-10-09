@@ -561,7 +561,9 @@ and M5 Stage-B results therefore stand for the M6 code.
 crossings ≈ +1.7 ms, the duplication-map pass ≈ 1.0 ms.
 
 **Interactive default** (305a358, MD9 after rung 3.11): light mode B, Gaussian pairing σ 16, RIS-NEE, dual MVs, the
-duplication map, cCap 5. The silhouette resolve fixes of the denoiser (denoiser.md DN-16 / DN-17) were merged on main
+duplication map, cCap 5. (Superseded for the app by perf2 D1 / D3: the app's ReSTIR-interactive runs RR after bounce 2
+with the duplication map off; the `interactive` preset, which validation uses, is unchanged. See
+[perf2 app defaults](#perf2-app-defaults-d1--d3).) The silhouette resolve fixes of the denoiser (denoiser.md DN-16 / DN-17) were merged on main
 (cf8d358) after this branch forked; they are not part of the M6 runs.
 
 **Open items.**

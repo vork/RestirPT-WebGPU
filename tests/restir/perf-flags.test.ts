@@ -8,6 +8,8 @@ import {
 } from '../../src/core/render/restir/perf-flags.ts';
 import { INTERACTIVE_PINNED, RESTIR_PRESETS, restirSettings } from '../../src/core/render/restir/presets.ts';
 import { INTERACTIVE_APP_DEFAULTS, restirAppSettings } from '../../src/core/render/renderer.ts';
+import { APP_DEFAULTS_RESTIR, DECISION_CONFIGS, abbaJobs } from '../../validation/harness/run-perf.ts';
+import { APP_DEFAULTS_M6 } from '../../validation/harness/gate-m6.ts';
 import { shaderSources } from '../../src/core/shaders/index.ts';
 import { denoiseSources } from '../../src/core/render/denoise/denoiser.ts';
 
@@ -95,8 +97,31 @@ describe('pinned interactive knobs and app defaults (WP-0 step 2, user decisions
     expect(RESTIR_PRESETS.interactive.dupmap).toBe(true);
     const app = restirAppSettings('interactive', 3);
     for (const [k, v] of Object.entries(INTERACTIVE_APP_DEFAULTS)) expect(app[k as keyof typeof app], k).toEqual(v);
-    // D3 is not switched yet (lands with its Stage-B chain): the app keeps the duplication map
-    expect(app.dupmap).toBe(INTERACTIVE_APP_DEFAULTS.dupmap ?? true);
+    // perf2 §5: D1 (RR after bounce 2) and D3 (duplication map off) are the app defaults; the preset keeps 3 / on
+    expect(INTERACTIVE_APP_DEFAULTS).toEqual({ rrMinBounces: 2, dupmap: false });
+    expect(app.dupmap).toBe(false);
+    expect(app.rrMinBounces).toBe(2);
+    expect(app.rr).toBe(true);
+    expect(RESTIR_PRESETS.interactive.rrMinBounces).toBe(3);
+    // only the interactive mode gets them
+    expect(restirAppSettings('criteria2022', 3).dupmap).toBe(true);
+    expect(restirAppSettings('criteria2022', 3).rrMinBounces).toBe(3);
+  });
+  it('the pins of the bits rigs / perf baselines are the preset, not the app defaults (goldens hold)', () => {
+    expect(INTERACTIVE_PINNED).toEqual({ slots: 3, risM: 32, rrMinBounces: 3, dupmap: true });
+  });
+  it('the harness copies of the app defaults (run-perf --abba-restir app-defaults, gate-m6 --part decisions) equal them', () => {
+    expect(APP_DEFAULTS_RESTIR).toEqual(INTERACTIVE_APP_DEFAULTS);
+    expect(APP_DEFAULTS_M6).toEqual(INTERACTIVE_APP_DEFAULTS);
+    expect(DECISION_CONFIGS.find((d) => d.id === 'D1+D3 appDefaults')?.restir).toEqual(INTERACTIVE_APP_DEFAULTS);
+    const j = abbaJobs('', ['cornell'], ['540p'], 1, {}, { role: 'appDefaults', settings: APP_DEFAULTS_RESTIR });
+    expect(j.map((x) => x.label!.split(' ')[2])).toEqual(['base', 'appDefaults', 'appDefaults', 'base', 'base', 'appDefaults', 'appDefaults', 'base']);
+    expect(j[0].restir).toEqual(INTERACTIVE_PINNED);
+    expect(j[1].restir).toEqual({ ...INTERACTIVE_PINNED, ...INTERACTIVE_APP_DEFAULTS });
+    expect(j[1].perfFlags).toEqual({});
+  });
+  it('RR start can be overridden per session (panel)', () => {
+    expect(restirAppSettings('interactive', 3, true, { rrMinBounces: 3 }).rrMinBounces).toBe(3);
   });
   it('the duplication map can be switched off per session (feature override over the app defaults)', () => {
     expect(restirAppSettings('interactive', 3, true, { dupmap: false }).dupmap).toBe(false);

@@ -8,6 +8,8 @@
 //   --decisions              baseline suite + one labelled 540p N3 row per user-decision configuration (DECISION_CONFIGS)
 //   --abba FLAGS [--blocks 2] same-session ABBA per scene / resolution: (base, FLAGS, FLAGS, base) × 2 per block, labels
 //                            '<scene>@<res> N3 base #i' / '<scene>@<res> N3 <FLAGS> #i' (validation/tools/perf/abba.py)
+//   --abba-restir app-defaults|JSON   ABBA variant = the pinned job + these ReSTIR knobs (with or without --abba FLAGS);
+//                            'app-defaults' = INTERACTIVE_APP_DEFAULTS (role 'appDefaults'), JSON = role 'restir'
 // Every baseline / ABBA row pins the interactive knobs (INTERACTIVE_PINNED + the scene's maxBounces), so app-default
 // decisions never move them; decision rows are the only rows that change knobs.
 // Writes <out>/<tag>.json (all reports) and prints a table. Default out: validation/out/m8-perf.
@@ -56,7 +58,11 @@ export const DECISION_CONFIGS: { id: string; restir?: Partial<RestirSettings>; p
   { id: 'D3 dupmapOff', restir: { dupmap: false } },
   { id: 'D4 slots2', restir: { slots: 2 } },
   { id: 'D6 halfRate', perfFlags: { RS_HALF_RATE: 1 } },
+  // the shipped app defaults (INTERACTIVE_APP_DEFAULTS in renderer.ts: D1 + D3; tests/restir/perf-flags.test.ts checks equality)
+  { id: 'D1+D3 appDefaults', restir: { rrMinBounces: 2, dupmap: false } },
 ];
+/** `--abba-restir app-defaults`: the knob changes of INTERACTIVE_APP_DEFAULTS (renderer.ts cannot be imported in node). */
+export const APP_DEFAULTS_RESTIR: Partial<RestirSettings> = { rrMinBounces: 2, dupmap: false };
 export const RES: Record<string, [number, number]> = { '540p': [960, 540], '720p': [1280, 720] };
 
 /** The M8 target configurations (PLAN §5 M8 exit): N=3 static at 540p and 720p, N=1 + moving lights at 540p. */
@@ -84,16 +90,16 @@ export function suiteJobs(name: string, scenes: string[], res: string[], extra: 
 
 /** perf2 V-PERF: same-session ABBA jobs (base = the pinned N3 job with `extra`; variant = + `flags`), per scene and
  *  resolution `blocks` × (base, variant, variant, base, base, variant, variant, base). */
-export function abbaJobs(flags: string, scenes: string[], res: string[], blocks: number, extra: Partial<PerfOptions> = {}): PerfOptions[] {
+export function abbaJobs(flags: string, scenes: string[], res: string[], blocks: number, extra: Partial<PerfOptions> = {}, restir?: { role: string; settings: Partial<RestirSettings> }): PerfOptions[] {
   const vf = normalizePerfFlags(flags);
-  const role = perfFlagsKey(vf);
-  if (!role) throw new Error('--abba: no flags');
+  const role = [perfFlagsKey(vf), restir?.role].filter(Boolean).join('+');
+  if (!role) throw new Error('--abba: no flags and no --abba-restir');
   const jobs: PerfOptions[] = [];
   let i = 0;
   for (let b = 0; b < blocks; b++) for (const sc of scenes) for (const r of res) {
     const [w, h] = RES[r];
     const base: PerfOptions = withExtra({ ...pinnedJob(sc), width: w, height: h }, extra);
-    const variant: PerfOptions = { ...base, perfFlags: { ...normalizePerfFlags(extra.perfFlags), ...vf } };
+    const variant: PerfOptions = { ...base, restir: { ...base.restir, ...restir?.settings }, perfFlags: { ...normalizePerfFlags(extra.perfFlags), ...vf } };
     for (const v of [false, true, true, false, false, true, true, false]) jobs.push({ ...(v ? variant : base), label: `${sc}@${r} N3 ${v ? role : 'base'} #${i++}` });
   }
   return jobs;
@@ -143,13 +149,16 @@ async function main(): Promise<number> {
     suite: { type: 'string' }, jobs: { type: 'string' }, res: { type: 'string', default: '540p,720p' }, only: { type: 'string' },
     out: { type: 'string', default: 'validation/out/m8-perf' }, tag: { type: 'string' }, frames: { type: 'string' }, extra: { type: 'string' },
     'kernel-flags': { type: 'string' }, decisions: { type: 'boolean', default: false }, abba: { type: 'string' }, blocks: { type: 'string', default: '2' },
+    'abba-restir': { type: 'string' },
   } });
+  const abbaRestir = a['abba-restir'] === undefined ? undefined : a['abba-restir'] === 'app-defaults'
+    ? { role: 'appDefaults', settings: APP_DEFAULTS_RESTIR } : { role: 'restir', settings: JSON.parse(a['abba-restir']) as Partial<RestirSettings> };
   const extra = a.extra ? JSON.parse(a.extra) as Partial<PerfOptions> : {};
   if (a.frames) extra.frames = Number(a.frames);
   if (a['kernel-flags'] !== undefined) extra.perfFlags = normalizePerfFlags(a['kernel-flags']);
   const scenes = (a.only ?? Object.keys(PERF_SCENES).join(',')).split(',');
   const jobs: PerfOptions[] = a.jobs ? (JSON.parse(readFileSync(path.resolve(ROOT, a.jobs), 'utf8')) as PerfOptions[]).map((j) => ({ ...j, ...extra }))
-    : a.abba ? abbaJobs(a.abba, scenes, a.res.split(','), Number(a.blocks), extra)
+    : a.abba !== undefined || abbaRestir ? abbaJobs(a.abba ?? '', scenes, a.res.split(','), Number(a.blocks), extra, abbaRestir)
       : suiteJobs(a.suite ?? 'baseline', scenes, a.res.split(','), extra, { decisions: a.decisions });
   const un = [...new Set(jobs.flatMap((j) => unlandedFlags(j.perfFlags)))];
   if (un.length) console.log(`[run-perf] note: ${un.join(', ')} are reserved names without WGSL yet (no effect)`);
