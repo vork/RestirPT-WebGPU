@@ -165,6 +165,20 @@ The first-week quick-win set is #1, #2, #9 (dn_gradient part) and #14. All are b
   - Expected spill: shift 800 → about 528 B, classify 736 → about 464 B, inverse 1184 → about 928 B.
   - V-PERF.
 - **Dependencies:** WP-0. No conflicts: `shift.wgsl` belongs to WP-1 until the WP-9b sweep.
+- **Delivered (WP-1):** two bitwise flags, both `release: true`.
+  - `vis_ray` / `vis_trace` (`visible.wgsl`, gate `RS_VIS_MERGE || RS_REFRESH_VIS`; WP-2b adds `|| RS_NEE_SITE`):
+    `vis_ray(a, na, b, nb, primB, dir, inf)` builds the `visible()` (inf = false) or `visibleInf()` (inf = true) ray with
+    identical operands; `vis_trace(r, primA)` traces it (true = unoccluded).
+  - `RS_VIS_MERGE`: `shift_finish_vis` traces once (the prototype patch, through `vis_ray`). bvh copies 4→1 (shift,
+    classify), 5→2 (replay, forward), 6→3 (inverse). Spill Sponza / Cornell (B): shift 800→528 / 1072→672, classify
+    736→448 / 992→592, inverse 1184→784 / 1360→992, forward 1056→640 / 1232→848, replay 1072→656 / 1232→848.
+  - `RS_REFRESH_VIS` (the optional refresh merge, new registry name): the class functions return their pending ray
+    (`RfOut.rayMode/ray/rayPrim`) and `refresh_record` traces it once. bvh copies 4→1 (Sponza) / 6→1 (Cornell); spill
+    refresh_fwd 560→288 / 1056→384, refresh_inv 272→0 / 784→144; zero_init +1 (the pending record).
+  - Gains (same-session ABBA, 2 blocks, shared GPU): 540p N3 Sponza −5.6 ms (passes: shift −3.1, classify −1.0,
+    inverse −0.3), Cornell −0.9, crossings −1.6, nm_smooth −0.9; 720p N3 Sponza −9.9, Cornell −1.5. RS_REFRESH_VIS at
+    540p N1+moving: refresh passes Sponza −0.8 ms (harness pass times) / −0.5 ms (−17 %, split-phase MST sums, ABBA),
+    nm_smooth −0.13 / −0.10 ms (−12 %); Cornell and crossings within noise; frame time within noise.
 
 ### WP-2 rs_initial and RIS (one engineer, sequential steps, about 3 weeks)
 - **Items:** #2, #4, #15 plus single-chunk accumulation, #3, #17 (Mode-B part), and constant loop bounds in its files.

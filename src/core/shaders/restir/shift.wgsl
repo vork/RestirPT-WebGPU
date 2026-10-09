@@ -496,6 +496,22 @@ fn shift_finish_vis(F: vec3f, J: f32, jNum: f32, cs: u32, y: SurfaceHit, yPrim: 
                     visPos: vec3f, visN: vec3f, visPrim: u32, visInf: bool, endOcc: bool) -> ShiftOut {
   var o = shift_finish(F, J, jNum, true);
   if (rs_slot_code_sc(o.code) != SC_OK) { return o; }
+#if RS_VIS_MERGE
+  // perf2 WP-1: one trace_any_ex call site (vis_ray, visible.wgsl) for the forced-inf, forced-local, ENV and reconnect
+  // tests; the end-occluded case is decided without tracing. Same operands per case as the #else text (bitwise).
+  let inf = cs == SH_ENV || (cs == SH_FORCED && visInf);
+#if RS_MODE_B
+  let occ = (cs == SH_N1 || cs == SH_B1) && endOcc;
+#else
+  let occ = cs == SH_N1 && endOcc;
+#endif
+  var vis = false;
+  if (!occ) {
+    let fz = cs == SH_FORCED;
+    vis = vis_trace(vis_ray(y.pos, y.ng, select(xk.pos, visPos, fz), select(xk.ng, visN, fz), select(xkPrim, visPrim, fz),
+                            wP, inf), yPrim);
+  }
+#else
   var vis = true;
   if (cs == SH_FORCED) {                                 // = nee_visible(y, yPrim, ls) (endpoint.wgsl), from the kept fields
     if (visInf) { vis = visibleInf(y.pos, y.ng, yPrim, wP); }
@@ -508,6 +524,7 @@ fn shift_finish_vis(F: vec3f, J: f32, jNum: f32, cs: u32, y: SurfaceHit, yPrim: 
   else if (cs == SH_N1 && endOcc) { vis = false; }      // M5 (§3.4): N1 end occluded under frame dst.fs (refresh)
 #endif
   else { vis = visible(y.pos, y.ng, yPrim, xk.pos, xk.ng, xkPrim); }
+#endif
   if (!vis) { return shift_finish(F, J, jNum, false); }
   return o;
 }

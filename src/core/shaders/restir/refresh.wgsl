@@ -86,7 +86,22 @@ fn refresh_plant_hash(key: vec2u, j: u32) -> vec4u {
   return pcg4d(vec4u(key.x, key.y ^ (RS_PASS_T_PLANT * 0x9e3779b9u), j, STREAM_RESAMPLE));
 }
 
+#if RS_REFRESH_VIS
+// perf2 WP-1 (RS_REFRESH_VIS): the class functions do not trace; a class that needs its visibility ray returns it
+// (rayMode RFV_ZERO: occluded ⇒ rad = 0 (deep classes); RFV_VIS: unoccluded ⇒ SXS_VIS (N1 / B1-ana)) and
+// refresh_record traces it at ONE trace_any_ex call site (vis_ray, visible.wgsl). Same rays, same decisions (bitwise).
+const RFV_NONE: u32 = 0u;
+const RFV_ZERO: u32 = 1u;
+const RFV_VIS: u32 = 2u;
+struct RfOut { rad: vec3f, aux: f32, status: u32, rayMode: u32, ray: VisRay, rayPrim: u32 }
+fn refresh_nee_ray(o: ptr<function, RfOut>, mode: u32, x: SurfaceHit, xPrim: u32, ls: LightSample) {
+  (*o).rayMode = mode;                                      // = nee_visible(x, xPrim, ls) (endpoint.wgsl)
+  (*o).ray = vis_ray(x.pos, x.ng, ls.pos, ls.nz, ls.prim, ls.dir, ls.isInf);
+  (*o).rayPrim = xPrim;
+}
+#else
 struct RfOut { rad: vec3f, aux: f32, status: u32 }
+#endif
 
 /// Class D-NEE: β_s ⊙ (ω1/q)·f_all·Λ at the cached x_{d−1} under frame fsTo (endpoint eTo, light-local words ab).
 /// The shadow ray is traced iff `moved` (or the N4 plant re-drew the endpoint).
@@ -132,7 +147,11 @@ fn refresh_deep_nee(ai: u32, d: u32, eTo: u32, ab: vec2u, fsTo: u32, moved: bool
   if (trace && any(rad > vec3f(0.0))) {
     o.status |= SXS_RAY;
     refresh_count(RSC_T_REFRESH_RAYS, 1u);
+#if RS_REFRESH_VIS
+    refresh_nee_ray(&o, RFV_ZERO, x, sfx.x, lsSel);
+#else
     if (!nee_visible(x, sfx.x, lsSel)) { rad = vec3f(0.0); }
+#endif
   }
   if (n4) { o.status |= SXS_PLANT; }
   o.rad = rad;
@@ -181,7 +200,11 @@ fn refresh_n1(ai: u32, eTo: u32, ab: vec2u, fsTo: u32, moved: bool) -> RfOut {
     if (ls.valid && any(ls.Lambda > vec3f(0.0))) {
       o.status |= SXS_RAY;
       refresh_count(RSC_T_REFRESH_RAYS, 1u);
+#if RS_REFRESH_VIS
+      refresh_nee_ray(&o, RFV_VIS, x, sfx.x, ls);
+#else
       vis = nee_visible(x, sfx.x, ls);
+#endif
     }
   }
   if (vis) { o.status |= SXS_VIS; }
@@ -228,7 +251,13 @@ fn refresh_deep_cross(ai: u32, d: u32, eTo: u32, fsTo: u32, moved: bool) -> RfOu
   if (moved && any(rad > vec3f(0.0))) {
     o.status |= SXS_RAY;
     refresh_count(RSC_T_REFRESH_RAYS, 1u);
+#if RS_REFRESH_VIS
+    o.rayMode = RFV_ZERO;
+    o.ray = vis_ray(x.pos, x.ng, ce.z, light_load(slot, eTo).normal, LIGHT_NONE, vec3f(0.0), false);
+    o.rayPrim = sfx.x;
+#else
     if (!visible(x.pos, x.ng, sfx.x, ce.z, light_load(slot, eTo).normal, LIGHT_NONE)) { rad = vec3f(0.0); }
+#endif
   }
   o.rad = rad;
   return o;
@@ -252,7 +281,13 @@ fn refresh_b1_cross(ai: u32, eTo: u32, fsTo: u32, moved: bool) -> RfOut {
     if (ce.ok && any(ce.Le > vec3f(0.0))) {
       o.status |= SXS_RAY;
       refresh_count(RSC_T_REFRESH_RAYS, 1u);
+#if RS_REFRESH_VIS
+      o.rayMode = RFV_VIS;
+      o.ray = vis_ray(x.pos, x.ng, ce.z, light_load(slot, eTo).normal, LIGHT_NONE, vec3f(0.0), false);
+      o.rayPrim = rc.x;
+#else
       vis = visible(x.pos, x.ng, rc.x, ce.z, light_load(slot, eTo).normal, LIGHT_NONE);
+#endif
     }
   }
   if (vis) { o.status |= SXS_VIS; }
@@ -322,11 +357,18 @@ fn refresh_record(ai: u32, fsFrom: u32, fsTo: u32) -> SfxRec {
     return r;
   }
   let moved = (bits & LCB_MOVED) != 0u;
+#if RS_REFRESH_VIS
+  var pend: RfOut;                                       // the one pending visibility ray (rayMode RFV_NONE: none)
+  pend.rayMode = RFV_NONE;
+#endif
   switch (cls) {
     case RFC_DNEE: {
       let o = refresh_deep_nee(ai, d, eTo, end.yz, fsTo, moved);
       r.rad = o.rad;
       r.status |= o.status;
+#if RS_REFRESH_VIS
+      pend = o;
+#endif
     }
     case RFC_DBSDF: {
 #if RS_MODE_B
@@ -334,6 +376,9 @@ fn refresh_record(ai: u32, fsFrom: u32, fsTo: u32) -> SfxRec {
         let o = refresh_deep_cross(ai, d, eTo, fsTo, moved);
         r.rad = o.rad;
         r.status |= o.status;
+#if RS_REFRESH_VIS
+      pend = o;
+#endif
       } else {
         r.rad = refresh_deep_bsdf(ai, d, tech, fsTo);
         r.status |= SXS_DEEP;
@@ -348,6 +393,9 @@ fn refresh_record(ai: u32, fsFrom: u32, fsTo: u32) -> SfxRec {
       r.rad = o.rad;
       r.aux = o.aux;
       r.status |= o.status;
+#if RS_REFRESH_VIS
+      pend = o;
+#endif
     }
     default: {
 #if RS_MODE_B
@@ -359,8 +407,18 @@ fn refresh_record(ai: u32, fsFrom: u32, fsTo: u32) -> SfxRec {
       r.rad = o.rad;
       r.aux = o.aux;
       r.status |= o.status;
+#if RS_REFRESH_VIS
+      pend = o;
+#endif
     }
   }
+#if RS_REFRESH_VIS
+  if (pend.rayMode != RFV_NONE) {
+    let vis = vis_trace(pend.ray, pend.rayPrim);
+    if (pend.rayMode == RFV_ZERO && !vis) { r.rad = vec3f(0.0); }
+    if (pend.rayMode == RFV_VIS && vis) { r.status |= SXS_VIS; }
+  }
+#endif
   if (deep && !any(r.rad > vec3f(0.0))) { r.status |= SXS_ZERO; }
   return r;
 }
