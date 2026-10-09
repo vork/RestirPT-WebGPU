@@ -31,7 +31,7 @@ const CASES: Case[] = [
   { name: 'all-full-boost-reset', scene: 'all', preset: 'full', settings: { maxBounces: 3, boostSlots: 3 }, lightMode: 'B', size: [64, 48], staticFrames: 2, movingFrames: 0, advance: false },
   { name: 'all-offline-m6-E2', scene: 'all', preset: 'offline-m6', settings: { maxBounces: 3, trees: 2 }, lightMode: 'B', size: [48, 32], staticFrames: 1, movingFrames: 0, advance: false, members: 2 },
 ];
-const FLAG_SETS = ['RS_DENSE_SLOTS', 'RS_BOOST_GATE', 'RS_MIS_TRIM', 'RS_PAIR_TABLE', 'RS_DENSE_SLOTS,RS_BOOST_GATE,RS_MIS_TRIM,RS_PAIR_TABLE'];
+const FLAG_SETS = ['RS_DENSE_SLOTS', 'RS_DENSE_SLOTS=2,RS_BOOST_GATE,RS_PAIR_TABLE', 'RS_BOOST_GATE', 'RS_MIS_TRIM', 'RS_PAIR_TABLE', 'RS_DENSE_SLOTS,RS_BOOST_GATE,RS_MIS_TRIM,RS_PAIR_TABLE'];
 const WP5_HDR = new Set([12, 13, 14, 15, WP5_CONSTS.RS_HDR_BOOST_GATE]);
 
 function yawed(cam: { camToWorld: number[]; yfov: number }, a: number): { camToWorld: number[]; yfov: number } {

@@ -83,7 +83,8 @@ describe('WP-5 composed texts', () => {
         if (name === 'rs_spatial_shift' && extra.RS_DENSE_SLOTS) expect(code).toContain('@workgroup_size(64)');
         if (name === 'rs_pair_accept' && extra.RS_DENSE_SLOTS) expect(code).toContain('arena_dense_item_word');
         expect(code.length).toBeGreaterThan(0);
-        if (name === 'rs_t_classify' && Object.keys(extra).join() === 'RS_MIS_TRIM') expect(code).toBe(base);   // T1 sees the gate, the queue consts and rs_pix only
+        if (name === 'rs_t_classify' && Object.keys(extra).join() === 'RS_MIS_TRIM') expect(code).toBe(base);
+        if (extra.RS_DENSE_SLOTS) expect(compose(name, { ...extra, RS_DENSE_SLOTS: 2 }).length).toBeGreaterThan(0);   // T1 sees the gate, the queue consts and rs_pix only
       }
     }
   });

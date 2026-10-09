@@ -84,7 +84,67 @@ fn pa_flush(li: u32) {
 var<workgroup> paDenseN: atomic<u32>;
 var<workgroup> paDenseBase: u32;
 
-fn pa_pixel_dense(p: RsPix, items: ptr<function, array<u32, RS_MAX_SLOTS>>) -> u32 {
+#if RS_DENSE_SLOTS == 2
+// RS_DENSE_SLOTS=2 (A/B variant): the M4 acceptance (the pair's min thread evaluates A0 once and writes both slots);
+// the min thread appends the q3 items of BOTH sides (pair items adjacent instead of pixel items).
+const PA_ITEMS: u32 = 12u;
+
+fn pa_dense_side(ai: u32, s: u32, items: ptr<function, array<u32, PA_ITEMS>>, n: ptr<function, u32>) {
+  let flags = resin_plane(ai, RP_SEED).z;
+  if (res_empty(flags)) {
+    arena_slot_write(ai, s, vec3f(0.0), JW_FAILED, rs_slot_code(SC_EMPTY_SRC, RCT_NONE, 0u, 0.0));
+    atomicAdd(&paCnt[3], 1u);
+    return;
+  }
+  arena_slot_write(ai, s, vec3f(0.0), JW_PENDING, rs_slot_code(SC_PENDING, RCT_NONE, 0u, 0.0));
+  if (pa_needs_replay(flags)) {
+    queue_append(0u, queue_item_word(ai, s));
+    atomicAdd(&paCnt[1], 1u);
+  } else {
+    (*items)[*n] = queue_item_word(ai, s);
+    *n += 1u;
+  }
+}
+
+fn pa_pixel_dense(p: RsPix, items: ptr<function, array<u32, PA_ITEMS>>) -> u32 {
+  let t = rs_t();
+  let r = rsDispatch.round;
+  let vbP = rs_vbuf(p.px);
+  let geoP = rs_geo(p.px);
+  let firstBoost = pair_first_boost_slot();
+  let nsEff = pa_ns_eff();
+  var n = 0u;
+  for (var s = 0u; s < RS_MAX_SLOTS; s++) {
+    if (s >= rsParams.numSlots) { break; }
+    if (s >= nsEff) { pa_not_accepted(p.ai, s); continue; }
+    let pr = pa_partner(p.local, p.member, t, r, s);
+    if (!pr.valid) { pa_not_accepted(p.ai, s); continue; }
+    let back = pa_partner(pr.partner, p.member, t, r, s);
+    if (!back.valid || back.partner.x != p.local.x || back.partner.y != p.local.y) {
+      pa_not_accepted(p.ai, s);
+      atomicAdd(&paCnt[4], 1u);
+      continue;
+    }
+    let qpx = pair_atlas_px(p, pr.partner);
+    let qai = pair_atlas_index(qpx);
+    if (p.ai > qai) { continue; }                 // the partner's thread owns the pair
+    var a = pair_A0(vbP, geoP, rs_vbuf(qpx), rs_geo(qpx));   // canonical order: G[min], G[max]
+    if (s >= firstBoost) { a = pair_boost_accept(a, pair_disoccluded(p.ai), pair_disoccluded(qai)); }
+    if (!a) {
+      pa_not_accepted(p.ai, s);
+      pa_not_accepted(qai, s);
+      continue;
+    }
+    atomicAdd(&paCnt[0], 2u);
+    pa_dense_side(p.ai, s, items, &n);
+    pa_dense_side(qai, s, items, &n);
+  }
+  return n;
+}
+#else
+const PA_ITEMS: u32 = RS_MAX_SLOTS;
+
+fn pa_pixel_dense(p: RsPix, items: ptr<function, array<u32, PA_ITEMS>>) -> u32 {
   let t = rs_t();
   let r = rsDispatch.round;
   let vbP = rs_vbuf(p.px);
@@ -130,6 +190,7 @@ fn pa_pixel_dense(p: RsPix, items: ptr<function, array<u32, RS_MAX_SLOTS>>) -> u
   }
   return n;
 }
+#endif
 
 @compute @workgroup_size(8, 8, 1)
 fn rs_pair_accept(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_index) li: u32) {
@@ -137,7 +198,7 @@ fn rs_pair_accept(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invo
   pair_xf_prepare(li, rsDispatch.round);
 #endif
   let p = rs_pix(vec2u(gid.x, gid.y + rsDispatch.rowBase));
-  var items: array<u32, RS_MAX_SLOTS>;
+  var items: array<u32, PA_ITEMS>;
   var n = 0u;
   if (p.valid) { n = pa_pixel_dense(p, &items); }
   let off = atomicAdd(&paDenseN, n);
@@ -151,7 +212,7 @@ fn rs_pair_accept(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invo
   workgroupBarrier();
   let cap = queue_capacity();
   let b = paDenseBase + off;
-  for (var j = 0u; j < RS_MAX_SLOTS; j++) {
+  for (var j = 0u; j < PA_ITEMS; j++) {
     if (j >= n) { break; }
     if (b + j >= cap) { atomicStore(&rsArena.hdr[4u * RS_Q_DENSE + 3u], 1u); break; }
     rsArena.words[arena_dense_item_word(b + j)] = items[j];
