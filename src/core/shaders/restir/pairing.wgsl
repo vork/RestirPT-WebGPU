@@ -68,6 +68,50 @@ fn pair_partner(local: vec2u, member: u32, t: u32, round: u32, slot: u32) -> Pai
 }
 #endif
 
+#if RS_PAIR_TABLE && RS_PAIRTEX_BINDING
+// perf2 WP-5 (RS_PAIR_TABLE): with memberCount 1 every thread of a dispatch shares (member, t, round), so the transforms
+// of the 8 layers are computed once per workgroup (pair_xf_prepare, all threads, uniform control flow) and the torus
+// wrap uses an exact float-reciprocal modulo (|M·p + o| < 2^24: the f32 quotient is off by at most 1, corrected).
+// Identical results to pair_partner; other member counts (and every caller without the table) use pair_partner.
+struct PairXfT { code: u32, off: vec2i, size: i32, inv: f32 }
+var<workgroup> pairXfWg: array<PairXfT, 8>;
+
+/// Fill the workgroup table for round `round` (call at the top of the entry point, before any early exit).
+fn pair_xf_prepare(li: u32, round: u32) {
+  if (rsParams.memberCount == 1u) {
+    if (li < 8u) {
+      let x = pair_transform(rsParams.memberBase, rs_t(), round, li);
+      pairXfWg[li] = PairXfT(x.code, x.off, x.size, select(0.0, 1.0 / f32(x.size), x.size > 0));
+    }
+    workgroupBarrier();
+  }
+}
+/// x mod size in [0, size) for |x| < 2^24, size > 0 (= ((x % size) + size) % size).
+fn pair_mod_fast(x: i32, size: i32, inv: f32) -> i32 {
+  var r = x - size * i32(floor(f32(x) * inv));
+  r = select(r, r + size, r < 0);
+  return select(r, r - size, r >= size);
+}
+fn pair_partner_xf(local: vec2u, x: PairXfT, slot: u32) -> PairResult {
+  var r = PairResult(false, local);
+  if (x.size <= 0) { return r; }
+  let mp = dihedral_apply(x.code, vec2i(local)) + x.off;
+  let q = vec2i(pair_mod_fast(mp.x, x.size, x.inv), pair_mod_fast(mp.y, x.size, x.inv));
+  let d = textureLoad(pairTex, q, i32(slot), 0).xy;
+  if (d.x == 0 && d.y == 0) { return r; }
+  let pp = vec2i(local) + dihedral_apply_t(x.code, d);
+  if (pp.x < 0 || pp.y < 0 || pp.x >= i32(rsParams.memberSize.x) || pp.y >= i32(rsParams.memberSize.y)) { return r; }
+  r.valid = true;
+  r.partner = vec2u(pp);
+  return r;
+}
+/// pair_partner through the workgroup table (round = the round pair_xf_prepare was called with).
+fn pair_partner_wg(local: vec2u, member: u32, t: u32, round: u32, slot: u32) -> PairResult {
+  if (rsParams.memberCount == 1u) { return pair_partner_xf(local, pairXfWg[slot & 7u], slot); }
+  return pair_partner(local, member, t, round, slot);
+}
+#endif
+
 /// Atlas pixel of a member-local partner of p (same member tile).
 fn pair_atlas_px(p: RsPix, partnerLocal: vec2u) -> vec2u { return p.px - p.local + partnerLocal; }
 fn pair_atlas_index(px: vec2u) -> u32 { return px.y * rsParams.atlasSize.x + px.x; }
@@ -99,4 +143,13 @@ fn pair_disoccluded(ai: u32) -> bool {
   let w = 6u * rs_atlas_pixels() * rs_ns_alloc() + PAIR_TS_WORDS * ai + PAIR_TSW_FLAGS;
   return (arena_word(w) & PAIR_TS_DISOCC) != 0u;
 }
+#if RS_BOOST_GATE
+/// perf2 WP-5 (RS_BOOST_GATE): NS_eff = numSlots while some non-background pixel is disoccluded (T1's gate word), else
+/// the first boost slot: then A_boost = A0 ∧ (dis(p) ∨ dis(q)) is false for every pair (A0 is false on background), so
+/// every boost slot is NOT_ACCEPTED and needs no partner, A0 or slot read.
+fn pair_ns_eff() -> u32 {
+  let open = (rsDispatch.flags & RSD_BOOST_OPEN) != 0u || rs_hdr(RS_HDR_BOOST_GATE) != 0u;
+  return select(pair_first_boost_slot(), rsParams.numSlots, open);
+}
+#endif
 #endif

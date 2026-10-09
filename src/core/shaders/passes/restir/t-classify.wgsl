@@ -22,6 +22,10 @@ fn rs_t_classify(@builtin(global_invocation_id) gid: vec3u) {
   if (!pk.valid) {
     ts_clear(p.ai, TS_DISOCC | select(TS_NO_HIST, 0u, rs_tf(TF_HIST_VALID)));
     rs_count(RSC_T_DISOCC, 1u);
+#if RS_BOOST_GATE
+    // perf2 WP-5: open the boost gate (a load first: one atomic per pixel only until the word is set)
+    if (atomicLoad(&rsArena.hdr[RS_HDR_BOOST_GATE]) == 0u) { atomicOr(&rsArena.hdr[RS_HDR_BOOST_GATE], 1u); }
+#endif
     return;
   }
   let qP = pk.ai;

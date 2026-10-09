@@ -100,6 +100,18 @@ fn rs_pix(px: vec2u) -> RsPix {
   p.px = px;
   let W = rsParams.memberSize.x;
   let H = rsParams.memberSize.y;
+#if RS_PAIR_TABLE
+  // perf2 WP-5: one member and px inside its tile (mcol = mrow = m = 0): the same fields without the divisions.
+  if (rsParams.memberCount == 1u && px.x < W && px.y < H) {
+    p.valid = px.x < rsParams.atlasSize.x && px.y < rsParams.atlasSize.y && px.y >= rsDispatch.rowBase && px.y < rsDispatch.rowEnd
+      && rsParams.memberCols > 0u;
+    p.member = rsParams.memberBase;
+    p.local = px;
+    p.localIdx = px.y * W + px.x;
+    p.ai = px.y * rsParams.atlasSize.x + px.x;
+    return p;
+  }
+#endif
   let mcol = px.x / W;
   let mrow = px.y / H;
   let m = mrow * rsParams.memberCols + mcol;

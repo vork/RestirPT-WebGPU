@@ -49,21 +49,41 @@ fn mis_flush_counters(li: u32) {
 /// Write-back of a partner sample (math.md#jacobian, PLAN rule 4): copy all ten planes of resIn[src], then F = G/J,
 /// jDen = J·jDen_src, W, c.
 fn res_select_shifted(dst: u32, src: u32, G: vec3f, J: f32, W: f32, c: f32) {
+#if RS_MIS_TRIM
+  // perf2 WP-5 (RS_MIS_TRIM): one load and one store per plane (the same values as the copy-then-patch below)
+  for (var pl = 0u; pl < RS_RES_PLANES; pl++) {
+    var v = vec4u(bitcast<u32>(W), bitcast<vec3u>(G / J));
+    if (pl != RP_WF) { v = resin_plane(src, pl); }
+    if (pl == RP_SEED) { v.w = bitcast<u32>(c); }
+    if (pl == RP_RC) { v.w = bitcast<u32>(J * bitcast<f32>(v.w)); }
+    resout_set(dst, pl, v);
+  }
+#else
   for (var pl = 0u; pl < RS_RES_PLANES; pl++) { resout_set(dst, pl, resin_plane(src, pl)); }
   resout_set(dst, RP_WF, vec4u(bitcast<u32>(W), bitcast<vec3u>(G / J)));
   let p1 = resin_plane(src, RP_SEED);
   resout_set(dst, RP_SEED, vec4u(p1.xyz, bitcast<u32>(c)));
   let p2 = resin_plane(src, RP_RC);
   resout_set(dst, RP_RC, vec4u(p2.xyz, bitcast<u32>(J * bitcast<f32>(p2.w))));
+#endif
 }
 
 /// Copy of the canonical record of `dst` (resIn → resOut) with W and c replaced.
 fn res_copy_canonical(dst: u32, W: f32, c: f32) {
+#if RS_MIS_TRIM
+  for (var pl = 0u; pl < RS_RES_PLANES; pl++) {
+    var v = resin_plane(dst, pl);
+    if (pl == RP_WF) { v.x = bitcast<u32>(W); }
+    if (pl == RP_SEED) { v.w = bitcast<u32>(c); }
+    resout_set(dst, pl, v);
+  }
+#else
   for (var pl = 0u; pl < RS_RES_PLANES; pl++) { resout_set(dst, pl, resin_plane(dst, pl)); }
   let p0 = resin_plane(dst, RP_WF);
   resout_set(dst, RP_WF, vec4u(bitcast<u32>(W), p0.yzw));
   let p1 = resin_plane(dst, RP_SEED);
   resout_set(dst, RP_SEED, vec4u(p1.xyz, bitcast<u32>(c)));
+#endif
 }
 
 fn mis_store_shade(p: RsPix, finalRound: bool, L: vec3f) {
@@ -85,16 +105,32 @@ fn spatial_resample(p: RsPix, round: u32, finalRound: bool) {
   let bg = (p1.z & RF_BG) != 0u;
   if (!bg && res_empty(p1.z)) { atomicAdd(&misCnt[4], 1u); }
   let t = rs_t();
+#if RS_BOOST_GATE
+  let NS = pair_ns_eff();         // perf2 WP-5: gated boost slots are NOT_ACCEPTED on both sides (no read, no count)
+#else
   let NS = rsParams.numSlots;
+#endif
 
   // S_c: partners of accepted slots (0xFFFFFFFF = not in S_c); consistency counters.
   var qs: array<u32, 6>;
+#if RS_MIS_TRIM
+  var cjs: array<f32, 6>;         // c_j of the partners (one read each)
+#endif
   var k = 0u;
   var cOut = cc;
+#if RS_MIS_TRIM
+  for (var s = 0u; s < RS_MAX_SLOTS; s++) {
+    if (s >= NS) { break; }
+#else
   for (var s = 0u; s < NS; s++) {
+#endif
     qs[s] = 0xFFFFFFFFu;
     let jw = arena_slot_jword(c, s);
+#if RS_PAIR_TABLE
+    let pr = pair_partner_wg(p.local, p.member, t, round, s);
+#else
     let pr = pair_partner(p.local, p.member, t, round, s);
+#endif
     var q = 0xFFFFFFFFu;
     var jwq = JW_NOT_ACCEPTED;
     if (pr.valid) {
@@ -109,15 +145,31 @@ fn spatial_resample(p: RsPix, round: u32, finalRound: bool) {
     if ((rsParams.flags & RSF_PLANT_U8_FAILED_K) != 0u && !jw_valid(jwq)) { continue; }
     qs[s] = q;
     k++;
+#if RS_MIS_TRIM
+    let cq = rp_c(resin_plane(q, RP_SEED));
+    cjs[s] = cq;
+    cOut += cq;
+#else
     cOut += rp_c(resin_plane(q, RP_SEED));
+#endif
   }
   let wScale = rsParams.wScale;
   if (k == 0u) {
     // No partner: the canonical sample as is (background: F = W = 0, shade 0).
+#if RS_MIS_TRIM
+    var W0 = Wc * wScale;
+    if (!is_finite(W0)) { atomicAdd(&misCnt[2], 1u); W0 = 0.0; }
+    for (var pl = 0u; pl < RS_RES_PLANES; pl++) {
+      var v = vec4u(bitcast<u32>(W0), p0.yzw);
+      if (pl != RP_WF) { v = resin_plane(c, pl); }
+      resout_set(c, pl, v);
+    }
+#else
     for (var pl = 0u; pl < RS_RES_PLANES; pl++) { resout_set(c, pl, resin_plane(c, pl)); }
     var W0 = Wc * wScale;
     if (!is_finite(W0)) { atomicAdd(&misCnt[2], 1u); W0 = 0.0; }
     resout_set(c, RP_WF, vec4u(bitcast<u32>(W0), p0.yzw));
+#endif
     mis_store_shade(p, finalRound, select(Fc * Wc * wScale, vec3f(0.0), Wc == 0.0));
     rsdbg_mis(p.px, 0u, 1.0, 0.0, 0.0, 0xFFu, 1.0, pc * Wc, 0u);
     return;
@@ -127,12 +179,21 @@ fn spatial_resample(p: RsPix, round: u32, finalRound: bool) {
   // m_c(X_c) and, for the diagnostic view 461, Σ_j m_j(X_c) (p̂_{←j}(X_c) = lum H_j).
   var sumT = 1.0;
   var sumMj = 0.0;
+#if RS_MIS_TRIM
+  for (var s = 0u; s < RS_MAX_SLOTS; s++) {
+    if (s >= NS) { break; }
+#else
   for (var s = 0u; s < NS; s++) {
+#endif
     let q = qs[s];
     if (q == 0xFFFFFFFFu) { continue; }
     let h = arena_slot(c, s);
     let lumH = select(0.0, luminance(bitcast<vec3f>(h.xyz)), jw_valid(h.w));
+#if RS_MIS_TRIM
+    let cj = cjs[s];
+#else
     let cj = rp_c(resin_plane(q, RP_SEED));
+#endif
     sumT += mis_canonical_term(a, pc, cj, lumH);
     sumMj += mis_partner_weight(a, cj, lumH, pc, k);
   }
@@ -150,7 +211,12 @@ fn spatial_resample(p: RsPix, round: u32, finalRound: bool) {
   let wc = mc * pc * Wc;
   if (ris_update(&wSum, wc, rs_rand(key, passId, 0u))) { sel = 0u; }
   var L = select(mc * Fc * Wc, vec3f(0.0), Wc == 0.0);
+#if RS_MIS_TRIM
+  for (var s = 0u; s < RS_MAX_SLOTS; s++) {
+    if (s >= NS) { break; }
+#else
   for (var s = 0u; s < NS; s++) {
+#endif
     let q = qs[s];
     if (q == 0xFFFFFFFFu) { continue; }
     let g = arena_slot(q, s);
@@ -160,7 +226,11 @@ fn spatial_resample(p: RsPix, round: u32, finalRound: bool) {
     let pq0 = resin_plane(q, RP_WF);
     let pj = luminance(rp_F(pq0));
     let Wj = rp_W(pq0);
+#if RS_MIS_TRIM
+    let cj = cjs[s];
+#else
     let cj = rp_c(resin_plane(q, RP_SEED));
+#endif
     let lumG = luminance(G);
     let mj = select(0.0, mis_partner_weight(a, cj, pj, lumG, k), valid);
     let wj = mj * lumG * Wj;

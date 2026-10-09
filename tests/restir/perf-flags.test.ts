@@ -13,7 +13,9 @@ import { shaderSources } from '../../src/core/shaders/index.ts';
 /** perf2-plan.md WP-0 step 1 (+ RS_HALF_RATE, user decision D6). */
 const RESERVED = ['RS_VIS_MERGE', 'RS_RIS_HOIST', 'RS_NEE_SITE', 'RS_LAST_ANYHIT', 'RS_RIS_PREPASS', 'RS_ENV_WRAP', 'RS_ENV_PRESAMPLE',
   'CW_TRI_BUDGET', 'BVH_ALPHA_BIT', 'BVH2_PRIV_STACK', 'RS_DENSE_SLOTS', 'RS_BOOST_GATE', 'RS_TSEL_FOLD', 'RS_TSTATE_SOA', 'RS_AGG_COUNTERS',
-  'RS_NO_PLANTS', 'RS_NO_DIAG', 'MAT_VARIANTS', 'RS_PRIMARY_EXT', 'RS_HALF_RATE'];
+  'RS_NO_PLANTS', 'RS_NO_DIAG', 'MAT_VARIANTS', 'RS_PRIMARY_EXT', 'RS_HALF_RATE',
+  // added by WP-5 (separately measurable parts of #6 / #16)
+  'RS_MIS_TRIM', 'RS_PAIR_TABLE'];
 
 describe('perf-flag registry', () => {
   it('reserves every WP-0 name and RS_HALF_RATE', () => {

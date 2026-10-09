@@ -9,7 +9,7 @@
 // restir-api.md Changelog C7 (one chunk per row band; RsDispatch.treeBase / treeCount = item base / count), so the
 // result is bitwise independent of row bands and chunks (U-TR-2). Unit labels start with the pass kind (E1).
 import type { RestirKernel, RestirStage, WorkUnit } from './kernel.ts';
-import { RS_WGSL_CONSTS as K } from './layout.ts';
+import { RS_WGSL_CONSTS as K, WP5_CONSTS } from './layout.ts';
 import { refreshFwdUnits, refreshInvUnits } from './refresh.ts';
 import { TEMPORAL_PASSES, type RsPassName } from './resources.ts';
 
@@ -56,9 +56,12 @@ export class TemporalStage implements RestirStage {
         });
       }
     };
+    const boostGate = !!k.perfFlags.RS_BOOST_GATE;
     const clearQueues = (enc: GPUCommandEncoder) => {
       enc.clearBuffer(res.arena, 16 * K.RS_Q_FWD, 8);
       enc.clearBuffer(res.arena, 16 * K.RS_Q_INV, 8);
+      // perf2 WP-5 (RS_BOOST_GATE): T1 sets the any-disocclusion word; it is cleared here, before T1, every frame
+      if (boostGate) enc.clearBuffer(res.arena, 4 * WP5_CONSTS.RS_HDR_BOOST_GATE, 4);
     };
     // The queue clear rides on the first unit of the stage (a unit of its own would be submitted alone until measured, E1).
     const pre = hist ? refreshFwdUnits(k, t) : [];
