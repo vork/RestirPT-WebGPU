@@ -81,6 +81,10 @@ The app opens `validation/assets/cornell/cornell.glb`. This Cornell box has **no
 Lights › "Add area light (rectangle)", then click the ceiling, or load an HDRI. The integrator starts as the
 reference PT; switch Render › integrator to **ReSTIR PT**.
 
+**Live demo (GitHub Pages):** <https://vork.github.io/RestirPT-WebGPU/>. It needs a browser with WebGPU (Chrome or Edge 113+, Safari 26+).
+Sponza with the sky HDRI: <https://vork.github.io/RestirPT-WebGPU/?scene=validation/assets/downloaded/sponza/Sponza.gltf&env=validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr>.
+The site is built by `.github/workflows/pages.yml` on every push to `main` (Sponza and the HDRI are fetched in CI and copied by `scripts/pages-assets.mjs`).
+
 URL parameters:
 
 | Parameter | Effect |

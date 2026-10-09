@@ -16,7 +16,9 @@ declare global {
   }
 }
 
-export const DEFAULT_SCENE_URL = '/validation/assets/cornell/cornell.glb';
+// Relative to Vite's base ('/' in dev, '/<repo>/' on GitHub Pages); a build can pick another default scene with
+// VITE_DEFAULT_SCENE (the Pages build uses the lit Cornell box with point + spot lights).
+export const DEFAULT_SCENE_URL = `${import.meta.env.BASE_URL}${import.meta.env.VITE_DEFAULT_SCENE ?? 'validation/assets/cornell/cornell.glb'}`;
 
 export async function boot(loader?: SceneLoader, hooks?: AppHooks): Promise<App> {
   const canvas = document.getElementById('view') as HTMLCanvasElement;
@@ -36,7 +38,7 @@ export async function boot(loader?: SceneLoader, hooks?: AppHooks): Promise<App>
   app.start();
   if (integration && !q.has('scene')) {
     const url = new URL(DEFAULT_SCENE_URL, location.href).href;
-    void app.loadScene({ kind: 'url', url, name: 'cornell.glb' });
+    void app.loadScene({ kind: 'url', url, name: DEFAULT_SCENE_URL.split('/').pop() ?? 'scene' });
   }
   return app;
 }

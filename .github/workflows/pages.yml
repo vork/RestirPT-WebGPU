@@ -1,0 +1,60 @@
+name: GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - name: Cache downloaded scenes
+        uses: actions/cache@v4
+        with:
+          path: validation/assets/downloaded
+          key: pages-assets-${{ hashFiles('validation/blender/fetch_sponza.py', 'validation/assets/hdris.json') }}
+      - name: Fetch Sponza and the HDRI
+        run: |
+          [ -f validation/assets/downloaded/sponza/Sponza.gltf ] || python3 validation/blender/fetch_sponza.py
+          [ -f validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr ] || npx tsx validation/assets/fetch_hdris.ts
+      - name: Build
+        env:
+          PAGES_BASE: /${{ github.event.repository.name }}/
+          VITE_DEFAULT_SCENE: validation/assets/cornell/cornell_point_spot.glb
+        run: npm run build
+      - run: node scripts/pages-assets.mjs
+        env:
+          CI: 'true'
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

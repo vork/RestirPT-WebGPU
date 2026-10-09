@@ -15,6 +15,8 @@ const nodeModulesReal = realpathSync(`${root}node_modules`);
 // Loader dependencies are pre-bundled up front: they are first reached from Workers / dynamic imports, which the
 // dependency scanner does not see, and a late discovery reloads the page mid-run (Playwright smoke, Chrome lane).
 export default defineConfig({
+  // GitHub Pages serves the app under /<repo>/ (PAGES_BASE, set by .github/workflows/pages.yml); dev stays at '/'.
+  base: process.env.PAGES_BASE ?? '/',
   // Local, not node_modules/.vite: worktrees symlink node_modules to the main checkout, and a shared deps cache that
   // another checkout re-optimizes reloads pages mid-run.
   cacheDir: '.vite',
