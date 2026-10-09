@@ -406,7 +406,8 @@ export class Renderer {
         const dbg = debug ? await RestirDebugPass.create(pass.kernel, debug) : undefined;
         if (this.lights) pass.setLights(this.lights);
         const tg = this.targets;
-        if (tg) pass.setTargets({ width: tg.t.width, height: tg.t.height, color: tg.t.color, frameUniforms: tg.t.frameUniforms });
+        if (tg) pass.setTargets({ width: tg.t.width, height: tg.t.height, color: tg.t.color, frameUniforms: tg.t.frameUniforms, vbuf: tg.vbuf });
+        await pass.prepare();   // perf2 WP-7e: the V-buffer source is part of the prepare key
         destroyRestir(state.rs);
         state.rs = { pass, dbg, hud: new RestirHud(this.device), temporalFrames: 0, heldFrames: 0 };
         this.restirError = undefined;
@@ -614,7 +615,8 @@ export class Renderer {
     if (s?.pt && s.pt.colorFormat !== t.colorFormat) void this.compilePt(s, t.colorFormat);
     else s?.pt?.setTargets({ width: t.width, height: t.height, color: t.color, frameUniforms: t.frameUniforms });
     if (s?.rs && s.rs.pass.colorFormat !== t.colorFormat) void this.compileRestir(s, t.colorFormat);
-    else s?.rs?.pass.setTargets({ width: t.width, height: t.height, color: t.color, frameUniforms: t.frameUniforms });
+    // perf2 WP-7e: the M1 V-buffer feeds rs_primary_ext (RS_PRIMARY_EXT; the primary pass runs first in every ReSTIR frame)
+    else s?.rs?.pass.setTargets({ width: t.width, height: t.height, color: t.color, frameUniforms: t.frameUniforms, vbuf });
   }
 
   get gbuffer(): GPUBuffer | undefined { return this.targets?.gbuf; }

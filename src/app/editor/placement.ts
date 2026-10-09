@@ -10,10 +10,11 @@ import { add, cross, dot, normalize, scale, sub, type Vec3 } from './picking.ts'
 
 export const BVH_MISS = 0xffffffff;
 
-export interface VBufferTexel { primId: number; u: number; v: number; matId: number }
+/** `w`: the material id, or bits(t) with perf2 RS_PRIMARY_EXT (WP-7e: read by rs_primary_ext). */
+export interface VBufferTexel { primId: number; u: number; v: number; w: number }
 export interface SurfaceHit { primId: number; position: Vec3; ng: Vec3; u: number; v: number }
 
-/** Read one texel of the rgba32uint V-buffer (primId, bitcast u, bitcast v, matId). */
+/** Read one texel of the rgba32uint V-buffer (primId, bitcast u, bitcast v, matId | bits(t)). */
 export async function readVBufferTexel(device: GPUDevice, vbuf: GPUTexture, x: number, y: number): Promise<VBufferTexel> {
   const buf = device.createBuffer({ label: 'vbuffer-pick', size: 256, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
   try {
@@ -24,7 +25,7 @@ export async function readVBufferTexel(device: GPUDevice, vbuf: GPUTexture, x: n
     const u32 = new Uint32Array(buf.getMappedRange().slice(0, 16));
     buf.unmap();
     const f = new Float32Array(u32.buffer);
-    return { primId: u32[0], u: f[1], v: f[2], matId: u32[3] };
+    return { primId: u32[0], u: f[1], v: f[2], w: u32[3] };
   } finally {
     buf.destroy();
   }

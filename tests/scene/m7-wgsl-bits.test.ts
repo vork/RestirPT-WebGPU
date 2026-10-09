@@ -11,7 +11,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { composeWgsl, type Defines } from '../../src/core/gpu/wgsl-composer.ts';
 import { shaderSources } from '../../src/core/shaders/index.ts';
-import { RS_PASSES, restirCommonDefines, restirDefines, type RsPassName } from '../../src/core/render/restir/resources.ts';
+import { PERF2_FLAG_PASSES, RS_PASSES, restirCommonDefines, restirDefines, type RsPassName } from '../../src/core/render/restir/resources.ts';
 import { envDefines } from '../../src/core/render/env-gpu.ts';
 import { lutDefines } from '../../src/core/render/luts/lut-layout.ts';
 import { LUT_RECORDS_BASE } from '../../src/core/render/lights-gpu.ts';
@@ -59,7 +59,7 @@ export function m7Hashes(extraScene: Defines = {}): Record<string, string> {
     out[`${sk}:emission`] = compose('passes/emission.wgsl', { ...sd, ...envDefines(0, 1) });
     out[`${sk}:env-debug`] = compose('passes/env-debug.wgsl', { ...sd, ...envDefines(0, 1), LIGHTS_GROUP: 0, LIGHTS_BINDING: 5, ...lutDefines({ base: LUT_RECORDS_BASE, recordsKind: 'u32' }) });
     for (const name of Object.keys(RS_PASSES) as RsPassName[]) {
-      if (!RS_PASSES[name].scene) continue;
+      if (!RS_PASSES[name].scene || PERF2_FLAG_PASSES.includes(name)) continue;   // perf2 WP-7e: flag-only passes
       for (const [vk, vd] of Object.entries(M6_VARIANTS)) for (const debug of [false, true]) {
         const d = restirDefines(name, { sceneDefines: sd, debug, extra: { RS_RIS_NEE: 0, RS_MODE_B: 0, RS_DUAL_MV: 0, RS_DUPMAP: 0, RS_PLANT_T2: 0, ...vd } });
         out[`${sk}:${name}:${vk}${debug ? ':debug' : ''}`] = compose(RS_PASSES[name].file, d);

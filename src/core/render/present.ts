@@ -123,9 +123,11 @@ export class Presenter {
     s: PresentSettings,
     dbg: PresentDebug,
     overlay?: { overlay: Overlay; camera: CameraState },
-    timestampWrites?: GPURenderPassTimestampWrites,
-    /** WP-7g: the tonemap pass's timestamps; `target`: render into this texture (tests) instead of the canvas. */
-    o: { toneTimestampWrites?: GPUComputePassTimestampWrites; target?: GPUTexture } = {},
+    /** The blit's timestamps; a function is called only when the pass is encoded, after the tonemap's (encode order). */
+    timestampWrites?: GPURenderPassTimestampWrites | (() => GPURenderPassTimestampWrites | undefined),
+    /** WP-7g: the tonemap pass's timestamps (a function: called only when the pass is encoded); `target`: render into
+     *  this texture (tests) instead of the canvas. */
+    o: { toneTimestampWrites?: GPUComputePassTimestampWrites | (() => GPUComputePassTimestampWrites | undefined); target?: GPUTexture } = {},
   ): void {
     if (!this.pipeline || !this.tonePipeline) return;
     const target = o.target ?? this.context.getCurrentTexture();
@@ -164,7 +166,8 @@ export class Presenter {
       const tu = new Uint32Array(this.toneScratch), tf = new Float32Array(this.toneScratch);
       tu[0] = src.color.width; tu[1] = src.color.height; tf[2] = 2 ** s.exposureEV; tu[3] = TONEMAP_CODE[s.tonemap]; tu[4] = s.highlightNonFinite ? 1 : 0;
       this.device.queue.writeBuffer(this.toneParams, 0, this.toneScratch);
-      const cp = encoder.beginComputePass({ label: 'tonemap', timestampWrites: o.toneTimestampWrites });
+      const tw = typeof o.toneTimestampWrites === 'function' ? o.toneTimestampWrites() : o.toneTimestampWrites;
+      const cp = encoder.beginComputePass({ label: 'tonemap', timestampWrites: tw });
       cp.setPipeline(this.tonePipeline);
       cp.setBindGroup(0, this.toneGroup!);
       cp.dispatchWorkgroups(Math.ceil(src.color.width / 8), Math.ceil(src.color.height / 8));
@@ -193,7 +196,7 @@ export class Presenter {
     const pass = encoder.beginRenderPass({
       label: 'present',
       colorAttachments: [{ view: target.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }],
-      timestampWrites,
+      timestampWrites: typeof timestampWrites === 'function' ? timestampWrites() : timestampWrites,
     });
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup!);

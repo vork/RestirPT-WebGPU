@@ -33,12 +33,12 @@ import { SpatialStage } from './stage-spatial.ts';
 import { EnsembleStage } from './ensemble.ts';
 import { TemporalStage } from './stage-temporal.ts';
 import { FrameStateTracker, type ConfigHashInput, type RestirAdvance, type RestirFrameState, type RestirInteractiveAdvance } from './frame-state.ts';
-import { RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagDefines, perfFlagsKey, type PerfFlags, type PerfFlagsInput } from './perf-flags.ts';
+import { KERNEL_RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagDefines, perfFlagsKey, type PerfFlags, type PerfFlagsInput } from './perf-flags.ts';
 
 export type { RestirSettings } from './presets.ts';
 export type { RestirAdvance, RestirFrameState } from './frame-state.ts';
 export { RESTIR_PRESETS } from './presets.ts';
-export { PERF_FLAGS, RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagDefines, perfFlagsKey, type PerfFlagName, type PerfFlags, type PerfFlagsInput } from './perf-flags.ts';
+export { KERNEL_RELEASE_PERF_FLAGS, PERF_FLAGS, RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagDefines, perfFlagsKey, type PerfFlagName, type PerfFlags, type PerfFlagsInput } from './perf-flags.ts';
 
 export interface WorkUnit { label: string; costHint: number; encode(enc: GPUCommandEncoder): void }
 /** A stage of the frame graph (spatial = WP-C stage-spatial.ts, ensemble = WP-C ensemble.ts). `prepare` compiles its
@@ -81,7 +81,8 @@ export interface RestirKernelOptions {
    *  plane-major ('soa', composer define RS_RES_SOA; RestirKernel.interactive). readReservoirs() always returns AoS. */
   resLayout?: 'aos' | 'soa';
   /** perf2 (docs/decisions/perf2-api.md): interactive-only optimisation defines from the registry in perf-flags.ts.
-   *  Default: none (every validation caller); RestirKernel.interactive defaults to RELEASE_PERF_FLAGS. Part of
+   *  Default: none (every validation caller); RestirKernel.interactive defaults to KERNEL_RELEASE_PERF_FLAGS (the release
+   *  set without the renderer-only flags; the Renderer passes RELEASE_PERF_FLAGS). Part of
    *  variantKey(); setPerfFlags() switches them at a frame boundary (recompile + history reset). */
   perfFlags?: PerfFlagsInput;
   env?: PtEnvOptions;
@@ -194,7 +195,8 @@ export class RestirKernel {
 
   static async create(device: GPUDevice, scene: SceneGpu, env: EnvGpuResources, o: RestirKernelOptions): Promise<RestirKernel> {
     const k = new RestirKernel(device, scene, env, o);
-    const names: RsPassName[] = ['rs_primary', 'rs_initial', 'rs_finalize'];
+    // (RS_PRIMARY_EXT: rs_vtrace compiles in prepare() only when no external V-buffer serves the view)
+    const names: RsPassName[] = [k.primaryExt() ? 'rs_primary_ext' : 'rs_primary', 'rs_initial', 'rs_finalize'];
     if (o.instrumentation?.dumpCandidates) names.push('rs_initial_dump');
     await Promise.all(names.map((n) => k.pipeline(n)));
     await k.prepare();
@@ -205,7 +207,7 @@ export class RestirKernel {
   static async interactive(device: GPUDevice, scene: SceneGpu, env: EnvGpuResources, colorFormat: GPUTextureFormat,
     o: Omit<RestirKernelOptions, 'settings'> & { settings?: Partial<RestirSettings> } = {}): Promise<RestirFramePass> {
     const k = await RestirKernel.create(device, scene, env, {
-      modeBNeedsAreaLights: true, resLayout: 'soa', ...o, perfFlags: o.perfFlags ?? RELEASE_PERF_FLAGS, settings: { ...restirSettings('interactive'), ...o.settings },
+      modeBNeedsAreaLights: true, resLayout: 'soa', ...o, perfFlags: o.perfFlags ?? KERNEL_RELEASE_PERF_FLAGS, settings: { ...restirSettings('interactive'), ...o.settings },
     });
     await k.pipeline('rs_finalize_frame', {}, colorFormat);
     return new RestirFramePass(k, colorFormat);
@@ -356,7 +358,7 @@ export class RestirKernel {
     const key = this.prepareKey();
     if (key === this.prepared) return;
     // the frame passes of the current variant (cached; a variant change recompiles them, MD1)
-    const base: RsPassName[] = ['rs_primary', 'rs_initial', 'rs_finalize'];
+    const base: RsPassName[] = [...this.primaryPasses(), 'rs_initial', 'rs_finalize'];
     if (this.o.instrumentation?.dumpCandidates) base.push('rs_initial_dump');
     if (this.settings.risNee) base.push('rs_light_tiles');
     if (this.settings.dupmap && this.settings.temporal) base.push('rs_dupmap');
@@ -372,7 +374,30 @@ export class RestirKernel {
 
   /** Key of what prepare() compiles: the stages the settings / view need and the pipeline variant. */
   prepareKey(): string {
-    return `${this.settings.rounds > 0}:${(this.view?.members ?? 1) > 1}:${this.settings.temporal}:${this.variantKey()}`;
+    return `${this.settings.rounds > 0}:${(this.view?.members ?? 1) > 1}:${this.settings.temporal}:${this.variantKey()}${this.primaryExt() ? `:x${this.extVsrc() ? 1 : 0}` : ''}`;
+  }
+
+  // ---- perf2 WP-7e (RS_PRIMARY_EXT) -------------------------------------------------------------------------------
+  private externalVbuf: { tex: GPUTexture; view: GPUTextureView } | undefined;
+  /** RS_PRIMARY_EXT: rs_primary_ext replaces rs_primary (the primary hit read from a V-buffer texel). */
+  primaryExt(): boolean { return !!this.perfFlagSet.RS_PRIMARY_EXT; }
+  /** The frame's primary passes: rs_primary, or rs_primary_ext (+ rs_vtrace without a usable external V-buffer). */
+  primaryPasses(): RsPassName[] {
+    if (!this.primaryExt()) return ['rs_primary'];
+    return this.extVsrc() ? ['rs_primary_ext'] : ['rs_vtrace', 'rs_primary_ext'];
+  }
+  /** Interactive (RS_PRIMARY_EXT): the renderer's M1 V-buffer of this frame (primId, bits(u), bits(v), bits(t)), written
+   *  by its primary pass before the ReSTIR passes with the same camera ray. Undefined: the kernel traces its own
+   *  (rs_vtrace). A change of source is a new prepare() key (rs_vtrace compiles only when needed). */
+  setExternalVbuf(tex: GPUTexture | undefined): void {
+    if (tex === this.externalVbuf?.tex) return;
+    this.externalVbuf = tex ? { tex, view: tex.createView() } : undefined;
+  }
+  /** The external V-buffer when it can serve this kernel: interactive, one member, atlas-sized. */
+  private extVsrc(): GPUTextureView | undefined {
+    const e = this.externalVbuf, a = this.res?.alloc;
+    if (!e || !this.external || !a || a.members !== 1 || e.tex.width !== a.atlasW || e.tex.height !== a.atlasH) return undefined;
+    return e.view;
   }
   /** Every pipeline the current settings, light mode and view need is compiled (prepare() finished for them). A frame
    *  must not be encoded otherwise: setSettings() / setLightMode() switch the variant at once, the compile is async. */
@@ -678,12 +703,16 @@ export class RestirKernel {
     }
     const w = this.roleW;
     const bands = this.rowBands();
-    const primary = this.pipelineSync('rs_primary');
-    for (const [r0, r1] of bands) {
-      units.push({
-        label: `rs_primary[${r0}]`, costHint: a.atlasW * (r1 - r0),
-        encode: (enc) => this.encodePass(enc, 'rs_primary', primary, res.g2('rs_primary'), { t, passId: K.RS_PASS_PRIMARY, rowBase: r0, rowEnd: r1 }, this.perPixelWorkgroups(r0, r1)),
-      });
+    // perf2 WP-7e (RS_PRIMARY_EXT): rs_primary_ext reads the hit from the M1 V-buffer (or rs_vtrace's) instead of tracing
+    for (const name of this.primaryPasses()) {
+      const primary = this.pipelineSync(name);
+      const g2 = name === 'rs_primary_ext' ? res.g2(name, 0, { vsrc: this.extVsrc() }) : res.g2(name);
+      for (const [r0, r1] of bands) {
+        units.push({
+          label: `${name}[${r0}]`, costHint: a.atlasW * (r1 - r0),
+          encode: (enc) => this.encodePass(enc, name, primary, g2, { t, passId: K.RS_PASS_PRIMARY, rowBase: r0, rowEnd: r1 }, this.perPixelWorkgroups(r0, r1)),
+        });
+      }
     }
     // M6 (MD4): the frame's light tiles (per member) before the path trees
     if (s.risNee) {
@@ -837,7 +866,8 @@ export class RestirKernel {
 /** perf2 WP-7c: RsDispatch.flags bit of finalize.wgsl's RSD_NO_DISPLAY (RS_SKIP_DISPLAY text only). */
 export const K_RSD_NO_DISPLAY = 128;
 
-export interface RestirFrameTargets { width: number; height: number; color: GPUTexture; frameUniforms: GPUBuffer }
+/** `vbuf` (perf2 WP-7e, RS_PRIMARY_EXT): the renderer's M1 V-buffer, written by its primary pass earlier in the frame. */
+export interface RestirFrameTargets { width: number; height: number; color: GPUTexture; frameUniforms: GPUBuffer; vbuf?: GPUTexture }
 
 /** Interactive ReSTIR pass (renderer mode 'restir'; mirrors PtFramePass). One submit per frame: encode() resets the
  *  RsDispatch ring. t = frame.seedIndex (RSF_INTERACTIVE). */
@@ -871,6 +901,7 @@ export class RestirFramePass {
     }
     this.targets = t;
     this.kernel.setExternalFrame(t.frameUniforms, t.width, t.height);
+    this.kernel.setExternalVbuf(t.vbuf);
     this.kernel.resources.forgetExternalGroups();
   }
 

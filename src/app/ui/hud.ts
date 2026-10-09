@@ -37,9 +37,16 @@ export class Hud {
     if (d.scene) lines.push(`scene ${d.scene}`);
     if (!d.timestampsSupported) lines.push('gpu timing: timestamp-query unavailable');
     else {
+      // timestamps.ts attributeFrame: each timed pass is its own cost; "untimed" is the rest of the frame's GPU span (the
+      // ReSTIR passes and the in-frame denoiser carry no timestamps, Q3); gpu total = the span (first timed begin to the
+      // present's end), so the lines add up to it.
       const total = d.passes.find((p) => p.name === 'total');
-      for (const p of d.passes) if (p.name !== 'total') lines.push(`  ${p.name.padEnd(18)} ${f(p.ms, 3).padStart(8)} ms`);
-      if (total) lines.push(`  ${'gpu total'.padEnd(18)} ${f(total.ms, 3).padStart(8)} ms`);
+      const untimed = d.passes.find((p) => p.name === 'untimed');
+      const row = (name: string, ms: number) => lines.push(`  ${name.padEnd(18)} ${f(ms, 3).padStart(8)} ms`);
+      for (const p of d.passes) if (p.name !== 'total' && p.name !== 'untimed') row(p.name, p.ms);
+      if (untimed) row('untimed (Q3)', untimed.ms);
+      if (total) row('gpu total', total.ms);
+      if (untimed && untimed.ms > 0.05) lines.push('  (untimed = ReSTIR + in-frame denoiser: no timestamps there, Q3)');
     }
     const c = d.counters;
     const t = d.totals;

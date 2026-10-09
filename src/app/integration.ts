@@ -86,7 +86,9 @@ export function createIntegration(gpu: GpuContext, opts: IntegrationOptions = {}
   const renderFrame: AppHooks['renderFrame'] = (encoder, ctx) => {
     if (lightsDirty && lightStore && renderer?.setLights(lightStore.list())) lightsDirty = false;
     renderer?.encode(encoder, { advanced: ctx.advanced, debugMode: ctx.debug.mode, debugGroup: ctx.targets.debug.bindGroup, resetTemporal: ctx.resetTemporal, resetHistory: ctx.resetHistory },
-      () => ctx.timestamps('primary'), () => ctx.timestamps('pt'), () => ctx.timestamps('restir'));
+      // No 'restir' slot: the ReSTIR passes carry no timestampWrites (Q3), so a reserved pair was never written and the
+      // HUD showed a stale value; their GPU time is the HUD's "untimed" line (timestamps.ts attributeFrame).
+      () => ctx.timestamps('primary'), () => ctx.timestamps('pt'));
   };
   /** ReSTIR with temporal reuse is on: paused frames re-display the last frame (TD20). */
   const restirTemporal = () => !!renderer && renderer.options.renderMode === 'restir' && !!renderer.restir?.settings.temporal;

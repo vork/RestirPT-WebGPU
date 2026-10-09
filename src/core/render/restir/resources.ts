@@ -20,7 +20,9 @@ export type RsPassName =
   // M5 temporal / refresh passes (restir-temporal-api.md §4.2)
   | 'rs_refresh_fwd' | 'rs_refresh_inv' | 'rs_t_classify' | 'rs_t_forward' | 'rs_t_select' | 'rs_t_inverse'
   // M6 passes (restir-m6-api.md §3)
-  | 'rs_light_tiles' | 'rs_dupmap';
+  | 'rs_light_tiles' | 'rs_dupmap'
+  // perf2 WP-7e (RS_PRIMARY_EXT): rs_primary from a V-buffer texel; the trace-only source pass without an M1 V-buffer
+  | 'rs_primary_ext' | 'rs_vtrace';
 
 type G2Kind =
   | { k: 'ro' } | { k: 'rw'; min?: number } | { k: 'st'; format: GPUTextureFormat } | { k: 'tex'; sampleType: GPUTextureSampleType; dim?: GPUTextureViewDimension }
@@ -59,6 +61,17 @@ export const RS_PASSES: Record<RsPassName, RsPassDef> = {
     file: 'passes/restir/primary.wgsl', entry: 'rs_primary', scene: true, debug: true,
     g2: [{ k: 'st', format: 'rgba32uint' }, ST_F, ST_F, RW],
     defines: { RS_VBUF_W_BINDING: b(0), RS_GEO_W_BINDING: b(1), RS_L1_W_BINDING: b(2), RS_ARENA_BINDING: b(3), RS_ARENA_RW: true },
+  },
+  // perf2 WP-7e (RS_PRIMARY_EXT; app / flag only: the validation passes and their G2 layouts are unchanged)
+  rs_primary_ext: {
+    file: 'passes/restir/primary-ext.wgsl', entry: 'rs_primary_ext', scene: true, debug: true,
+    g2: [{ k: 'st', format: 'rgba32uint' }, ST_F, ST_F, RW, TEX_U],
+    defines: { RS_VBUF_W_BINDING: b(0), RS_GEO_W_BINDING: b(1), RS_L1_W_BINDING: b(2), RS_ARENA_BINDING: b(3), RS_ARENA_RW: true, RS_VSRC_BINDING: b(4) },
+  },
+  rs_vtrace: {
+    file: 'passes/restir/primary-ext.wgsl', entry: 'rs_vtrace', scene: true, debug: true,
+    g2: [{ k: 'st', format: 'rgba32uint' }, RW],
+    defines: { RS_VSRC_W_BINDING: b(0), RS_ARENA_BINDING: b(1), RS_ARENA_RW: true },
   },
   rs_initial: {
     file: 'passes/restir/initial.wgsl', entry: 'rs_initial', scene: true, debug: true,
@@ -156,6 +169,9 @@ export const RS_PASSES: Record<RsPassName, RsPassDef> = {
     defines: { RS_RES_IN_BINDING: b(0), RS_ARENA_BINDING: b(1), RS_ARENA_RW: true },
   },
 };
+
+/** perf2 passes behind a perf flag (never compiled without it): outside the validation pipeline set (U-M7-BITS). */
+export const PERF2_FLAG_PASSES: readonly RsPassName[] = ['rs_primary_ext', 'rs_vtrace'];
 
 /** The M5 temporal / refresh passes (compile smoke, U-BIND-1). */
 export const TEMPORAL_PASSES: readonly RsPassName[] = ['rs_refresh_fwd', 'rs_refresh_inv', 'rs_t_classify', 'rs_t_forward', 'rs_t_select', 'rs_t_inverse'];
@@ -317,7 +333,7 @@ export class RestirResources {
    * resample writes the other one; finalize reads res[inIdx]). Finalize needs `accum` / `counters` (and `colour` for
    * the interactive variant); they are part of the cache key.
    */
-  g2(name: RsPassName, inIdx = 0, ext: { accum?: GPUBuffer; counters?: GPUBuffer; colour?: GPUTextureView } = {}): GPUBindGroup {
+  g2(name: RsPassName, inIdx = 0, ext: { accum?: GPUBuffer; counters?: GPUBuffer; colour?: GPUTextureView; vsrc?: GPUTextureView } = {}): GPUBindGroup {
     const v = this.views;
     const rin = { buffer: this.res[inIdx] }, rout = { buffer: this.res[1 - inIdx] };
     const arena = { buffer: this.arena };
@@ -325,6 +341,12 @@ export class RestirResources {
     const g = `:g${this.parity}`;
     switch (name) {
       case 'rs_primary': return this.group(name + g, name, [v.vbuf, v.geo, v.l1, arena]);
+      // perf2 WP-7e: the V-buffer source = the renderer's M1 V-buffer (ext.vsrc) or the kernel's own (rs_vtrace)
+      case 'rs_primary_ext': {
+        const src = ext.vsrc ?? this.vsrcView();
+        return this.group(`${name}${g}:${objId(src)}`, name, [v.vbuf, v.geo, v.l1, arena, src]);
+      }
+      case 'rs_vtrace': return this.group(name, name, [this.vsrcView(), arena]);
       // rs_initial writes res[inIdx] (= res[w], TD2; 0 with temporal off).
       case 'rs_initial': return this.group(`${name}:${inIdx}${g}`, name, [rin, arena, v.vbuf, v.geo]);
       case 'rs_initial_dump':
@@ -364,6 +386,19 @@ export class RestirResources {
     }
   }
 
+  private vsrc: { tex: GPUTexture; view: GPUTextureView } | undefined;
+  /** perf2 WP-7e: the kernel's own V-buffer source (rs_vtrace → rs_primary_ext), allocated on first use. */
+  private vsrcView(): GPUTextureView {
+    if (!this.vsrc) {
+      const tex = this.device.createTexture({ label: 'rs-vsrc', size: [this.alloc.atlasW, this.alloc.atlasH], format: 'rgba32uint',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC });
+      this.vsrc = { tex, view: tex.createView() };
+    }
+    return this.vsrc.view;
+  }
+  /** perf2 WP-7e: the kernel's own V-buffer source texture (undefined until rs_vtrace ran). */
+  get vsrcTexture(): GPUTexture | undefined { return this.vsrc?.tex; }
+
   private needTemporal(name: RsPassName): void {
     if (!this.alloc.temporal) throw new Error(`${name}: allocate with temporal = true (settings.temporal)`);
   }
@@ -376,6 +411,7 @@ export class RestirResources {
   destroy(): void {
     for (const x of [...this.res, this.arena, this.args, this.ensStats, this.ensPixel]) x.destroy();
     this.candDump?.destroy();
+    this.vsrc?.tex.destroy();
     for (const t of new Set([...this.vbufs, ...this.geos, this.l1, this.shade, this.frameTex, this.pairTex, this.maskTex])) t.destroy();
     this.groups.clear();
   }
