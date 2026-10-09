@@ -31,7 +31,7 @@
 //     smoke), FLIP of the denoised vs the raw 1-frame ReSTIR-interactive output against 65 536-spp PT references on (i),
 //     (v), (vii), ix-d (ratio ≥ 2), recovery after the ix-e steps (≤ 8 frames), 960×540 timing (≤ 3 ms), T16.
 //     `--only gate0,flip,recovery,timing`; `--prerender-ptrefs` renders (caches) the PT references only.
-// M6: validation/harness/gate-m6.ts (restir-m6-api.md §4–§5) — `--part core|r37|r39|r310|r311|gate5|plants` (default:
+// M6: validation/harness/gate-m6.ts (restir-m6-api.md §4–§5) — `--part core|r37|r39|r310|r311|gate5|plants|decisions` (default:
 //     all parts): Gate 0 (M6 suites, T3-M6 variants, M4/M5 regressions, make-m6 determinism, M6 app smoke), rungs 3.7 /
 //     3.9 / 3.10 / 3.11, Gate 5 (duplication-map bias ≤ 3.25 %), the M6 plants with predicted signs, A/A + W × 1.003.
 //     `--only id|pkg,…`, `--pilot-only` (pilots + sizing), `--plant-seed-offset 700` (revised predictions, fresh seeds),
@@ -57,7 +57,7 @@ import { milestoneM3c } from './gate-m3c.ts';
 import { milestoneM4 } from './gate-m4.ts';
 import { milestoneM5 } from './gate-m5.ts';
 import { milestoneM55 } from './gate-m55.ts';
-import { milestoneM6, PARTS as M6_PARTS, type Part as M6Part } from './gate-m6.ts';
+import { milestoneM6, ALL_PARTS as M6_PARTS, type Part as M6Part } from './gate-m6.ts';
 import { milestoneM7, PARTS as M7_PARTS, type Part as M7Part } from './gate-m7.ts';
 import { milestoneM8, PARTS as M8_PARTS, type Part as M8Part } from './gate-m8.ts';
 import { withGpuLockSync } from './gpu-lock.ts';
