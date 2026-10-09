@@ -39,6 +39,57 @@
 var<private> ptDumpPrims: array<u32, 8>;
 #endif
 
+#if RS_ONE_CHUNK
+// perf2 WP-2c (RS_ONE_CHUNK): with one tree chunk (RSD_FIRST_CHUNK | RSD_FINAL_CHUNK) the record is never read back:
+// Σw / nCand start at the empty record's 0 in registers, the selection's F and "any selection" are tracked here (set by
+// pt_emit), and the empty record is written only when nothing was selected
+var<private> ptSelF: vec3f;
+var<private> ptAnySel: bool;
+#endif
+
+#if RS_LAZY_HASH
+/// perf2 WP-2c (RS_LAZY_HASH): nee_draw(slot, h(SEL), h(SEL2), (h(L0), h(L1), h(L2))) of vertex B with each path hash
+/// computed only where nee_draw reads it (SEL2: padded tables > 2^16 entries; L0–L2 by the entry's kind). Same values.
+fn pt_nee_draw(seed: vec2u, B: u32) -> NeeEndpoint {
+  let slot = lightsParams.cur;
+  if (slot.nEntries == 0u) { return NeeEndpoint(LIGHT_NONE, 0u, 0u); }
+  let hSel = rs_path_hash(seed, B, SLOT_SEL);
+  var hSel2 = 0u;
+  if (slot.aliasLog2 > 16u) { hSel2 = rs_path_hash(seed, B, SLOT_SEL2); }
+  let entry = alias_sample(slot, hSel, hSel2);
+  if (entry == slot.envEntry) {
+    let ij = env_draw_cell(rs_path_hash(seed, B, SLOT_L0), rs_path_hash(seed, B, SLOT_L1));
+    return NeeEndpoint(entry, (ij.x << 16u) | ij.y, rs_path_hash(seed, B, SLOT_L2));
+  }
+  if (entry < slot.nAnalytic) {
+    let kind = records[slot.lightOff + entry * LIGHT_REC_WORDS + 3u];
+    if (kind == LT_POINT || kind == LT_SPOT || kind == LT_SUN) { return NeeEndpoint(entry, 0u, 0u); }
+  }
+  return NeeEndpoint(entry, bitcast<u32>(u32_to_unit(rs_path_hash(seed, B, SLOT_L0))), bitcast<u32>(u32_to_unit(rs_path_hash(seed, B, SLOT_L1))));
+}
+#endif
+
+#if RS_ESC_CSE && !ENV_PLANT && !ENV_MIS_POWER
+/// perf2 WP-2c (RS_ESC_CSE): p1Env(d) with envUV(d) given (env-sample.wgsl p1Env_s / envPdfSA, same operations).
+fn pt_p1_env_uv(d: vec3f, uv: vec2f) -> f32 {
+  let slot = lightsParams.cur;
+  if (slot.envEntry == LIGHT_NONE) { return 0.0; }
+  var pdf = 0.0;
+  if (env_tables_present()) {
+    let b = envToBlender(d, envParams.cg, envParams.sg);
+    let c = env_cell_of(uv);
+    pdf = env_pdf_sa_cell(c.y, c.x, length(b.xy));
+  }
+  return light_pmf(slot, slot.envEntry) * pdf;
+}
+/// env_bsdf_mis_weight with p1 = p1Env(dir) given (the escape's own p1).
+fn pt_env_w2(p1: f32, p2: f32, B: u32, afterDelta: bool) -> f32 {
+  if (afterDelta) { return 1.0; }
+  if (lightsParams.cur.envEntry == LIGHT_NONE) { return 1.0; }
+  return mis_w2(p1, p2, B);
+}
+#endif
+
 /// Joint pdf used in the stored Jacobian denominators (RSF_PLANT_MARGINAL_J: the marginal, U-11 negative control).
 fn pt_jpdf(q: BsdfQuery) -> f32 {
   return select(q.p_joint, q.p_marg, (rsParams.flags & RSF_PLANT_MARGINAL_J) != 0u);
@@ -64,6 +115,9 @@ fn pt_put(ai: u32, sel: bool, di: u32, i: u32, v: vec4u) {
 fn pt_emit(ai: u32, sel: bool, di: u32, w: f32, F: vec3f, seed: vec2u, flags: u32, rc: vec3u, jDen: f32, rcWi: vec3f, aux: f32,
            rcRad: vec3f, wBefore: f32, end: vec3u, hist: u32, sfx: vec3u, sfxFlags: u32, sfxDir: vec3f, sfxT: f32, betaS: vec3f,
            sfxP2: f32, ordinal: u32, selId: u32, kMargin: f32, endpointId: u32) {
+#if RS_ONE_CHUNK
+  if (sel) { ptSelF = F; ptAnySel = true; }
+#endif
   pt_put(ai, sel, di, RP_WF, vec4u(bitcast<u32>(w), bitcast<vec3u>(F)));
   pt_put(ai, sel, di, RP_SEED, vec4u(seed, flags, bitcast<u32>(1.0)));
   pt_put(ai, sel, di, RP_RC, vec4u(rc, bitcast<u32>(jDen)));
@@ -210,9 +264,27 @@ fn pt_cross_candidates(ai: u32, px: vec2u, key: vec2u, seed: vec2u, s: u32, B: u
 
 fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk: bool, finalChunk: bool) {
   let ai = p.ai;
+#if RS_RIS_PREPASS && RS_RIS_NEE
+  // perf2 WP-2d: the RIS-NEE selection of rs_ris_nee (trees = 1: this is tree 0 of the first chunk), read before
+  // res_write_empty reuses the plane
+  let risRec = resout_plane(ai, RP_DIAG);
+#endif
+#if RS_ONE_CHUNK
+  let oneChunk = firstChunk && finalChunk;
+  ptAnySel = false;
+  ptSelF = vec3f(0.0);
+  var wSum = 0.0;
+  var nCand = 0u;
+  if (!oneChunk) {
+    if (firstChunk) { res_write_empty(ai, key, false); }
+    wSum = bitcast<f32>(resout_plane(ai, RP_RAD).w);
+    nCand = resout_plane(ai, RP_DIAG).x;
+  }
+#else
   if (firstChunk) { res_write_empty(ai, key, false); }
   var wSum = bitcast<f32>(resout_plane(ai, RP_RAD).w);
   var nCand = resout_plane(ai, RP_DIAG).x;
+#endif
 #if RS_DUMP_CANDIDATES
   var nDump = 0u;
 #endif
@@ -286,15 +358,33 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
         var wNee = 1.0;
         var tileMult = 0.0;
         if (B == 1u) {
+#if RS_RIS_PREPASS
+          let rsel = ris_prepass_sel(risRec, seed);
+#if RS_RIS_PREPASS_DIAG
+          // tests only (the WP-2d diagnostic): the inline selection next to the pre-pass's; arena header words 40–43 =
+          // compared, endpoint / mult mismatches, W bit mismatches, max relative |ΔW| (f32 bits)
+          let rIn = ris_nee_select(p, key, seed, s, cur, curPrim, m, V);
+          rs_count(40u, 1u);
+          rs_count(41u, select(0u, 1u, any(vec4u(rIn.ep.entry, rIn.ep.a, rIn.ep.b, bitcast<u32>(rIn.mult)) != vec4u(rsel.ep.entry, rsel.ep.a, rsel.ep.b, bitcast<u32>(rsel.mult)))));
+          rs_count(42u, select(0u, 1u, bitcast<u32>(rIn.W) != bitcast<u32>(rsel.W)));
+          let dW = select(abs(rsel.W - rIn.W) / max(abs(rIn.W), 1e-30), 0.0, bitcast<u32>(rIn.W) == bitcast<u32>(rsel.W));
+          atomicMax(&rsArena.hdr[43u], bitcast<u32>(dW));
+#endif
+#else
           let rsel = ris_nee_select(p, key, seed, s, cur, curPrim, m, V);
+#endif
           ep = rsel.ep;
           wNee = rsel.W;
           tileMult = rsel.mult;
         }
 #if RS_RIS_HOIST
         else {
+#if RS_LAZY_HASH
+          ep = pt_nee_draw(seed, B);
+#else
           ep = nee_draw(lightsParams.cur, rs_path_hash(seed, B, SLOT_SEL), rs_path_hash(seed, B, SLOT_SEL2),
                         vec3u(rs_path_hash(seed, B, SLOT_L0), rs_path_hash(seed, B, SLOT_L1), rs_path_hash(seed, B, SLOT_L2)));
+#endif
         }
 #endif
         let ls = nee_eval(cur.pos, ep);
@@ -303,8 +393,12 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
           wNee *= ls.p1 / ls.q;
         }
 #else
+#if RS_LAZY_HASH
+        let ep = pt_nee_draw(seed, B);
+#else
         let ep = nee_draw(lightsParams.cur, rs_path_hash(seed, B, SLOT_SEL), rs_path_hash(seed, B, SLOT_SEL2),
                           vec3u(rs_path_hash(seed, B, SLOT_L0), rs_path_hash(seed, B, SLOT_L1), rs_path_hash(seed, B, SLOT_L2)));
+#endif
         let ls = nee_eval(cur.pos, ep);
 #endif
         // same-triangle skip (Cycles shade_surface.h:345-351), as the PT
@@ -410,7 +504,17 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
       if (!bs.valid) { break; }
       hist = pt_hist_set(hist, B, bs.lobe | select(0u, 8u, bs.is_delta));
       let org = offset_ray(cur.pos, select(-cur.ng, cur.ng, dot(cur.ng, bs.L) >= 0.0));
+#if RS_LAST_ANYHIT && !RS_MODE_B
+      // perf2 WP-2c (RS_LAST_ANYHIT; Mode-A text, scene without TRI_EMISSIVE triangles — the kernel drops the define
+      // otherwise): the last continuation (B = maxB) only decides escape vs hit. A hit ends no candidate (no emission,
+      // no crossings) and the tree stops, so the same call site traces it as an any-hit query and stops there; an escape
+      // is the same miss as the closest-hit query. Only counters see it (BVH stats, RSC_BASE_JDEN_INVALID of the dead q_b).
+      let lastAny = B == maxB;
+      let h = bvh_trace(org, bs.L, FLT_MAX, lastAny, curPrim, BVH_MISS);
+      if (lastAny && h.primId != BVH_MISS) { break; }
+#else
       let h = trace_closest_ex(org, bs.L, FLT_MAX, curPrim, BVH_MISS);
+#endif
       let isHit = h.primId != BVH_MISS;
       var nxt = cur;
       var wOut = bs.L;
@@ -514,6 +618,19 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
 #else
         if (envPresent) {
 #endif
+#if RS_ESC_CSE && !ENV_PLANT && !ENV_MIS_POWER
+          // perf2 WP-2c (RS_ESC_CSE): envUV and p1Env of the escape direction once (env_bsdf_mis_weight, envRadiance and
+          // p1Env each rebuilt them); the same operations on the same values
+          let escUV = envUV(bs.L, envParams.cg, envParams.sg);
+          endP1 = pt_p1_env_uv(bs.L, escUV);
+#if RS_RIS_NEE
+          endW2 = pt_env_w2(endP1, rs_p2m(qb.p_marg, B), B, bs.is_delta);
+#else
+          endW2 = pt_env_w2(endP1, qb.p_marg, B, bs.is_delta);
+#endif
+          endLe = envRadiance(escUV);
+          endF = endW2 * beta * endLe;
+#else
 #if RS_RIS_NEE
           endW2 = env_bsdf_mis_weight(bs.L, rs_p2m(qb.p_marg, B), B, bs.is_delta);
 #else
@@ -522,6 +639,7 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
           endLe = envRadiance(envUV(bs.L, envParams.cg, envParams.sg));
           endF = endW2 * beta * endLe;
           endP1 = p1Env(bs.L);
+#endif
 #if !RS_NEE_SITE
           isEnd = true;
 #endif
@@ -633,8 +751,21 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
   if (treeBase == 0u) { candDump[rs_atlas_pixels() * RS_DUMP_CAP * RS_DUMP_WORDS + ai] = nDump; }
 #endif
   if (finalChunk) {
+#if RS_ONE_CHUNK
+    var lumF = 0.0;
+    var noSel = false;
+    if (oneChunk) {
+      lumF = luminance(ptSelF);
+      noSel = !ptAnySel;                                 // = res_empty(flags): a selection has d = B + 1 ≥ 2
+    } else {
+      lumF = luminance(rp_F(resout_plane(ai, RP_WF)));
+      noSel = res_empty(resout_plane(ai, RP_SEED).z);
+    }
+    if (!(wSum > 0.0) || noSel || !(lumF > 0.0)) {
+#else
     let lumF = luminance(rp_F(resout_plane(ai, RP_WF)));
     if (!(wSum > 0.0) || res_empty(resout_plane(ai, RP_SEED).z) || !(lumF > 0.0)) {
+#endif
       res_write_empty(ai, key, false);
 #if RS_RES_SOA
       resOut[resout_index(ai, RP_RAD)].w = bitcast<u32>(wSum);

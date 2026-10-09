@@ -16,7 +16,16 @@
 #include "restir/endpoint.wgsl"
 #include "restir/queue.wgsl"
 
+#if RS_RIS_PREPASS
+// perf2 WP-2d (RS_RIS_PREPASS, interactive, trees = 1): the selection is made by the lean pre-pass rs_ris_nee
+// (passes/restir/initial.wgsl) and handed to rs_initial in the pixel's own RP_DIAG plane of resOut (dead until
+// res_write_empty): (j | RIS_PRE_NONE, bits(W_NEE), entry, bits(mult)). rs_initial rebuilds the endpoint from (j, entry)
+// with nee_draw_entry, exactly as the loop built it; W_NEE and the U8-10 multiplicity are the stored values.
+const RIS_PRE_NONE: u32 = 0xFFFFFFFFu;
+struct RisSel { ep: NeeEndpoint, W: f32, mult: f32, j: u32 }
+#else
 struct RisSel { ep: NeeEndpoint, W: f32, mult: f32 }   // mult: tile multiplicity / 1024 of the selection (U8-10 plant)
+#endif
 
 /// Light tile (0 … 127) of member-local pixel `local` of member `member` at frame t.
 fn ris_tile_of(local: vec2u, member: u32) -> u32 {
@@ -41,7 +50,11 @@ fn nee_draw_entry(slot: LightSlot, entry: u32, hL: vec3u) -> NeeEndpoint {
 /// RIS over M tile candidates at shading point x (primId xPrim) with MatEval m and outgoing V. p is the pixel (member and
 /// member-local position for the tile), atlas member index = p.member − memberBase.
 fn ris_nee_select(p: RsPix, key: vec2u, seed: vec2u, s: u32, x: SurfaceHit, xPrim: u32, m: MatEval, V: vec3f) -> RisSel {
+#if RS_RIS_PREPASS
+  var out = RisSel(NeeEndpoint(LIGHT_NONE, 0u, 0u), 0.0, 0.0, RIS_PRE_NONE);
+#else
   var out = RisSel(NeeEndpoint(LIGHT_NONE, 0u, 0u), 0.0, 0.0);
+#endif
   let slot = lightsParams.cur;
   if (slot.nEntries == 0u) { return out; }
   let M = rs_ris_m();
@@ -70,6 +83,9 @@ fn ris_nee_select(p: RsPix, key: vec2u, seed: vec2u, s: u32, x: SurfaceHit, xPri
     if (ris_update(&wSum, r, rs_rand(key, RS_PASS_RIS_NEE, (s << 20u) | j))) {
       out.ep = ep;
       rSel = r;
+#if RS_RIS_PREPASS
+      out.j = j;
+#endif
     }
   }
   if (rs_pos_finite(rSel) && rs_pos_finite(wSum)) { out.W = (wSum / f32(M)) / rSel; }
@@ -80,3 +96,19 @@ fn ris_nee_select(p: RsPix, key: vec2u, seed: vec2u, s: u32, x: SurfaceHit, xPri
   }
   return out;
 }
+
+#if RS_RIS_PREPASS
+/// perf2 WP-2d: the pre-pass record of a selection (RP_DIAG plane of resOut).
+fn ris_prepass_record(r: RisSel) -> vec4u { return vec4u(r.j, bitcast<u32>(r.W), r.ep.entry, bitcast<u32>(r.mult)); }
+
+/// perf2 WP-2d: the selection of a pre-pass record for tree seed `seed`: the endpoint of candidate j rebuilt with
+/// nee_draw_entry from the stored entry and the candidate's hashes (the loop's own rule), W_NEE and mult as stored.
+fn ris_prepass_sel(rec: vec4u, seed: vec2u) -> RisSel {
+  var out = RisSel(NeeEndpoint(LIGHT_NONE, 0u, 0u), bitcast<f32>(rec.y), bitcast<f32>(rec.w), rec.x);
+  if (rec.x != RIS_PRE_NONE) {
+    let h = pcg4d(vec4u(seed.x, seed.y, rec.x, STREAM_RIS_NEE));
+    out.ep = nee_draw_entry(lightsParams.cur, rec.z, h.yzw);
+  }
+  return out;
+}
+#endif

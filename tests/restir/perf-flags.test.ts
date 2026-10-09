@@ -22,7 +22,9 @@ const RESERVED = ['RS_VIS_MERGE', 'RS_RIS_HOIST', 'RS_NEE_SITE', 'RS_LAST_ANYHIT
   // added by WP-5 (separately measurable parts of #6 / #16)
   'RS_MIS_TRIM', 'RS_PAIR_TABLE',
   // WP-7 a–d, f (app-only passes)
-  'DN_GRAD_SKIP', 'RS_DUPMAP_S64', 'PRIM_SKIP_BEAUTY', 'RS_SKIP_DISPLAY', 'GBUF_48', 'DN_ZGRAD_TEX', 'DN_COLOUR_EARLY'];
+  'DN_GRAD_SKIP', 'RS_DUPMAP_S64', 'PRIM_SKIP_BEAUTY', 'RS_SKIP_DISPLAY', 'GBUF_48', 'DN_ZGRAD_TEX', 'DN_COLOUR_EARLY',
+  // WP-2c (separately measurable parts of #10 / #15)
+  'RS_ONE_CHUNK', 'RS_ESC_CSE', 'RS_LAZY_HASH'];
 
 describe('perf-flag registry', () => {
   it('reserves every WP-0 name, RS_HALF_RATE and the WP-7 names', () => {
