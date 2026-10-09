@@ -90,6 +90,10 @@ fn bvh_slab(bmin: vec3f, bmax: vec3f, o: vec3f, rd: vec3f, tlim: f32) -> f32 {
 #if BVH_CWBVH
 #include "bvh/traverse-cwbvh.wgsl"
 #else
+#if BVH2_PRIV_STACK
+// perf2 WP-3d: the traversal stack at module scope (BVH2 only: on CWBVH this measured +10 ms, perf2-plan.md §1)
+var<private> bvh_pstack: array<u32, 32>;
+#endif
 fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u32) -> Hit {
   var hit = Hit(tmax, 0.0, 0.0, BVH_MISS);
   let rd = vec3f(bvh_safe_rcp(d.x), bvh_safe_rcp(d.y), bvh_safe_rcp(d.z));
@@ -97,20 +101,34 @@ fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u3
   let wr = woop_setup(d);
   let nTris4 = arrayLength(&bvh_tris);
 #endif
+#if !BVH2_PRIV_STACK
   var stack: array<u32, 32>;
+#endif
   var sp = 0u;
   var node = 0u; // child ref: interior index, or leaf (LEAF_BIT set)
+#if BVH_CONST_LOOPS
+  // perf2 WP-3c: constant loop bounds (no Tint loop guards); iteration iter + 1 of the old loop, same cap and flag
+  for (var iter = 0u; iter <= BVH_ITER_CAP; iter += 1u) {
+    if (iter == BVH_ITER_CAP) { bvh_flags |= BVH_FLAG_ITERCAP; break; }
+#else
   var iter = 0u;
   loop {
     iter += 1u;
     if (iter > BVH_ITER_CAP) { bvh_flags |= BVH_FLAG_ITERCAP; break; }
+#endif
 #if BVH_STATS
     bvh_st_steps += 1u;
 #endif
     if ((node & BVH_LEAF_BIT) != 0u) {
       let cnt = (node >> 24u) & 127u;
       let first = node & 0xffffffu;
+#if BVH_CONST_LOOPS
+      for (var li = 0u; li < 127u; li += 1u) {
+        if (li >= cnt) { break; }
+        let i = first + li;
+#else
       for (var i = first; i < first + cnt; i += 1u) {
+#endif
 #if BVH_STATS
         bvh_st_tri += 1u;
 #endif
@@ -122,6 +140,12 @@ fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u3
         let r = isect_woop(o, wr, p0.xyz, p1.xyz, p2.xyz, vec3u(bitcast<u32>(p0.w), bitcast<u32>(p1.w), bitcast<u32>(p2.w)), hit.t);
         if (!r.ok) { continue; }
         let prim = bitcast<u32>(bvh_tris[nTris4 - 1u - (i >> 2u)][i & 3u]); // primId tail, read from the end
+#elif BVH_ALPHA_BIT
+        let v0 = bvh_tris[base];
+        let e1 = bvh_tris[base + 1u];   // e1.w: the MASK bit (bit 0) written by scene-gpu.ts (perf2 WP-3b)
+        let r = isect_mt(o, d, v0.xyz, e1.xyz, bvh_tris[base + 2u].xyz, hit.t);
+        if (!r.ok) { continue; }
+        let prim = bitcast<u32>(v0.w);
 #else
         let v0 = bvh_tris[base];
         let r = isect_mt(o, d, v0.xyz, bvh_tris[base + 1u].xyz, bvh_tris[base + 2u].xyz, hit.t);
@@ -129,7 +153,13 @@ fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u3
         let prim = bitcast<u32>(v0.w);
 #endif
         if (prim == skipA || prim == skipB || prim == BVH_MISS) { continue; }
+#if BVH_ALPHA_BIT && BVH_NO_ALPHA
+        // perf2 WP-3b: no MASK triangle in the scene (scene-gpu.ts): alpha_pass is constant true
+#elif BVH_ALPHA_BIT && !WATERTIGHT
+        if ((bitcast<u32>(e1.w) & 1u) != 0u && !alpha_pass(prim, r.u, r.v)) { continue; }
+#else
         if (!alpha_pass(prim, r.u, r.v)) { continue; }
+#endif
 #if GLASS_PLANT == 5
         if (any_hit && glass_plant_transparent(prim)) { continue; }   // Gate-1 plant B-shadow (validation only)
 #endif
@@ -155,7 +185,11 @@ fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u3
         let leftFirst = tl <= tr;
         node = select(right, left, leftFirst);
         if (sp < BVH_STACK_SIZE) {
+#if BVH2_PRIV_STACK
+          bvh_pstack[sp] = select(left, right, leftFirst);
+#else
           stack[sp] = select(left, right, leftFirst);
+#endif
           sp += 1u;
 #if BVH_STATS
           bvh_flags = max(bvh_flags, (bvh_flags & 0xffu) | (sp << 8u));
@@ -170,7 +204,11 @@ fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u3
     }
     if (sp == 0u) { break; }
     sp -= 1u;
+#if BVH2_PRIV_STACK
+    node = bvh_pstack[sp];
+#else
     node = stack[sp];
+#endif
   }
   return hit;
 }

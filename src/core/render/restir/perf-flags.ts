@@ -37,6 +37,8 @@ export interface PerfFlagDef {
 
 const reserved = (wp: string, cls: PerfFlagClass, what: string, except?: PerfFlagDef['except']): PerfFlagDef =>
   ({ wp, cls, what, landed: false, release: false, ...(except ? { except } : {}) });
+const landed = (wp: string, cls: PerfFlagClass, what: string, o: { release?: boolean; except?: PerfFlagDef['except'] } = {}): PerfFlagDef =>
+  ({ ...reserved(wp, cls, what, o.except), landed: true, release: !!o.release });
 
 /** The registry. Order is documentation only (keys are sorted wherever they form a key / define set). */
 export const PERF_FLAGS = {
@@ -47,9 +49,11 @@ export const PERF_FLAGS = {
   RS_RIS_PREPASS: reserved('WP-2d', 'unbiased', 'lean RIS pre-pass rs_ris_nee (interactive, trees=1); record in the pixel\'s RP_DIAG plane'),
   RS_ENV_WRAP: reserved('WP-4a', 'bitwise', 'envTexel select-wrap instead of emulated i32 modulos'),
   RS_ENV_PRESAMPLE: reserved('WP-4b', 'unbiased', 'env-presampled light tiles inside the RIS pre-pass (adds correlation)'),
-  CW_TRI_BUDGET: reserved('WP-3', 'bitwise', 'CWBVH K=2 triangle budget'),
-  BVH_ALPHA_BIT: reserved('WP-3', 'bitwise', 'alpha bit in the MT triangle record; CUSTOM_ALPHA compiled out without MASK'),
-  BVH2_PRIV_STACK: reserved('WP-3', 'bitwise', 'module-private traversal stack (BVH2 only; never on CWBVH)'),
+  CW_TRI_BUDGET: landed('WP-3', 'bitwise', 'CWBVH triangle budget: one traversal loop, at most K triangles per iteration (value = K)'),
+  BVH_ALPHA_BIT: landed('WP-3', 'bitwise', 'alpha bit in the MT triangle record; CUSTOM_ALPHA compiled out without MASK'),
+  BVH2_PRIV_STACK: landed('WP-3', 'bitwise', 'module-private traversal stack (BVH2 only; never on CWBVH)'),
+  CW_EXP_OR: landed('WP-3', 'bitwise', 'CWBVH child-box bytes decoded by exponent-OR into f16 (exact), not shift / mask / convert'),
+  BVH_CONST_LOOPS: landed('WP-3', 'bitwise', 'constant-bound traversal loops (iteration cap, BVH2 leaf, CWBVH triangle group)'),
   RS_DENSE_SLOTS: reserved('WP-5', 'bitwise', 'dense spatial slot-item queue, write-back trimming'),
   RS_BOOST_GATE: reserved('WP-5', 'bitwise', 'boost-slot gating'),
   RS_TSEL_FOLD: reserved('WP-6', 'bitwise', 'T4 split into non-replay / replay pipelines, res[w] read-only, phase B folded into T4'),

@@ -18,7 +18,8 @@ import { buildCwbvhFromMesh, uploadCwbvh, type CwbvhData } from '../../src/core/
 import { bruteAny, bruteClosest, bvhTrace64, intersectTri64 } from '../../src/core/bvh/cpu-trace.ts';
 import { icosphere, loadGltfMesh, meshBounds, proceduralScene, randomDir, rng, type Mesh } from '../../tests/bvh/fixtures.ts';
 import { computeRenderOrigin } from '../../src/core/render/frame-uniforms.ts';
-import { recentrePositions } from '../../src/core/render/scene-gpu.ts';
+import { MT_ALPHA_WORD, mtRecordsWithAlphaBit, recentrePositions } from '../../src/core/render/scene-gpu.ts';
+import { TRI_ALPHA_MASK } from '../../src/core/scene/types.ts';
 import { findSeams, latticeMesh, loadPackage, loadSponzaQuantized } from './quant-fixtures.ts';
 
 const N_RAYS = 1_000_000;
@@ -181,18 +182,19 @@ fn alpha_pass(primId: u32, u: f32, v: f32) -> bool { return (primId & 1u) == 0u;
 }
 `;
 
-interface Variant { watertight: boolean; stats: boolean; cwbvh?: boolean }
+/** `flags`: extra composer defines (perf2 WP-3 traversal flags, src/core/render/restir/perf-flags.ts). */
+interface Variant { watertight: boolean; stats: boolean; cwbvh?: boolean; flags?: Record<string, number | boolean> }
 interface RunResult { out: Uint32Array; ctr: Uint32Array; gpuMs: number }
 
 const pipelines = new Map<string, Promise<GPUComputePipeline>>();
 function getPipeline(ctx: GpuContext, v: Variant, entry: string): Promise<GPUComputePipeline> {
-  const key = `${v.watertight}|${v.stats}|${!!v.cwbvh}|${entry}`;
+  const key = `${v.watertight}|${v.stats}|${!!v.cwbvh}|${JSON.stringify(v.flags ?? {})}|${entry}`;
   let p = pipelines.get(key);
   if (!p) {
     p = (async () => {
       const shader = composeWgsl('tests/bvh_t12.wgsl', {
         sources: { ...shaderSources, 'tests/bvh_t12.wgsl': KERNEL },
-        defines: { WATERTIGHT: v.watertight, BVH_STATS: v.stats, ...(v.cwbvh ? { BVH_CWBVH: true } : {}) },
+        defines: { WATERTIGHT: v.watertight, BVH_STATS: v.stats, ...(v.cwbvh ? { BVH_CWBVH: true } : {}), ...(v.flags ?? {}) },
         features: ctx.features, wgslLanguageFeatures: ctx.wgslLanguageFeatures,
       });
       const module = await createCheckedShaderModule(ctx.device, shader, `bvh_t12.${key}`);
@@ -268,11 +270,13 @@ const vname = (v: Variant) => `${v.cwbvh ? 'cw.' : ''}${v.watertight ? 'woop' : 
 
 /** CWBVH of a mesh (built once per BVH2 object of the test: a leaf-≤ 3 BVH2 collapsed to 8-wide). */
 const cwCache = new WeakMap<BvhData, CwbvhData>();
-function uploadFor(device: GPUDevice, m: Mesh, bvh: BvhData, v: Variant): BvhGpuBuffers {
-  if (!v.cwbvh) return uploadBvh(device, bvh, { watertight: v.watertight });
+function uploadFor(device: GPUDevice, m: Mesh, bvh: BvhData, v: Variant, triFlags?: Uint32Array): BvhGpuBuffers {
+  // triFlags (perf2 WP-3b): MT records carry the MASK bit of these flags in e1.w, as scene-gpu.ts uploads them
+  const alpha = (tris: Float32Array) => (triFlags && !v.watertight ? mtRecordsWithAlphaBit(tris, triFlags) : null) ?? tris;
+  if (!v.cwbvh) return uploadBvh(device, { ...bvh, tris: alpha(bvh.tris) }, { watertight: v.watertight });
   let cw = cwCache.get(bvh);
   if (!cw) { cw = buildCwbvhFromMesh(m.positions, m.indices).cw; cwCache.set(bvh, cw); }
-  return uploadCwbvh(device, cw, { watertight: v.watertight });
+  return uploadCwbvh(device, { ...cw, tris: alpha(cw.tris) }, { watertight: v.watertight });
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -918,3 +922,242 @@ function concat(a: Mesh, b: Mesh): Mesh {
   indices.set(a.indices); for (let i = 0; i < b.indices.length; i++) indices[a.indices.length + i] = b.indices[i] + off;
   return { positions, indices };
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// perf2 WP-3 (docs/decisions/perf2-plan.md §2 WP-3, steps 3a–3d): every traversal flag reproduces the flag-free traversal
+// BIT FOR BIT, ray by ray (closest t / primId / u, the any-hit prim, the overflow / iteration-cap flags and, with
+// BVH_STATS, every step / box / triangle counter and the max stack depth), MT and Woop, BVH2 and CWBVH. The flag-free
+// text is the pre-perf2 text (tests: m7-wgsl-bits U-M7-BITS). MT records carry the MASK bit of synthetic triangle flags
+// (odd primIds) in e1.w in BOTH runs, which also shows that the flag-free text never reads that word.
+
+const WP3_BVH2: Record<string, number | boolean>[] = [
+  { BVH2_PRIV_STACK: 1 }, { BVH_CONST_LOOPS: 1 }, { BVH_ALPHA_BIT: 1 }, { BVH_ALPHA_BIT: 1, BVH_NO_ALPHA: true },
+  { BVH2_PRIV_STACK: 1, BVH_CONST_LOOPS: 1, BVH_ALPHA_BIT: 1 },
+];
+const WP3_CW: Record<string, number | boolean>[] = [
+  { CW_TRI_BUDGET: 1 }, { CW_TRI_BUDGET: 2 }, { CW_TRI_BUDGET: 3 }, { BVH_CONST_LOOPS: 1 }, { BVH_ALPHA_BIT: 1 },
+  { BVH_ALPHA_BIT: 1, BVH_NO_ALPHA: true }, { CW_EXP_OR: 1 }, { CW_TRI_BUDGET: 2, BVH_CONST_LOOPS: 1, BVH_ALPHA_BIT: 1, CW_EXP_OR: 1 },
+];
+const flagName = (f: Record<string, number | boolean>) => Object.entries(f).map(([k, v]) => (v === 1 || v === true ? k : `${k}=${v}`)).join('+');
+/** Synthetic MASK flags: every odd primId. */
+const oddMask = (nTri: number) => Uint32Array.from({ length: nTri }, (_, p) => (p & 1 ? TRI_ALPHA_MASK : 0));
+
+function firstDiff(a: Uint32Array, b: Uint32Array): string {
+  if (a.length !== b.length) return `length ${a.length} vs ${b.length}`;
+  let n = 0, first = -1;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) { n++; if (first < 0) first = i; }
+  return n ? `${n} words differ, first at word ${first} (ray ${first >> 2}): ${a[first]} vs ${b[first]}` : '';
+}
+
+describe(`perf2 WP-3 traversal flags: per-ray bit equality (${lane()})`, () => {
+  afterAll(releaseTestGpu);
+  const report: Record<string, unknown> = { lane: lane() };
+  afterAll(() => console.log('WP3_REPORT', JSON.stringify(report)));
+
+  for (const sc of [{ name: 'procedural', mesh: async () => proceduralScene(7) }, { name: 'sponza', mesh: () => loadGltfMesh() }]) {
+    it(`${sc.name}: 10^6 random rays + 960×540 primary / hemisphere / shadow rays, every flag = the flag-free traversal`, async () => {
+      const m = await sc.mesh();
+      if (!m) { console.warn(`${sc.name} not present; skipping`); report[`${sc.name}.skipped`] = true; return; }
+      const ctx = await getTestGpu();
+      const bvh = buildBvh(m.positions, m.indices);
+      const n = N_RAYS;
+      const rays = makeRays(m, n, 98765);
+      const tf = oddMask(m.indices.length / 3);
+      // camera rays (the throughput kernels' setup, smaller): coherent closest, incoherent closest, any-hit segments
+      const W = 960, H = 540, b = meshBounds(m);
+      const c = [0, 1, 2].map((k) => 0.5 * (b.min[k] + b.max[k])), ext = [0, 1, 2].map((k) => b.max[k] - b.min[k]);
+      const params = new Float32Array(24), pu = new Uint32Array(params.buffer);
+      pu[1] = 23; pu[2] = W; pu[3] = H;
+      params.set([c[0] - 0.35 * ext[0], b.min[1] + 0.25 * ext[1], c[2], Math.tan(Math.PI / 6), 1, 0, 0, W / H, 0, 0, 1, 0, 0, 1, 0, 0, c[0], b.min[1] + 0.8 * ext[1], c[2], 0], 4);
+      const grid: [number, number] = [W / 8, Math.ceil(H / 8)];
+      const camRun = async (v: Variant, bufs: BvhGpuBuffers) => {
+        const p = await run(ctx, v, 'perf_primary', bufs, null, W * H, { params, grid, readOut: false });
+        await run(ctx, v, 'perf_secondary', bufs, null, W * H, { params, grid, outBuf: p.outBuf, readOut: false });
+        const sh = await run(ctx, v, 'perf_shadow', bufs, null, W * H, { params, grid, outBuf: p.outBuf });
+        p.outBuf.destroy();
+        return sh.out;
+      };
+      for (const cwbvh of [false, true]) for (const watertight of [false, true]) for (const stats of [true, false]) {
+        const base: Variant = { watertight, stats, cwbvh };
+        const bufs = uploadFor(ctx.device, m, bvh, base, tf);
+        const ref = await run(ctx, base, 'closest_any', bufs, rays, n);
+        const refCam = await camRun(base, bufs);
+        if (!watertight && !stats) {
+          // the MASK bit in e1.w is dead in the flag-free text: same results as the builder's records (e1.w = 0)
+          const plain = uploadFor(ctx.device, m, bvh, base);
+          const r0 = await run(ctx, base, 'closest_any', plain, rays, n);
+          expect(firstDiff(ref.out, r0.out), 'records with / without the MASK bit').toBe('');
+          plain.nodes.destroy(); plain.tris.destroy();
+        }
+        for (const flags of cwbvh ? WP3_CW : WP3_BVH2) {
+          const v: Variant = { ...base, flags };
+          const r = await run(ctx, v, 'closest_any', bufs, rays, n);
+          const rc = await camRun(v, bufs);
+          const key = `${sc.name}.${vname(base)}${stats ? '.stats' : ''}.${flagName(flags)}`;
+          const d = { random: firstDiff(ref.out, r.out), counters: firstDiff(ref.ctr, r.ctr), camera: firstDiff(refCam, rc) };
+          report[key] = { ...d, steps: r.ctr[0] / n / 2, triTests: r.ctr[2] / n / 2, flags: r.ctr[3], maxStack: r.ctr[4] };
+          console.log('WP3', lane(), key, JSON.stringify(report[key]));
+          expect(d.random, `${key} closest / any-hit words`).toBe('');
+          expect(d.counters, `${key} counters`).toBe('');
+          expect(d.camera, `${key} camera rays`).toBe('');
+        }
+        bufs.nodes.destroy(); bufs.tris.destroy();
+      }
+    }, 900_000);
+  }
+
+  it('alpha_pass hook with BVH_ALPHA_BIT: MASK-bit records give the flag-free results (odd primIds cut out), MT and Woop', async () => {
+    const ctx = await getTestGpu();
+    const m = proceduralScene(7);
+    const bvh = buildBvh(m.positions, m.indices);
+    const n = 1 << 18;
+    const rays = makeRays(m, n, 4321);
+    const tf = oddMask(m.indices.length / 3);
+    const runAlpha = async (watertight: boolean, cwbvh: boolean, flags: Record<string, number | boolean>, bufs: BvhGpuBuffers) => {
+      const shader = composeWgsl('tests/bvh_alpha.wgsl', {
+        sources: { ...shaderSources, 'tests/bvh_alpha.wgsl': ALPHA_KERNEL },
+        defines: { WATERTIGHT: watertight, CUSTOM_ALPHA: 1, BVH_DECLARE_BINDINGS: 1, BVH_GROUP: 0, BVH_BINDING_NODES: 0, BVH_BINDING_TRIS: 1, ...(cwbvh ? { BVH_CWBVH: true } : {}), ...flags },
+        features: ctx.features, wgslLanguageFeatures: ctx.wgslLanguageFeatures,
+      });
+      const module = await createCheckedShaderModule(ctx.device, shader, 'bvh_alpha_wp3');
+      const pipeline = await ctx.device.createComputePipelineAsync({ layout: 'auto', compute: { module, entryPoint: 'main' } });
+      const inBuf = storage(ctx.device, rays, 'inp'), outBuf = storage(ctx.device, n * 16, 'outp');
+      const bg = ctx.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
+        { binding: 0, resource: { buffer: bufs.nodes } }, { binding: 1, resource: { buffer: bufs.tris } },
+        { binding: 2, resource: { buffer: inBuf } }, { binding: 3, resource: { buffer: outBuf } }] });
+      const enc = ctx.device.createCommandEncoder();
+      const pass = enc.beginComputePass(); pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.dispatchWorkgroups(n / 64); pass.end();
+      ctx.device.queue.submit([enc.finish()]);
+      const out = new Uint32Array(await readBuffer(ctx.device, outBuf, n * 16));
+      inBuf.destroy(); outBuf.destroy();
+      return out;
+    };
+    for (const [watertight, cwbvh] of [[false, false], [true, false], [false, true], [true, true]] as const) {
+      const bufs = uploadFor(ctx.device, m, bvh, { watertight, stats: false, cwbvh }, tf);
+      const ref = await runAlpha(watertight, cwbvh, {}, bufs);
+      let oddHits = 0;
+      for (let i = 0; i < n; i++) if ((ref[4 * i + 1] !== BVH_MISS && ref[4 * i + 1] & 1) || (ref[4 * i + 2] !== BVH_MISS && ref[4 * i + 2] & 1)) oddHits++;
+      expect(oddHits).toBe(0);
+      for (const flags of <Record<string, number | boolean>[]>[{ BVH_ALPHA_BIT: 1 }, ...(cwbvh ? [{ BVH_ALPHA_BIT: 1, CW_TRI_BUDGET: 2 }] : [{ BVH_ALPHA_BIT: 1, BVH2_PRIV_STACK: 1, BVH_CONST_LOOPS: 1 }])]) {
+        const out = await runAlpha(watertight, cwbvh, flags, bufs);
+        const key = `alpha.${cwbvh ? 'cw.' : ''}${watertight ? 'woop' : 'mt'}.${flagName(flags)}`;
+        report[key] = firstDiff(ref, out) || 'identical';
+        console.log('WP3', lane(), key, report[key]);
+        expect(firstDiff(ref, out), key).toBe('');
+      }
+      bufs.nodes.destroy(); bufs.tris.destroy();
+    }
+  }, 600_000);
+
+  it('MASK bit: scene-gpu writes bit 0 of e1.w for TRI_ALPHA_MASK triangles only (BVH2 and CWBVH order), nothing else changes', () => {
+    const m = proceduralScene(3);
+    const bvh = buildBvh(m.positions, m.indices);
+    const cw = buildCwbvhFromMesh(m.positions, m.indices).cw;
+    const tf = oddMask(m.indices.length / 3);
+    expect(mtRecordsWithAlphaBit(bvh.tris, new Uint32Array(tf.length))).toBeNull();
+    for (const tris of [bvh.tris, cw.tris]) {
+      const a = new Uint32Array(tris.buffer, tris.byteOffset, tris.length), wb = mtRecordsWithAlphaBit(tris, tf)!;
+      const b = new Uint32Array(wb.buffer);
+      let set = 0;
+      for (let w = 0; w < a.length; w++) {
+        if (w % 12 === MT_ALPHA_WORD) {
+          expect(a[w]).toBe(0);
+          expect(b[w]).toBe(a[w - 4] & 1);   // primId of the record (word 3) odd ⇔ MASK
+          set += b[w];
+        } else expect(b[w]).toBe(a[w]);
+      }
+      expect(set).toBe(Math.floor(tf.length / 2));
+    }
+  });
+
+  // V-PERF, isolated T12 perf kernels (VITE_WP3_PERF=1): the throughput kernels at 1080p ray counts, flag-free vs each
+  // flag set, same session, ABBA blocks (base, flags, flags, base) × VITE_WP3_PERF blocks; median of 7 dispatches each.
+  it.runIf(!!import.meta.env.VITE_WP3_PERF)('V-PERF: T12 throughput kernels, flag-free vs each WP-3 flag set (ABBA)', async () => {
+    const ctx = await getTestGpu();
+    const blocks = Math.max(1, Number(import.meta.env.VITE_WP3_PERF) || 2);
+    const sets: { mesh: string; cwbvh: boolean; flags: Record<string, number | boolean>[] }[] = [
+      { mesh: 'sponza', cwbvh: true, flags: [{ CW_TRI_BUDGET: 1 }, { CW_TRI_BUDGET: 2 }, { CW_TRI_BUDGET: 3 }, { BVH_CONST_LOOPS: 1 }, { CW_EXP_OR: 1 }, { CW_TRI_BUDGET: 2, BVH_CONST_LOOPS: 1 }, { CW_TRI_BUDGET: 2, CW_EXP_OR: 1 }] },
+      { mesh: 'sponza', cwbvh: false, flags: [{ BVH2_PRIV_STACK: 1 }, { BVH_CONST_LOOPS: 1 }, { BVH2_PRIV_STACK: 1, BVH_CONST_LOOPS: 1 }] },
+      { mesh: 'procedural', cwbvh: false, flags: [{ BVH2_PRIV_STACK: 1 }, { BVH_CONST_LOOPS: 1 }, { BVH2_PRIV_STACK: 1, BVH_CONST_LOOPS: 1 }] },
+    ];
+    for (const set of sets) {
+      const m = set.mesh === 'sponza' ? await loadGltfMesh() : proceduralScene(7);
+      if (!m) continue;
+      const bvh = buildBvh(m.positions, m.indices);
+      const b = meshBounds(m);
+      const c = [0, 1, 2].map((k) => 0.5 * (b.min[k] + b.max[k])), ext = [0, 1, 2].map((k) => b.max[k] - b.min[k]);
+      const params = new Float32Array(24), pu = new Uint32Array(params.buffer);
+      pu[1] = 17; pu[2] = W1080; pu[3] = H1080;
+      params.set([c[0] - 0.35 * ext[0], b.min[1] + 0.25 * ext[1], c[2], Math.tan(Math.PI / 6), 1, 0, 0, W1080 / H1080, 0, 0, 1, 0, 0, 1, 0, 0, c[0], b.min[1] + 0.8 * ext[1], c[2], 0], 4);
+      const rnd = new Float32Array(24), ru = new Uint32Array(rnd.buffer);
+      ru[1] = 5;
+      rnd.set([b.min[0] + 0.1 * ext[0], b.min[1] + 0.05 * ext[1], b.min[2] + 0.1 * ext[2], 0, b.max[0] - 0.1 * ext[0], b.max[1] - 0.3 * ext[1], b.max[2] - 0.1 * ext[2], 0], 4);
+      const N = W1080 * H1080, grid: [number, number] = [W1080 / 8, H1080 / 8];
+      const bufs = uploadFor(ctx.device, m, bvh, { watertight: false, stats: false, cwbvh: set.cwbvh });
+      const measure = async (v: Variant) => {
+        const prim = await run(ctx, v, 'perf_primary', bufs, null, N, { params, grid, reps: 7, readOut: false });
+        const sec = await run(ctx, v, 'perf_secondary', bufs, null, N, { params, grid, reps: 7, outBuf: prim.outBuf, readOut: false });
+        const sh = await run(ctx, v, 'perf_shadow', bufs, null, N, { params, grid, reps: 7, outBuf: prim.outBuf, readOut: false });
+        const rand = await run(ctx, v, 'perf_random', bufs, null, N, { params: rnd, reps: 7, readOut: false });
+        prim.outBuf.destroy(); rand.outBuf.destroy();
+        return [prim.gpuMs, sec.gpuMs, sh.gpuMs, rand.gpuMs];
+      };
+      const base: Variant = { watertight: false, stats: false, cwbvh: set.cwbvh };
+      for (const flags of set.flags) {
+        const a: number[][] = [], f: number[][] = [];
+        for (let bl = 0; bl < blocks; bl++) {
+          a.push(await measure(base)); f.push(await measure({ ...base, flags })); f.push(await measure({ ...base, flags })); a.push(await measure(base));
+        }
+        const mean = (xs: number[][], k: number) => xs.reduce((s2, x) => s2 + x[k], 0) / xs.length;
+        const names = ['primary', 'hemisphere', 'shadow', 'random'];
+        const row = Object.fromEntries(names.map((nm, k) => [nm, { base: +mean(a, k).toFixed(3), flag: +mean(f, k).toFixed(3), deltaPct: +(100 * (mean(f, k) / mean(a, k) - 1)).toFixed(2) }]));
+        const key = `perf.${set.mesh}.${set.cwbvh ? 'cw.' : ''}mt.${flagName(flags)}`;
+        report[key] = row;
+        console.log('WP3', lane(), key, JSON.stringify(row));
+      }
+      bufs.nodes.destroy(); bufs.tris.destroy();
+    }
+  }, 1_800_000);
+
+  // Overflow and iteration-cap flags: a cyclic node graph (every interior node's children are interior nodes of the
+  // same graph) overflows the stack and runs into BVH_ITER_CAP. Both flags, every counter and the max stack depth are
+  // the flag-free ones.
+  it('overflow / iteration-cap flags on a cyclic node graph: every flag = the flag-free traversal', async () => {
+    const ctx = await getTestGpu();
+    const f32 = (x: number) => new Uint32Array(new Float32Array([x]).buffer)[0];
+    // BVH2: node 0, both children = node 0, boxes ±1000
+    const n2 = new Float32Array(16), n2u = new Uint32Array(n2.buffer);
+    for (const s of [0, 8]) { n2.set([-1000, -1000, -1000, 0, 1000, 1000, 1000, 0], s); }
+    n2u[3] = 0; n2u[7] = 0;
+    // CWBVH: nodes 0 and 1, interior slots 0 and 1 → nodes baseChild + {0, 1} = {0, 1}; box p = −8, e = −4, q 0..255
+    const cwn = new Uint32Array(40);
+    for (const k of [0, 1]) {
+      const o = 20 * k;
+      cwn[o] = f32(-8); cwn[o + 1] = f32(-8); cwn[o + 2] = f32(-8);
+      cwn[o + 3] = (0xfc | (0xfc << 8) | (0xfc << 16) | (0x03 << 24)) >>> 0;
+      cwn[o + 4] = 0; cwn[o + 5] = 0;
+      cwn[o + 6] = 0x38 | (0x39 << 8); cwn[o + 7] = 0;
+      cwn[o + 14] = 0xffff; cwn[o + 16] = 0xffff; cwn[o + 18] = 0xffff;   // qhi.x / .y / .z of slots 0, 1 = 255
+    }
+    const tri = new Float32Array(16);   // one degenerate record (+ a Woop primId tail vec4); never reached
+    const nr = 256;
+    const rays = new Float32Array(nr * 8), r = rng(5);
+    for (let i = 0; i < nr; i++) { const d = randomDir(r); rays.set([0.1 * r(), 0.1 * r(), 0.1 * r(), 50, d[0], d[1], d[2], 0], 8 * i); }
+    for (const cwbvh of [false, true]) for (const watertight of [false, true]) for (const stats of [true, false]) {
+      const nodes = storage(ctx.device, cwbvh ? cwn : n2, 'nodes'), tris = storage(ctx.device, tri, 'tris');
+      const bufs: BvhGpuBuffers = { nodes, tris, triCount: 1, watertight };
+      const base: Variant = { watertight, stats, cwbvh };
+      const ref = await run(ctx, base, 'closest_any', bufs, rays, nr);
+      expect(ref.ctr[3], 'overflow and itercap set').toBe(3);
+      if (stats) expect(ref.ctr[4], 'max stack depth').toBe(cwbvh ? 16 : 32);
+      for (const flags of cwbvh ? WP3_CW : WP3_BVH2) {
+        const res = await run(ctx, { ...base, flags }, 'closest_any', bufs, rays, nr);
+        const key = `cyclic.${vname(base)}${stats ? '.stats' : ''}.${flagName(flags)}`;
+        const d = firstDiff(ref.out, res.out) + firstDiff(ref.ctr, res.ctr);
+        report[key] = d || 'identical';
+        expect(d, key).toBe('');
+      }
+      nodes.destroy(); tris.destroy();
+    }
+  }, 300_000);
+});

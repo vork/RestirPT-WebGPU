@@ -654,6 +654,8 @@ describe('Production shift passes: platform-fault stress (VITE_STRESS)', () => {
       const rig = await restirRig(t.scene, 256, 256, {
         preset: 'offline', cam: { camToWorld: t.camera.matrix, yfov: t.camera.yfov },
         settings: { maxBounces: t.maxBounces, trees: 1, rounds: 3, slots: 6, diskRadius: 10 },
+        // perf2 WP-3: VITE_STRESS_CWBVH=1 runs the stress on the CWBVH (MT, the app's traversal)
+        ...(import.meta.env?.VITE_STRESS_CWBVH ? { gpu: { bvhKind: 'cwbvh' as const, watertight: false } } : {}),
       });
       const tot = { pendingLeft: 0, slotMismatch: 0, shiftNonFinite: 0, accepted: 0, queued: 0 };
       const codes = new Array(16).fill(0);
@@ -662,7 +664,7 @@ describe('Production shift passes: platform-fault stress (VITE_STRESS)', () => {
         for (const k of Object.keys(tot) as (keyof typeof tot)[]) tot[k] += r.arena.rsc[k];
         r.arena.codes.forEach((c, i) => { codes[i] += c; });
       }
-      console.log(`[STRESS ${variant}] frames=${frames} perfFlags=${perfFlagsKey(rig.kernel.perfFlags) || '-'} ${JSON.stringify(tot)} codes=${codes.map((c, i) => (c ? `${SC_NAMES[i]}:${c}` : '')).filter(Boolean).join(' ')}`);
+      console.log(`[STRESS ${variant}] bvh=${rig.g.gpu.bvhKind} frames=${frames} perfFlags=${perfFlagsKey(rig.kernel.perfFlags) || '-'} ${JSON.stringify(tot)} codes=${codes.map((c, i) => (c ? `${SC_NAMES[i]}:${c}` : '')).filter(Boolean).join(' ')}`);
       expect(tot.pendingLeft + tot.slotMismatch + tot.shiftNonFinite).toBe(0);
       rig.destroy();
     }
