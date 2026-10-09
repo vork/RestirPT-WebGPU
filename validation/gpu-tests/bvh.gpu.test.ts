@@ -1077,10 +1077,13 @@ describe(`perf2 WP-3 traversal flags: per-ray bit equality (${lane()})`, () => {
     const blocks = Math.max(1, Number(import.meta.env.VITE_WP3_PERF) || 2);
     const sets: { mesh: string; cwbvh: boolean; flags: Record<string, number | boolean>[] }[] = [
       { mesh: 'sponza', cwbvh: true, flags: [{ CW_TRI_BUDGET: 1 }, { CW_TRI_BUDGET: 2 }, { CW_TRI_BUDGET: 3 }, { BVH_CONST_LOOPS: 1 }, { CW_EXP_OR: 1 }, { CW_TRI_BUDGET: 2, BVH_CONST_LOOPS: 1 }, { CW_TRI_BUDGET: 2, CW_EXP_OR: 1 }] },
+      // the second sweep: K on top of CW_EXP_OR (set VITE_WP3_PERF_SET=2)
+      { mesh: 'sponza', cwbvh: true, flags: [{ CW_EXP_OR: 1 }, { CW_TRI_BUDGET: 2, CW_EXP_OR: 1 }, { CW_TRI_BUDGET: 3, CW_EXP_OR: 1 }, { CW_TRI_BUDGET: 4, CW_EXP_OR: 1 }, { CW_TRI_BUDGET: 3, CW_EXP_OR: 1, BVH_CONST_LOOPS: 1 }] },
       { mesh: 'sponza', cwbvh: false, flags: [{ BVH2_PRIV_STACK: 1 }, { BVH_CONST_LOOPS: 1 }, { BVH2_PRIV_STACK: 1, BVH_CONST_LOOPS: 1 }] },
       { mesh: 'procedural', cwbvh: false, flags: [{ BVH2_PRIV_STACK: 1 }, { BVH_CONST_LOOPS: 1 }, { BVH2_PRIV_STACK: 1, BVH_CONST_LOOPS: 1 }] },
     ];
-    for (const set of sets) {
+    const which = String(import.meta.env.VITE_WP3_PERF_SET ?? '1');
+    for (const set of which === '2' ? sets.slice(1, 2) : [sets[0], ...sets.slice(2)]) {
       const m = set.mesh === 'sponza' ? await loadGltfMesh() : proceduralScene(7);
       if (!m) continue;
       const bvh = buildBvh(m.positions, m.indices);

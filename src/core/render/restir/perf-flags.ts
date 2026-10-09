@@ -32,13 +32,15 @@ export interface PerfFlagDef {
   /** On by default in the app (RestirKernel.interactive). Release flags of class unbiased / biased move the Shipped
    *  goldens. Biased flags are never released by default (user decision D6: a toggle, off in every validation path). */
   release: boolean;
+  /** Define value of a released parametrised flag (default 1; e.g. the triangle budget K of CW_TRI_BUDGET). */
+  value?: number;
   what: string;
 }
 
 const reserved = (wp: string, cls: PerfFlagClass, what: string, except?: PerfFlagDef['except']): PerfFlagDef =>
   ({ wp, cls, what, landed: false, release: false, ...(except ? { except } : {}) });
-const landed = (wp: string, cls: PerfFlagClass, what: string, o: { release?: boolean; except?: PerfFlagDef['except'] } = {}): PerfFlagDef =>
-  ({ ...reserved(wp, cls, what, o.except), landed: true, release: !!o.release });
+const landed = (wp: string, cls: PerfFlagClass, what: string, o: { release?: boolean; value?: number; except?: PerfFlagDef['except'] } = {}): PerfFlagDef =>
+  ({ ...reserved(wp, cls, what, o.except), landed: true, release: !!o.release, ...(o.value !== undefined ? { value: o.value } : {}) });
 
 /** The registry. Order is documentation only (keys are sorted wherever they form a key / define set). */
 export const PERF_FLAGS = {
@@ -77,7 +79,7 @@ export const isPerfFlagName = (n: string): n is PerfFlagName => Object.prototype
 
 /** Flags on in the app by default (RestirKernel.interactive). Empty until a package's flag is accepted. */
 export const RELEASE_PERF_FLAGS: PerfFlags = Object.fromEntries(
-  PERF_FLAG_NAMES.filter((n) => (PERF_FLAGS[n] as PerfFlagDef).release).map((n) => [n, 1])) as PerfFlags;
+  PERF_FLAG_NAMES.filter((n) => (PERF_FLAGS[n] as PerfFlagDef).release).map((n) => [n, (PERF_FLAGS[n] as PerfFlagDef).value ?? 1])) as PerfFlags;
 
 /** Parse / validate / normalise: unknown names throw, false / 0 entries are dropped, keys sorted. */
 export function normalizePerfFlags(input: PerfFlagsInput): PerfFlags {
