@@ -561,7 +561,9 @@ and M5 Stage-B results therefore stand for the M6 code.
 crossings ≈ +1.7 ms, the duplication-map pass ≈ 1.0 ms.
 
 **Interactive default** (305a358, MD9 after rung 3.11): light mode B, Gaussian pairing σ 16, RIS-NEE, dual MVs, the
-duplication map, cCap 5. The silhouette resolve fixes of the denoiser (denoiser.md DN-16 / DN-17) were merged on main
+duplication map, cCap 5. (Superseded for the app by perf2 D1 / D3: the app's ReSTIR-interactive runs RR after bounce 2
+with the duplication map off; the `interactive` preset, which validation uses, is unchanged. See
+[perf2 app defaults](#perf2-app-defaults-d1--d3).) The silhouette resolve fixes of the denoiser (denoiser.md DN-16 / DN-17) were merged on main
 (cf8d358) after this branch forked; they are not part of the M6 runs.
 
 **Open items.**
@@ -757,3 +759,25 @@ for anything those gates cover.
 **Open items.** D-M8-1 (96 B / 120 B quantized layout), D-M8-4 (40 B G-buffer), Sponza's targets (D-M8-6: a wavefront split
 of the path tree, a cheaper RIS target), rs_primary reusing the M1 V-buffer (≈ 1.4 ms on Sponza), tinybvh WASM once
 emscripten is available, the app's maxBounces default (3) vs PLAN §1.10 (2).
+
+# perf2 app defaults (D1 / D3)
+
+Interactive app defaults since perf2: Russian roulette after bounce 2 (`rrMinBounces 2`, D1) and the duplication map off
+(`dupmap false`, D3), applied through `INTERACTIVE_APP_DEFAULTS` (renderer.ts). Test rigs keep `INTERACTIVE_PINNED`, so
+every golden is unchanged. With the map off, ReSTIR-interactive is unbiased by default.
+
+- **Equal quality (WP-Q, perf2-plan.md §5):** D1 (rr2) passes on Cornell and Sponza (Sponza relMSE×ms −7.2 %). D3 fails the
+  denoised Cornell checks (FLIP +1.9–5.1 %, temporal std +3.8–6.8 %) and passes Sponza; adopted by the user's decision for
+  unbiasedness.
+- **Stage B** (`npm run validate -- --milestone M6 --part decisions`, run `m6-gate-decisions-20261009-150044`): **11/11
+  PASS** at unchanged δ, interactive c_cap 5, map off, rrMinBounces 2:
+  m6_crossings_B_256 Mode B t=24 Δ_Y +0.0053 % (MDB 0.060 %); m5s_cornell_i t=24 −0.0044 % (MDB 0.013 %);
+  ixs_d_camera_256 dyn f8…f64 all pass (|Δ_Y| ≤ 0.021 %, MDB ≤ 0.049 %), sequence drift test pass.
+- **Timing** (same-session ABBA, 540p N3, 2 blocks, after the run-perf fix 4b760d6): new vs old defaults Sponza
+  85.8 → 79.2 ms (−7.6 %), Cornell −0.9 % (noise). Separately: rr2 Sponza −8.3 %, Cornell 0; map off Sponza −0.8 %,
+  Cornell −6.1 % (rs_dupmap −0.7 ms).
+- **Harness bug found on the way (4b760d6):** `run-perf --abba FLAGS` without `--kernel-flags` ran the base with the release
+  set and the variant without any released flag; the first app-defaults ABBA therefore read +23 %. Any `--abba` run made
+  after flags were released and without `--kernel-flags` must be re-measured; the wave-1 overall run used
+  `--kernel-flags ""` and is unaffected.
+- **App smokes:** M5 87/87, M5.5 35/35, M6 15/15 (expects the new defaults).

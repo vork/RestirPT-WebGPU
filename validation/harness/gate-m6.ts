@@ -20,6 +20,11 @@
 //           of the global |bias| ≤ 3.25 %, noise floor ≤ 1 %) and its OFF twin (must pass Stage B / dyn) on
 //           m5s_cornell_i t = 24, m5s_glossy_v1 t = 24 and ixs_d_camera. The dupmap-ON Stage-B / dyn steps are informational
 //           (biased by design). `--reuse-run DIR` recomputes the verdicts from an earlier gate5 run (no rendering; M6-12).
+//   decisions  (opt-in, never in the default part list; perf2-plan.md §5 D1 / D3) Stage-B chains of the shipped
+//           interactive app defaults (INTERACTIVE_APP_DEFAULTS: RR after bounce 2, duplication map off) at c_cap 5, the
+//           Gate-5 twin template: m6_crossings_B_256 in Mode B t = 24 (D3: interactive Mode B with the map off) and the
+//           Gate-5 twins m5s_cornell_i t = 24 / ixs_d_camera (stage dyn) at rrMinBounces 2 (D1). n_units (δ, the
+//           Bonferroni count) is the M6 gate's own: these units do not enter nUnits().
 //   plants  U8-4 / U8-7 / U8-8 / U8-10 (§5.3) with the predictions derived BEFORE the measurement (tests/restir/plant-m6
 //           .test.ts): detected (plant_sign.py: half-size repeats ≥ 9/10 vs the 4× PT, PT A/A ≥ 9/10), the full comparison
 //           not `pass`, the predicted sign (one-sided z ≥ 3) on the predicted region; synthetic W × 1.003 + calibrate A/A
@@ -68,8 +73,11 @@ export function pkgDirM6(pkg: string): string {
 
 // ------------------------------------------------------------------------------------------------ unit lists
 
-export type Part = 'core' | 'r37' | 'r39' | 'r310' | 'r311' | 'gate5' | 'plants';
+export type Part = 'core' | 'r37' | 'r39' | 'r310' | 'r311' | 'gate5' | 'plants' | 'decisions';
+/** The default parts (a run without --part). */
 export const PARTS: Part[] = ['core', 'r37', 'r39', 'r310', 'r311', 'gate5', 'plants'];
+/** Every accepted --part: the default ones plus the opt-in perf2 decision chains. */
+export const ALL_PARTS: Part[] = [...PARTS, 'decisions'];
 
 export interface SeqUnit {
   id: string; part: Part; rung: string; pkg: string; label: string; preset: RestirPresetName; settings?: Partial<RestirSettings>;
@@ -138,6 +146,22 @@ const gate5Units = (): ChainUnitM6[] => {
   }
   return out;
 };
+/** perf2 D1 + D3 (perf2-plan.md §5): the knob changes of the app's INTERACTIVE_APP_DEFAULTS (renderer.ts; equality is
+ *  checked in tests/restir/perf-flags.test.ts). */
+export const APP_DEFAULTS_M6: Partial<RestirSettings> = { rrMinBounces: 2, dupmap: false };
+/** `--part decisions`: the interactive Stage-B chains of the shipped app defaults (Gate-5 twin template, c_cap 5, map off,
+ *  unbiased T16). Not in CHAIN_UNITS, so nUnits() and with it every other unit's δ are unchanged. */
+export const DECISION_CHAIN_UNITS: ChainUnitM6[] = [
+  C('decisions', { id: 'm6_crossings_B_256@D13-cap5-app', kind: 'static', pkg: 'm6_crossings_B_256', rung: 'D13', preset: 'interactive', variant: 'appdef',
+    extra: ['--restir-settings', json({ cCap: 5, ...APP_DEFAULTS_M6 })], frames: 25, testFrames: [24], rounds: 1, lightMode: 'B',
+    label: 'interactive Mode B, c_cap 5, app defaults (RR after bounce 2, duplication map off)', t16: { cCap: 5, rr: true, lightMode: 'B' } }),
+  C('decisions', { id: 'm5s_cornell_i@D1-cap5-rr2', kind: 'static', pkg: 'm5s_cornell_i', rung: 'D1', preset: 'interactive', variant: 'rr2',
+    extra: ['--restir-settings', json({ cCap: 5, ...APP_DEFAULTS_M6 })], frames: 25, testFrames: [24], rounds: 1, lightMode: 'A',
+    label: 'Gate-5 twin at rrMinBounces 2 (interactive c_cap 5, map off)', t16: { cCap: 5, rr: true } }),
+  C('decisions', { id: 'ixs_d_camera_256@D1-cap5-rr2', kind: 'dyn', pkg: 'ixs_d_camera_256', rung: 'D1', preset: 'interactive', variant: 'rr2',
+    extra: ['--restir-settings', json({ cCap: 5, ...APP_DEFAULTS_M6 })], frames: ixsD.T, testFrames: ixsD.testFrames, rounds: 1, lightMode: 'A',
+    label: 'Gate-5 twin at rrMinBounces 2, camera motion (stage dyn)', t16: { cCap: 5, rr: true } }),
+];
 export const CHAIN_UNITS: ChainUnitM6[] = [
   C('r37', { id: 'm5s_cornell_i@3.7-full-m6', kind: 'static', pkg: 'm5s_cornell_i', rung: '3.7', preset: 'full-m6', extra: [], frames: 25, testFrames: [1, 24], rounds: 1, lightMode: 'A', label: 'chains full-m6 (σ 16 + RIS)' }),
   C('r37', { id: 'ixs_d_camera_256@3.7-dualmv', kind: 'dyn', pkg: 'ixs_d_camera_256', rung: '3.7', preset: 'full', variant: 'dualmv', extra: ['--restir-settings', json({ dualMv: true })],
@@ -635,7 +659,7 @@ export function milestoneM6(record: Rec, o: M6Options = {}): void {
   if (parts.includes('core') && !o.only && !o.pilotOnly) gate0(dir, runId, add, runStep);
   for (const part of parts.filter((p) => p !== 'core' && !o.reuseRun)) {
     for (const u of SEQ_UNITS.filter((x) => x.part === part && sel(x.id, x.pkg))) results.push(seqUnit(u, dir, runId, nU, add, !!o.pilotOnly, o.restirSeedOffset ?? 0));
-    const cu = CHAIN_UNITS.filter((x) => x.part === part && sel(x.id, x.pkg));
+    const cu = (part === 'decisions' ? DECISION_CHAIN_UNITS : CHAIN_UNITS).filter((x) => x.part === part && sel(x.id, x.pkg));
     if (cu.length) {
       const r = chainUnits(cu, dir, runId, nU, add, !!o.pilotOnly);
       results.push(...r.results);
@@ -654,7 +678,7 @@ export function milestoneM6(record: Rec, o: M6Options = {}): void {
   const informational = steps.filter((x) => GATE5_ON_STEP.test(x.name)).map((x) => x.name);
   const failed = steps.filter((x) => !x.ok && !informational.includes(x.name)).map((x) => x.name);
   const kinds = ['seq', 'chain-static', 'chain-dyn', 'gate5', 'gate5-twin', 'plant', 'aa'];
-  const perPart = Object.fromEntries(PARTS.filter((p) => p !== 'core').map((p) => {
+  const perPart = Object.fromEntries(ALL_PARTS.filter((p) => p !== 'core' && (p !== 'decisions' || parts.includes(p))).map((p) => {
     const u = results.filter((x) => x.part === p && x.kind !== 'gate5-on');
     return [p, { pass: u.filter((x) => x.ok).length, fail: u.filter((x) => !x.ok && x.status !== 'not run').length, notRun: u.filter((x) => x.status === 'not run').length }];
   }));

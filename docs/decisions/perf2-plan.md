@@ -536,3 +536,37 @@ Uncertainty:
 - **D6:** **(b)** add biased half-rate path trees (history-age selection) as an interactive option for Sponza-scale scenes; bias and artefacts (disocclusion darkening, glossy, flicker) must be measured and documented; it must be a toggle, off in every validation path.
 - **D9:** developer mode enabled; GPU counters still unavailable (Xcode 27.0 / macOS 26.6.2 / M5 Pro: counter sets contain only "RT Unit Active").
 - **Execution:** parallel agents per package in separate worktrees, merged in the §2 order with same-session ABBA re-baselines.
+
+### WP-Q evidence (2026-10-09)
+
+Source: `validation/out/wpq-eq/decision.json` (harness `validation/harness/run-eq.ts` + `validation/tools/eq_eval.py`,
+branch perf2-wpq). Cornell and Sponza at 960×540, static / pan / light-animation sequences, 4 seeds, frames
+{16, 32, 48, 63}, against converged PT references (maxBounces 3). Rule (§2 WP-Q step 7): denoised LDR-FLIP and denoised
+temporal std inside the baseline's seed-to-seed 95 % CI in all three sequences (6 checks per scene), and raw relMSE
+(0.1 %-trimmed) × ms not worse than (baseline relMSE + CI) × baseline ms. Candidate ms = baseline ms × the same-session
+ABBA ratio (`perf-abba1.json`; the absolute ms are from a loaded session, the ratios are what counts).
+
+| Candidate | Cornell: ms Δ / relMSE Δ / relMSE×ms Δ | Cornell FLIP + tstd checks | Sponza: ms Δ / relMSE Δ / relMSE×ms Δ | Sponza FLIP + tstd checks | Verdict |
+|---|---|---|---|---|---|
+| D1 rrMinBounces 2 | −0.1 % / +0.8 % / +0.7 % (inside CI) | 6/6 pass | −7.4 % / +0.3 % / −7.2 % | 6/6 pass | **equal quality** on both: adopted |
+| D1 rrMinBounces 1 | +2.7 % / +2.6 % / +5.4 % (fail) | 2/6 (tstd light +3.8 %, FLIP pan +1.3 %, tstd pan +1.9 %, FLIP static +2.0 %) | −12.0 % / +1.9 % / −10.3 % | 0/6 (FLIP +0.7…1.2 %, tstd +1.7…2.2 %) | fails: not adopted |
+| D2 risM 16 | −2.4 % / +0.1 % / −2.3 % | 6/6 pass | −3.4 % / +2.2 % / −1.3 % | 5/6 (tstd static +1.1 %) | fails on Sponza: not adopted |
+| D2 risM 8 | −6.2 % / +0.1 % / −6.2 % | 6/6 pass | −7.5 % / +6.9 % / −1.2 % | 2/6 (tstd light +1.0 %, pan +2.7 %, static +3.0 %; FLIP static +1.0 %) | fails on Sponza: not adopted |
+| D3 duplication map off | −1.3 % / −7.4 % / −8.6 % | 0/6 (FLIP +1.9…5.1 %, tstd +3.8…6.8 %) | +2.5 % / −5.9 % / −3.6 % | 6/6 pass | fails on Cornell (denoised); **adopted by user decision** (unbiased, lower raw error on both scenes) |
+| D4 slots 2 | −0.0 % / +23.4 % / +23.3 % (fail) | 0/6 (FLIP +1.8…5.4 %, tstd +6.1…8.1 %) | −4.2 % / +11.6 % / +6.8 % (fail) | 0/6 (FLIP +1.0…2.6 %, tstd +3.5…6.0 %) | fails: not adopted |
+
+Reading: RR from bounce 2 costs nothing measurable in quality and saves about 7 % of the Sponza frame; RR from bounce 1
+and RIS M 8 / 16 trade visible denoised flicker on Sponza for their time; two spatial slots lose clearly. The
+duplication map is the only case where raw error and denoised quality disagree: switching it off lowers the raw relMSE
+by 6–7 % (it removes the map's bias) but the denoised Cornell output gets 2–7 % worse in FLIP and temporal std, because
+the map's confidence cap also damped temporal noise that the denoiser now sees.
+
+### Applied (perf2-wpdec, 2026-10-09)
+
+- `INTERACTIVE_APP_DEFAULTS` (`src/core/render/renderer.ts`) = `{ rrMinBounces: 2, dupmap: false }`: ReSTIR-interactive
+  in the app is unbiased by default. The presets and every test pin (`INTERACTIVE_PINNED`, the bits rigs, the perf
+  baselines) are unchanged, so every golden holds. The panel can switch the duplication map back on and set the RR start
+  (1 / 2 / 3) per session.
+- Stage-B evidence: `npm run validate -- --milestone M6 --part decisions` (opt-in part; δ and the Bonferroni count of
+  the M6 gate unchanged). Results in [validation.md](validation.md#perf2-app-defaults-d1--d3).
+- Performance: same-session ABBA `run-perf.ts --abba-restir app-defaults` (results in validation.md, same section).

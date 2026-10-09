@@ -22,6 +22,7 @@ import type { App } from '../../src/app/app.ts';
 import type { EditorHandle } from '../../src/app/editor/index.ts';
 import type { Integration } from '../../src/app/integration.ts';
 import { acquireGpuLock } from './gpu-lock.ts';
+import { RELEASE_PERF_FLAGS, perfFlagsKey } from '../../src/core/render/restir/perf-flags.ts';
 
 declare global {
   interface Window { __app?: App; __integration?: Integration; __editor?: EditorHandle; __webgpuErrors?: string[]; __tsPasses?: string[]; __dnAnim?: { cam: boolean; light: boolean; k: number } }
@@ -251,6 +252,15 @@ async function pageLoad(browser: Browser, port: number, OUT: string, scene: stri
     }, sponza);
     await frames(page, 10);
     await scenePass(page, OUT, scene);
+    // perf2 D1 / D3: the app defaults change settings only; ReSTIR-interactive keeps the released perf flags
+    const k = await page.evaluate(() => {
+      const r = window.__integration!.renderer()!;
+      const rs = (r as unknown as { state?: { rs?: { pass: { kernel: { perfFlags: Record<string, number> } } } } }).state?.rs;
+      const s = r.restirSettings();
+      return { mode: r.options.restirMode, flags: rs?.pass.kernel.perfFlags ?? {}, rrMinBounces: s.rrMinBounces, dupmap: s.dupmap };
+    });
+    check(`${scene}: ReSTIR-interactive at the app defaults (RR after bounce 2, dup map off) runs the released perf flags`,
+      k.mode === 'interactive' && k.rrMinBounces === 2 && k.dupmap === false && perfFlagsKey(k.flags) === perfFlagsKey(RELEASE_PERF_FLAGS), `${perfFlagsKey(k.flags)} | rrMin ${k.rrMinBounces} dupmap ${k.dupmap}`);
     const t = await page.evaluate(() => ({ ...window.__app!.runTotals }));
     check(`${scene}: NaN/Inf = 0 (debug counters)`, t.nan === 0 && t.inf === 0, JSON.stringify(t));
     const st = await page.evaluate(() => ({ err: window.__integration!.renderer()!.lastError, rs: window.__integration!.renderer()!.restirError, dn: window.__integration!.renderer()!.denoiserError, gpu: window.__webgpuErrors ?? [], ts: window.__tsPasses ?? [] }));

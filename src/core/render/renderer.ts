@@ -62,7 +62,7 @@ import { RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagDefines, perfFlagsKey, 
  *  2022 criteria), Offline, initial only (no spatial reuse: rung 3.1, or rung 3.3 with temporal on). */
 export type RestirAppMode = 'interactive' | 'unbiased' | 'criteria2022' | 'offline' | 'initial';
 export const RESTIR_APP_MODES: Record<RestirAppMode, string> = {
-  interactive: 'ReSTIR-interactive (S 1, 1 round × 3 + boost 3, σ 16, RIS-NEE, dual MV, dup map, RR)',
+  interactive: 'ReSTIR-interactive (S 1, 1 round × 3 + boost 3, σ 16, RIS-NEE, dual MV, RR after bounce 2; unbiased: duplication map off by default)',
   unbiased: 'ReSTIR-unbiased (S 1, 1 round × 3, σ 16, RIS-NEE)', criteria2022: 'ReSTIR-2022-criteria', offline: 'Offline (S 32, 3 rounds × 6, σ 16, RIS-NEE)',
   initial: 'initial only (rung 3.1 / 3.3)',
 };
@@ -81,13 +81,19 @@ export function restirAppSettings(mode: RestirAppMode, maxBounces: number, tempo
 /** perf2 (perf2-plan.md §5 user decisions, WP-10 rule): app-level defaults of app mode 'interactive', applied over the
  *  interactive preset by restirAppSettings. The presets stay unchanged, so validation and the bits rigs (whose
  *  interactive knobs are pinned: INTERACTIVE_PINNED in presets.ts) never see these. Decisions land here one by one with
- *  their evidence — D3 (duplication map off) as `dupmap: false` after its Stage-B chain; D1 / D2 / D4 (rrMinBounces,
- *  risM, slots) only where WP-Q's equal-quality rule holds. The panel's feature toggles (restirFeatures) still override
- *  them per session. Empty: today's app = the interactive preset. */
-export const INTERACTIVE_APP_DEFAULTS: Readonly<Partial<RestirSettings>> = Object.freeze({});
+ *  their evidence (perf2-plan.md §5):
+ *  - D1 `rrMinBounces: 2` (Russian roulette at vertices B > 2 instead of > 3; unbiased): WP-Q equal quality on Cornell
+ *    and Sponza; Stage-B chains of the interactive configuration at rrMinBounces 2 (gate-m6 `--part decisions`).
+ *  - D3 `dupmap: false` (the duplication map, the only biased interactive feature, off; user decision, although WP-Q
+ *    measured the denoised Cornell sequences 2–7 % worse without it): the interactive Mode-B Stage-B chain with the map
+ *    off (gate-m6 `--part decisions`). ReSTIR-interactive is unbiased by default.
+ *  D2 / D4 (risM, slots) did not pass WP-Q and stay at the preset. The panel's feature toggles (restirFeatures) still
+ *  override these per session (the duplication map can be switched back on there). */
+export const INTERACTIVE_APP_DEFAULTS: Readonly<Partial<RestirSettings>> = Object.freeze({ rrMinBounces: 2, dupmap: false });
 
-/** M6 feature toggles of the app (restir-m6-api.md MD13): overrides of the mode's preset (empty = the preset's). */
-export type RestirFeatureOverrides = Partial<Pick<RestirSettings, 'pairing' | 'risNee' | 'dualMv' | 'dupmap'>>;
+/** M6 feature toggles of the app (restir-m6-api.md MD13) and the perf2 D1 RR start: per-session overrides of the mode's
+ *  settings (preset ⊕ INTERACTIVE_APP_DEFAULTS; empty = those). */
+export type RestirFeatureOverrides = Partial<Pick<RestirSettings, 'pairing' | 'risNee' | 'dualMv' | 'dupmap' | 'rrMinBounces'>>;
 
 /** M8 (m8-perf.md §3): 'auto' picks the CWBVH from this many triangles on. */
 export const CWBVH_AUTO_MIN_TRIS = 65536;
@@ -928,7 +934,7 @@ export class Renderer {
       if (!rs) out.push(this.restirError ?? 'ReSTIR: compiling (PT shown)');
       else {
         const st = rs.pass.settings;
-        out.push(`ReSTIR ${this.options.restirMode}: S ${st.trees}  rounds ${st.rounds} × ${st.slots}${st.temporal && st.boostSlots ? ` + boost ${st.boostSlots}` : ''} slots  R ${st.diskRadius}  ${st.criteria}${st.rr ? ' RR' : ''}  max_bounces ${st.maxBounces}`
+        out.push(`ReSTIR ${this.options.restirMode}: S ${st.trees}  rounds ${st.rounds} × ${st.slots}${st.temporal && st.boostSlots ? ` + boost ${st.boostSlots}` : ''} slots  R ${st.diskRadius}  ${st.criteria}${st.rr ? ` RR>${st.rrMinBounces}` : ''}  max_bounces ${st.maxBounces}`
           + `  temporal ${st.temporal ? `on (c_cap ${st.cCap}, ${st.temporalMis}${st.refresh === 'e2' ? ', E2' : ''}; ${rs.temporalFrames} frames, ${rs.heldFrames} held)` : 'off'}`);
         out.push(`  M6: Mode ${rs.pass.kernel.lightMode}  pairing ${st.pairing === 'gauss' ? `gauss σ ${st.pairSigma}` : `disk R ${st.diskRadius}`}  RIS-NEE ${st.risNee ? `M ${st.risM}` : 'off'}`
           + `  dual MV ${st.dualMv ? 'on' : 'off'}  dup map ${st.dupmap && st.temporal ? 'on (biased)' : 'off'}`);
