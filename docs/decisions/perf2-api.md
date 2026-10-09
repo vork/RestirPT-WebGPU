@@ -99,12 +99,20 @@ Each entry has `wp`, `cls` (`bitwise` / `unbiased` / `biased`), optional `except
   crossings 4, nm_smooth 3). Pinning changed no hash.
 - `INTERACTIVE_APP_DEFAULTS` (`renderer.ts`) is the app-level override of app mode `'interactive'`, applied by
   `restirAppSettings` over the interactive preset. The presets are unchanged (WP-10 rule).
-  - User decision D3 lands as `{ dupmap: false }` here, together with its Stage-B chain. Until then it is empty and the
-    app keeps the duplication map.
-  - The per-session switch already exists: the panel's "duplication map" toggle (`restirFeatures.dupmap`).
-  - D1 / D2 / D4 land here only where WP-Q's equal-quality rule holds.
+  - Since perf2-wpdec it is `{ rrMinBounces: 2, dupmap: false }`: D1 (RR after bounce 2; WP-Q equal quality on
+    Cornell and Sponza) and D3 (the duplication map off; user decision). ReSTIR-interactive is unbiased by default.
+    D2 / D4 failed WP-Q and stay at the preset (perf2-plan.md §5, WP-Q evidence).
+  - Per-session switches: the panel's "duplication map" toggle (`restirFeatures.dupmap`) and "RR after bounce"
+    (`restirFeatures.rrMinBounces`, 1 / 2 / 3).
+  - Harness copies (renderer.ts does not load in node): `APP_DEFAULTS_RESTIR` (`run-perf.ts`) and `APP_DEFAULTS_M6`
+    (`gate-m6.ts`); `tests/restir/perf-flags.test.ts` checks that both equal `INTERACTIVE_APP_DEFAULTS`.
+  - Evidence runs: `npm run validate -- --milestone M6 --part decisions` (opt-in Stage-B chains of the app defaults:
+    interactive c_cap 5, Mode B on m6_crossings_B_256, and the Gate-5 twins m5s_cornell_i / ixs_d_camera at
+    rrMinBounces 2; outside `nUnits()`, so the M6 δ is unchanged) and `run-perf.ts --abba-restir app-defaults` (ABBA of
+    the pinned baseline vs the pinned baseline + the app defaults; role `appDefaults`).
 - Decision rows: `run-perf.ts --decisions` adds labelled 540p N3 rows per scene from `DECISION_CONFIGS` (D1 rrMin2,
-  D2 risM16, D3 dupmapOff, D4 slots2, D6 halfRate). A row whose flag has not landed is skipped with a note.
+  D2 risM16, D3 dupmapOff, D4 slots2, D6 halfRate, and `D1+D3 appDefaults` = the shipped app defaults). A row whose
+  flag has not landed is skipped with a note.
 
 ## 3. Bits goldens: Anchor and Shipped tiers
 

@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { restirSettings } from '../../src/core/render/restir/presets.ts';
 import { SEEDS as M4_SEEDS } from '../../validation/harness/gate-m4.ts';
 import { SEEDS as M5_SEEDS, t16ChainProblems } from '../../validation/harness/gate-m5.ts';
-import { CHAIN_UNITS, M6_PKGS, PLANTS_M6, SEEDS, SEQ_UNITS, T3M6_RUNS, nUnits, pkgDirM6, t16M6 } from '../../validation/harness/gate-m6.ts';
+import { ALL_PARTS, CHAIN_UNITS, DECISION_CHAIN_UNITS, M6_PKGS, PARTS, PLANTS_M6, SEEDS, SEQ_UNITS, T3M6_RUNS, nUnits, pkgDirM6, t16M6 } from '../../validation/harness/gate-m6.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -48,6 +48,19 @@ describe('M6 unit lists (§5.1)', () => {
       expect(u.t16?.cCap).toBe(u.gate5!.cCap);
     }
     expect(new Set(g5.map((u) => u.gate5!.scene))).toEqual(new Set(['m5s_cornell_i', 'm5s_glossy_v1', 'ixs_d_camera_256']));
+  });
+  it('perf2 decisions (opt-in part): interactive c_cap 5 at the app defaults, map off, unbiased T16, Mode B on m6_crossings_B; outside nUnits()', () => {
+    expect(PARTS).not.toContain('decisions');
+    expect(ALL_PARTS).toContain('decisions');
+    expect(DECISION_CHAIN_UNITS.map((u) => `${u.pkg}:${u.lightMode}:${u.kind}`)).toEqual(['m6_crossings_B_256:B:static', 'm5s_cornell_i:A:static', 'ixs_d_camera_256:A:dyn']);
+    for (const u of DECISION_CHAIN_UNITS) {
+      expect(u.preset).toBe('interactive');
+      expect(JSON.parse(u.extra[1])).toEqual({ cCap: 5, rrMinBounces: 2, dupmap: false });
+      expect(u.t16?.biased).toBeUndefined();
+      expect(u.t16?.cCap).toBe(5);
+      expect(u.gate5).toBeUndefined();
+      expect(CHAIN_UNITS).not.toContain(u);
+    }
   });
   it('plants: U8-4 (M_foot +), U8-7 (global −), U8-8 (global +), U8-10 (global +, M_hl +) with derivations; T3-M6 runs', () => {
     const pr = Object.fromEntries(PLANTS_M6.map((p) => [p.id, p.predict.map((x) => `${x.region}${x.sign}`).join(' ')]));

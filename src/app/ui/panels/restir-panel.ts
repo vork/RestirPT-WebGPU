@@ -43,15 +43,17 @@ export function addRestirPanel(app: App, r: Renderer, inspector: RestirInspector
   // after a change recompiles; the config hash changes, so the history resets)
   const feat = r.options.restirFeatures;
   const eff = () => restirSettings(undefined, r.restirSettings());
-  const fx = { gauss: eff().pairing === 'gauss', ris: eff().risNee, dualMv: eff().dualMv, dupmap: eff().dupmap };
+  const fx = { gauss: eff().pairing === 'gauss', ris: eff().risNee, dualMv: eff().dualMv, dupmap: eff().dupmap, rrMin: eff().rrMinBounces };
   const setF = (o: RestirFeatureOverrides) => { Object.assign(feat, o); void r.setOptions({ restirFeatures: feat }).then(() => app.resetHistory()); };
   const ef = f.addFolder({ title: 'Enhanced features', expanded: false });
   tip(ef.addBinding(fx, 'gauss', { label: 'σ 16 pairing maps' }), 'Spatial partners from reciprocal pairing maps with Gaussian (σ 16 px) offsets; off = disk partners.')
     .on('change', q((e) => setF({ pairing: e.value ? 'gauss' : 'disk' })));
   tip(ef.addBinding(fx, 'ris', { label: 'RIS-NEE light tiles' }), 'Light selection for NEE by RIS over light tiles.').on('change', q((e) => setF({ risNee: e.value })));
   tip(ef.addBinding(fx, 'dualMv', { label: 'dual motion vectors' }), 'On disocclusion, retry the temporal reprojection with the occluder\'s motion (needs temporal reuse).').on('change', q((e) => setF({ dualMv: e.value })));
-  tip(ef.addBinding(fx, 'dupmap', { label: 'duplication map (biased)' }), 'Caps the temporal confidence where neighbouring pixels share a sample (biased; on in the interactive preset; needs temporal reuse).')
+  tip(ef.addBinding(fx, 'dupmap', { label: 'duplication map (biased)' }), 'Caps the temporal confidence where neighbouring pixels share a sample (biased; off by default since perf2 decision D3, so ReSTIR-interactive is unbiased; needs temporal reuse).')
     .on('change', q((e) => setF({ dupmap: e.value })));
+  tip(ef.addBinding(fx, 'rrMin', { label: 'RR after bounce', options: { 1: 1, 2: 2, 3: 3 } }), 'Russian roulette at initial sampling only at vertices past this bounce (unbiased; 2 by default in ReSTIR-interactive, perf2 decision D1; lower = faster, noisier). Needs the mode\'s RR on.')
+    .on('change', q((e) => setF({ rrMinBounces: Number(e.value) })));
   tip(f.addBinding(ui, 'stats', { readonly: true, multiline: true, rows: 7, label: 'status' }), 'Shift arena: replay fraction, queue occupancy, shift outcome histogram, error counters.');
   tip(f.addBinding(ui, 'inspector', { label: 'pixel inspector' }), 'Reservoir / shift / MIS dump and a 3D path overlay for the probe pixel (Alt+click a pixel).')
     .on('change', q((e) => {
@@ -65,7 +67,7 @@ export function addRestirPanel(app: App, r: Renderer, inspector: RestirInspector
     try {
       ui.mode = r.options.restirMode;
       ui.temporal = r.options.temporal;
-      { const e = eff(); fx.gauss = e.pairing === 'gauss'; fx.ris = e.risNee; fx.dualMv = e.dualMv; fx.dupmap = e.dupmap; }
+      { const e = eff(); fx.gauss = e.pairing === 'gauss'; fx.ris = e.risNee; fx.dualMv = e.dualMv; fx.dupmap = e.dupmap; fx.rrMin = e.rrMinBounces; }
       ui.inspector = !!inspector?.visible;
       ui.stats = r.options.renderMode === 'restir' ? (r.restirHud?.lines().join('\n') ?? r.restirError ?? 'compiling ...') : 'off (Render › integrator is not ReSTIR PT)';
       f.refresh();
