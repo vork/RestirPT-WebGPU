@@ -227,7 +227,8 @@ async function cmdPerf(a: Record<string, string | boolean | undefined>): Promise
       if (!restir) throw new Error(`unknown config ${cfg}`);
       for (const scene of scenes) {
         const s = PERF_SCENES[EQ_SCENES[scene].perf];
-        jobs.push({ scene: s.scene, env: s.env, width: W, height: H, restir, label: `${cfg}|${scene}|r${r}`,
+        // frame time only (the per-pass split and isolated latency are not used by the rule)
+        jobs.push({ scene: s.scene, env: s.env, width: W, height: H, restir, label: `${cfg}|${scene}|r${r}`, latencyFrames: 0, passFrames: 0,
           ...(perfFlags && cfg !== 'baseline' ? { renderer: { restirKernel: { perfFlags } } as PerfOptions['renderer'] } : {}),
           ...(a.frames ? { frames: Number(a.frames) } : {}) });
       }

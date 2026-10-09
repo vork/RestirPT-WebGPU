@@ -29,8 +29,8 @@ decide     the WP-Q rule for candidates against the baseline summary: equal qual
            denoised LDR-FLIP and denoised motion-compensated temporal std (tstd, all pixels) are not above the baseline's seed-to-seed 95 % CI
            (mean + half-width; below it is better and passes) AND raw relMSE x ms (relMSE averaged over the sequences, ms =
            run-perf frame time, candidate = baseline ms x the same-session ABBA ratio) is not worse than the baseline's
-           beyond its seed-to-seed CI (the strict comparison is reported as pass_strict). Writes decision.json and, for every scene, a ms-vs-denoised-FLIP
-           Pareto plot (pareto_<scene>.png).
+           beyond its seed-to-seed CI (the strict comparison is reported as pass_strict). Writes decision.json and, for
+           every scene, a ms-vs-denoised-FLIP Pareto plot (pareto_<scene>.png).
 
     python eq_eval.py ref-merge --dirs D1,D2 --out-dir REFDIR [--delete-batches]
     python eq_eval.py run --ref-dir REFDIR --dir RUNDIR --eval 16,32,48,63 --window 40:64 --out metrics.json [--delete]
