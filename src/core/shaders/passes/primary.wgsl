@@ -95,7 +95,12 @@ fn primary(@builtin(global_invocation_id) gid: vec3u) {
     color = g.albedo;
     uv = s.uv;
     bary = vec3f(1.0 - hit.u - hit.v, hit.u, hit.v);
+#if RS_PRIMARY_EXT
+    // perf2 WP-7e: vbuf.w = bits(t), read by rs_primary_ext (passes/restir/primary-ext.wgsl) instead of tracing again
+    vb = vec4u(hit.primId, bitcast<u32>(hit.u), bitcast<u32>(hit.v), bitcast<u32>(hit.t));
+#else
     vb = vec4u(hit.primId, bitcast<u32>(hit.u), bitcast<u32>(hit.v), s.matId);
+#endif
   } else {
     color = envBackground(ray.d);
     let cur = project_h(ray.d, 0.0, frame.cam);

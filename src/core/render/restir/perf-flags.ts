@@ -67,7 +67,7 @@ export const PERF_FLAGS = {
   RS_NO_PLANTS: reserved('WP-9b', 'bitwise', 'U8-*, TP_* and 2022-criteria plant code compiled out'),
   RS_NO_DIAG: reserved('WP-9b', 'bitwise', 'P9 diagnostic writes / copies skipped (allocation kept)', ['P9']),
   MAT_VARIANTS: reserved('WP-8', 'bitwise', 'material compile variants (models present in the scene only), TEX_XFORM, branch-free LUT lerp'),
-  RS_PRIMARY_EXT: reserved('WP-7e', 'unbiased', 'rs_primary reads the M1 V-buffer (bits(t) in vbuf.w) instead of tracing again (ulp edge ties)'),
+  RS_PRIMARY_EXT: { ...reserved('WP-7e', 'unbiased', 'rs_primary reads the M1 V-buffer (bits(t) in vbuf.w) instead of tracing again (ulp edge ties)'), landed: true },
   // WP-7 a–d, f (added by WP-7; app-only passes: the M1 primary, the interactive finalize, the denoiser)
   DN_GRAD_SKIP: { ...reserved('WP-7a', 'bitwise', 'denoiser: dn_gradient / dn_grad_filter skipped on frames where no pass reads λ (host only)'), landed: true, release: true },
   RS_DUPMAP_S64: { ...reserved('WP-7b', 'bitwise', 'rs_dupmap: branch-free 64-bit seed compare (memberCount == 1, sentinel tile texels)'), landed: true, release: true },
