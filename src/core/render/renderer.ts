@@ -55,6 +55,7 @@ import { RestirDebugPass, RestirHud } from './restir/debug.ts';
 import { Denoiser, type DenoiseFrame } from './denoise/denoiser.ts';
 import { denoiseModeKey, denoiserAllowed, denoiserDefault, type DenoiserSettings } from './denoise/layout.ts';
 import { arenaWords, RS_WGSL_CONSTS } from './restir/layout.ts';
+import { RELEASE_PERF_FLAGS, perfFlagDefines, perfFlagsKey, type PerfFlagsInput } from './restir/perf-flags.ts';
 
 /** App ReSTIR modes (PLAN §3, restir-temporal-api.md §3.7): ReSTIR-interactive (interactive preset: temporal, RR, boost
  *  3), ReSTIR-unbiased (the `full` preset: temporal, RR off, no boost), ReSTIR-2022-criteria (interactive preset with the
@@ -73,8 +74,17 @@ export const RESTIR_APP_MODES: Record<RestirAppMode, string> = {
 export function restirAppSettings(mode: RestirAppMode, maxBounces: number, temporal = true, features: Partial<RestirSettings> = {}): RestirSettings {
   const base = mode === 'offline' ? RESTIR_PRESETS['offline-m6'] : mode === 'unbiased' ? RESTIR_PRESETS['full-m6']
     : mode === 'initial' ? { ...RESTIR_PRESETS.interactive, rounds: 0 } : RESTIR_PRESETS.interactive;
-  return { ...DEFAULT_RESTIR_SETTINGS, ...base, criteria: mode === 'criteria2022' ? '2022' : 'enhanced', maxBounces, temporal, ...features };
+  const app = mode === 'interactive' ? INTERACTIVE_APP_DEFAULTS : {};
+  return { ...DEFAULT_RESTIR_SETTINGS, ...base, ...app, criteria: mode === 'criteria2022' ? '2022' : 'enhanced', maxBounces, temporal, ...features };
 }
+
+/** perf2 (perf2-plan.md §5 user decisions, WP-10 rule): app-level defaults of app mode 'interactive', applied over the
+ *  interactive preset by restirAppSettings. The presets stay unchanged, so validation and the bits rigs (whose
+ *  interactive knobs are pinned: INTERACTIVE_PINNED in presets.ts) never see these. Decisions land here one by one with
+ *  their evidence — D3 (duplication map off) as `dupmap: false` after its Stage-B chain; D1 / D2 / D4 (rrMinBounces,
+ *  risM, slots) only where WP-Q's equal-quality rule holds. The panel's feature toggles (restirFeatures) still override
+ *  them per session. Empty: today's app = the interactive preset. */
+export const INTERACTIVE_APP_DEFAULTS: Readonly<Partial<RestirSettings>> = Object.freeze({});
 
 /** M6 feature toggles of the app (restir-m6-api.md MD13): overrides of the mode's preset (empty = the preset's). */
 export type RestirFeatureOverrides = Partial<Pick<RestirSettings, 'pairing' | 'risNee' | 'dualMv' | 'dupmap'>>;
@@ -138,7 +148,13 @@ export interface RendererOptions {
   /** M5.5: the denoiser toggle of the current mode (denoiser.md §8; remembered per mode in denoiseByMode). */
   denoise: boolean;
   /** M8 (m8-perf.md): kernel options of the interactive ReSTIR (A/B measurements; default the interactive kernel's). */
-  restirKernel?: { resLayout?: 'aos' | 'soa'; modeBNeedsAreaLights?: boolean };
+  restirKernel?: {
+    resLayout?: 'aos' | 'soa'; modeBNeedsAreaLights?: boolean;
+    /** perf2 (docs/decisions/perf2-api.md): perf flags of the interactive ReSTIR kernel and the M1 primary pass
+     *  (default RELEASE_PERF_FLAGS). A change recompiles at the next frame (the PT beauty shows meanwhile) and resets the
+     *  temporal history. */
+    perfFlags?: PerfFlagsInput;
+  };
 }
 
 export interface RendererTargets {
@@ -310,6 +326,7 @@ export class Renderer {
       // M6: the light mode and the feature toggles are pipeline variants (MD1, MD9): recompiled lazily by prepare()
       // until it is compiled the frames show the PT beauty (encodeRestir), never a half-switched kernel
       rs.pass.kernel.setLightMode(this.options.lightMode);
+      rs.pass.kernel.setPerfFlags(this.perfFlags());
       rs.pass.setSettings(this.restirSettings());
       await this.prepareRestirVariant(rs);
     }
@@ -369,7 +386,7 @@ export class Renderer {
         const pass = await RestirKernel.interactive(this.device, state.gpu, this.env, colorFormat, {
           settings: this.restirSettings(), lightMode: this.options.lightMode, debug,
           env: { nee: this.options.envNee, importanceCap: this.options.envImportanceCap },
-          features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures, ...this.options.restirKernel,
+          features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures, ...this.options.restirKernel, perfFlags: this.perfFlags(),
         });
         const dbg = debug ? await RestirDebugPass.create(pass.kernel, debug) : undefined;
         if (this.lights) pass.setLights(this.lights);
@@ -412,6 +429,9 @@ export class Renderer {
     return restirAppSettings(this.options.restirMode, this.options.maxBounces, this.options.temporal, this.options.restirFeatures);
   }
 
+  /** perf2: the perf flags of the interactive kernels (options.restirKernel.perfFlags, default RELEASE_PERF_FLAGS). */
+  perfFlags(): PerfFlagsInput { return this.options.restirKernel?.perfFlags ?? RELEASE_PERF_FLAGS; }
+
   /** The interactive ReSTIR pass (undefined until renderMode 'restir' compiled it). */
   get restir(): RestirFramePass | undefined { return this.state?.rs?.pass; }
   get restirHud(): RestirHud | undefined { return this.state?.rs?.hud; }
@@ -427,7 +447,11 @@ export class Renderer {
     return (await this.compileRestir(s, this.targets.t.colorFormat))?.pass;
   }
 
-  private variantKey(colorFormat: string, stats: boolean): string { return `${colorFormat}|${stats ? 'stats' : 'plain'}`; }
+  /** Primary pipeline key `format|stats[|perf flags]` (perf2: the flag part only when flags are set). */
+  private variantKey(colorFormat: string, stats: boolean): string {
+    const pf = perfFlagsKey(this.perfFlags());
+    return `${colorFormat}|${stats ? 'stats' : 'plain'}${pf ? `|${pf}` : ''}`;
+  }
 
   private g2Layout(colorFormat: GPUTextureFormat): GPUBindGroupLayout {
     let l = this.g2Layouts.get(colorFormat);
@@ -452,14 +476,14 @@ export class Renderer {
   private compile(state: SceneState, key: string): Promise<GPUComputePipeline | undefined> {
     const existing = state.pending.get(key);
     if (existing) return existing;
-    const [colorFormat, stats] = key.split('|');
+    const [colorFormat, stats, pf] = key.split('|');
     const p = (async () => {
       try {
         const shader = composeWgsl('passes/primary.wgsl', {
           sources: shaderSources,
           defines: {
             COLOR_FORMAT: colorFormat, BVH_STATS: stats === 'stats',
-            ...state.gpu.defines(SCENE_GROUP), ...envDefines(0, ENV_BINDING_BASE),
+            ...state.gpu.defines(SCENE_GROUP), ...envDefines(0, ENV_BINDING_BASE), ...perfFlagDefines(pf),
           },
           features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures,
         });

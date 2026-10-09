@@ -1,5 +1,7 @@
 // WP-B helpers for the shift GPU tests (restir-shift.gpu.test.ts; restir-api.md §1.2, §6.1–§6.2): custom test
 // pipelines on top of RestirKernel (G0/G1 of the kernel, a test G2 of storage buffers), f32 bit helpers.
+// perf2 (perf2-api.md): test pipelines compose with k.customDefines(), i.e. with the kernel's perf flags — the T3
+// discriminator / round trips run with flags forced on via VITE_PERF_FLAGS (restirRig / testPerfFlags() kernels).
 import { readBuffer } from '../../src/core/gpu/readback.ts';
 import type { Defines } from '../../src/core/gpu/wgsl-composer.ts';
 import type { RestirKernel } from '../../src/core/render/restir/kernel.ts';

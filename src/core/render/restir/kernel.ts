@@ -33,10 +33,12 @@ import { SpatialStage } from './stage-spatial.ts';
 import { EnsembleStage } from './ensemble.ts';
 import { TemporalStage } from './stage-temporal.ts';
 import { FrameStateTracker, type ConfigHashInput, type RestirAdvance, type RestirFrameState, type RestirInteractiveAdvance } from './frame-state.ts';
+import { RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagDefines, perfFlagsKey, type PerfFlags, type PerfFlagsInput } from './perf-flags.ts';
 
 export type { RestirSettings } from './presets.ts';
 export type { RestirAdvance, RestirFrameState } from './frame-state.ts';
 export { RESTIR_PRESETS } from './presets.ts';
+export { PERF_FLAGS, RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagDefines, perfFlagsKey, type PerfFlagName, type PerfFlags, type PerfFlagsInput } from './perf-flags.ts';
 
 export interface WorkUnit { label: string; costHint: number; encode(enc: GPUCommandEncoder): void }
 /** A stage of the frame graph (spatial = WP-C stage-spatial.ts, ensemble = WP-C ensemble.ts). `prepare` compiles its
@@ -78,6 +80,10 @@ export interface RestirKernelOptions {
   /** M8 (m8-perf.md §8, P-7): reservoir planes record-major ('aos', the M4 layout; default: every validation caller) or
    *  plane-major ('soa', composer define RS_RES_SOA; RestirKernel.interactive). readReservoirs() always returns AoS. */
   resLayout?: 'aos' | 'soa';
+  /** perf2 (docs/decisions/perf2-api.md): interactive-only optimisation defines from the registry in perf-flags.ts.
+   *  Default: none (every validation caller); RestirKernel.interactive defaults to RELEASE_PERF_FLAGS. Part of
+   *  variantKey(); setPerfFlags() switches them at a frame boundary (recompile + history reset). */
+  perfFlags?: PerfFlagsInput;
   env?: PtEnvOptions;
   debug?: DebugResources;
   features?: Set<string>;
@@ -139,12 +145,15 @@ export class RestirKernel {
   private readonly g2Layouts = new Map<string, GPUBindGroupLayout>();
   private readonly pipelines = new Map<string, Promise<GPUComputePipeline>>();
   private prepared = '';
+  /** perf2: the normalised perf-flag set (sorted; absent = off). */
+  private perfFlagSet: PerfFlags = {};
 
   /** Light mode (M6 MD9: A, B or A′; B / A′ compile the crossing variant RS_MODE_B). */
   lightMode: LightMode;
 
   private constructor(readonly device: GPUDevice, readonly scene: SceneGpu, private env: EnvGpuResources, readonly o: RestirKernelOptions) {
     this.lightMode = o.lightMode ?? 'A';
+    this.perfFlagSet = normalizePerfFlags(o.perfFlags);
     this.settings = restirSettings(undefined, o.settings);
     this.envOptions = { ...o.env };
     this.frame = new FrameUniformBuffer(device);
@@ -195,7 +204,9 @@ export class RestirKernel {
   /** Interactive ReSTIR (renderer mode 'restir'): progressive mean into the renderer's colour target. */
   static async interactive(device: GPUDevice, scene: SceneGpu, env: EnvGpuResources, colorFormat: GPUTextureFormat,
     o: Omit<RestirKernelOptions, 'settings'> & { settings?: Partial<RestirSettings> } = {}): Promise<RestirFramePass> {
-    const k = await RestirKernel.create(device, scene, env, { modeBNeedsAreaLights: true, resLayout: 'soa', ...o, settings: { ...restirSettings('interactive'), ...o.settings } });
+    const k = await RestirKernel.create(device, scene, env, {
+      modeBNeedsAreaLights: true, resLayout: 'soa', ...o, perfFlags: o.perfFlags ?? RELEASE_PERF_FLAGS, settings: { ...restirSettings('interactive'), ...o.settings },
+    });
     await k.pipeline('rs_finalize_frame', {}, colorFormat);
     return new RestirFramePass(k, colorFormat);
   }
@@ -215,10 +226,23 @@ export class RestirKernel {
 
   /** Composer defines shared by every ReSTIR pipeline (+ the pass's own). */
   defines(name: RsPassName, extra: Defines = {}): Defines {
-    return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug, extra: { ...this.m6Defines(), NM_PLANT: m7NmPlantDefine(this.settings, name), ...this.layoutDefines(), ...extra } });
+    return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug, extra: { ...this.m6Defines(), NM_PLANT: m7NmPlantDefine(this.settings, name), ...this.layoutDefines(), ...this.perfDefines(), ...extra } });
   }
   /** M8 P-7: RS_RES_SOA only for plane-major kernels (the key is absent otherwise: the M7 text). */
   layoutDefines(): Record<string, number> { return this.o.resLayout === 'soa' ? { RS_RES_SOA: 1 } : {}; }
+  /** perf2: composer defines of the kernel's perf flags (empty without flags: the validation text). */
+  perfDefines(): Record<string, number> { return perfFlagDefines(this.perfFlagSet); }
+  /** perf2: the normalised perf-flag set of the kernel. */
+  get perfFlags(): PerfFlags { return this.perfFlagSet; }
+  /** perf2: switch the perf flags (a new pipeline variant: `await prepare()` before the next frame; the temporal history
+   *  resets, as for a light-mode variant switch). Returns true when the set changed. */
+  setPerfFlags(f: PerfFlagsInput): boolean {
+    const next = normalizePerfFlags(f);
+    if (perfFlagsKey(next) === perfFlagsKey(this.perfFlagSet)) return false;
+    this.perfFlagSet = next;
+    this.frameState.invalidate('perf-flags');
+    return true;
+  }
   /** M8 P-7: u32 words between consecutive planes of a record's plane 0 … (denoiser: 10 AoS, 1 SoA for plane 0). */
   get resPlaneStride(): number { return this.o.resLayout === 'soa' ? 1 : RES_PLANES;
   }
@@ -240,7 +264,11 @@ export class RestirKernel {
     return true;
   }
   /** Cache key of the current pipeline variant. */
-  variantKey(): string { const d = this.m6Defines(); return `${d.RS_RIS_NEE}${d.RS_MODE_B}${d.RS_DUAL_MV}${d.RS_DUPMAP}${d.RS_PLANT_T2}${d.RS_PLANT_SMOOTH_J}${m7NmPlantDefine(this.settings, 'rs_spatial_shift')}`; }
+  variantKey(): string {
+    const d = this.m6Defines();
+    const pf = perfFlagsKey(this.perfFlagSet);   // perf2: '' without flags (the pre-perf2 key)
+    return `${d.RS_RIS_NEE}${d.RS_MODE_B}${d.RS_DUAL_MV}${d.RS_DUPMAP}${d.RS_PLANT_T2}${d.RS_PLANT_SMOOTH_J}${m7NmPlantDefine(this.settings, 'rs_spatial_shift')}${pf ? `|${pf}` : ''}`;
+  }
 
   /** Compile (once) the pipeline of a standard pass; `extra` defines give test variants (their own cache key). */
   pipeline(name: RsPassName, extra: Defines = {}, colorFormat?: GPUTextureFormat): Promise<GPUComputePipeline> {
@@ -487,7 +515,7 @@ export class RestirKernel {
   }
   /** Defines of a custom pipeline (scene + env + lights + LUTs + the given pass bindings; DEBUG_NO_BINDINGS). */
   customDefines(extra: Defines, scene = true): Defines {
-    return { ...restirCommonDefines(scene ? this.scene.defines(SCENE_GROUP) : undefined, false), ...this.m6Defines(), ...extra };
+    return { ...restirCommonDefines(scene ? this.scene.defines(SCENE_GROUP) : undefined, false), ...this.m6Defines(), ...this.perfDefines(), ...extra };
   }
   /** Encode a custom pipeline with the kernel's G0 (+ one RsDispatch) and G1. */
   encodeCustom(enc: GPUCommandEncoder, pipeline: GPUComputePipeline, g2: GPUBindGroup, d: Partial<RsDispatchCpu>, work: [number, number], scene = true): void {

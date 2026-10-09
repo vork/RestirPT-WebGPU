@@ -5,7 +5,7 @@
 import { fetchScenePackage } from '../../src/core/scene/scene-package.ts';
 import type { SceneData } from '../../src/core/scene/types.ts';
 import { bitFixtureScene, boxCamera, hashF32, restirRig } from './restir-fixtures.ts';
-import { M6_OFF } from '../../src/core/render/restir/presets.ts';
+import { INTERACTIVE_PINNED, M6_OFF } from '../../src/core/render/restir/presets.ts';
 
 export interface BitsCase { name: string; scene: 'i' | 'x_quads'; preset: 'initial' | 'offline' | 'interactive'; settings: Record<string, unknown>; frames: number }
 
@@ -13,11 +13,12 @@ export const BITS_CASES: BitsCase[] = [
   { name: 'i-3.1', scene: 'i', preset: 'initial', settings: { maxBounces: 3 }, frames: 2 },
   { name: 'i-3.2', scene: 'i', preset: 'offline', settings: { maxBounces: 3, trees: 2, rounds: 2, slots: 3 }, frames: 2 },
   // M6 (restir-m6-api.md MD13): the interactive preset gained the M6 features; these cases pin them off (M6_OFF), which
-  // is the configuration the goldens were recorded with
-  { name: 'i-interactive', scene: 'i', preset: 'interactive', settings: { maxBounces: 3, ...M6_OFF }, frames: 2 },
+  // is the configuration the goldens were recorded with. perf2 WP-0: the interactive knobs are pinned explicitly
+  // (INTERACTIVE_PINNED = the preset's values; M6_OFF then turns the duplication map off as before)
+  { name: 'i-interactive', scene: 'i', preset: 'interactive', settings: { maxBounces: 3, ...INTERACTIVE_PINNED, ...M6_OFF }, frames: 2 },
   { name: 'xq-3.1', scene: 'x_quads', preset: 'initial', settings: { maxBounces: 3 }, frames: 2 },
   { name: 'xq-3.2', scene: 'x_quads', preset: 'offline', settings: { maxBounces: 3, trees: 2, rounds: 3, slots: 6 }, frames: 2 },
-  { name: 'xq-interactive', scene: 'x_quads', preset: 'interactive', settings: { maxBounces: 3, ...M6_OFF }, frames: 2 },
+  { name: 'xq-interactive', scene: 'x_quads', preset: 'interactive', settings: { maxBounces: 3, ...INTERACTIVE_PINNED, ...M6_OFF }, frames: 2 },
 ];
 
 const u32Hash = (u: Uint32Array) => hashF32(new Float32Array(u.buffer, u.byteOffset, u.length));

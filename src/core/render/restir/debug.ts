@@ -408,7 +408,9 @@ export class RestirDebugPass {
     });
     const layout = kernel.device.createPipelineLayout({ label: 'rs-debug', bindGroupLayouts: [kernel.layouts.g0, kernel.layouts.g1Scene, g2, kernel.layouts.g3] });
     const defines = {
-      ...restirCommonDefines(kernel.scene.defines(1), true), ...kernel.layoutDefines(),
+      // perf2: the kernel's perf flags at creation (the debug pass is compiled once; a package whose flag changes a
+      // layout the views read must recompile it on setPerfFlags — WP-9a owns the debug-variant switch)
+      ...restirCommonDefines(kernel.scene.defines(1), true), ...kernel.layoutDefines(), ...kernel.perfDefines(),
       RS_ARENA_BINDING: '1u', RS_ARENA_RW: false, RS_VBUF_BINDING: '2u', RS_GEO_BINDING: '3u', RS_PAIRTEX_BINDING: '4u',
       RS_VBUF_PREV_BINDING: '5u',
     };

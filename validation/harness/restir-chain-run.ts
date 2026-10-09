@@ -14,6 +14,7 @@ import type { PtEnvOptions } from '../../src/core/render/pt-kernel.ts';
 import { ChainFrameCollector, ChainRunner, type ChainMasks, type ChainSpec } from '../../src/core/render/restir/chain-runner.ts';
 import type { LightMode } from '../../src/core/render/lights-gpu.ts';
 import { RestirKernel } from '../../src/core/render/restir/kernel.ts';
+import { checkValidationPerfFlags, type PerfFlagsInput } from '../../src/core/render/restir/perf-flags.ts';
 import { writeNpz, type NpzArray } from '../../src/core/render/restir/npz.ts';
 import { RESTIR_PRESETS, restirSettings, type RestirPresetName, type RestirSettings } from '../../src/core/render/restir/presets.ts';
 import { SceneGpu } from '../../src/core/render/scene-gpu.ts';
@@ -60,6 +61,11 @@ export interface RenderRestirChainsOptions {
   settings?: Partial<RestirSettings>;
   /** Light mode override (default: the package's; restir-m6-api.md MD9). */
   lightMode?: string;
+  /** perf2 (perf2-api.md; run-batches --kernel-flags): perf flags forced on in this validation run (V-UNB Stage-B units
+   *  with a flag on). Recorded as config.perfFlags (absent without flags: config hashes of flag-free runs unchanged).
+   *  Biased flags (RS_HALF_RATE) are refused unless allowBiasedFlags. */
+  perfFlags?: PerfFlagsInput;
+  allowBiasedFlags?: boolean;
   chromeVersion?: string;
   budget?: Partial<SubmitBudget>;
 }
@@ -128,7 +134,8 @@ export async function renderRestirChains(ctx: GpuContext, o: RenderRestirChainsO
     ...(o.refresh ? { refresh: o.refresh } : {}), ...(o.boostSlots !== undefined ? { boostSlots: o.boostSlots } : {}),
     ...o.settings, ...(tPlant ? { tPlant } : {}), ...(plant ? { plant } : {}),
   });
-  const kernel = await RestirKernel.create(device, gpu, env, { settings, lightMode, env: envOpts, features, wgslLanguageFeatures });
+  const perfFlags = checkValidationPerfFlags(o.perfFlags, !!o.allowBiasedFlags);
+  const kernel = await RestirKernel.create(device, gpu, env, { settings, lightMode, env: envOpts, features, wgslLanguageFeatures, perfFlags: perfFlags.flags });
   const jitterMode = disocc ? JITTER_NONE : JITTER_IID;
   kernel.setView({ camera: { camToWorld: Array.from(f0.camera.camToWorld), yfov: f0.camera.yfov }, width: W, height: H, runSeed: o.seed >>> 0, members: E, jitterMode, jitter: [0.5, 0.5] });
   await kernel.prepare();
@@ -215,13 +222,13 @@ export async function renderRestirChains(ctx: GpuContext, o: RenderRestirChainsO
       if (r.temporalUnits === 0) errors.push(`frame ${r.t}: no temporal units emitted (T16)`);
     }
   }
-  const unbiased = UNBIASED_CHAIN_PRESETS.includes(o.preset) && !tPlant && !plant && !(settings.dupmap && settings.temporal);
+  const unbiased = UNBIASED_CHAIN_PRESETS.includes(o.preset) && !tPlant && !plant && !(settings.dupmap && settings.temporal) && !perfFlags.biased.length;
   const envInfo = env.present ? { nee: envOpts.nee !== false } : undefined;
   const config = {
     kernel: 'restir-chains', preset: o.preset, members: E, width: W, height: H, jitter: disocc ? 'none (pixel centre)' : 'iid-per-run', filter: 'box-1px',
     scene: hash.sha256, frames, testFrames, average: o.average ?? null, textureMode: 'validation', intersector: 'woop-watertight',
     maxBounces, lightMode, settings, env: envInfo ? { nee: envInfo.nee } : 'none', plants: { temporal: o.tPlants ?? [], u8: o.u8Plants ?? [], wScale: o.wScale ?? 1 },
-    masks: o.masks ?? null, mode: o.mode ?? 'chains',
+    masks: o.masks ?? null, mode: o.mode ?? 'chains', ...(perfFlags.key ? { perfFlags: perfFlags.key } : {}),
   };
   const configHash = await sha256Hex(new TextEncoder().encode(stable(config)));
   const info = describeContext(ctx) as { vendor?: string; architecture?: string; description?: string };

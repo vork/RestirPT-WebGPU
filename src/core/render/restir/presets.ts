@@ -97,6 +97,13 @@ export const RESTIR_PRESETS: Record<RestirPresetName, Partial<RestirSettings>> =
   'full-m6': { trees: 1, rounds: 1, slots: 3, diskRadius: 30, rr: false, temporal: true, boostSlots: 0, ...M6_UNBIASED },
 };
 
+/** perf2 WP-0 (perf2-plan.md §2): the interactive knobs as of the perf2 baseline, pinned explicitly by the bits rigs
+ *  (m8-bits, restir-tframe-bits, restir-m6-bits) and the perf / gate jobs (run-perf, gate-m8), so an app-default decision
+ *  (D1 rrMinBounces, D2 risM, D3 dupmap, D4 slots: INTERACTIVE_APP_DEFAULTS in renderer.ts) never moves an Anchor golden
+ *  or a baseline row. Equal to the interactive preset's values (tests/restir/perf-flags.test.ts); maxBounces is pinned
+ *  per case / scene. */
+export const INTERACTIVE_PINNED: Readonly<Pick<RestirSettings, 'slots' | 'risM' | 'rrMinBounces' | 'dupmap'>> = Object.freeze({ slots: 3, risM: 32, rrMinBounces: 3, dupmap: true });
+
 /** M6 features off (the M5 configuration of a preset): U-M4-BITS / U-M5-BITS pin the interactive cases with it. */
 export const M6_OFF: Partial<RestirSettings> = { pairing: 'disk', risNee: false, dualMv: false, dupmap: false };
 

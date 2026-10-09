@@ -2,6 +2,9 @@
 // own files): small quad scenes that exercise every light type, V1/V2/mirror materials and an env map; a PT rig with
 // deterministic accumulation (U-PT-BITS image hashes); a ReSTIR rig on top of RestirKernel; reservoir decoding.
 import { buildBvh } from '../../src/core/bvh/sah-builder.ts';
+import { buildCwbvhFromMesh } from '../../src/core/bvh/cwbvh.ts';
+import { normalizePerfFlags, type PerfFlagsInput } from '../../src/core/render/restir/perf-flags.ts';
+import type { TexturePathMode } from '../../src/core/render/textures-gpu.ts';
 import { BatchAccumulator } from '../../src/core/render/batch-accumulator.ts';
 import { createEnvResources, destroyEnvResources, type EnvGpuResources } from '../../src/core/render/env-gpu.ts';
 import { computeRenderOrigin, JITTER_IID, type JitterMode } from '../../src/core/render/frame-uniforms.ts';
@@ -101,11 +104,21 @@ export function allLightsScene(): SceneData {
 
 export interface GpuScene { device: GPUDevice; features: Set<string>; wgslLanguageFeatures: Set<string>; gpu: SceneGpu; env: EnvGpuResources; destroy(): void }
 
-export async function gpuScene(scene: SceneData): Promise<GpuScene> {
+/** Scene upload options of the test rigs (default: the validation configuration — BVH2, Woop, exact texels). perf2 WP-0:
+ *  the CWBVH-forced bits cases and Sponza-lite set bvhKind 'cwbvh' (and MT intersection, the app's). */
+export interface GpuSceneOptions { bvhKind?: 'bvh2' | 'cwbvh'; watertight?: boolean; textureMode?: TexturePathMode }
+
+export async function gpuScene(scene: SceneData, o: GpuSceneOptions = {}): Promise<GpuScene> {
   const { device, features, wgslLanguageFeatures } = await getTestGpu();
   const origin = computeRenderOrigin(scene.bounds, scene.quant);
+  const cw = o.bvhKind === 'cwbvh';
   const gpu = await SceneGpu.create(device, scene, origin, {
-    textureMode: 'validation', watertight: true, buildBvh: async (p, i) => buildBvh(p, i, { mt: true, woop: true }), features, wgslLanguageFeatures,
+    textureMode: o.textureMode ?? 'validation', watertight: o.watertight ?? true, features, wgslLanguageFeatures,
+    buildBvh: async (p, i, bo) => {
+      if (bo?.cwbvh) { const r = buildCwbvhFromMesh(p, i); return { ...r.bvh2, cwbvh: r.cw }; }
+      return buildBvh(p, i, { mt: true, woop: true });
+    },
+    ...(cw ? { bvhKind: 'cwbvh' as const } : {}),
   });
   const env = await createEnvResources(device, scene.env);
   return { device, features, wgslLanguageFeatures, gpu, env, destroy: () => { gpu.destroy(); destroyEnvResources(env); } };
@@ -152,6 +165,20 @@ export interface RestirRigOptions {
   lightMode?: LightMode;
   /** M8 (m8-perf.md §8): reservoir plane order (default the validation 'aos'). */
   resLayout?: 'aos' | 'soa';
+  /** M8 P-4: compile Mode B as the Mode-A text while no rect / disk light exists (the interactive kernel's option). */
+  modeBNeedsAreaLights?: boolean;
+  /** perf2 (perf2-api.md): perf flags of the kernel. Default: testPerfFlags() (VITE_PERF_FLAGS; none when unset). */
+  perfFlags?: PerfFlagsInput;
+  /** perf2: scene upload options (BVH kind, intersection, texture path). */
+  gpu?: GpuSceneOptions;
+}
+
+/** perf2 (perf2-api.md): flags forced on by the environment for every test rig that does not pass its own —
+ *  `VITE_PERF_FLAGS=RS_VIS_MERGE,CW_TRI_BUDGET=2 npx vitest run --project chrome …` runs the T3 fixtures, VITE_STRESS,
+ *  the bits suites etc. with the flags on (V-BIT / V-SHIFT / V-UNB of perf2-plan.md §2). */
+export function testPerfFlags(): PerfFlagsInput {
+  const env = (import.meta as unknown as { env?: Record<string, unknown> }).env;
+  return normalizePerfFlags(String(env?.VITE_PERF_FLAGS ?? ''));
 }
 
 export interface RestirRig {
@@ -163,11 +190,11 @@ export interface RestirRig {
 }
 
 export async function restirRig(scene: SceneData, W: number, H: number, o: RestirRigOptions = {}): Promise<RestirRig> {
-  const g = await gpuScene(scene);
+  const g = await gpuScene(scene, o.gpu);
   const kernel = await RestirKernel.create(g.device, g.gpu, g.env, {
     settings: restirSettings(o.preset ?? 'initial', o.settings), features: g.features, wgslLanguageFeatures: g.wgslLanguageFeatures,
     instrumentation: { dumpCandidates: o.dumpCandidates, initialDefines: o.initialDefines, extraSources: o.extraSources }, env: o.env,
-    lightMode: o.lightMode, resLayout: o.resLayout,
+    lightMode: o.lightMode, resLayout: o.resLayout, modeBNeedsAreaLights: o.modeBNeedsAreaLights, perfFlags: o.perfFlags ?? testPerfFlags(),
   });
   kernel.setView({ camera: o.cam ?? boxCamera(), width: W, height: H, runSeed: o.seed ?? 11, jitterMode: o.jitterMode ?? JITTER_IID, members: o.members, memberBase: o.memberBase });
   await kernel.prepare();

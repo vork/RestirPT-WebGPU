@@ -21,6 +21,9 @@
 //      A|B|A' (default: the package's), --restir-settings JSON (Partial<RestirSettings>: pairing, risNee, rr, dualMv,
 //      dupmap, plant {u8T2, u8RisMixed, u8TilePmf, u8CrossOcc}, …; recorded in meta.json); M8: --bvh cwbvh (the CWBVH
 //      instead of BVH2, docs/decisions/m8-perf.md §3; recorded as meta.config.bvh))
+//   perf2 (docs/decisions/perf2-api.md), --kernel restir (batches and chains): --kernel-flags A,B=2 forces perf flags on
+//      (RestirKernelOptions.perfFlags; recorded as meta.config.perfFlags; biased flags such as RS_HALF_RATE are refused
+//      unless --allow-biased-flags)
 //   --batch-offset N (pt / restir sequential): render batches N … N+batches−1 of a longer run (the same samples; the
 //      gate splits long references into GPU-lock chunks and merges the batch files)
 //   npx tsx validation/harness/run-batches.ts --package validation/scenes/ixs_d_camera_256 --kernel restir --preset full --chains 256
@@ -48,6 +51,7 @@ import { exportScenePackage } from '../../src/core/scene/scene-package.ts';
 import type { SceneData } from '../../src/core/scene/types.ts';
 import type { RenderBatchesReport, ValidationKernel } from './batch-run.ts';
 import type { RestirPlantName } from './restir-batch-run.ts';
+import { checkValidationPerfFlags } from '../../src/core/render/restir/perf-flags.ts';
 import type { RenderRestirChainsOptions, TPlantName, U8PlantName } from './restir-chain-run.ts';
 import type { RestirPresetName, RestirSettings } from '../../src/core/render/restir/presets.ts';
 import { acquireGpuLock, GPU_LOCK } from './gpu-lock.ts';
@@ -109,6 +113,8 @@ const OPTIONS = {
   'max-spp-per-dispatch': { type: 'string' },
   'restir-settings': { type: 'string' },
   bvh: { type: 'string' },
+  'kernel-flags': { type: 'string' },
+  'allow-biased-flags': { type: 'boolean', default: false },
 } as const;
 const parse = (argv?: string[]) => parseArgs({ options: { ...OPTIONS, jobs: { type: 'string' } }, ...(argv ? { args: argv } : {}) }).values;
 let args = parse();
@@ -226,6 +232,10 @@ async function main(shared?: SharedPage): Promise<number> {
   if (args['restir-settings']) {
     try { rsSettings = JSON.parse(args['restir-settings']) as Partial<RestirSettings>; } catch { console.error('--restir-settings: JSON object'); return 2; }
   }
+  if (args['kernel-flags']) {   // perf2: fail fast on unknown / biased names (the browser side checks again)
+    if (!restir) { console.error('--kernel-flags: --kernel restir only'); return 2; }
+    try { checkValidationPerfFlags(args['kernel-flags'], args['allow-biased-flags']); } catch (e) { console.error(`--kernel-flags: ${(e as Error).message}`); return 2; }
+  }
   const chains = restir && (args.chains !== undefined || args.mode === 'disocc');
   if (chains) {
     if (!['temporal', 'full', 'initial', 'initial-rr', 'offline', 'criteria2022', 'interactive', 'offline-m6', 'full-m6'].includes(args.preset!)) { console.error('--preset temporal|full|…'); return 2; }
@@ -263,6 +273,7 @@ async function main(shared?: SharedPage): Promise<number> {
             maxBounces: args['max-bounces'] !== undefined ? Number(args['max-bounces']) : undefined, env: env && env.nee !== undefined ? { nee: env.nee } : undefined,
             mode: args.mode as RenderRestirChainsOptions['mode'],
             settings: rsSettings, lightMode: args['light-mode'],
+            ...(args['kernel-flags'] ? { perfFlags: args['kernel-flags'], allowBiasedFlags: args['allow-biased-flags'] } : {}),
           };
           rep = await page.evaluate((x) => window.__harness!.renderRestirChains(x), co) as unknown as RenderBatchesReport;
         } else if (restir) {
@@ -273,6 +284,7 @@ async function main(shared?: SharedPage): Promise<number> {
             plant: args.plant as RestirPlantName | undefined, wScale: args['w-scale'] !== undefined ? Number(args['w-scale']) : undefined,
             maxBounces: args['max-bounces'] !== undefined ? Number(args['max-bounces']) : undefined, env: env && env.nee !== undefined ? { nee: env.nee } : undefined,
             settings: rsSettings, lightMode: args['light-mode'], ...(args.bvh === 'cwbvh' ? { bvhKind: 'cwbvh' as const } : {}),
+            ...(args['kernel-flags'] ? { perfFlags: args['kernel-flags'], allowBiasedFlags: args['allow-biased-flags'] } : {}),
           });
         } else rep = await page.evaluate((o) => window.__harness!.renderBatches(o), {
           run: runId, package: pkgUrl, sceneUrl: args.scene, kernel: args.kernel as ValidationKernel, spp: Number(args.spp), batches: Number(args.batches),

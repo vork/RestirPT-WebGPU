@@ -20,6 +20,7 @@ import { RestirKernel } from '../../src/core/render/restir/kernel.ts';
 import { writeNpz } from '../../src/core/render/restir/npz.ts';
 import { RESTIR_PRESETS, restirSettings, type RestirPresetName, type RestirSettings } from '../../src/core/render/restir/presets.ts';
 import { SceneGpu } from '../../src/core/render/scene-gpu.ts';
+import { checkValidationPerfFlags, type PerfFlagsInput } from '../../src/core/render/restir/perf-flags.ts';
 import { sceneHasNormalMaps } from '../../src/core/scene/tangents.ts';
 import { loadSource, stable } from './batch-run.ts';
 import { uploadFile } from './export-package.ts';
@@ -56,6 +57,10 @@ export interface RenderRestirBatchesOptions {
   watertight?: boolean;
   /** M8 (m8-perf.md §3, gate-m8 stageB): the acceleration structure (default BVH2, as every earlier gate). */
   bvhKind?: 'bvh2' | 'cwbvh';
+  /** perf2 (perf2-api.md; run-batches --kernel-flags): perf flags forced on in this validation run. Recorded as
+   *  config.perfFlags (absent without flags). Biased flags are refused unless allowBiasedFlags. */
+  perfFlags?: PerfFlagsInput;
+  allowBiasedFlags?: boolean;
   writeMean?: boolean;
 }
 
@@ -99,7 +104,8 @@ export async function renderRestirBatches(ctx: GpuContext, o: RenderRestirBatche
     : undefined;
   const settings = restirSettings(o.preset, { maxBounces, ...o.settings, ...(plant ? { plant } : {}) });
 
-  const kernel = await RestirKernel.create(device, gpu, env, { settings, lightMode, env: envOpts, features, wgslLanguageFeatures });
+  const perfFlags = checkValidationPerfFlags(o.perfFlags, !!o.allowBiasedFlags);
+  const kernel = await RestirKernel.create(device, gpu, env, { settings, lightMode, env: envOpts, features, wgslLanguageFeatures, perfFlags: perfFlags.flags });
   kernel.setView({ camera: { camToWorld: src.camera.camToWorld as number[], yfov: src.camera.yfov }, width: W, height: H, runSeed: o.seed >>> 0, members: E, jitterMode: JITTER_IID });
   await kernel.prepare();
   const runner = new RestirBatchRunner(kernel, { budget: o.budget, framesPerBatch: o.framesPerBatch, batches: o.batches, runSeed: o.seed >>> 0 });
@@ -156,11 +162,11 @@ export async function renderRestirBatches(ctx: GpuContext, o: RenderRestirBatche
 
   // T16: unbiased = an unbiased preset, no plant and no biased feature (the duplication map, restir-m6-api.md MD10)
   const plantsNamed = plantsOf(settings);
-  const unbiased = UNBIASED_PRESETS.includes(o.preset) && !plantsNamed.length && !(settings.dupmap && settings.temporal);
+  const unbiased = UNBIASED_PRESETS.includes(o.preset) && !plantsNamed.length && !(settings.dupmap && settings.temporal) && !perfFlags.biased.length;
   const config = {
     kernel: 'restir', preset: o.preset, framesPerBatch: o.framesPerBatch, members: E, width: W, height: H, jitter: 'iid-per-run', filter: 'box-1px',
     scene: src.source.packageSha256, frame: null, textureMode: 'validation', intersector: watertight ? 'woop-watertight' : 'moller-trumbore', bvh: gpu.bvhKind,
-    maxBounces, lightMode, settings, env: envInfo ? { nee: envInfo.nee } : 'none', plant: plant ?? null,
+    maxBounces, lightMode, settings, env: envInfo ? { nee: envInfo.nee } : 'none', plant: plant ?? null, ...(perfFlags.key ? { perfFlags: perfFlags.key } : {}),
   };
   const configHash = await sha256Hex(new TextEncoder().encode(stable(config)));
   const info = describeContext(ctx) as { vendor?: string; architecture?: string; description?: string };
