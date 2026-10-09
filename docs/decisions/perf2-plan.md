@@ -321,6 +321,19 @@ The first-week quick-win set is #1, #2, #9 (dn_gradient part) and #14. All are b
   - The pairing involution tests; a CPU test of the pcg4d mirror against the WGSL; an operand-swap test for `pair_A0`.
   - V-PERF including a `--pan` job, plus split sums for accept, shift, replay and resample.
 - **Dependencies:** measure after WP-1 has merged. Owns `queue.wgsl`, `layout.ts` and `pairing.wgsl`; merges before WP-6.
+- **Delivered (WP-5, branch perf2-wp5; measured on perf2 without WP-1):**
+  - Flags: `RS_DENSE_SLOTS` (released), `RS_MIS_TRIM` (released; split out of the dense flag), `RS_BOOST_GATE` and
+    `RS_PAIR_TABLE` (landed, not released: no gain). All bitwise; validation text unchanged (U-M7-BITS).
+  - Dense queue as specified, plus: `RSD_BOOST_OPEN` (RsDispatch.flags bit 12) opens the gate on frames without T1;
+    header word 30 is the gate (cleared by the temporal stage before T1); q3 = header words 12–15. Pair_accept still
+    writes the gated boost slots (NOT_ACCEPTED, no partner / A0 work), so debug views need no gate.
+  - ABBA (540p N3, 2 blocks, all four flags): Sponza −7.9 ms (−8.6 %), Cornell −1.35 ms; crossings −3.6 ms, nm_smooth
+    −3.4 ms; `pan` 0.02 m/frame Sponza −7.5 ms, Cornell −1.0 ms; 720p (1 block) Sponza −6.6 ms, Cornell −5.0 ms. Almost all
+    of it is `rs_spatial_shift` (Sponza −7.0 ms: the per-pixel slot loop was divergent); `rs_pair_accept` +0.8 ms.
+  - Dropped: `RS_DENSE_SLOTS=2` (min-thread acceptance appending both sides' items): pair_accept −0.8 ms but shift
+    +0.9 ms — pixel-adjacent items matter. The workgroup-local-compaction / fused alternatives were not built (the
+    queue already removed the shift's divergence). The global boost gate never closes on Sponza (jittered thin geometry
+    leaves disoccluded pixels every frame); a tiled gate would need a dilation by the Gaussian maps' |d| ≤ 127 px.
 
 ### WP-6 Temporal reuse (M, about 1.5 weeks, after WP-5 merges)
 - **Items:** #11.

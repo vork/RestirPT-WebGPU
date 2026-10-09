@@ -16,7 +16,11 @@
 fn rs_args() {
   let q = (rsDispatch.flags >> RSD_QUEUE_SHIFT) & 3u;
   let counter = atomicLoad(&rsArena.hdr[4u * q]);
+#if RS_DENSE_SLOTS
+  let cap = select(queue_capacity_q(q), queue_capacity(), q == RS_Q_DENSE);   // q3 shares q0's region (WP-5)
+#else
   let cap = queue_capacity_q(q);
+#endif
   let n = min(counter, cap);
   atomicStore(&rsArena.hdr[4u * q + 1u], n);
   atomicStore(&rsArena.hdr[4u * q + 2u], cap);

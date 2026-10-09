@@ -28,6 +28,8 @@ the packages never collide:
 | `CW_EXP_OR` | WP-3 | bitwise | CWBVH exponent-OR child-box byte decode (added by WP-3, step 3e) |
 | `RS_DENSE_SLOTS` | WP-5 | bitwise | dense spatial slot-item queue |
 | `RS_BOOST_GATE` | WP-5 | bitwise | boost-slot gating |
+| `RS_MIS_TRIM` | WP-5 | bitwise | spatial write-back trimming (added by WP-5) |
+| `RS_PAIR_TABLE` | WP-5 | bitwise | pairing transforms per workgroup, exact fast modulo, `rs_pix` single-member fast path (added by WP-5) |
 | `RS_TSEL_FOLD` | WP-6 | bitwise | T4 split / phase B folded into T4 |
 | `RS_TSTATE_SOA` | WP-6 | bitwise | tState plane-major |
 | `RS_AGG_COUNTERS` | WP-6 | bitwise | subgroup-aggregated counters |

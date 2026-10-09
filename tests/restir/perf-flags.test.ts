@@ -15,7 +15,9 @@ const RESERVED = ['RS_VIS_MERGE', 'RS_RIS_HOIST', 'RS_NEE_SITE', 'RS_LAST_ANYHIT
   'CW_TRI_BUDGET', 'BVH_ALPHA_BIT', 'BVH2_PRIV_STACK', 'RS_DENSE_SLOTS', 'RS_BOOST_GATE', 'RS_TSEL_FOLD', 'RS_TSTATE_SOA', 'RS_AGG_COUNTERS',
   'RS_NO_PLANTS', 'RS_NO_DIAG', 'MAT_VARIANTS', 'RS_PRIMARY_EXT', 'RS_HALF_RATE',
   'RS_REFRESH_VIS',  // WP-1's optional refresh merge (perf2-plan.md WP-1 "separate flag")
-  'BVH_CONST_LOOPS', 'CW_EXP_OR'];   // WP-3c (constant-bound traversal loops) and WP-3e (exponent-OR decode), added by WP-3
+  'BVH_CONST_LOOPS', 'CW_EXP_OR',   // WP-3c (constant-bound traversal loops) and WP-3e (exponent-OR decode), added by WP-3
+  // added by WP-5 (separately measurable parts of #6 / #16)
+  'RS_MIS_TRIM', 'RS_PAIR_TABLE'];
 
 describe('perf-flag registry', () => {
   it('reserves every WP-0 name and RS_HALF_RATE', () => {

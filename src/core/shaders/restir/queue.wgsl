@@ -44,6 +44,22 @@ fn queue_item_word(ai: u32, s: u32) -> u32 { return (ai << 3u) | s; }
 fn queue_item_ai(w: u32) -> u32 { return w >> 3u; }
 fn queue_item_slot(w: u32) -> u32 { return w & 7u; }
 
+#if RS_DENSE_SLOTS || RS_BOOST_GATE
+// perf2 WP-5 (docs/decisions/perf2-plan.md §2 WP-5; TS mirror layout.ts WP5_CONSTS, checked by tests/restir/queue.test.ts).
+//   q3 (RS_Q_DENSE, RS_DENSE_SLOTS): the non-replay spatial slot items of the round, appended workgroup-aggregated by
+//   rs_pair_accept from the TOP of the item region (item i at arena_item_word(queue_capacity() − 1 − i)); q0's replay
+//   items stay at the bottom. Both share q0's region: together at most one item per (pixel, slot) = queue_capacity().
+//   RS_HDR_BOOST_GATE (RS_BOOST_GATE): header word set by T1 (atomicOr) when a non-background pixel is disoccluded;
+//   cleared by the temporal stage before T1.
+//   RSD_BOOST_OPEN (RsDispatch.flags): the frame ran no T1 (a non-advanced frame: tState and the gate word are stale),
+//   so the gate is open (the boost slots are evaluated as without the flag).
+const RS_Q_DENSE: u32 = 3u;
+const RS_HDR_BOOST_GATE: u32 = 30u;
+const RSD_BOOST_OPEN: u32 = 4096u;
+/// Arena word of dense item i (q3, top end of the item region).
+fn arena_dense_item_word(i: u32) -> u32 { return arena_item_word(queue_capacity() - 1u - i); }
+#endif
+
 /// J-word predicates (D7, §2.6; integer compares only).
 fn jw_accepted(jw: u32) -> bool { return jw != JW_NOT_ACCEPTED; }
 /// VALID: the f32 bits of a finite J > 0 (not FAILED, PENDING or NOT_ACCEPTED).
