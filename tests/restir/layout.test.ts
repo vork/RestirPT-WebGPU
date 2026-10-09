@@ -204,4 +204,23 @@ describe('U-RES-1 (M6): m6-types.wgsl ≡ RS_M6_CONSTS; inline budget of the M6 
     expect(n.sample).toBeLessThanOrEqual(1);
     expect(n.mat).toBeLessThanOrEqual(2);
   });
+
+  // perf2 WP-2b (RS_NEE_SITE): rs_initial's path tree traces visibility from two sites (NEE shadow + k=B retest; tree-pair
+  // + emitter-rc retest) instead of five; Mode B's crossings keep their own two
+  for (const modeB of [false, true]) {
+    it(`rs_initial (M6${modeB ? '' : ' Mode-A text'}) + RS_NEE_SITE: trace_any_ex sites 5 → 2 in the path tree`, () => {
+      const def = RS_PASSES.rs_initial;
+      const ex: Defines = { ...M6, RS_MODE_B: modeB ? 1 : 0 };
+      const cnt = (extra: Defines) => {
+        const code = composeWgsl(def.file, { sources: shaderSources, defines: restirDefines('rs_initial', { sceneDefines: SCENE_DEFINES, debug: true, extra }) }).code;
+        return { any: inlineCount(code, def.entry, 'trace_any_ex'), closest: inlineCount(code, def.entry, 'trace_closest_ex'), vr: inlineCount(code, def.entry, 'vis_ray') };
+      };
+      const off = cnt(ex);
+      const on = cnt({ ...ex, RS_NEE_SITE: 1 });
+      console.log(`[RS_NEE_SITE] modeB=${modeB} off ${JSON.stringify(off)} on ${JSON.stringify(on)}`);
+      expect(on.vr).toBe(2);
+      expect(off.any - on.any).toBe(3);
+      expect(on.closest).toBe(off.closest);
+    });
+  }
 });
