@@ -64,7 +64,7 @@ import { withGpuLockSync } from './gpu-lock.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const { values: args } = parseArgs({ options: {
-  milestone: { type: 'string', default: 'M0' }, only: { type: 'string' },
+  milestone: { type: 'string', default: 'M0' }, only: { type: 'string' }, 'kernel-flags': { type: 'string' },
   'pilot-only': { type: 'boolean', default: false }, 'write-budget': { type: 'boolean', default: false },
   'prerender-ptrefs': { type: 'boolean', default: false }, part: { type: 'string' }, all: { type: 'boolean', default: false }, 'reuse-chains': { type: 'string' }, plants: { type: 'string' }, 'plant-seed-offset': { type: 'string' }, 'restir-seed-offset': { type: 'string' }, 'reuse-run': { type: 'string' },
 } });
@@ -425,7 +425,7 @@ const gates: Record<string, () => void> = {
 };
 gates.M8 = () => {
   if (args.part && !M8_PARTS.includes(args.part as M8Part)) { record(`--part ${args.part}`, false, `unknown; M8 parts: ${M8_PARTS.join(', ')}`); return; }
-  milestoneM8(record, { part: args.part as M8Part | undefined, only: args.only ? new Set(args.only.split(',')) : undefined });
+  milestoneM8(record, { part: args.part as M8Part | undefined, only: args.only ? new Set(args.only.split(',')) : undefined, kernelFlags: args['kernel-flags'] });
 };
 
 // PLAN §5 M8 exit: `validate --all` = every milestone gate in order (unbiased validation mode; the M6 Gate-5 and M5.5

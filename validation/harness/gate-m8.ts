@@ -1,5 +1,5 @@
 // M8 milestone gate (docs/decisions/m8-perf.md §13; PLAN §5 M8):
-// `npm run validate -- --milestone M8 [--part core|stageB|perf] [--only id,pkg]`.
+// `npm run validate -- --milestone M8 [--part core|stageB|perf] [--only id,pkg] [--kernel-flags A,B]` (stageB: V-UNB of perf2).
 //   core    Gate 0: typecheck; cpu lane (U-M7-BITS: every validation pipeline composes to the M6 / M7 text with the M8
 //           code, cwbvh encoder, dynamic resolution, env-compact static check + every earlier CPU test); python tests;
 //           Chrome: U-M8-BITS / U-M8-BITS (SoA) / U-M8-PTBITS / U-M8-MODEB / P-4 switching (m8-bits), T12 on BVH2 and
@@ -25,6 +25,7 @@ import { withGpuLockSync } from './gpu-lock.ts';
 import { pinnedJob, withExtra } from './run-perf.ts';
 import type { PerfOptions } from './perf-run.ts';
 import type { RestirSettings } from '../../src/core/render/restir/presets.ts';
+import { perfFlagsKey } from '../../src/core/render/restir/perf-flags.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const PY = path.join(ROOT, 'validation/.venv/bin/python');
@@ -133,12 +134,14 @@ function perf(dir: string, add: Add): Record<string, any> {
 
 // ------------------------------------------------------------------------------------------------ the gate
 
-export interface M8Options { part?: Part; only?: Set<string> }
+/** `kernelFlags` (perf2 V-UNB, perf2-api.md §1): the stageB units with these perf flags forced on the ReSTIR side
+ *  (`--kernel-flags`; unit ids get `+<flags>`, T16 checks meta.config.perfFlags). δ and nUnits() are unchanged. */
+export interface M8Options { part?: Part; only?: Set<string>; kernelFlags?: string }
 
 export function milestoneM8(record: Rec, o: M8Options = {}): boolean {
   const t0 = performance.now();
   const parts = o.part ? [o.part] : PARTS;
-  const runId = `m8-gate-${o.part ?? 'all'}-${stamp()}`;
+  const runId = `m8-gate-${o.part ?? 'all'}${o.kernelFlags ? `-${safe(perfFlagsKey(o.kernelFlags))}` : ''}-${stamp()}`;
   const dir = path.join('validation/out', runId);
   mkdirSync(path.join(ROOT, dir), { recursive: true });
   const steps: { name: string; ok: boolean; seconds: number; data?: unknown; detail?: string }[] = [];
@@ -165,8 +168,16 @@ export function milestoneM8(record: Rec, o: M8Options = {}): boolean {
   for (const part of parts) {
     if (part === 'core') { if (!o.only) gate0(dir, runId, add, runStep); continue; }
     if (part === 'stageB') {
-      for (const u of STAGE_B_UNITS.filter((x) => !o.only || o.only.has(x.id) || o.only.has(x.pkg))) {
+      const kf = o.kernelFlags ? perfFlagsKey(o.kernelFlags) : '';
+      for (const u0 of STAGE_B_UNITS.filter((x) => !o.only || o.only.has(x.id) || o.only.has(x.pkg))) {
+        const u: SeqUnit = kf ? { ...u0, id: `${u0.id}+${kf}`, extraArgs: [...(u0.extraArgs ?? []), '--kernel-flags', kf] } : u0;
         const res = seqUnit(u, dir, runId, nUnits(), add, false);
+        if (kf) {
+          const m = res.restir_dir ? tryJson(path.join(res.restir_dir, 'meta.json')) : undefined;
+          const got = perfFlagsKey(m?.config?.perfFlags ?? '');
+          if (got !== kf) { res.ok = false; (res.t16 ??= []).push(`ReSTIR meta.config.perfFlags '${got}' (want '${kf}')`); }
+          add(`T16 ${u.id}: ReSTIR ran with the perf flags`, got === kf, 0, undefined, `perfFlags ${got}`);
+        }
         // T16 (M8): the ReSTIR side really ran on the CWBVH
         const meta = res.restir_dir ? tryJson(path.join(res.restir_dir, 'meta.json')) : undefined;
         const bvhOk = meta?.config?.bvh === 'cwbvh';
