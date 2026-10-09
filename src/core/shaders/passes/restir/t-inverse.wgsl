@@ -13,17 +13,9 @@
 
 @compute @workgroup_size(64)
 fn rs_t_inverse(@builtin(workgroup_id) wid: vec3u, @builtin(num_workgroups) nwg: vec3u, @builtin(local_invocation_index) lid: u32) {
-#if RS_TSEL_FOLD
-  // perf2 WP-6: q2 (replay items, RS_REPLAY = 1) or q3 (non-replay items, RS_REPLAY = 0), RsDispatch queue field
-  let tq = tinv_queue();
-  let i = queue_item_chunk(tq, wid, nwg, lid, rsDispatch.treeBase, rsDispatch.treeCount);
-  if (i == 0xFFFFFFFFu) { return; }
-  let q = queue_item_ai(arena_word(arena_item_word(tinv_item_index(tq, i))));
-#else
   let i = queue_item_chunk(RS_Q_INV, wid, nwg, lid, rsDispatch.treeBase, rsDispatch.treeCount);
   if (i == 0xFFFFFFFFu) { return; }
   let q = queue_item_ai(arena_word(arena_item_word(queue_item_base(RS_Q_INV) + i)));
-#endif
   let qP = ts_load(q, TSW_QPRIME);
   var flags = ts_load(q, TSW_FLAGS) | TS_INV_DONE;
   let src = tsrc_load(q, 1u, SFX_INV, RS_FS_PREV);

@@ -64,23 +64,19 @@ export class TemporalStage implements RestirStage {
           encode: (enc) => {
             const d = { t, passId, treeBase: ci * chunk, treeCount: chunk };
             k.encodePass(enc, 'rs_args', args, gArgs, { ...d, flags: q << K.RSD_QUEUE_SHIFT }, [1, 1]);
-            // perf2 WP-6: the consumer gets the queue field too (q2 / q3 of the split T4; 0 bits for every other use)
+            // perf2 WP-6: T4 carries RSD_TFOLD (0 for every other use)
             k.encodePass(enc, name, pipe, g2, flags ? { ...d, flags } : d, { indirect: res.args, offset: 16 * q });
           },
         });
       }
     };
     const fold = !!k.perfFlags.RS_TSEL_FOLD;
-    const split = k.perfFlags.RS_TSEL_FOLD === 2;
-    const qNr = WP6_CONSTS.RS_Q_INV_NR;
     const boostGate = !!k.perfFlags.RS_BOOST_GATE;
     const clearQueues = (enc: GPUCommandEncoder) => {
       enc.clearBuffer(res.arena, 16 * K.RS_Q_FWD, 8);
       enc.clearBuffer(res.arena, 16 * K.RS_Q_INV, 8);
       // perf2 WP-5 (RS_BOOST_GATE): T1 sets the any-disocclusion word; it is cleared here, before T1, every frame
       if (boostGate) enc.clearBuffer(res.arena, 4 * WP5_CONSTS.RS_HDR_BOOST_GATE, 4);
-      // perf2 WP-6 (RS_TSEL_FOLD = 2): q3 = the non-replay part of Q_i during the temporal stage
-      if (split) enc.clearBuffer(res.arena, 16 * qNr, 8);
     };
     // The queue clear rides on the first unit of the stage (a unit of its own would be submitted alone until measured, E1).
     const pre = hist ? refreshFwdUnits(k, t) : [];
@@ -94,17 +90,10 @@ export class TemporalStage implements RestirStage {
     perPixel('rs_t_select_a', 'rs_t_select', select, gSelect, { passId: K.RS_PASS_TEMPORAL, round: 0 });
     if (!hist) return units;
     units.push(...refreshInvUnits(k, t));
-    if (!fold) {
-      indirect('rs_t_inverse', 'rs_t_inverse', inverse, gInverse, K.RS_Q_INV, K.RS_PASS_T_INV);
-      perPixel('rs_t_select_b', 'rs_t_select', select, gSelect, { passId: K.RS_PASS_TEMPORAL, round: 1, flags: K.RSD_PHASE_B });
-      return units;
-    }
-    // perf2 WP-6 (RS_TSEL_FOLD): phase B folded into T4 for contribution MIS (RSD_TFOLD), where the phase-B dispatch
-    // only records the debug views and is emitted only while a ReSTIR view or the probe is on. RS_TSEL_FOLD = 2: T4
-    // over q2 (replay items) and q3 (non-replay items), same pipeline (coherent workgroups)
-    const tfold = tselFoldActive(k) ? WP6_CONSTS.RSD_TFOLD : 0;
-    indirect('rs_t_inverse', 'rs_t_inverse', inverse, gInverse, K.RS_Q_INV, K.RS_PASS_T_INV, (K.RS_Q_INV << K.RSD_QUEUE_SHIFT) | tfold);
-    if (split) indirect('rs_t_inverse_nr', 'rs_t_inverse', inverse, gInverse, qNr, K.RS_PASS_T_INV, (qNr << K.RSD_QUEUE_SHIFT) | tfold);
+    // perf2 WP-6 (RS_TSEL_FOLD): phase B folded into T4 for contribution MIS (RSD_TFOLD, tselFoldActive); the phase-B
+    // dispatch then only records the debug views and is emitted only while a ReSTIR view or the probe is on
+    const tfold = fold && tselFoldActive(k) ? WP6_CONSTS.RSD_TFOLD : 0;
+    indirect('rs_t_inverse', 'rs_t_inverse', inverse, gInverse, K.RS_Q_INV, K.RS_PASS_T_INV, tfold);
     if (!tfold || restirDebugActive(k)) {
       perPixel('rs_t_select_b', 'rs_t_select', select, gSelect, { passId: K.RS_PASS_TEMPORAL, round: 1, flags: K.RSD_PHASE_B | tfold });
     }

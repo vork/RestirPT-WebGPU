@@ -22,13 +22,6 @@ const DMV_C_CAP: f32 = 1.0;
 #endif
 
 /// Ring offset k (0…7): (1,0),(1,1),(0,1),(−1,1),(−1,0),(−1,−1),(0,−1),(1,−1).
-#if RS_AGG_COUNTERS
-/// perf2 WP-6 (codegen checklist: no return in switch): the same offsets from two 2-bit-per-entry tables (offset + 1).
-fn tpick_ring(k: u32) -> vec2i {
-  let sh = 2u * (k & 7u);
-  return vec2i(i32((36890u >> sh) & 3u) - 1, i32((425u >> sh) & 3u) - 1);
-}
-#else
 fn tpick_ring(k: u32) -> vec2i {
   switch (k & 7u) {
     case 0u: { return vec2i(1, 0); }
@@ -41,7 +34,6 @@ fn tpick_ring(k: u32) -> vec2i {
     default: { return vec2i(1, -1); }
   }
 }
-#endif
 
 /// The pick hash h = pcg4d(runSeed ^ member·φ, t, localIdx, STREAM_TEMPORAL_PICK) (§5).
 fn tpick_hash(p: RsPix) -> vec4u {

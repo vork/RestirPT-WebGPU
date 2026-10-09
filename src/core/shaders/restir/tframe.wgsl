@@ -125,23 +125,10 @@ fn queue_item_base(q: u32) -> u32 { return select(0u, rs_atlas_pixels(), q == RS
 fn queue_capacity_q(q: u32) -> u32 { return select(rs_atlas_pixels(), queue_capacity(), q == RS_Q_SPATIAL); }
 
 #if RS_TSEL_FOLD
-// perf2 WP-6 (RS_TSEL_FOLD; TS mirror layout.ts WP6_CONSTS). RSD_TFOLD (RsDispatch.flags of T4 and T3 phase B):
-// contribution MIS without a check mode, T4 finishes the s = c pixel itself (phase B folded into T4) and phase B only
-// records the debug views. RS_TSEL_FOLD = 2 also splits Q_i by the replay predicate of its record res[w][q]
-// (shift.wgsl res_needs_replay): replay items stay on q2 (bottom of the Q_i region [P, 2P)), non-replay items go on
-// q3 (RS_Q_INV_NR, header words 12–15, free during the temporal stage: the spatial stage clears q3 before it uses it)
-// from the TOP of the same region (item i at P + P − 1 − i); together at most P items. Both queues run the SAME T4
-// pipeline (an RS_REPLAY = 0 T4 for q3 changed bits: the Metal compiler contracts the shift differently there);
-// rs_refresh_inv covers both.
-const RS_Q_INV_NR: u32 = 3u;
+// perf2 WP-6 (RS_TSEL_FOLD; TS mirror layout.ts WP6_CONSTS.RSD_TFOLD): RsDispatch flag of T4 and T3 phase B for
+// contribution MIS without a check mode: T4 finishes the s = c pixel itself (restir/tfold.wgsl, phase B folded into
+// T4) and phase B only records the debug views.
 const RSD_TFOLD: u32 = 1048576u;
-/// Item region index of item i of Q_i (q2) or its non-replay part (q3).
-fn tinv_item_index(q: u32, i: u32) -> u32 {
-  let P = rs_atlas_pixels();
-  return select(P + i, P + P - 1u - i, q == RS_Q_INV_NR);
-}
-/// Queue of the T4 dispatch / refresh_inv dispatch (RsDispatch.flags queue field; q2 or q3).
-fn tinv_queue() -> u32 { return select(RS_Q_INV, RS_Q_INV_NR, ((rsDispatch.flags >> RSD_QUEUE_SHIFT) & 3u) == RS_Q_INV_NR); }
 #endif
 
 #if RS_ARENA_BINDING

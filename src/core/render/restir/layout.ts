@@ -74,9 +74,9 @@ const K6 = RS_M6_CONSTS;
 /** perf2 WP-5 constants (shaders/restir/queue.wgsl under RS_DENSE_SLOTS / RS_BOOST_GATE; tests/restir/queue.test.ts):
  *  q3 = the dense non-replay spatial slot items (top end of q0's item region); header word 30 = the boost gate. */
 export const WP5_CONSTS = { RS_Q_DENSE: 3, RS_HDR_BOOST_GATE: 30, RSD_BOOST_OPEN: 4096 } as const;
-/** perf2 WP-6 constants (shaders/restir/tframe.wgsl under RS_TSEL_FOLD; tests/restir/wp6.test.ts): q3 = the non-replay
- *  part of Q_i during the temporal stage (top end of Q_i's item region [P, 2P)); RSD_TFOLD = T3 phase B folded into T4. */
-export const WP6_CONSTS = { RS_Q_INV_NR: 3, RSD_TFOLD: 1048576 } as const;
+/** perf2 WP-6 constant (shaders/restir/tframe.wgsl under RS_TSEL_FOLD): RsDispatch flag RSD_TFOLD = T3 phase B folded
+ *  into T4 (contribution MIS without a check mode). */
+export const WP6_CONSTS = { RSD_TFOLD: 1048576 } as const;
 
 export const RS_TECH = { nee: K.RS_TECH_NEE, bsdfTri: K.RS_TECH_BSDF_TRI, bsdfAnalytic: K.RS_TECH_BSDF_ANALYTIC, bsdfEnv: K.RS_TECH_BSDF_ENV } as const;
 export const RS_TECH_NAMES = ['NEE', 'BSDF_TRI', 'BSDF_ANALYTIC', 'BSDF_ENV'] as const;

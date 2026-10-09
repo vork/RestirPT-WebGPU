@@ -10,7 +10,7 @@
 // them on any temporal frame is correct, only slower. Bind groups are built with the parity and roles of the frame
 // being built (units of a frame are encoded before the next advance(), TD26).
 import type { RestirKernel, WorkUnit } from './kernel.ts';
-import { RS_WGSL_CONSTS as K, WP6_CONSTS } from './layout.ts';
+import { RS_WGSL_CONSTS as K } from './layout.ts';
 
 /** Indirect-args byte offset of queue q (rs_args writes rsArgs[4q … 4q+3]). */
 const argsOffset = (q: number): number => 16 * q;
@@ -49,16 +49,15 @@ export function refreshInvUnits(k: RestirKernel, t: number, flags?: number): Wor
   const bands = k.rowBands();
   const P = a.atlasW * a.atlasH;
   const chunk = bands.length > 1 ? Math.max(1, Math.ceil(P / bands.length)) : 0;
-  // perf2 WP-6 (RS_TSEL_FOLD = 2): Q_i is split into q2 (replay) and q3 (non-replay); the refresh covers both
-  const queues = k.perfFlags?.RS_TSEL_FOLD === 2 ? [K.RS_Q_INV, WP6_CONSTS.RS_Q_INV_NR] : [K.RS_Q_INV];
-  return queues.flatMap((q) => bands.map(([r0, r1], ci) => ({
-    label: `rs_refresh_inv[${q === K.RS_Q_INV ? '' : `q${q}:`}${ci}]`, costHint: a.atlasW * (r1 - r0) * 2,
+  const qFlags = K.RS_Q_INV << K.RSD_QUEUE_SHIFT;
+  return bands.map(([r0, r1], ci) => ({
+    label: `rs_refresh_inv[${ci}]`, costHint: a.atlasW * (r1 - r0) * 2,
     encode: (enc: GPUCommandEncoder) => {
-      const d = { t, passId: K.RS_PASS_T_REFRESH_INV, treeBase: ci * chunk, treeCount: chunk, flags: q << K.RSD_QUEUE_SHIFT };
+      const d = { t, passId: K.RS_PASS_T_REFRESH_INV, treeBase: ci * chunk, treeCount: chunk, flags: qFlags };
       k.encodePass(enc, 'rs_args', args, g2Args, d, [1, 1]);
-      k.encodePass(enc, 'rs_refresh_inv', pl, g2, d, { indirect: res.args, offset: argsOffset(q) });
+      k.encodePass(enc, 'rs_refresh_inv', pl, g2, d, { indirect: res.args, offset: argsOffset(K.RS_Q_INV) });
     },
-  })));
+  }));
 }
 
 // ------------------------------------------------------------------------------------------------ CPU mirrors (tests)

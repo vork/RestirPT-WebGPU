@@ -108,26 +108,6 @@ fn tsel_empty(p: RsPix, c: f32) {
 /// c_p in the MIS denominators (plant TP_CP_PLUS1: c_p + 1, detected by rung 3.4).
 fn tsel_cpw(cP: f32) -> f32 { return select(cP, cP + 1.0, rs_tplant(TP_CP_PLUS1)); }
 
-#if RS_TSEL_FOLD
-/// perf2 WP-6 (RS_TSEL_FOLD): queue pixel q for T4 on q2. RS_TSEL_FOLD = 2 (split): on q2 if its record res[w][q]
-/// needs replay, else on q3 (item region top end, restir/tframe.wgsl tinv_item_index); both run the same T4 pipeline.
-/// Same predicate as shift.wgsl res_needs_replay (shift.wgsl cannot be included here: no scene group); read after this
-/// thread's own write-back of res[w][q].
-fn tsel_queue_inv(q: u32) {
-  let f = resout_plane(q, RP_SEED).z;
-  let k = rf_k(f);
-  let replay = !res_empty(f) && (k > 2u || k == 0u);
-#if RS_TSEL_FOLD == 2
-  let qq = select(RS_Q_INV_NR, RS_Q_INV, replay);
-#else
-  let qq = RS_Q_INV;
-#endif
-  let i = atomicAdd(&rsArena.hdr[4u * qq], 1u);
-  if (i >= rs_atlas_pixels()) { atomicStore(&rsArena.hdr[4u * qq + 3u], 1u); return; }
-  rsArena.words[arena_item_word(tinv_item_index(qq, i))] = queue_item_word(q, 0u);
-}
-#endif
-
 fn tsel_phase_a(p: RsPix, flags0: u32) {
   let q = p.ai;
   var flags = flags0;
@@ -147,11 +127,7 @@ fn tsel_phase_a(p: RsPix, flags0: u32) {
   ts_storef(q, TSW_WC, wc);
   ts_storef(q, TSW_WP, wp);
   if (rs_tmode(TM_TALBOT)) {
-#if RS_TSEL_FOLD
-    tsel_queue_inv(q);
-#else
     queue_append(RS_Q_INV, queue_item_word(q, 0u));
-#endif
     rs_count(RSC_T_INV_QUEUED, 1u);
     ts_store(q, TSW_FLAGS, flags | TS_INV_QUEUED);
     return;
@@ -175,11 +151,7 @@ fn tsel_phase_a(p: RsPix, flags0: u32) {
     rs_count(RSC_T_SEL_P, 1u);
     if (rs_tmode(TM_PP_RECOMPUTE)) {
       res_select_temporal(q, qP, 0.0, 1.0 + cP);         // W written in phase B from π_p(Y_p) of T4
-#if RS_TSEL_FOLD
-      tsel_queue_inv(q);
-#else
       queue_append(RS_Q_INV, queue_item_word(q, 0u));
-#endif
       rs_count(RSC_T_INV_QUEUED, 1u);
       ts_store(q, TSW_FLAGS, flags | TS_SEL_P | TS_INV_QUEUED);
       return;
@@ -194,11 +166,7 @@ fn tsel_phase_a(p: RsPix, flags0: u32) {
       flags |= TS_EMPTY_OUT;
     }
     if (rs_tmode(TM_ROBUST)) {
-#if RS_TSEL_FOLD
-      tsel_queue_inv(q);
-#else
       queue_append(RS_Q_INV, queue_item_word(q, 0u));
-#endif
       rs_count(RSC_T_INV_QUEUED, 1u);
       flags |= TS_INV_QUEUED | TS_ROBUST;
     }
@@ -206,11 +174,7 @@ fn tsel_phase_a(p: RsPix, flags0: u32) {
     if ((flags & TS_INV_QUEUED) == 0u) { rsdbg_temporal(p.px, q, 0u); }
     return;
   }
-#if RS_TSEL_FOLD
-  tsel_queue_inv(q);
-#else
   queue_append(RS_Q_INV, queue_item_word(q, 0u));
-#endif
   rs_count(RSC_T_INV_QUEUED, 1u);
   ts_store(q, TSW_FLAGS, flags | TS_SEL_C | TS_INV_QUEUED);
 }
