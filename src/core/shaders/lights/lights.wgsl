@@ -58,8 +58,13 @@ struct LightSlot {
   envEntry: u32,       // alias entry of ENV_ID (env NEE on), LIGHT_NONE when absent
   curToPrevOff: u32,
   prevToCurOff: u32,
+#if RS_LIGHT_REC4
+  areaOff: u32,        // perf2 WP-4a: rect / disk light indices (stable-id order), areaCount entries
+  areaCount: u32,
+#else
   pad0: u32,
   pad1: u32,
+#endif
 }
 
 struct LightsParams {
@@ -76,6 +81,59 @@ struct LightsParams {
 }
 
 @group($LIGHTS_GROUP) @binding($LIGHTS_BINDING) var<uniform> lightsParams: LightsParams;
+#if RS_LIGHT_REC4
+// perf2 WP-4a (interactive only): `records` as array<vec4u>. lights-gpu.ts lays out every light record (28 words) and
+// every alias pair on a 16 B boundary, so a record is 7 vec4 loads (one robustness clamp each instead of 28) and an
+// alias pair one load. Every other word goes through rec_u32 (the same bits as records[w] in the array<u32> text).
+#if !RECORDS_EXTERNAL
+@group($LIGHTS_GROUP) @binding($LIGHTS_BINDING + 1) var<storage, read> records: array<vec4u>;
+#endif
+
+fn rec_u32(w: u32) -> u32 { return records[w >> 2u][w & 3u]; }
+fn rec_f32(w: u32) -> f32 { return bitcast<f32>(rec_u32(w)); }
+fn rec_vec3(w: u32) -> vec3f { return vec3f(rec_f32(w), rec_f32(w + 1u), rec_f32(w + 2u)); }
+
+fn light_load(slot: LightSlot, i: u32) -> LightRec {
+  let b = (slot.lightOff >> 2u) + i * (LIGHT_REC_WORDS / 4u);
+  let q0 = records[b];
+  let q1 = records[b + 1u];
+  let q2 = records[b + 2u];
+  let q3 = records[b + 3u];
+  let q4 = records[b + 4u];
+  let q5 = records[b + 5u];
+  let q6 = records[b + 6u];
+  var r: LightRec;
+  r.pos = bitcast<vec3f>(q0.xyz);     r.kind = q0.w;
+  r.axisU = bitcast<vec3f>(q1.xyz);   r.halfU = bitcast<f32>(q1.w);
+  r.axisV = bitcast<vec3f>(q2.xyz);   r.halfV = bitcast<f32>(q2.w);
+  r.normal = bitcast<vec3f>(q3.xyz);  r.area = bitcast<f32>(q3.w);
+  r.emit = bitcast<vec3f>(q4.xyz);    r.flags = q4.w;
+  r.cosHalf = bitcast<f32>(q5.x);     r.spotSmooth = bitcast<f32>(q5.y);
+  r.spreadNorm = bitcast<f32>(q5.z);  r.tanHalfSpread = bitcast<f32>(q5.w);
+  r.stableId = q6.x;                  r.invArea = bitcast<f32>(q6.y);
+  return r;
+}
+
+/// Kind (LT_*) of analytic light i of a slot (word 3 of its record).
+fn light_kind(slot: LightSlot, i: u32) -> u32 { return records[(slot.lightOff >> 2u) + i * (LIGHT_REC_WORDS / 4u)].w; }
+
+/// Light index of the k-th rect / disk light of a slot (k < slot.areaCount; stable-id order). For WP-2e.
+fn area_light_index(slot: LightSlot, k: u32) -> u32 { return rec_u32(slot.areaOff + k); }
+
+fn light_is_delta(r: LightRec) -> bool { return (r.flags & LF_DELTA) != 0u; }
+
+/// Emissive-triangle entry i: (primId, area).
+fn emissive_tri(i: u32) -> vec2u {
+  let b = lightsParams.triOff + 2u * i;
+  return vec2u(rec_u32(b), rec_u32(b + 1u));
+}
+
+/// Emissive-triangle entry index of primId, LIGHT_NONE if the triangle is not an NEE entry (emission_sampling NONE).
+fn emissive_entry_of_prim(primId: u32) -> u32 {
+  if (lightsParams.triCount == 0u) { return LIGHT_NONE; }
+  return rec_u32(lightsParams.primMapOff + primId);
+}
+#else
 #if !RECORDS_EXTERNAL
 @group($LIGHTS_GROUP) @binding($LIGHTS_BINDING + 1) var<storage, read> records: array<u32>;
 #endif
@@ -110,6 +168,7 @@ fn emissive_entry_of_prim(primId: u32) -> u32 {
   if (lightsParams.triCount == 0u) { return LIGHT_NONE; }
   return records[lightsParams.primMapOff + primId];
 }
+#endif // RS_LIGHT_REC4
 
 /// One NEE light sample in the product measure μ (math.md#measure). Filled by the per-type samplers
 /// (point/spot/area/sun/emissive.wgsl) and completed (entry, q, p1) by measure.wgsl light_sample().

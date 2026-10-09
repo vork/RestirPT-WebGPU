@@ -82,7 +82,11 @@ fn lt_translate(entry: u32, fsFrom: u32, fsTo: u32) -> u32 {
   if (entry == sf.envEntry) { return st.envEntry; }
   if (entry < sf.nAnalytic) {
     let cur = lightsParams.cur;
+#if RS_LIGHT_REC4
+    return rec_u32(select(cur.curToPrevOff, cur.prevToCurOff, fsFrom == RS_FS_PREV) + entry);
+#else
     return records[select(cur.curToPrevOff, cur.prevToCurOff, fsFrom == RS_FS_PREV) + entry];
+#endif
   }
   let tri = entry - sf.nAnalytic;
   if (tri >= lightsParams.triCount) { return LIGHT_NONE; }
@@ -103,7 +107,11 @@ fn lt_change_bits(entryCur: u32) -> u32 {
   }
   if (entryCur < cur.nAnalytic) {
     if (rs_tf(TF_LIGHTS_SAME)) { return 0u; }
+#if RS_LIGHT_REC4
+    return rec_u32(cur.lightOff + entryCur * LIGHT_REC_WORDS + 26u);
+#else
     return records[cur.lightOff + entryCur * LIGHT_REC_WORDS + 26u];
+#endif
   }
   return 0u;
 }

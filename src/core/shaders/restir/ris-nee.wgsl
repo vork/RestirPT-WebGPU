@@ -32,7 +32,11 @@ fn nee_draw_entry(slot: LightSlot, entry: u32, hL: vec3u) -> NeeEndpoint {
     return NeeEndpoint(entry, (ij.x << 16u) | ij.y, hL.z);
   }
   if (entry < slot.nAnalytic) {
+#if RS_LIGHT_REC4
+    let kind = light_kind(slot, entry);
+#else
     let kind = records[slot.lightOff + entry * LIGHT_REC_WORDS + 3u];
+#endif
     if (kind == LT_POINT || kind == LT_SPOT || kind == LT_SUN) { return NeeEndpoint(entry, 0u, 0u); }
   }
   return NeeEndpoint(entry, bitcast<u32>(u32_to_unit(hL.x)), bitcast<u32>(u32_to_unit(hL.y)));

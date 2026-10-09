@@ -10,8 +10,8 @@ import { INTERACTIVE_PINNED, RESTIR_PRESETS, restirSettings } from '../../src/co
 import { INTERACTIVE_APP_DEFAULTS, restirAppSettings } from '../../src/core/render/renderer.ts';
 import { shaderSources } from '../../src/core/shaders/index.ts';
 
-/** perf2-plan.md WP-0 step 1 (+ RS_HALF_RATE, user decision D6). */
-const RESERVED = ['RS_VIS_MERGE', 'RS_RIS_HOIST', 'RS_NEE_SITE', 'RS_LAST_ANYHIT', 'RS_RIS_PREPASS', 'RS_ENV_WRAP', 'RS_ENV_PRESAMPLE',
+/** perf2-plan.md WP-0 step 1 (+ RS_HALF_RATE, user decision D6; + RS_LIGHT_REC4, WP-4a's light-record item #17). */
+const RESERVED = ['RS_VIS_MERGE', 'RS_RIS_HOIST', 'RS_NEE_SITE', 'RS_LAST_ANYHIT', 'RS_RIS_PREPASS', 'RS_ENV_WRAP', 'RS_LIGHT_REC4', 'RS_ENV_PRESAMPLE',
   'CW_TRI_BUDGET', 'BVH_ALPHA_BIT', 'BVH2_PRIV_STACK', 'RS_DENSE_SLOTS', 'RS_BOOST_GATE', 'RS_TSEL_FOLD', 'RS_TSTATE_SOA', 'RS_AGG_COUNTERS',
   'RS_NO_PLANTS', 'RS_NO_DIAG', 'MAT_VARIANTS', 'RS_PRIMARY_EXT', 'RS_HALF_RATE'];
 
