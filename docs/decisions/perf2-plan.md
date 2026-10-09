@@ -353,6 +353,15 @@ The first-week quick-win set is #1, #2, #9 (dn_gradient part) and #14. All are b
     - The M4/M5/M5.5 app smokes.
   - **7f:** U-DN-3b and U-DN-3c.
   - **7g:** HUD present timing; screenshot diff ≤1 LSB; a dynres app trace with no spikes.
+- **Delivered (WP-7 a–d, f, g; 7e later in the merge order):** flags `DN_GRAD_SKIP` (7a), `RS_DUPMAP_S64` (7b),
+  `PRIM_SKIP_BEAUTY` + `RS_SKIP_DISPLAY` (7c), `GBUF_48` (7d), `DN_ZGRAD_TEX` + `DN_COLOUR_EARLY` (7f), all bitwise and
+  released ([perf2-api.md](perf2-api.md) §1). Proof: `wp7-bits.gpu.test.ts` (U-WP7-APP: the app frame with and without the
+  set, 31 frames incl. a light change, motion, held frames, view 527, denoiser toggling, gradientOnCamera; U-WP7-DUP:
+  planted seeds incl. the sentinel), m8-bits Anchor with the kernel flags forced and Shipped with the release set,
+  U-DUP-VIEW and the denoiser suite with the flags forced, spill-lint `wp7-all` (no spill growth). 7c's documented
+  difference: the first frame shown without the denoiser (or the M1 beauty) restarts the progressive mean. 7g: tonemap
+  once (`post/tonemap.wgsl`, U-WP7-PRESENT ≤ 1 LSB), the paused re-timing fix, the early denoiser prepare. Dropped: dynres
+  without reallocation (touches the shared ReSTIR resources and the SoA plane stride in validation text for no gate gain).
 
 ### WP-8 Materials and BSDF compile variants (M, after WP-2a merges)
 - **Items:** #12, plus optionally a validity-only `bsdf_sample` variant, consumed in `pathtree` only after WP-2 has merged (about 0.3 ms).
