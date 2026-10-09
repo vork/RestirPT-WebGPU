@@ -24,7 +24,7 @@ import { createServer, type ViteDevServer } from 'vite';
 import { acquireGpuLock } from './gpu-lock.ts';
 import type { PerfOptions, PerfReport } from './perf-run.ts';
 import { INTERACTIVE_PINNED, type RestirSettings } from '../../src/core/render/restir/presets.ts';
-import { normalizePerfFlags, perfFlagsKey, unlandedFlags, type PerfFlags } from '../../src/core/render/restir/perf-flags.ts';
+import { RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagsKey, unlandedFlags, type PerfFlags } from '../../src/core/render/restir/perf-flags.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const HDRI = '/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr';
@@ -48,6 +48,13 @@ export function pinnedJob(sceneKey: string, restir: Partial<RestirSettings> = {}
 /** `extra` over a job: top-level keys replace, `restir` / `renderer` merge (the pins survive `--extra`). */
 export function withExtra(j: PerfOptions, e: Partial<PerfOptions>): PerfOptions {
   return { ...j, ...e, restir: { ...j.restir, ...e.restir }, renderer: { ...j.renderer, ...e.renderer } };
+}
+
+/** The flag set a job runs without its own `perfFlags`: `--kernel-flags` if given, else the app's release set (what
+ *  perf-run applies to a job whose perfFlags is undefined). Variant jobs ADD to this set; an explicit `{}` would drop the
+ *  released flags (the wpdec ABBA measured that as a +23 % "regression"). */
+export function jobBaseFlags(extra: Partial<PerfOptions> = {}): PerfFlags {
+  return extra.perfFlags !== undefined ? normalizePerfFlags(extra.perfFlags) : normalizePerfFlags(RELEASE_PERF_FLAGS);
 }
 
 /** perf2 user decisions (perf2-plan.md §3 / §5) as separately labelled rows: knob changes over the pinned baseline, or
@@ -80,7 +87,7 @@ export function suiteJobs(name: string, scenes: string[], res: string[], extra: 
           const un = unlandedFlags(d.perfFlags);
           if (un.length) { console.log(`[run-perf] skipping decision row '${d.id}': ${un.join(', ')} not landed yet (reserved name only)`); continue; }
           const j = withExtra({ ...pinnedJob(sc), width: w, height: h, label: `${sc}@${r} N3 [${d.id}]` }, extra);
-          jobs.push({ ...j, restir: { ...j.restir, ...d.restir }, ...(d.perfFlags ? { perfFlags: { ...normalizePerfFlags(extra.perfFlags), ...d.perfFlags } } : {}) });
+          jobs.push({ ...j, restir: { ...j.restir, ...d.restir }, ...(d.perfFlags ? { perfFlags: { ...jobBaseFlags(extra), ...d.perfFlags } } : {}) });
         }
       }
     }
@@ -99,7 +106,7 @@ export function abbaJobs(flags: string, scenes: string[], res: string[], blocks:
   for (let b = 0; b < blocks; b++) for (const sc of scenes) for (const r of res) {
     const [w, h] = RES[r];
     const base: PerfOptions = withExtra({ ...pinnedJob(sc), width: w, height: h }, extra);
-    const variant: PerfOptions = { ...base, restir: { ...base.restir, ...restir?.settings }, perfFlags: { ...normalizePerfFlags(extra.perfFlags), ...vf } };
+    const variant: PerfOptions = { ...base, restir: { ...base.restir, ...restir?.settings }, ...(perfFlagsKey(vf) ? { perfFlags: { ...jobBaseFlags(extra), ...vf } } : {}) };
     for (const v of [false, true, true, false, false, true, true, false]) jobs.push({ ...(v ? variant : base), label: `${sc}@${r} N3 ${v ? role : 'base'} #${i++}` });
   }
   return jobs;

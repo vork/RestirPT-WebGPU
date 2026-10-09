@@ -21,6 +21,7 @@ import type { App } from '../../src/app/app.ts';
 import type { EditorHandle } from '../../src/app/editor/index.ts';
 import type { Integration } from '../../src/app/integration.ts';
 import { acquireGpuLock } from './gpu-lock.ts';
+import { RELEASE_PERF_FLAGS, perfFlagsKey } from '../../src/core/render/restir/perf-flags.ts';
 
 declare global {
   interface Window { __app?: App; __integration?: Integration; __editor?: EditorHandle; __webgpuErrors?: string[]; __tsPasses?: string[]; __m6Pan?: boolean }
@@ -100,6 +101,13 @@ async function run(page: Page, OUT: string): Promise<void> {
     window.__app!.resetTemporalHistory();
   });
   await frames(page, 30);
+  // perf2: the app defaults (D1 / D3) change settings only; the interactive kernel keeps the released perf flags
+  const kflags = await page.evaluate(() => {
+    const r = window.__integration!.renderer()! as unknown as { state?: { rs?: { pass: { kernel: { perfFlags: Record<string, number> } } } } };
+    return r.state?.rs?.pass.kernel.perfFlags ?? {};
+  });
+  const pf = { kernel: perfFlagsKey(kflags), release: perfFlagsKey(RELEASE_PERF_FLAGS) };
+  check('interactive kernel runs the released perf flags with the app defaults', pf.kernel === pf.release && pf.release !== '', pf.kernel);
   const s0 = await readState(page);
   const h0 = await hud(page);
   const e0 = await errState(page);

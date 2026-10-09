@@ -118,7 +118,11 @@ describe('pinned interactive knobs and app defaults (WP-0 step 2, user decisions
     expect(j.map((x) => x.label!.split(' ')[2])).toEqual(['base', 'appDefaults', 'appDefaults', 'base', 'base', 'appDefaults', 'appDefaults', 'base']);
     expect(j[0].restir).toEqual(INTERACTIVE_PINNED);
     expect(j[1].restir).toEqual({ ...INTERACTIVE_PINNED, ...INTERACTIVE_APP_DEFAULTS });
-    expect(j[1].perfFlags).toEqual({});
+    // both roles run the same (release) flag set: a variant never drops the released flags
+    expect(j[1].perfFlags).toEqual(j[0].perfFlags);
+    const f = abbaJobs('RS_TSEL_FOLD', ['cornell'], ['540p'], 1);
+    expect(f[1].perfFlags).toEqual({ ...normalizePerfFlags(RELEASE_PERF_FLAGS), RS_TSEL_FOLD: 1 });
+    expect(f[0].perfFlags).toBeUndefined();
   });
   it('RR start can be overridden per session (panel)', () => {
     expect(restirAppSettings('interactive', 3, true, { rrMinBounces: 3 }).rrMinBounces).toBe(3);
