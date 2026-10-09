@@ -89,7 +89,7 @@ fn envTexel(uv: vec2f) -> vec3f {
   let xi = vec2i(x0);
   let w0 = select(xi, xi + dim, xi < vec2i(0));
   var i0 = select(w0, w0 - dim, w0 >= dim);
-  if (any(xi < -dim) || any(xi >= 2 * dim)) { i0 = ((xi % dim) + dim) % dim; }
+  if (any((xi < -dim) | (xi >= 2 * dim))) { i0 = ((xi % dim) + dim) % dim; }
   let i1 = select(i0 + 1, vec2i(0), i0 + 1 == dim);
 #else
   let i0 = ((vec2i(x0) % dim) + dim) % dim;
