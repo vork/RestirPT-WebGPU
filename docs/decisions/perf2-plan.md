@@ -133,6 +133,7 @@ The first-week quick-win set is #1, #2, #9 (dn_gradient part) and #14. All are b
   - `tests/scene/m7-wgsl-bits.test.ts`;
   - `validation/tools/*`.
 - **Verification:** every existing gate stays green with identical bits. Sanity-check the new goldens by running them twice.
+- **Delivered (WP-0):** the interface is [perf2-api.md](perf2-api.md): the flag registry and how a package adds its flag (§1), the pinned knobs and the `INTERACTIVE_APP_DEFAULTS` hook for D1–D4 (§2), the Anchor / Shipped golden tiers and the new cases (§3), and the tools in `validation/tools/perf/` with the `spill-lint.ts` command (§4).
 
 ### WP-Q Equal-quality harness (parallel with everything, 2–3 days plus overnight compute)
 - **Steps:**
