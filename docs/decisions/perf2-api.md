@@ -14,6 +14,7 @@ the packages never collide:
 | Flag | WP | Class | What |
 |---|---|---|---|
 | `RS_VIS_MERGE` | WP-1 | bitwise | one `trace_any_ex` call site in `shift_finish_vis` |
+| `RS_REFRESH_VIS` | WP-1 | bitwise | `refresh_record` traces the per-class visibility ray once (added by WP-1, the plan's separate refresh flag) |
 | `RS_RIS_HOIST` | WP-2a | bitwise | `bsdf_prepare` hoisted out of the RIS loop; dead `nee_draw` at B=1 skipped |
 | `RS_NEE_SITE` | WP-2b | bitwise | one NEE site and one post-hit retest site in rs_initial |
 | `RS_LAST_ANYHIT` | WP-2c | bitwise (exception: counters) | last continuation as any-hit |
