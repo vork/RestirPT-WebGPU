@@ -155,6 +155,60 @@ export function packMaterials(materials: MaterialData[], textures: Pick<GpuTextu
   return buf;
 }
 
+/** Material texture fields in MaterialGpu slot order (packMaterials). */
+const MATERIAL_TEX_FIELDS = ['baseColorTexture', 'metallicRoughnessTexture', 'normalTexture', 'emissiveTexture', 'transmissionTexture', 'specularTexture', 'specularColorTexture'] as const;
+/** perf2 WP-8: the TEX_NO_<slot> key per field material_eval samples (normal: NORMAL_MAP; emissive: not material_eval). */
+const MV_TEX_KEYS: Partial<Record<(typeof MATERIAL_TEX_FIELDS)[number], string>> = {
+  baseColorTexture: 'TEX_NO_BASE', metallicRoughnessTexture: 'TEX_NO_MR', specularTexture: 'TEX_NO_SPEC',
+  specularColorTexture: 'TEX_NO_SPECCOL', transmissionTexture: 'TEX_NO_TRANS',
+};
+const IDENTITY_XFORM = [1, 0, 0, 0, 1, 0] as const;
+
+/**
+ * perf2 WP-8 (MAT_VARIANTS): composer keys for what the material table CANNOT produce, so material_eval / bsdf_prepare
+ * compile only the models and texture slots the scene uses (material-eval.wgsl, bsdf.wgsl). A key means "absent"; no key
+ * keeps the runtime test, so every subset of these keys is correct. The table is immutable per SceneGpu (a new scene is a
+ * new SceneGpu and a new kernel), so the keys are computed once. Merged into the kernel's defines only while the
+ * MAT_VARIANTS flag is on (RestirKernel.perfDefines): validation define sets never carry them.
+ * - MAT_NO_V1 / MAT_NO_PRINCIPLED / MAT_NO_GLASS_NODE / MAT_NO_REFRACTION: no material of that model;
+ * - MAT_NO_PGLASS: no Principled material with transmissionFactor > 0 (MatEval model 2 needs t·tex > 1e-5; tex ≥ 0);
+ * - MAT_NO_NODES, MAT_NO_G (no class-G closure at all), MAT_ONLY_V1: derived;
+ * - TEX_NO_<slot>: no material has a valid slot of that kind (tex_sample returns 1);
+ * - TEX_NO_XFORM: every valid slot (all seven kinds) has exactly the identity transform (uv' = uv bitwise).
+ */
+export function materialVariantDefines(materials: readonly MaterialData[], textures: Pick<GpuTextures, 'slot'> | null): Record<string, number> {
+  const has = { v1: false, principled: false, glassNode: false, refraction: false, pglass: false };
+  const texUsed = new Set<string>();
+  let xform = false;
+  for (const m of materials) {
+    if (m.model === 'v1') has.v1 = true;
+    else if (m.model === 'glass') has.glassNode = true;
+    else if (m.model === 'refraction') has.refraction = true;
+    else {
+      has.principled = true;
+      if (!(m.transmissionFactor <= 0)) has.pglass = true;   // NaN counts as present
+    }
+    for (const f of MATERIAL_TEX_FIELDS) {
+      const slot = textures ? textures.slot(m[f], f === 'baseColorTexture' || f === 'emissiveTexture' || f === 'specularColorTexture') : null;
+      if (!slot) continue;
+      texUsed.add(f);
+      if (!slot.xform.every((v, i) => Object.is(v, IDENTITY_XFORM[i]))) xform = true;
+    }
+  }
+  const d: Record<string, number> = {};
+  if (!has.v1) d.MAT_NO_V1 = 1;
+  if (!has.principled) d.MAT_NO_PRINCIPLED = 1;
+  if (!has.glassNode) d.MAT_NO_GLASS_NODE = 1;
+  if (!has.refraction) d.MAT_NO_REFRACTION = 1;
+  if (!has.pglass) d.MAT_NO_PGLASS = 1;
+  if (!has.glassNode && !has.refraction) d.MAT_NO_NODES = 1;
+  if (!has.glassNode && !has.refraction && !has.pglass) d.MAT_NO_G = 1;
+  if (has.v1 && !has.principled && !has.glassNode && !has.refraction) d.MAT_ONLY_V1 = 1;
+  for (const [f, k] of Object.entries(MV_TEX_KEYS)) if (!texUsed.has(f)) d[k] = 1;
+  if (!xform) d.TEX_NO_XFORM = 1;
+  return d;
+}
+
 async function defaultBuilder(positions: Float32Array, indices: Uint32Array, opts: { cwbvh?: boolean } = {}): Promise<BvhData> {
   if (typeof Worker !== 'undefined' && typeof window !== 'undefined') {
     const { buildBvhInWorker } = await import('../bvh/build-in-worker.ts');
@@ -290,6 +344,9 @@ export class SceneGpu {
   get noAlphaMask(): boolean { return (this.noMask ??= !hasAlphaMask(this.scene.geometry.triFlags)); }
   private noMask?: boolean;
   get bvhKind(): BvhKind { return this.bvh.cwbvh ? 'cwbvh' : 'bvh2'; }
+  /** perf2 WP-8: the MAT_VARIANTS scene keys of this material table (materialVariantDefines; static per SceneGpu). */
+  materialVariantDefines(): Record<string, number> { return (this.mvDefines ??= materialVariantDefines(this.scene.materials, this.textures)); }
+  private mvDefines?: Record<string, number>;
 
   /** Switch MT <-> Woop (re-uploads only the triangle layout; the caller recompiles with the new defines). */
   setWatertight(on: boolean): void {

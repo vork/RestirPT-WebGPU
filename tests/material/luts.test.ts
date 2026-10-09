@@ -13,6 +13,17 @@ import { F0FromIor, S_ior, S_s, ggxE, ggxEavg } from './bsdf-ref.ts';
 const zIor = (eta: number) => Math.sqrt(Math.abs((eta - 1) / (eta + 1)));
 
 describe('Cycles LUTs (shader.tables @ v5.1.2)', () => {
+  it('perf2 WP-8 (MAT_VARIANTS branch-free lerp): every uploaded table value is finite and ≥ +0 (no −0)', () => {
+    // lut.wgsl fetches both taps at every level (no t == 0 early return); a non-finite unused tap would still poison the
+    // lerp operand that the t == 0 select discards, so the tables must stay finite (and ≥ +0: (1 − 0)·d0 + 0·d1 = d0).
+    const all = lutFloats();
+    let bad = 0;
+    for (const v of all) if (!Number.isFinite(v) || v < 0 || Object.is(v, -0)) bad++;
+    expect(bad).toBe(0);
+    for (const t of [TABLE_GGX_GEN_SCHLICK_IOR_S, TABLE_GGX_GEN_SCHLICK_S, TABLE_GGX_E, TABLE_GGX_EAVG]) {
+      expect(t.every((v) => Number.isFinite(v) && v >= 0 && !Object.is(v, -0))).toBe(true);
+    }
+  });
   it('provenance + per-table count, sum (gap-bsdf §3.5) and f32 sha256', () => {
     expect(LUT_SOURCE_URL).toContain('/v5.1.2/intern/cycles/scene/shader.tables');
     expect(LUT_SOURCE_SHA256).toMatch(/^[0-9a-f]{64}$/);

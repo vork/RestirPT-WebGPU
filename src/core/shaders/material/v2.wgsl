@@ -48,7 +48,11 @@ fn bsdf_setup_v2(m: MatEval, c_in: BsdfCtx, mu: f32) -> BsdfCtx {
   }
 
   // 2. transmission: glass closure (lobe class G) [closure.h:377-415]
+#if MAT_VARIANTS
+  if (mv_model_pglass(m.model)) {
+#else
   if (m.model == BSDF_MODEL_GLASS) {
+#endif
     let t = saturate(m.transmission);
     if (t > BSDF_WEIGHT_CUTOFF) {
 #if GLASS_PLANT == 3

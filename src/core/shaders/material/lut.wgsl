@@ -33,15 +33,27 @@ fn lut_fetch(i: u32) -> f32 {
 }
 
 // lookup_table_read: x' = saturate(x)·(n−1); i = min(trunc(x'), n−1); j = min(i+1, n−1); t = x' − i.
+// perf2 WP-8 (MAT_VARIANTS): no t == 0 early return at any level: both taps are always fetched and t == 0 selects d0.
+// The select is load-bearing: the plain lerp (1 − t)·d0 + t·d1 equals d0 at t = 0 in exact arithmetic (finite tables
+// ≥ +0, tests/material/luts.test.ts), yet the select-free text measured different bits (U-M8-BITS all-offline-m6-B; the
+// same hash as an explicit fma(t, d1, (1 − t)·d0)), while the select text reproduces the branchy text's bits.
+#if MAT_VARIANTS
+fn lut_lerp(d0: f32, d1: f32, t: f32) -> f32 { return select((1.0 - t) * d0 + t * d1, d0, t == 0.0); }
+#endif
 fn lut_read(x_in: f32, off: u32, n: u32) -> f32 {
   let x = saturate(x_in) * f32(n - 1u);
   let i = min(u32(x), n - 1u);              // float_to_int truncation (x ≥ 0 after saturate)
   let j = min(i + 1u, n - 1u);
   let t = x - f32(i);
   let d0 = lut_fetch(off + i);
+#if MAT_VARIANTS
+  let d1 = lut_fetch(off + j);
+  return lut_lerp(d0, d1, t);
+#else
   if (t == 0.0) { return d0; }
   let d1 = lut_fetch(off + j);
   return (1.0 - t) * d0 + t * d1;
+#endif
 }
 
 // lookup_table_read_2D: rows y (outer), layout d[off + y·nx + x].
@@ -51,9 +63,15 @@ fn lut_read_2d(x: f32, y_in: f32, off: u32, nx: u32, ny: u32) -> f32 {
   let j = min(i + 1u, ny - 1u);
   let t = y - f32(i);
   let d0 = lut_read(x, off + nx * i, nx);
+#if !MAT_VARIANTS
   if (t == 0.0) { return d0; }
+#endif
   let d1 = lut_read(x, off + nx * j, nx);
+#if MAT_VARIANTS
+  return lut_lerp(d0, d1, t);
+#else
   return (1.0 - t) * d0 + t * d1;
+#endif
 }
 
 // lookup_table_read_3D: slices z (outer) → rows y → x (inner), layout d[off + z·nx·ny + y·nx + x].
@@ -63,9 +81,15 @@ fn lut_read_3d(x: f32, y: f32, z_in: f32, off: u32, nx: u32, ny: u32, nz: u32) -
   let j = min(i + 1u, nz - 1u);
   let t = z - f32(i);
   let d0 = lut_read_2d(x, y, off + nx * ny * i, nx, ny);
+#if !MAT_VARIANTS
   if (t == 0.0) { return d0; }
+#endif
   let d1 = lut_read_2d(x, y, off + nx * ny * j, nx, ny);
+#if MAT_VARIANTS
+  return lut_lerp(d0, d1, t);
+#else
   return (1.0 - t) * d0 + t * d1;
+#endif
 }
 
 /// S_ior(rough, mu, z): dielectric generalized-Schlick albedo factor (bsdf_microfacet.h:441-451).

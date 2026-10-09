@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { composeWgsl } from '../../src/core/gpu/wgsl-composer.ts';
 import { GBUF48_TEXEL_BYTES, GBUF_TEXEL_BYTES, PRIMARY_PARAMS_SIZE, gbufTexelBytes } from '../../src/core/render/renderer.ts';
 import {
-  MATERIAL_LAYOUT, MAT_ALPHA_MASK, MAT_V1, TRI_FLAGS_SHIFT, packMaterials, packTris, recentrePositions,
+  MATERIAL_LAYOUT, MAT_ALPHA_MASK, MAT_V1, TRI_FLAGS_SHIFT, materialVariantDefines, packMaterials, packTris, recentrePositions,
 } from '../../src/core/render/scene-gpu.ts';
 import { VERTEX_FORMAT_F32, bitsF32, packVertexArena } from '../../src/core/gpu/vertex-format.ts';
 import { shaderSources } from '../../src/core/shaders/index.ts';
@@ -141,5 +141,62 @@ describe('scene packers', () => {
     expect(f(MATERIAL_LAYOUT.v1Mix)).toBeCloseTo(0.25, 7);
     expect(dv.getUint32(MATERIAL_LAYOUT.texBaseColor + 12, true) >>> 31).toBe(0); // invalid slot
     expect(f(MATERIAL_LAYOUT.texBaseColor)).toBe(1); // identity transform
+  });
+
+  // perf2 WP-8 (MAT_VARIANTS): the scene keys of the material table (material-eval.wgsl, bsdf.wgsl).
+  const mat = (o: Partial<MaterialData>): MaterialData => ({
+    name: 'm', baseColorFactor: [1, 1, 1, 1], metallicFactor: 0, roughnessFactor: 0.5, emissiveFactor: [0, 0, 0], emissiveStrength: 1,
+    ior: 1.5, specularFactor: 1, specularColorFactor: [1, 1, 1], transmissionFactor: 0, alphaMode: 'OPAQUE', alphaCutoff: 0.5,
+    doubleSided: false, model: 'principled', ...o,
+  });
+  const fakeTex = (xform?: [number, number, number, number, number, number]) => ({
+    slot: (ref: MaterialData['baseColorTexture'], srgb: boolean) => (ref ? { arrayIndex: 0, layer: ref.texture, sampler: 0, uvSet: 0, srgb, xform: xform ?? ref.transform ?? [1, 0, 0, 0, 1, 0] } : null),
+  });
+  const TEX_ALL = { TEX_NO_BASE: 1, TEX_NO_MR: 1, TEX_NO_SPEC: 1, TEX_NO_SPECCOL: 1, TEX_NO_TRANS: 1, TEX_NO_XFORM: 1 };
+
+  it('WP-8 materialVariantDefines: models', () => {
+    expect(materialVariantDefines([mat({ model: 'v1' })], null)).toEqual({
+      MAT_NO_PRINCIPLED: 1, MAT_NO_GLASS_NODE: 1, MAT_NO_REFRACTION: 1, MAT_NO_PGLASS: 1, MAT_NO_NODES: 1, MAT_NO_G: 1, MAT_ONLY_V1: 1, ...TEX_ALL,
+    });
+    expect(materialVariantDefines([mat({})], null)).toEqual({
+      MAT_NO_V1: 1, MAT_NO_GLASS_NODE: 1, MAT_NO_REFRACTION: 1, MAT_NO_PGLASS: 1, MAT_NO_NODES: 1, MAT_NO_G: 1, ...TEX_ALL,
+    });
+    // a Principled transmission material (or a NaN factor) keeps model 2 and the class-G code
+    for (const t of [0.5, Number.NaN]) {
+      expect(materialVariantDefines([mat({}), mat({ transmissionFactor: t })], null)).toEqual({
+        MAT_NO_V1: 1, MAT_NO_GLASS_NODE: 1, MAT_NO_REFRACTION: 1, MAT_NO_NODES: 1, ...TEX_ALL,
+      });
+    }
+    // glass / refraction nodes alongside V1: no derived "only" / "no G" keys
+    expect(materialVariantDefines([mat({ model: 'v1' }), mat({ model: 'glass' })], null)).toEqual({
+      MAT_NO_PRINCIPLED: 1, MAT_NO_REFRACTION: 1, MAT_NO_PGLASS: 1, ...TEX_ALL,
+    });
+    expect(materialVariantDefines([mat({ model: 'refraction' })], null)).toEqual({
+      MAT_NO_V1: 1, MAT_NO_PRINCIPLED: 1, MAT_NO_GLASS_NODE: 1, MAT_NO_PGLASS: 1, ...TEX_ALL,
+    });
+  });
+
+  it('WP-8 materialVariantDefines: texture slots and transforms; packMaterials sRGB bits are static per slot kind', () => {
+    const m = mat({ baseColorTexture: { texture: 0, texCoord: 0 }, metallicRoughnessTexture: { texture: 1, texCoord: 0 }, normalTexture: { texture: 2, texCoord: 0, scale: 1 } });
+    const d = materialVariantDefines([m], fakeTex());
+    expect(d).toMatchObject({ TEX_NO_SPEC: 1, TEX_NO_SPECCOL: 1, TEX_NO_TRANS: 1, TEX_NO_XFORM: 1 });
+    expect(d.TEX_NO_BASE).toBeUndefined();
+    expect(d.TEX_NO_MR).toBeUndefined();
+    expect(materialVariantDefines([m], null)).toMatchObject({ TEX_NO_BASE: 1, TEX_NO_MR: 1 });   // no usable texture: invalid slots
+    // any non-identity transform (any slot kind, also the normal map) keeps the transform code
+    const n = mat({ normalTexture: { texture: 2, texCoord: 0, scale: 1, transform: [1, 0, 0.5, 0, 1, 0] } });
+    expect(materialVariantDefines([m, n], fakeTex()).TEX_NO_XFORM).toBeUndefined();
+    expect(materialVariantDefines([m], fakeTex([1, -0, 0, 0, 1, 0])).TEX_NO_XFORM).toBeUndefined();
+    // mv_tex_* decode statically: base colour / specular colour sRGB, the others linear
+    const all = mat({
+      baseColorTexture: { texture: 0, texCoord: 0 }, metallicRoughnessTexture: { texture: 1, texCoord: 0 }, normalTexture: { texture: 2, texCoord: 0, scale: 1 },
+      emissiveTexture: { texture: 3, texCoord: 0 }, transmissionTexture: { texture: 4, texCoord: 0 }, specularTexture: { texture: 5, texCoord: 0 },
+      specularColorTexture: { texture: 6, texCoord: 0 },
+    });
+    const dv = new DataView(packMaterials([all], fakeTex()));
+    const srgb = (o: number) => (dv.getUint32(o + 12, true) & 0x40000) !== 0;
+    const L = MATERIAL_LAYOUT;
+    expect([L.texBaseColor, L.texSpecularColor, L.texEmissive].map(srgb)).toEqual([true, true, true]);
+    expect([L.texMetalRough, L.texSpecular, L.texTransmission, L.texNormal].map(srgb)).toEqual([false, false, false, false]);
   });
 });
