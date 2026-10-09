@@ -27,9 +27,9 @@ fn visibleInf(a: vec3f, na: vec3f, primA: u32, dir: vec3f) -> bool {
   return !trace_any_ex(vis_offset(a, na, dir), dir, FLT_MAX, primA, BVH_MISS);
 }
 
-#if RS_VIS_MERGE || RS_REFRESH_VIS
+#if RS_VIS_MERGE || RS_REFRESH_VIS || RS_NEE_SITE
 // perf2 WP-1 shared visibility ray (perf2-plan.md §2 WP-1 step 1; users: RS_VIS_MERGE shift.wgsl, RS_REFRESH_VIS
-// refresh.wgsl; RS_NEE_SITE / WP-2b adds `|| RS_NEE_SITE` to this gate when it lands). Each inlined trace_any_ex copy carries its own traversal stack and code, so
+// refresh.wgsl, RS_NEE_SITE (WP-2b) rs_initial). Each inlined trace_any_ex copy carries its own traversal stack and code, so
 // a caller that picks between several visibility tests per lane builds ONE VisRay with selects and traces it once:
 //   inf = false: the segment test visible(a, na, primA, b, nb, primB)   (dir ignored)
 //   inf = true:  the direction test visibleInf(a, na, primA, dir)       (b, nb, primB ignored)

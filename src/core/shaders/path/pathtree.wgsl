@@ -257,6 +257,9 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
     // the SAMPLED direction and the shadow segment between the stored vertices can disagree on a measure ~1e-6 set);
     // a candidate whose rc segment fails it is not streamed (F := 0), so base and shifts share one visibility term
     var treeVis = true;
+#if RS_NEE_SITE
+    var treeNew = false;           // perf2 WP-2b: the tree's rc was set at this B; its retest runs at the shared site
+#endif
 #if RS_DUMP_CANDIDATES
     for (var b = 0u; b < 8u; b++) { ptDumpPrims[b] = 0xFFFFFFFFu; }
 #endif
@@ -272,8 +275,14 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
 #if RS_RIS_NEE
         // M6 (restir-m6-api.md MD4): RIS over the pixel's light tile at x₁ replaces the single alias draw; W_NEE joins
         // the source weight, M(1) = risM enters every MIS weight at B = 1 as p2/M (MD5)
+#if RS_RIS_HOIST
+        // perf2 WP-2a: the alias draw is dead at B = 1 (RIS replaces it); rs_path_hash is stateless, so skipping it
+        // changes no other random draw
+        var ep: NeeEndpoint;
+#else
         var ep = nee_draw(lightsParams.cur, rs_path_hash(seed, B, SLOT_SEL), rs_path_hash(seed, B, SLOT_SEL2),
                           vec3u(rs_path_hash(seed, B, SLOT_L0), rs_path_hash(seed, B, SLOT_L1), rs_path_hash(seed, B, SLOT_L2)));
+#endif
         var wNee = 1.0;
         var tileMult = 0.0;
         if (B == 1u) {
@@ -282,6 +291,12 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
           wNee = rsel.W;
           tileMult = rsel.mult;
         }
+#if RS_RIS_HOIST
+        else {
+          ep = nee_draw(lightsParams.cur, rs_path_hash(seed, B, SLOT_SEL), rs_path_hash(seed, B, SLOT_SEL2),
+                        vec3u(rs_path_hash(seed, B, SLOT_L0), rs_path_hash(seed, B, SLOT_L1), rs_path_hash(seed, B, SLOT_L2)));
+        }
+#endif
         let ls = nee_eval(cur.pos, ep);
         // PLANT U8-8 (validation only): the UCW in mixed measures, W^RIS·p1_σ instead of W^RIS·q (area / triangle picks)
         if (B == 1u && rs_m6_flag(RSF_PLANT_U8_RIS_MIXED) && ls.valid && !ls.isDelta && ls.kind != LT_ENV && ls.q > 0.0) {
@@ -306,8 +321,31 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
           let w1 = nee_mis_w1(ls, qn.p_marg, B);
 #endif
           let F = (w1 / ls.q) * (beta * qn.f_all * ls.Lambda);
+#if RS_NEE_SITE
+          // perf2 WP-2b: ONE visibility site (one inlined trace_any_ex) for the NEE shadow ray (nee_visible: visible or
+          // visibleInf) and, when k* = B, the rc retest visible(x_{B−1}, x_B); kstar_nee runs exactly where it did
+          // (after a visible NEE sample), so nothing else changes
+          var neeVis = false;
+          var neeRetest = true;
+          var km = vec2u(0u);
+          if (any(F > vec3f(0.0))) {
+            for (var it = 0u; it < 2u; it++) {
+              let first = it == 0u;
+              let v = vis_trace(vis_ray(select(prevV.pos, cur.pos, first), select(prevV.ng, cur.ng, first),
+                                        select(cur.pos, ls.pos, first), select(cur.ng, ls.nz, first), select(curPrim, ls.prim, first),
+                                        ls.dir, first && ls.isInf), select(prevPrim, curPrim, first));
+              if (!first) { neeRetest = v; break; }
+              neeVis = v;
+              if (!v) { break; }
+              km = kstar_nee(treeRc, B, prevV, prevE, curV, rc_event_nee(m, qn.p_marg), thr);
+              if (km.x != B) { break; }
+            }
+          }
+          if (neeVis) {
+#else
           if (any(F > vec3f(0.0)) && nee_visible(cur, curPrim, ls)) {
             let km = kstar_nee(treeRc, B, prevV, prevE, curV, rc_event_nee(m, qn.p_marg), thr);
+#endif
             let k = km.x;
             var rc = nee_endpoint_words(ep);           // (a)/(f) forced: rc = the NEE light vertex
             var rcWi = vec3f(0.0);
@@ -326,7 +364,11 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
               rcRad = betaPost * (w1 / ls.q) * qn.f_all * ls.Lambda;
             }
             var visOk = true;
+#if RS_NEE_SITE
+            if (k == B) { visOk = neeRetest; }
+#else
             if (k == B) { visOk = visible(prevV.pos, prevV.ng, prevPrim, cur.pos, cur.ng, curPrim); }
+#endif
             else if (k <= B - 1u) { visOk = treeVis; }
 #if RS_TEST_NO_RC_VIS
             visOk = true;
@@ -391,9 +433,44 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
           treeL = vec2u(prevE.lobe | (prevE.delta << 3u), eB.lobe | (eB.delta << 3u));
           treeJDen = prevPJoint * rc_G(prevV.pos, cur.pos, cur.ng) * pt_jpdf(qb);
           betaPost = vec3f(1.0);
+#if RS_NEE_SITE
+          treeNew = true;
+#else
           treeVis = visible(prevV.pos, prevV.ng, prevPrim, cur.pos, cur.ng, curPrim);
+#endif
         }
       }
+#if RS_NEE_SITE
+      // perf2 WP-2b: ONE visibility site (one inlined trace_any_ex) for the tree-pair retest visible(x_{B−1}, x_B) (when
+      // the tree's rc was set at this B) and the emitter-rc retest visible(x_B, x_{B+1}) of a BSDF ending at a hit. The
+      // ending's classification (emissive hit / env escape) and its k* move up from (5), unchanged; the end retest is
+      // traced before the crossings and the β = 0 exit instead of after them (its result is only read in (5))
+      var endLe = vec3f(0.0);
+      var isEnd = false;
+      var endV = RcVertex(cur.pos + bs.L, vec3f(0.0), RCK_ENV, 0u);
+      if (!isHit) {
+        isEnd = envPresent;
+      } else {
+        endLe = tri_emission(h.primId, h.u, h.v);
+        if (any(endLe > vec3f(0.0))) {
+          endV = RcVertex(nxt.pos, nxt.ng, RCK_LIGHT, 0u);
+          isEnd = true;
+        }
+      }
+      var endKm = vec2u(0u);
+      if (isEnd) { endKm = kstar_bsdf_end(treeRc, B, curV, eB, endV, thr); }
+      let endRetest = isEnd && isHit && endKm.x == B + 1u;
+      var endVis = true;
+      for (var it = 0u; it < 2u; it++) {
+        let first = it == 0u;
+        if (first && !treeNew) { continue; }
+        if (!first && !endRetest) { break; }
+        let v = vis_trace(vis_ray(select(cur.pos, prevV.pos, first), select(cur.ng, prevV.ng, first),
+                                  select(nxt.pos, cur.pos, first), select(nxt.ng, cur.ng, first), select(h.primId, curPrim, first),
+                                  vec3f(0.0), false), select(curPrim, prevPrim, first));
+        if (first) { treeVis = v; treeNew = false; } else { endVis = v; }
+      }
+#endif
       let wq = rs_path_weight(qb, bs.weight, bs.is_delta);   // D3 / Changelog B-2: the shift's own factor formula
 #if RS_MODE_B
       // (4) Mode-B / A′ crossings (restir-m6-api.md MD6): candidates of the same d = B + 1 before the continuation's
@@ -422,13 +499,21 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
       // (4) Mode-B crossings: RS_MODE_B = 0 in M4 (D1)
       // ---- (5) BSDF endings at x_{B+1}, d = B + 1 -------------------------------------------------------------------
       var endF = vec3f(0.0);
+#if !RS_NEE_SITE
       var endLe = vec3f(0.0);
+#endif
       var endP1 = 0.0;
       var endW2 = 1.0;
+#if !RS_NEE_SITE
       var isEnd = false;
       var endV = RcVertex(cur.pos + bs.L, vec3f(0.0), RCK_ENV, 0u);
+#endif
       if (!isHit) {
+#if RS_NEE_SITE
+        if (isEnd) {
+#else
         if (envPresent) {
+#endif
 #if RS_RIS_NEE
           endW2 = env_bsdf_mis_weight(bs.L, rs_p2m(qb.p_marg, B), B, bs.is_delta);
 #else
@@ -437,11 +522,17 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
           endLe = envRadiance(envUV(bs.L, envParams.cg, envParams.sg));
           endF = endW2 * beta * endLe;
           endP1 = p1Env(bs.L);
+#if !RS_NEE_SITE
           isEnd = true;
+#endif
         }
       } else {
+#if RS_NEE_SITE
+        if (isEnd) {
+#else
         endLe = tri_emission(h.primId, h.u, h.v);
         if (any(endLe > vec3f(0.0))) {
+#endif
           endP1 = tri_light_p1(cur.pos, nxt.pos, nxt.ng, h.primId);
 #if RS_RIS_NEE
           if (!bs.is_delta) { endW2 = mis_w2(endP1, rs_p2m(qb.p_marg, B), B); }
@@ -449,12 +540,18 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
           if (!bs.is_delta) { endW2 = mis_w2(endP1, qb.p_marg, B); }
 #endif
           endF = endW2 * beta * endLe;
+#if !RS_NEE_SITE
           endV = RcVertex(nxt.pos, nxt.ng, RCK_LIGHT, 0u);
           isEnd = true;
+#endif
         }
       }
       if (isEnd) {
+#if RS_NEE_SITE
+        let km = endKm;
+#else
         let km = kstar_bsdf_end(treeRc, B, curV, eB, endV, thr);
+#endif
         let k = km.x;
         let tech = select(RS_TECH_BSDF_ENV, RS_TECH_BSDF_TRI, isHit);
         let endW = select(vec3u(RC_ENV_DIR, 0u, 0u), vec3u(h.primId, bitcast<u32>(h.u), bitcast<u32>(h.v)), isHit);
@@ -477,7 +574,11 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
           else { rcRad = betaPost * endW2 * endLe; }
         }
         var visOk = true;                            // B-5 (env rc: the same ray as visibleInf, no extra test)
+#if RS_NEE_SITE
+        if (k == B + 1u && isHit) { visOk = endVis; }
+#else
         if (k == B + 1u && isHit) { visOk = visible(cur.pos, cur.ng, curPrim, nxt.pos, nxt.ng, h.primId); }
+#endif
         else if (k != 0u && k <= B) { visOk = treeVis; }
 #if RS_TEST_NO_RC_VIS
         visOk = true;

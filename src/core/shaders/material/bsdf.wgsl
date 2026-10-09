@@ -359,6 +359,20 @@ fn bsdf_query(m: MatEval, V: vec3f, L: vec3f, lobe: u32) -> BsdfQuery {
   }
   return q;
 }
+#if RS_RIS_HOIST
+
+/// perf2 WP-2a (RS_RIS_HOIST, interactive only): bsdf_query(m, V, L, LOBE_NEE).f_all from a context c = bsdf_prepare(m, V)
+/// prepared once for the same (m, V) (bsdf_prepare is a pure function of (m, V)). The RIS candidate loop hoists the
+/// context out of the loop; bsdf_query itself is untouched, so every other kernel's machine code stays the same.
+fn bsdf_f_all_ctx(c: BsdfCtx, V: vec3f, L: vec3f) -> vec3f {
+  let e = bsdf_eval_ctx(c, V, L);
+  var f = e.f_d + e.f_s + e.f_g;
+#if NORMAL_MAP
+  f = select(vec3f(0.0), f, e.bump);
+#endif
+  return f;
+}
+#endif
 
 /// Per-lobe perceptual roughness for the reconnection predicate R_k (math.md#lobe-codes; gap-bsdf §7.4; glass §5.4).
 /// NEE uses the hasD/hasS/hasG bits of MatEval.flags (set by material_eval for the path's V). G_T is also delta
