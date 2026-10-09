@@ -7,6 +7,11 @@
 // --pkg-frames: comma list of package frames, `fxN` repeats f N times. --iterations / --alpha-min / --lambda0 / --lambda1
 // override the denoiser settings. Timing runs launch Chrome with --enable-webgpu-developer-features (unquantised
 // timestamps) unless --no-dev-features.
+// perf2 WP-Q (equal-quality harness, validation/harness/run-eq.ts): --restir JSON (Partial<RestirSettings> over the app
+// mode's preset, e.g. '{"risM":16}'), --renderer JSON (Partial<RendererOptions>, e.g. '{"lightMode":"B","bvhKind":"auto"}'),
+// --perf-flags A,B (opaque names for WP-0's perf-flag registry), --pan-osc AMP / --light-osc INDEX:AMP with --osc-knots
+// 0,16,32,48,63 (oscillating motion, the knots on the base state), --lock-per-job (with --jobs: one GPU-lock hold per
+// job instead of one for the list, so long lists stay inside the 12-min hold rule).
 import { lstatSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
@@ -23,9 +28,10 @@ const OPTIONS = {
   package: { type: 'string' }, mode: { type: 'string', default: 'flip' }, frames: { type: 'string', default: '64' }, 'eval-frames': { type: 'string' },
   'pkg-frames': { type: 'string' }, seed: { type: 'string', default: '1' }, run: { type: 'string' }, width: { type: 'string' }, height: { type: 'string' },
   iterations: { type: 'string' }, 'alpha-min': { type: 'string' }, 'sigma-l': { type: 'string' }, 'sigma-a': { type: 'string' }, 'var-corr': { type: 'string' }, 'no-resolve': { type: 'boolean', default: false }, 'no-guide': { type: 'boolean', default: false }, 'inv-radius': { type: 'string' }, 'lum-min-n': { type: 'string' }, 'lum-pre': { type: 'string' }, 'debug-views': { type: 'string' }, 'debug-frames': { type: 'string' }, jitter: { type: 'string' }, 'no-denoise': { type: 'boolean', default: false }, accumulate: { type: 'boolean', default: false }, pan: { type: 'string' }, 'light-anim': { type: 'string' }, 'dn-json': { type: 'string' }, lambda0: { type: 'string' }, lambda1: { type: 'string' },
+  restir: { type: 'string' }, renderer: { type: 'string' }, 'perf-flags': { type: 'string' }, 'pan-osc': { type: 'string' }, 'light-osc': { type: 'string' }, 'osc-knots': { type: 'string', default: '0,16,32,48,63' },
   warmup: { type: 'string' }, 'timing-submits': { type: 'string' }, 'timing-runs': { type: 'string' }, 'no-dev-features': { type: 'boolean', default: false },
 } as const;
-const parse = (argv?: string[]) => parseArgs({ options: { ...OPTIONS, jobs: { type: 'string' } }, ...(argv ? { args: argv } : {}) }).values;
+const parse = (argv?: string[]) => parseArgs({ options: { ...OPTIONS, jobs: { type: 'string' }, 'lock-per-job': { type: 'boolean', default: false } }, ...(argv ? { args: argv } : {}) }).values;
 const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
 
 /** `13x32,14x24` → [13 ×32, 14 ×24]; plain numbers once. */
@@ -37,6 +43,12 @@ export function parsePkgFrames(s: string): number[] {
     for (let k = 0; k < Number(m[2] ?? 1); k++) out.push(Number(m[1]));
   }
   return out;
+}
+
+function knots(s: string): number[] {
+  const k = s.split(',').map(Number);
+  if (k.length < 2 || k.some((x, i) => !Number.isInteger(x) || (i > 0 && x <= k[i - 1]))) throw new Error(`--osc-knots: increasing integers, got '${s}'`);
+  return k;
 }
 
 function optionsOf(a: ReturnType<typeof parse>, chromeVersion: string): RenderDenoiseOptions {
@@ -53,7 +65,11 @@ function optionsOf(a: ReturnType<typeof parse>, chromeVersion: string): RenderDe
     width: num(a.width), height: num(a.height), denoiser: dn, jitter: a.jitter as RenderDenoiseOptions['jitter'], denoise: !a['no-denoise'], accumulate: a.accumulate,
     debugViews: a['debug-views'] ? { ids: a['debug-views'].split(',').map(Number), frames: (a['debug-frames'] ?? '').split(',').map(Number) } : undefined,
     pan: a.pan ? (([dx, from, to]) => ({ dx, from, to }))(a.pan.split(':').map(Number)) : undefined,
-    lightAnim: a['light-anim'] ? (([index, amp, move]) => ({ index, amp, move }))(a['light-anim'].split(':').map(Number)) : undefined, warmup: num(a.warmup), timingSubmits: num(a['timing-submits']), timingRuns: num(a['timing-runs']), chromeVersion,
+    lightAnim: a['light-anim'] ? (([index, amp, move]) => ({ index, amp, move }))(a['light-anim'].split(':').map(Number)) : undefined,
+    restir: a.restir ? JSON.parse(a.restir) as RenderDenoiseOptions['restir'] : undefined, renderer: a.renderer ? JSON.parse(a.renderer) as RenderDenoiseOptions['renderer'] : undefined,
+    perfFlags: a['perf-flags'] ? a['perf-flags'].split(',').filter(Boolean) : undefined,
+    panOsc: a['pan-osc'] ? { amp: Number(a['pan-osc']), knots: knots(a['osc-knots']!) } : undefined,
+    lightOsc: a['light-osc'] ? (([index, amp]) => ({ index, amp, knots: knots(a['osc-knots']!) }))(a['light-osc'].split(':').map(Number)) : undefined, warmup: num(a.warmup), timingSubmits: num(a['timing-submits']), timingRuns: num(a['timing-runs']), chromeVersion,
   };
 }
 
@@ -106,15 +122,21 @@ async function main(): Promise<number> {
   const dev = !a['no-dev-features'] && jobs.some((j) => parse(j).mode === 'timing');
   const h = await openHarness(dev);
   let failures = 0;
-  console.log(`acquiring GPU lock (${GPU_LOCK}) for ${jobs.length} job(s) ...`);
-  const release = await acquireGpuLock('run-denoise');
-  console.log(`     lock wait ${release.waitedMs.toFixed(0)} ms`);
+  const perJob = a['lock-per-job'];
+  const lock = async () => {
+    const r = await acquireGpuLock('run-denoise');
+    console.log(`     lock wait ${r.waitedMs.toFixed(0)} ms`);
+    return r;
+  };
+  console.log(`acquiring GPU lock (${GPU_LOCK}) for ${jobs.length} job(s)${perJob ? ', one hold per job' : ''} ...`);
+  const release = perJob ? undefined : await lock();
   try {
     for (const j of jobs) {
-      try { if (!await runOne(h.page, optionsOf(parse(j), h.chromeVersion))) failures++; } catch (e) { failures++; console.error(e); }
+      const rj = perJob ? await lock() : undefined;
+      try { if (!await runOne(h.page, optionsOf(parse(j), h.chromeVersion))) failures++; } catch (e) { failures++; console.error(e); } finally { rj?.(); }
     }
   } finally {
-    release();
+    release?.();
     await h.close();
   }
   console.log(failures ? `RESULT: FAIL (${failures}/${jobs.length})` : `RESULT: PASS (${jobs.length})`);

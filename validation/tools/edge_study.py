@@ -3,7 +3,7 @@ silhouette pixels vs interior pixels, for runs of validation/harness/run-denoise
 frames), against a PT reference.
 
 Masks (from the PT reference of the frame): `edge` = denoise_eval.edge_masks (≥ 25 % luminance step to a 4-neighbour,
-dilated 1 px), `interior` = pixels ≥ 2 px from any edge. With --ids (an int32 .npy material-id map at pixel centres,
+dilated 1 px), `interior` = pixels ≥ 2 px from any edge, `all` = every pixel above the 2 % luminance floor (perf2 WP-Q). With --ids (an int32 .npy material-id map at pixel centres,
 -1 = background) the edge pixels are split by the pair of ids across the boundary, e.g. box|bg and box|wall.
 
 Per run and image (dn = the displayed output, raw = rsFrame), display luminance (Standard view: clamp, sRGB OETF):
@@ -32,6 +32,12 @@ from imageio_util import read_pfm  # noqa: E402
 
 def disp_lum(img: np.ndarray) -> np.ndarray:
     return srgb_oetf(img) @ LUMA
+
+
+def all_mask(ref: np.ndarray) -> np.ndarray:
+    """perf2 WP-Q: every pixel above the edge_masks luminance floor (2 % of the mean reference luminance)."""
+    lum = ref @ LUMA
+    return lum > 0.02 * float(lum.mean())
 
 
 def id_masks(ids: np.ndarray, edge: np.ndarray) -> dict[str, np.ndarray]:
@@ -94,7 +100,7 @@ def cmd_stats(a: argparse.Namespace) -> int:
             e2, i2 = edge_masks(fr)
             edge |= e2
             interior &= i2
-    masks = {'edge': edge, 'interior': interior}
+    masks = {'edge': edge, 'interior': interior, 'all': all_mask(ref)}
     if a.ids:
         ids = np.load(a.ids)
         for k, m in id_masks(ids, edge).items():
