@@ -190,4 +190,18 @@ describe('U-RES-1 (M6): m6-types.wgsl ≡ RS_M6_CONSTS; inline budget of the M6 
       expect(storageBufferCount(name, true)).toBeLessThanOrEqual(9);
     });
   }
+
+  // perf2 WP-2a (RS_RIS_HOIST): the RIS candidate loop evaluates bsdf_f_all_ctx from one hoisted bsdf_prepare instead
+  // of bsdf_query; the new entry counts against the same query budget, and appears exactly once
+  it('rs_initial (all M6 variants + RS_RIS_HOIST): bsdf_query + bsdf_f_all_ctx ≤ 4, bsdf_f_all_ctx = 1, ≤ 1 bsdf_sample, ≤ 2 material_eval', () => {
+    const def = RS_PASSES.rs_initial;
+    const code = composeWgsl(def.file, { sources: shaderSources, defines: restirDefines('rs_initial', { sceneDefines: SCENE_DEFINES, debug: true, extra: { ...M6, RS_RIS_HOIST: 1 } }) }).code;
+    const n = { sample: inlineCount(code, def.entry, 'bsdf_sample'), query: inlineCount(code, def.entry, 'bsdf_query'),
+      fAll: inlineCount(code, def.entry, 'bsdf_f_all_ctx'), mat: inlineCount(code, def.entry, 'material_eval') };
+    console.log(`[M6 inline] rs_initial+RS_RIS_HOIST ${JSON.stringify(n)}`);
+    expect(n.fAll).toBe(1);
+    expect(n.query + n.fAll).toBeLessThanOrEqual(4);
+    expect(n.sample).toBeLessThanOrEqual(1);
+    expect(n.mat).toBeLessThanOrEqual(2);
+  });
 });

@@ -49,6 +49,9 @@ fn ris_nee_select(p: RsPix, key: vec2u, seed: vec2u, s: u32, x: SurfaceHit, xPri
   let tb = rs_tiles_base() + (mIdx * RS_TILES + ris_tile_of(p.local, p.member)) * RS_TILE_SIZE;
   var wSum = 0.0;
   var rSel = 0.0;
+#if RS_RIS_HOIST
+  let bctx = bsdf_prepare(m, V);   // perf2 WP-2a: loop-invariant (m, V), after the nEntries == 0 early return
+#endif
   for (var j = 0u; j < M; j++) {
     let h = pcg4d(vec4u(seed.x, seed.y, j, STREAM_RIS_NEE));
     let entry = rsArena.words[tb + (h.x & (RS_TILE_SIZE - 1u))];
@@ -57,8 +60,12 @@ fn ris_nee_select(p: RsPix, key: vec2u, seed: vec2u, s: u32, x: SurfaceHit, xPri
     let ls = nee_eval(x.pos, ep);
     var r = 0.0;
     if (ls.valid && ls.prim != xPrim && any(ls.Lambda > vec3f(0.0))) {
+#if RS_RIS_HOIST
+      r = luminance(bsdf_f_all_ctx(bctx, V, ls.dir) * ls.Lambda) / ls.q;
+#else
       let q = bsdf_query(m, V, ls.dir, LOBE_NEE);
       r = luminance(q.f_all * ls.Lambda) / ls.q;
+#endif
     }
     if (ris_update(&wSum, r, rs_rand(key, RS_PASS_RIS_NEE, (s << 20u) | j))) {
       out.ep = ep;

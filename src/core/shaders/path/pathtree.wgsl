@@ -272,8 +272,14 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
 #if RS_RIS_NEE
         // M6 (restir-m6-api.md MD4): RIS over the pixel's light tile at x₁ replaces the single alias draw; W_NEE joins
         // the source weight, M(1) = risM enters every MIS weight at B = 1 as p2/M (MD5)
+#if RS_RIS_HOIST
+        // perf2 WP-2a: the alias draw is dead at B = 1 (RIS replaces it); rs_path_hash is stateless, so skipping it
+        // changes no other random draw
+        var ep: NeeEndpoint;
+#else
         var ep = nee_draw(lightsParams.cur, rs_path_hash(seed, B, SLOT_SEL), rs_path_hash(seed, B, SLOT_SEL2),
                           vec3u(rs_path_hash(seed, B, SLOT_L0), rs_path_hash(seed, B, SLOT_L1), rs_path_hash(seed, B, SLOT_L2)));
+#endif
         var wNee = 1.0;
         var tileMult = 0.0;
         if (B == 1u) {
@@ -282,6 +288,12 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
           wNee = rsel.W;
           tileMult = rsel.mult;
         }
+#if RS_RIS_HOIST
+        else {
+          ep = nee_draw(lightsParams.cur, rs_path_hash(seed, B, SLOT_SEL), rs_path_hash(seed, B, SLOT_SEL2),
+                        vec3u(rs_path_hash(seed, B, SLOT_L0), rs_path_hash(seed, B, SLOT_L1), rs_path_hash(seed, B, SLOT_L2)));
+        }
+#endif
         let ls = nee_eval(cur.pos, ep);
         // PLANT U8-8 (validation only): the UCW in mixed measures, W^RIS·p1_σ instead of W^RIS·q (area / triangle picks)
         if (B == 1u && rs_m6_flag(RSF_PLANT_U8_RIS_MIXED) && ls.valid && !ls.isDelta && ls.kind != LT_ENV && ls.q > 0.0) {
