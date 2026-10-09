@@ -40,7 +40,8 @@ const reserved = (wp: string, cls: PerfFlagClass, what: string, except?: PerfFla
 
 /** The registry. Order is documentation only (keys are sorted wherever they form a key / define set). */
 export const PERF_FLAGS = {
-  RS_VIS_MERGE: reserved('WP-1', 'bitwise', 'one trace_any_ex call site in shift_finish_vis (forced-inf, forced-local, ENV and reconnect merged via selects)'),
+  RS_VIS_MERGE: { ...reserved('WP-1', 'bitwise', 'one trace_any_ex call site in shift_finish_vis (forced-inf, forced-local, ENV and reconnect merged via selects); vis_ray helper in visible.wgsl'), landed: true },
+  RS_REFRESH_VIS: { ...reserved('WP-1', 'bitwise', 'refresh_record: the per-class visibility rays (D-NEE, N1, D-cross, B1-ana) traced at one call site (vis_ray); N1+moving only'), landed: true },
   RS_RIS_HOIST: reserved('WP-2a', 'bitwise', 'bsdf_prepare hoisted out of the RIS candidate loop; dead nee_draw at B=1 skipped'),
   RS_NEE_SITE: reserved('WP-2b', 'bitwise', 'rs_initial: one NEE visibility site (visible + visibleInf + k=B retest) and one post-hit retest site'),
   RS_LAST_ANYHIT: reserved('WP-2c', 'bitwise', 'last continuation ray as any-hit (Mode-A text, no TRI_EMISSIVE)', ['counters']),
