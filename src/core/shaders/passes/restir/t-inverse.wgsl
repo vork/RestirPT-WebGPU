@@ -7,12 +7,23 @@
 // G2: 0 resOut = res[w] rw · 1 arena rw · 2 rsVbuf · 3 rsGeo · 4 rsVbufPrev · 5 rsGeoPrev (§4.2). RS_REPLAY = 1.
 #include "restir/tshift.wgsl"
 #include "debug/restir-views.wgsl"
+#if RS_TSEL_FOLD
+#include "restir/tfold.wgsl"
+#endif
 
 @compute @workgroup_size(64)
 fn rs_t_inverse(@builtin(workgroup_id) wid: vec3u, @builtin(num_workgroups) nwg: vec3u, @builtin(local_invocation_index) lid: u32) {
+#if RS_TSEL_FOLD
+  // perf2 WP-6: q2 (replay items, RS_REPLAY = 1) or q3 (non-replay items, RS_REPLAY = 0), RsDispatch queue field
+  let tq = tinv_queue();
+  let i = queue_item_chunk(tq, wid, nwg, lid, rsDispatch.treeBase, rsDispatch.treeCount);
+  if (i == 0xFFFFFFFFu) { return; }
+  let q = queue_item_ai(arena_word(arena_item_word(tinv_item_index(tq, i))));
+#else
   let i = queue_item_chunk(RS_Q_INV, wid, nwg, lid, rsDispatch.treeBase, rsDispatch.treeCount);
   if (i == 0xFFFFFFFFu) { return; }
   let q = queue_item_ai(arena_word(arena_item_word(queue_item_base(RS_Q_INV) + i)));
+#endif
   let qP = ts_load(q, TSW_QPRIME);
   var flags = ts_load(q, TSW_FLAGS) | TS_INV_DONE;
   let src = tsrc_load(q, 1u, SFX_INV, RS_FS_PREV);
@@ -27,7 +38,15 @@ fn rs_t_inverse(@builtin(workgroup_id) wid: vec3u, @builtin(num_workgroups) nwg:
   }
   if (src.undefinedLight && tsfx_light_refused(SFX_INV, q)) { rs_count(RSC_T_LIGHT_CLASS, 1u); }
   let o = temporal_shift(src, tdst_prev(qP));
+#if RS_TSEL_FOLD
+  let piR = ts_store_inv(q, o);
+  if (rs_slot_code_sc(o.code) == SC_OK) { rs_count(RSC_T_INV_OK, 1u); }
+  // RSD_TFOLD (contribution MIS, no check mode): T3 phase B of this s = c pixel, here (restir/tfold.wgsl)
+  if ((rsDispatch.flags & RSD_TFOLD) != 0u && (flags & TS_SEL_C) != 0u) { flags = tfold_phase_b(q, flags, piR); }
+  ts_store(q, TSW_FLAGS, flags);
+#else
   ts_store_inv(q, o);
   if (rs_slot_code_sc(o.code) == SC_OK) { rs_count(RSC_T_INV_OK, 1u); }
   ts_store(q, TSW_FLAGS, flags);
+#endif
 }

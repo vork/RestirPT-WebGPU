@@ -27,7 +27,7 @@ import {
   ARENA_HDR_BYTES, arenaWords, nsAlloc, packRestirParams, packRsDispatch, packRsTemporal, queueHdr, type RscName, type RsDispatchCpu,
 } from './layout.ts';
 import { m6Defines, m7NmPlantDefine, numSlotsOf, pairTexSizes, restirFlags, restirSettings, tModeOf, tPlantsOf, validateSettings, type RestirSettings } from './presets.ts';
-import { RS_M6_CONSTS as K6, arenaM6Base } from './layout.ts';
+import { RS_M6_CONSTS as K6, arenaM6Base, tStateSoaToAos } from './layout.ts';
 import { G0_BINDING, RS_PASSES, RestirResources, createUniforms, g2LayoutEntries, restirCommonDefines, restirDefines, type RsPassName } from './resources.ts';
 import { SpatialStage } from './stage-spatial.ts';
 import { EnsembleStage } from './ensemble.ts';
@@ -753,7 +753,8 @@ export class RestirKernel {
     this.device.queue.submit([enc.finish()]);
     const out = new Uint32Array(await readBuffer(this.device, staging, bytes));
     staging.destroy();
-    return out;
+    // perf2 WP-6 (RS_TSTATE_SOA): returned record-major, as without the flag (every CPU decoder reads that layout)
+    return this.perfFlags.RS_TSTATE_SOA ? tStateSoaToAos(out, res.pixels) : out;
   }
 
   /** Read back the candidate dump (instrumentation.dumpCandidates). */

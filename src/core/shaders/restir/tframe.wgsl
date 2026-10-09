@@ -112,12 +112,37 @@ fn lt_moved(entryCur: u32) -> bool { return (lt_change_bits(entryCur) & LCB_MOVE
 // ---- arena extension (TD16/TD17, §2.8) -----------------------------------------------------------------------------
 /// words[] index of the temporal region (= global arena word 64 + 6·P·NS_alloc).
 fn arena_tbase() -> u32 { return 6u * rs_atlas_pixels() * rs_ns_alloc(); }
+#if RS_TSTATE_SOA
+/// perf2 WP-6 (RS_TSTATE_SOA): word-major tState, word w of pixel ai at w·P + ai (same region, same 20·P words).
+fn ts_word(ai: u32, w: u32) -> u32 { return arena_tbase() + w * rs_atlas_pixels() + ai; }
+#else
 fn ts_word(ai: u32, w: u32) -> u32 { return arena_tbase() + 20u * ai + w; }
+#endif
 fn sfx_word(dir: u32, ai: u32, w: u32) -> u32 { return arena_tbase() + 20u * rs_atlas_pixels() + 16u * ai + 8u * dir + w; }
 /// Item base of queue q inside the item region: 0 (q0, q1), P (q2).
 fn queue_item_base(q: u32) -> u32 { return select(0u, rs_atlas_pixels(), q == RS_Q_INV); }
 /// Capacity of queue q: P·NS_alloc (q0), P (q1, q2).
 fn queue_capacity_q(q: u32) -> u32 { return select(rs_atlas_pixels(), queue_capacity(), q == RS_Q_SPATIAL); }
+
+#if RS_TSEL_FOLD
+// perf2 WP-6 (RS_TSEL_FOLD; TS mirror layout.ts WP6_CONSTS). RSD_TFOLD (RsDispatch.flags of T4 and T3 phase B):
+// contribution MIS without a check mode, T4 finishes the s = c pixel itself (phase B folded into T4) and phase B only
+// records the debug views. RS_TSEL_FOLD = 2 also splits Q_i by the replay predicate of its record res[w][q]
+// (shift.wgsl res_needs_replay): replay items stay on q2 (bottom of the Q_i region [P, 2P)), non-replay items go on
+// q3 (RS_Q_INV_NR, header words 12–15, free during the temporal stage: the spatial stage clears q3 before it uses it)
+// from the TOP of the same region (item i at P + P − 1 − i); together at most P items. Both queues run the SAME T4
+// pipeline (an RS_REPLAY = 0 T4 for q3 changed bits: the Metal compiler contracts the shift differently there);
+// rs_refresh_inv covers both.
+const RS_Q_INV_NR: u32 = 3u;
+const RSD_TFOLD: u32 = 1048576u;
+/// Item region index of item i of Q_i (q2) or its non-replay part (q3).
+fn tinv_item_index(q: u32, i: u32) -> u32 {
+  let P = rs_atlas_pixels();
+  return select(P + i, P + P - 1u - i, q == RS_Q_INV_NR);
+}
+/// Queue of the T4 dispatch / refresh_inv dispatch (RsDispatch.flags queue field; q2 or q3).
+fn tinv_queue() -> u32 { return select(RS_Q_INV, RS_Q_INV_NR, ((rsDispatch.flags >> RSD_QUEUE_SHIFT) & 3u) == RS_Q_INV_NR); }
+#endif
 
 #if RS_ARENA_BINDING
 fn ts_load(ai: u32, w: u32) -> u32 { return rsArena.words[ts_word(ai, w)]; }
@@ -136,6 +161,33 @@ fn sfx_load(dir: u32, ai: u32) -> SfxRec {
 #if RS_ARENA_RW
 fn ts_store(ai: u32, w: u32, v: u32) { rsArena.words[ts_word(ai, w)] = v; }
 fn ts_storef(ai: u32, w: u32, v: f32) { rsArena.words[ts_word(ai, w)] = bitcast<u32>(v); }
+#if RS_TSTATE_SOA
+/// perf2 WP-6 (RS_TSTATE_SOA): = ts_clear below, each word written once (same final words).
+fn ts_clear(ai: u32, flags: u32) {
+  let na = rs_slot_code(SC_NOT_ACCEPTED, RCT_NONE, 0u, 0.0);
+  ts_store(ai, TSW_FWDF, 0u);  ts_store(ai, TSW_FWDF + 1u, 0u);  ts_store(ai, TSW_FWDF + 2u, 0u);
+  ts_store(ai, TSW_FWDJ, JW_FAILED);
+  ts_clear_inv(ai);
+  ts_store(ai, TSW_QPRIME, TS_QPRIME_NONE);
+  ts_store(ai, TSW_CP, 0u);
+  ts_store(ai, TSW_FWDCODE, na);
+  ts_store(ai, TSW_FLAGS, flags);
+  ts_store(ai, TSW_JP, 0u);
+  ts_store(ai, TSW_XPENTRY, RC_NONE);
+  ts_store(ai, TSW_CPREV, 0u);
+}
+/// The words T1 never sets beyond their cleared value (inverse block, w̃, π words): INVF 0, INVJ FAILED, WC / WP 0,
+/// INVCODE SC_NOT_ACCEPTED, PISTORED / PIRECOMP 0.
+fn ts_clear_inv(ai: u32) {
+  ts_store(ai, TSW_INVF, 0u);  ts_store(ai, TSW_INVF + 1u, 0u);  ts_store(ai, TSW_INVF + 2u, 0u);
+  ts_store(ai, TSW_INVJ, JW_FAILED);
+  ts_store(ai, TSW_WC, 0u);
+  ts_store(ai, TSW_WP, 0u);
+  ts_store(ai, TSW_INVCODE, rs_slot_code(SC_NOT_ACCEPTED, RCT_NONE, 0u, 0.0));
+  ts_store(ai, TSW_PISTORED, 0u);
+  ts_store(ai, TSW_PIRECOMP, 0u);
+}
+#else
 /// Every tState word of pixel ai to its cleared value (T1): qPrime NONE, codes SC_NOT_ACCEPTED, J words FAILED,
 /// xpEntry RC_NONE, everything else 0; then flags.
 fn ts_clear(ai: u32, flags: u32) {
@@ -149,6 +201,7 @@ fn ts_clear(ai: u32, flags: u32) {
   rsArena.words[ts_word(ai, TSW_XPENTRY)] = RC_NONE;
   rsArena.words[ts_word(ai, TSW_FLAGS)] = flags;
 }
+#endif
 fn sfx_store(dir: u32, ai: u32, r: SfxRec) {
   let b = sfx_word(dir, ai, 0u);
   rsArena.words[b] = bitcast<u32>(r.rad.x);

@@ -81,6 +81,8 @@ export const DN_MAX_ITERATIONS = 6;
 
 export interface DnParamsCpu {
   width: number; height: number; flags: number; settings: DenoiserSettings; tsBase: number; resPlanes: number;
+  /** perf2 WP-6 (RS_TSTATE_SOA): tState word stride = atlas pixels P (DnParams word 26, `pad6`; 0 = unused). */
+  tsStride?: number;
   /** Frames since the last lighting change (0 = this frame; Changelog DN-6). */
   sinceChange?: number;
 }
@@ -98,6 +100,7 @@ export function packDnParams(o: DnParamsCpu, out = new ArrayBuffer(DN_PARAMS_SIZ
   u[12] = o.tsBase >>> 0; u[13] = o.resPlanes >>> 0; f[14] = o.settings.sigmaA; f[15] = o.settings.varCorr; f[16] = o.settings.nMaxT; u[17] = Math.min(o.sinceChange ?? 0xffff, 0xffff); u[18] = o.settings.invRadius; f[19] = o.settings.lumMinN; u[20] = o.settings.lumPre;
   f[21] = o.settings.taaLightMax; f[22] = o.settings.taaCamMax; u[23] = (o.settings.taaDilate ? DNT.DILATE : 0) | (o.settings.taaCubic ? DNT.CUBIC : 0);
   f[24] = o.settings.taaGammaLight; f[25] = o.settings.taaGammaCam;
+  if (o.tsStride) u[26] = o.tsStride >>> 0;
   return out;
 }
 

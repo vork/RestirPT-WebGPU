@@ -31,6 +31,7 @@ import { RestirKernel } from '../../src/core/render/restir/kernel.ts';
 import {
   RES_WORDS, RS_VIEW, RS_WGSL_CONSTS as K, RW, TS_CONSTS as TS, TSW, arenaWords, decodeReservoir, decodeSfxLocal, decodeTStateLocal,
   packRsTemporal, pathClass, rfPack, rfUnpack, sfxWord, tsWord,
+  tStateAosToSoa,
 } from '../../src/core/render/restir/layout.ts';
 import { numSlotsOf, restirSettings, type RestirPresetName, type RestirSettings } from '../../src/core/render/restir/presets.ts';
 import { RS_PASSES, restirCommonDefines } from '../../src/core/render/restir/resources.ts';
@@ -635,7 +636,8 @@ describe('U-TD-1 (a) / U-TD-3: temporal views 480–496 and probe tags 73–78 (
     const { device } = rig.g;
     const NS = rig.kernel.resources.alloc.slots;
     const x = synthTemporal(P, NS, 21);
-    device.queue.writeBuffer(rig.kernel.resources.arena, 256 + 4 * x.base, x.words);
+    // perf2 WP-6 (RS_TSTATE_SOA forced): the GPU tState region is word-major
+    device.queue.writeBuffer(rig.kernel.resources.arena, 256 + 4 * x.base, rig.kernel.perfFlags.RS_TSTATE_SOA ? tStateAosToSoa(x.words, P) : x.words);
     device.queue.writeBuffer(rig.kernel.rsTemporal, 0, packRsTemporal({
       flags: TF_SYNTH, histFrames: 3, frameGen: GEN, prevGen: GEN - 1, envPrev: new Uint32Array(8), gens: [1, 2, 3, 4], gensPrev: [0, 1, 2, 3], configHash: 7,
     }));

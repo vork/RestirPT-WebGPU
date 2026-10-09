@@ -20,9 +20,17 @@ fn rs_refresh_fwd(@builtin(global_invocation_id) gid: vec3u) {
 @compute @workgroup_size(64)
 fn rs_refresh_inv(@builtin(workgroup_id) wid: vec3u, @builtin(num_workgroups) nwg: vec3u, @builtin(local_invocation_index) lid: u32) {
   if (!rs_tf(TF_REFRESH)) { return; }
+#if RS_TSEL_FOLD
+  // perf2 WP-6: Q_i is split into q2 (replay) and q3 (non-replay, item region top); one dispatch per queue
+  let tq = tinv_queue();
+  let i = queue_item_chunk(tq, wid, nwg, lid, rsDispatch.treeBase, rsDispatch.treeCount);
+  if (i == 0xFFFFFFFFu) { return; }
+  let q = queue_item_ai(arena_word(arena_item_word(tinv_item_index(tq, i))));
+#else
   let i = queue_item_chunk(RS_Q_INV, wid, nwg, lid, rsDispatch.treeBase, rsDispatch.treeCount);
   if (i == 0xFFFFFFFFu) { return; }
   let q = queue_item_ai(arena_word(arena_item_word(queue_item_base(RS_Q_INV) + i)));
+#endif
   let r = refresh_record(q, RS_FS_CUR, RS_FS_PREV);
   sfx_store(SFX_INV, q, r);
   rsdbg_refresh(q, SFX_INV, r);
