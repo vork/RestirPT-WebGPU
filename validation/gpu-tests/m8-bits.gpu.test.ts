@@ -57,6 +57,10 @@ const ANCHOR_NOP9: Record<string, string[]> = {
 };
 /** Shipped tier: = Anchor while RELEASE_PERF_FLAGS holds no results-changing flag. A package releasing one replaces the
  *  affected entries here (re-recorded with its flag on), with the justification and diagnostic in its decision note. */
+// perf2 WP-7e released RS_PRIMARY_EXT (unbiased, renderer-only): this rig has no M1 primary, so the kernel takes its
+// rs_vtrace → rs_primary_ext path, which reproduced every Anchor hash (full and P9-excluded) bit for bit when the tier
+// was re-recorded (2026-10-09, all 10 cases): the Shipped table stays the Anchor table, now checked by a second GPU run.
+// The flag's results change is app-only (the M1 primary's intersection: U-WP7E-VBUF, wp7e-primary-ext.gpu.test.ts).
 const SHIPPED: Record<string, string[]> = { ...ANCHOR };
 const SHIPPED_NOP9: Record<string, string[]> = { ...ANCHOR_NOP9 };
 const GOLDEN_PT: Record<string, string> = {

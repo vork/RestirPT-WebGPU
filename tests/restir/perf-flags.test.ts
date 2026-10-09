@@ -3,7 +3,7 @@
 // goldens) is m8-bits.gpu.test.ts, the validation-text side U-M7-BITS (m7-wgsl-bits.test.ts).
 import { describe, expect, it } from 'vitest';
 import {
-  PERF_FLAGS, PERF_FLAG_NAMES, RELEASE_PERF_FLAGS, bitwiseSubset, biasedFlags, checkValidationPerfFlags, normalizePerfFlags,
+  KERNEL_RELEASE_PERF_FLAGS, PERF_FLAGS, PERF_FLAG_NAMES, RELEASE_PERF_FLAGS, bitwiseSubset, biasedFlags, checkValidationPerfFlags, normalizePerfFlags,
   perfFlagDefines, perfFlagsKey, resultsChangingFlags, unlandedFlags, type PerfFlagDef,
 } from '../../src/core/render/restir/perf-flags.ts';
 import { INTERACTIVE_PINNED, RESTIR_PRESETS, restirSettings } from '../../src/core/render/restir/presets.ts';
@@ -35,6 +35,13 @@ describe('perf-flag registry', () => {
   it('no biased flag is a release flag (D6: a toggle, off by default and in every validation path)', () => {
     for (const n of PERF_FLAG_NAMES) if (PERF_FLAGS[n].cls === 'biased') expect((PERF_FLAGS[n] as PerfFlagDef).release).toBe(false);
     expect(biasedFlags(RELEASE_PERF_FLAGS)).toEqual([]);
+  });
+  it('renderer-only release flags (WP-7e RS_PRIMARY_EXT) are not in RestirKernel.interactive\'s default', () => {
+    expect(RELEASE_PERF_FLAGS.RS_PRIMARY_EXT).toBe(1);
+    expect(KERNEL_RELEASE_PERF_FLAGS.RS_PRIMARY_EXT).toBeUndefined();
+    for (const n of Object.keys(RELEASE_PERF_FLAGS) as (keyof typeof PERF_FLAGS)[]) {
+      expect(n in KERNEL_RELEASE_PERF_FLAGS, n).toBe(!(PERF_FLAGS[n] as PerfFlagDef).rendererOnly);
+    }
   });
   it('a release flag has landed', () => {
     for (const n of Object.keys(RELEASE_PERF_FLAGS)) expect(unlandedFlags([n])).toEqual([]);

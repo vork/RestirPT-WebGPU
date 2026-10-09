@@ -32,6 +32,10 @@ export interface PerfFlagDef {
   /** On by default in the app (RestirKernel.interactive). Release flags of class unbiased / biased move the Shipped
    *  goldens. Biased flags are never released by default (user decision D6: a toggle, off in every validation path). */
   release: boolean;
+  /** Released through the Renderer only (RendererOptions.restirKernel.perfFlags default): RestirKernel.interactive's
+   *  default omits it, because tests drive that kernel without the renderer (perf2 WP-7e: RS_PRIMARY_EXT needs the
+   *  renderer's M1 V-buffer; without it the kernel traces its own, rs_vtrace). */
+  rendererOnly?: boolean;
   /** Define value of a released parametrised flag (default 1; e.g. the triangle budget K of CW_TRI_BUDGET). */
   value?: number;
   what: string;
@@ -67,7 +71,7 @@ export const PERF_FLAGS = {
   RS_NO_PLANTS: reserved('WP-9b', 'bitwise', 'U8-*, TP_* and 2022-criteria plant code compiled out'),
   RS_NO_DIAG: reserved('WP-9b', 'bitwise', 'P9 diagnostic writes / copies skipped (allocation kept)', ['P9']),
   MAT_VARIANTS: reserved('WP-8', 'bitwise', 'material compile variants (models present in the scene only), TEX_XFORM, branch-free LUT lerp'),
-  RS_PRIMARY_EXT: { ...reserved('WP-7e', 'unbiased', 'rs_primary reads the M1 V-buffer (bits(t) in vbuf.w) instead of tracing again (ulp edge ties)'), landed: true },
+  RS_PRIMARY_EXT: { ...reserved('WP-7e', 'unbiased', 'rs_primary reads the M1 V-buffer (bits(t) in vbuf.w) instead of tracing again (ulp edge ties)'), landed: true, release: true, rendererOnly: true },
   // WP-7 a–d, f (added by WP-7; app-only passes: the M1 primary, the interactive finalize, the denoiser)
   DN_GRAD_SKIP: { ...reserved('WP-7a', 'bitwise', 'denoiser: dn_gradient / dn_grad_filter skipped on frames where no pass reads λ (host only)'), landed: true, release: true },
   RS_DUPMAP_S64: { ...reserved('WP-7b', 'bitwise', 'rs_dupmap: branch-free 64-bit seed compare (memberCount == 1, sentinel tile texels)'), landed: true, release: true },
@@ -91,6 +95,10 @@ export const isPerfFlagName = (n: string): n is PerfFlagName => Object.prototype
 /** Flags on in the app by default (RestirKernel.interactive). Empty until a package's flag is accepted. */
 export const RELEASE_PERF_FLAGS: PerfFlags = Object.fromEntries(
   PERF_FLAG_NAMES.filter((n) => (PERF_FLAGS[n] as PerfFlagDef).release).map((n) => [n, (PERF_FLAGS[n] as PerfFlagDef).value ?? 1])) as PerfFlags;
+
+/** RestirKernel.interactive's default: the release set without the renderer-only flags (PerfFlagDef.rendererOnly). */
+export const KERNEL_RELEASE_PERF_FLAGS: PerfFlags = Object.fromEntries(
+  Object.entries(RELEASE_PERF_FLAGS).filter(([n]) => !(PERF_FLAGS[n as PerfFlagName] as PerfFlagDef).rendererOnly)) as PerfFlags;
 
 /** Parse / validate / normalise: unknown names throw, false / 0 entries are dropped, keys sorted. */
 export function normalizePerfFlags(input: PerfFlagsInput): PerfFlags {

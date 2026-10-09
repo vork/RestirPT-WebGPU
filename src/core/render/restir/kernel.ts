@@ -33,12 +33,12 @@ import { SpatialStage } from './stage-spatial.ts';
 import { EnsembleStage } from './ensemble.ts';
 import { TemporalStage } from './stage-temporal.ts';
 import { FrameStateTracker, type ConfigHashInput, type RestirAdvance, type RestirFrameState, type RestirInteractiveAdvance } from './frame-state.ts';
-import { RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagDefines, perfFlagsKey, type PerfFlags, type PerfFlagsInput } from './perf-flags.ts';
+import { KERNEL_RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagDefines, perfFlagsKey, type PerfFlags, type PerfFlagsInput } from './perf-flags.ts';
 
 export type { RestirSettings } from './presets.ts';
 export type { RestirAdvance, RestirFrameState } from './frame-state.ts';
 export { RESTIR_PRESETS } from './presets.ts';
-export { PERF_FLAGS, RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagDefines, perfFlagsKey, type PerfFlagName, type PerfFlags, type PerfFlagsInput } from './perf-flags.ts';
+export { KERNEL_RELEASE_PERF_FLAGS, PERF_FLAGS, RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagDefines, perfFlagsKey, type PerfFlagName, type PerfFlags, type PerfFlagsInput } from './perf-flags.ts';
 
 export interface WorkUnit { label: string; costHint: number; encode(enc: GPUCommandEncoder): void }
 /** A stage of the frame graph (spatial = WP-C stage-spatial.ts, ensemble = WP-C ensemble.ts). `prepare` compiles its
@@ -81,7 +81,8 @@ export interface RestirKernelOptions {
    *  plane-major ('soa', composer define RS_RES_SOA; RestirKernel.interactive). readReservoirs() always returns AoS. */
   resLayout?: 'aos' | 'soa';
   /** perf2 (docs/decisions/perf2-api.md): interactive-only optimisation defines from the registry in perf-flags.ts.
-   *  Default: none (every validation caller); RestirKernel.interactive defaults to RELEASE_PERF_FLAGS. Part of
+   *  Default: none (every validation caller); RestirKernel.interactive defaults to KERNEL_RELEASE_PERF_FLAGS (the release
+   *  set without the renderer-only flags; the Renderer passes RELEASE_PERF_FLAGS). Part of
    *  variantKey(); setPerfFlags() switches them at a frame boundary (recompile + history reset). */
   perfFlags?: PerfFlagsInput;
   env?: PtEnvOptions;
@@ -206,7 +207,7 @@ export class RestirKernel {
   static async interactive(device: GPUDevice, scene: SceneGpu, env: EnvGpuResources, colorFormat: GPUTextureFormat,
     o: Omit<RestirKernelOptions, 'settings'> & { settings?: Partial<RestirSettings> } = {}): Promise<RestirFramePass> {
     const k = await RestirKernel.create(device, scene, env, {
-      modeBNeedsAreaLights: true, resLayout: 'soa', ...o, perfFlags: o.perfFlags ?? RELEASE_PERF_FLAGS, settings: { ...restirSettings('interactive'), ...o.settings },
+      modeBNeedsAreaLights: true, resLayout: 'soa', ...o, perfFlags: o.perfFlags ?? KERNEL_RELEASE_PERF_FLAGS, settings: { ...restirSettings('interactive'), ...o.settings },
     });
     await k.pipeline('rs_finalize_frame', {}, colorFormat);
     return new RestirFramePass(k, colorFormat);
