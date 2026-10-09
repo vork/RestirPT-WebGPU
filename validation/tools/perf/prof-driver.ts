@@ -17,7 +17,7 @@
 //        [--disable-dawn-features a,b] [--kernel-flags A,B] [--out DIR] [--target attach|all] [--trigger CMD] [--pre-delay s]
 // Jobs: a JSON array of PerfOptions (validation/harness/perf-run.ts; perfFlags per job, or --kernel-flags for all).
 import { execSync, spawn } from 'node:child_process';
-import { appendFileSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -125,7 +125,9 @@ try {
     const done = new Promise<number | null>((r) => xt.on('exit', (code) => r(code)));
     const code = await Promise.race([done, sleep(240_000).then(() => 'timeout' as const)]);
     if (code === 'timeout') { console.log('[drv] xctrace timeout: SIGINT'); xt.kill('SIGINT'); await Promise.race([done, sleep(30_000)]); exitCode = 1; }
-    else { console.log(`[drv] xctrace exit ${code}`); if (code !== 0) exitCode = 1; }
+    // exit 2 = "run issues detected" (e.g. 'Fatal logging system error: the log archive is corrupt'): the Metal tables
+    // are still recorded and exportable, so it is a warning; a missing trace is an error
+    else { console.log(`[drv] xctrace exit ${code}`); if (code !== 0 && !(code === 2 && existsSync(trace))) exitCode = 1; }
     c = await page.evaluate(() => (window as unknown as { __perf2: Record<string, number> }).__perf2).catch(() => c);
     console.log(`[drv] after recording: ${JSON.stringify(c)}; job finished=${finished}; trace ${path.relative(ROOT, trace)}`);
     await Promise.race([run, sleep(500)]);

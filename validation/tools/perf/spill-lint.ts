@@ -46,7 +46,7 @@ function run(name: string, cmd: string, argv: string[]): boolean {
   console.log(`\n--- ${name}: ${cmd} ${argv.join(' ')}`);
   const r = spawnSync(cmd, argv, { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'pipe'] });
   writeFileSync(path.join(dir, `${name}.log`), `${r.stdout ?? ''}${r.stderr ?? ''}`);
-  for (const l of `${r.stdout ?? ''}`.split('\n').filter((x) => /^\[drv\]|rows=|^kernel|spill\/thread/.test(x)).slice(0, 60)) console.log(`  ${l}`);
+  for (const l of `${r.stdout ?? ''}`.split('\n').filter((x) => /^\[drv\]|rows=|^kernel|spill\/thread|^\w+\s+\d+\s+\d+/.test(x)).slice(0, 60)) console.log(`  ${l}`);
   if (r.status !== 0) console.log(`  exit ${r.status}: ${(r.stderr ?? '').slice(-800)}`);
   return r.status === 0;
 }
@@ -67,6 +67,10 @@ async function scene(sc: string): Promise<SceneReport> {
   if (!PERF_SCENES[sc]) throw new Error(`unknown scene ${sc} (${Object.keys(PERF_SCENES).join(', ')})`);
   const rep: SceneReport = { scene: sc, perfFlags: perfFlagsKey(flags), spill: {}, lint: {}, errors: [] };
   const base = { ...pinnedJob(sc), width: W, height: H, lightAnim: PERF_SCENES[sc].lightAnim, ...(perfFlagsKey(flags) ? { perfFlags: flags } : {}) };
+  // --no-dump / --no-trace reuse the step's earlier result of the same tag when present
+  const prev = (f: string) => (existsSync(path.join(dir, f)) ? JSON.parse(readFileSync(path.join(dir, f), 'utf8')) : {});
+  if (a['no-dump']) rep.lint = prev(`${sc}-lint.json`);
+  if (a['no-trace']) rep.spill = prev(`${sc}-spill.json`);
   if (!a['no-dump']) {
     const jobs = path.join(dir, `${sc}-dump-jobs.json`);
     writeFileSync(jobs, JSON.stringify([{ ...base, frames: 32, warmup: 2, block: 8, latencyFrames: 0, passFrames: 0, label: `${sc} dump` }]));
@@ -82,7 +86,7 @@ async function scene(sc: string): Promise<SceneReport> {
   }
   if (!a['no-trace']) {
     const jobs = path.join(dir, `${sc}-xct-jobs.json`);
-    writeFileSync(jobs, JSON.stringify([{ ...base, frames: 32, warmup: 8, latencyFrames: 0, passFrames: 400, label: `${sc} split xct` }]));
+    writeFileSync(jobs, JSON.stringify([{ ...base, frames: 32, warmup: 8, latencyFrames: 0, passFrames: 2000, label: `${sc} split xct` }]));
     const trace = path.join(dir, 'xct', `${sc}-split.trace`);
     const pre = path.join(dir, `${sc}-xct-`);
     if (await locked(`${sc}-xct`, 'npx', ['tsx', path.join(HERE, 'prof-driver.ts'), '--mode', 'xct', '--jobs', rel(jobs), '--tag', `${sc}-split`, '--phase', 'split', '--after', '40',
