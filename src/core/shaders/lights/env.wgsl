@@ -81,8 +81,20 @@ fn envTexel(uv: vec2f) -> vec3f {
   let x = fma(uv, vec2f(dim), vec2f(-0.5));
   let x0 = floor(x);
   let t = x - x0;
+#if RS_ENV_WRAP
+  // perf2 WP-4a (interactive only): the repeat wrap as selects instead of 6 emulated i32 modulos (Metal has no integer
+  // divide). Every uv the renderer forms is in [0, 1], so x0 ∈ [−1, dim − 1]; on xi ∈ [−dim, 2·dim) the selects equal
+  // ((xi % dim) + dim) % dim exactly (truncated %), and i0 ∈ [0, dim) makes (i0 + 1) % dim a compare. Anything else
+  // (|uv| large, saturated conversions) takes the general modulo, so the result is the old one bit for bit.
+  let xi = vec2i(x0);
+  let w0 = select(xi, xi + dim, xi < vec2i(0));
+  var i0 = select(w0, w0 - dim, w0 >= dim);
+  if (any((xi < -dim) | (xi >= 2 * dim))) { i0 = ((xi % dim) + dim) % dim; }
+  let i1 = select(i0 + 1, vec2i(0), i0 + 1 == dim);
+#else
   let i0 = ((vec2i(x0) % dim) + dim) % dim;
   let i1 = (i0 + 1) % dim;
+#endif
   let a = textureLoad(texEnv, i0, 0).rgb;
   let b = textureLoad(texEnv, vec2i(i1.x, i0.y), 0).rgb;
   let c = textureLoad(texEnv, vec2i(i0.x, i1.y), 0).rgb;
