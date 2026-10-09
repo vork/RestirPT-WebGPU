@@ -14,7 +14,7 @@
 import { composeWgsl, createCheckedShaderModule, type Defines } from '../../gpu/wgsl-composer.ts';
 import { readBuffer } from '../../gpu/readback.ts';
 import { shaderSources } from '../../shaders/index.ts';
-import type { LightData } from '../../scene/types.ts';
+import { TRI_EMISSIVE, type LightData } from '../../scene/types.ts';
 import type { DebugResources } from '../debug-views.ts';
 import { envBindGroupEntries, envBindGroupLayoutEntries, type EnvGpuResources } from '../env-gpu.ts';
 import { FrameUniformBuffer, JITTER_IID, JITTER_NONE, boundsDiagonal, type CameraState, type JitterMode } from '../frame-uniforms.ts';
@@ -226,7 +226,36 @@ export class RestirKernel {
 
   /** Composer defines shared by every ReSTIR pipeline (+ the pass's own). */
   defines(name: RsPassName, extra: Defines = {}): Defines {
-    return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug, extra: { ...this.m6Defines(), NM_PLANT: m7NmPlantDefine(this.settings, name), ...this.layoutDefines(), ...this.perfDefines(), ...extra } });
+    return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug, extra: { ...this.m6Defines(), NM_PLANT: m7NmPlantDefine(this.settings, name), ...this.layoutDefines(), ...this.passPerfDefines(name), ...extra } });
+  }
+  /** perf2 WP-2d: RS_RIS_PREPASS changes rs_initial's text only while the pre-pass runs (risPrepassActive()); every other
+   *  text (other passes, the dump, custom / test pipelines that call pathtree_run) composes without it. */
+  private passPerfDefines(name: RsPassName | undefined): Record<string, number> {
+    const d = this.perfDefines();
+    if (d.RS_RIS_PREPASS && !(name === 'rs_initial' && this.risPrepassActive())) delete d.RS_RIS_PREPASS;
+    // perf2 WP-2c: the last continuation is an any-hit query only where a hit can end no candidate (no TRI_EMISSIVE
+    // triangle in the scene; the Mode-A text is checked in WGSL)
+    if (d.RS_LAST_ANYHIT && this.sceneHasEmissiveTris) delete d.RS_LAST_ANYHIT;
+    return d;
+  }
+  /** perf2 WP-2c: the scene has a TRI_EMISSIVE triangle (fixed per kernel: the triangle flags are uploaded once). */
+  private get sceneHasEmissiveTris(): boolean {
+    if (this.emissiveTris === undefined) {
+      const f = this.scene.scene.geometry.triFlags;
+      let any = false;
+      for (let t = 0; t < f.length && !any; t++) any = (f[t] & TRI_EMISSIVE) !== 0;
+      this.emissiveTris = any;
+    }
+    return this.emissiveTris;
+  }
+  private emissiveTris: boolean | undefined;
+  /** perf2 WP-2d (RS_RIS_PREPASS): the RIS-NEE selection runs as its own pass rs_ris_nee before rs_initial — only with
+   *  RIS-NEE, one tree per pixel, no candidate dump and no test defines of rs_initial (RS_PT_DIRECTIONS, RS_RNG_OVERRIDE,
+   *  …; the WP-2d diagnostic RS_RIS_PREPASS_DIAG excepted). Members (ensembles / chains) are per pixel, so E > 1 is fine. */
+  risPrepassActive(): boolean {
+    if (!this.perfFlagSet.RS_RIS_PREPASS || !this.settings.risNee || this.settings.trees !== 1) return false;
+    if (this.o.instrumentation?.dumpCandidates) return false;
+    return Object.keys(this.o.instrumentation?.initialDefines ?? {}).every((k) => k === 'RS_RIS_PREPASS_DIAG');
   }
   /** M8 P-7: RS_RES_SOA only for plane-major kernels (the key is absent otherwise: the M7 text). */
   layoutDefines(): Record<string, number> { return this.o.resLayout === 'soa' ? { RS_RES_SOA: 1 } : {}; }
@@ -267,7 +296,8 @@ export class RestirKernel {
   variantKey(): string {
     const d = this.m6Defines();
     const pf = perfFlagsKey(this.perfFlagSet);   // perf2: '' without flags (the pre-perf2 key)
-    return `${d.RS_RIS_NEE}${d.RS_MODE_B}${d.RS_DUAL_MV}${d.RS_DUPMAP}${d.RS_PLANT_T2}${d.RS_PLANT_SMOOTH_J}${m7NmPlantDefine(this.settings, 'rs_spatial_shift')}${pf ? `|${pf}` : ''}`;
+    const pre = this.perfFlagSet.RS_RIS_PREPASS ? (this.risPrepassActive() ? ':pre' : ':inline') : '';   // perf2 WP-2d
+    return `${d.RS_RIS_NEE}${d.RS_MODE_B}${d.RS_DUAL_MV}${d.RS_DUPMAP}${d.RS_PLANT_T2}${d.RS_PLANT_SMOOTH_J}${m7NmPlantDefine(this.settings, 'rs_spatial_shift')}${pf ? `|${pf}${pre}` : ''}`;
   }
 
   /** Compile (once) the pipeline of a standard pass; `extra` defines give test variants (their own cache key). */
@@ -282,6 +312,22 @@ export class RestirKernel {
       p = this.compile(d.file, d.entry, this.defines(name, { ...inst, ...extra, ...(colorFormat ? { COLOR_FORMAT: colorFormat } : {}) }),
         this.pipelineLayout(name, colorFormat), `${name}${std ? '' : ':' + JSON.stringify(extra)}`, this.o.instrumentation?.extraSources ?? {})
         .then((pl) => { if (std) this.ready.set(`${name}:${colorFormat ?? ''}:${vk}`, pl); return pl; });
+      this.pipelines.set(key, p);
+      p.catch(() => this.pipelines.delete(key));
+    }
+    return p;
+  }
+
+  /** perf2 WP-2d: the pre-pass pipeline (entry rs_ris_nee of rs_initial's own module text: same defines, layout and G2). */
+  risPrepassPipeline(): Promise<GPUComputePipeline> {
+    const vk = this.variantKey();
+    const key = `rs_ris_nee:${vk}`;
+    let p = this.pipelines.get(key);
+    if (!p) {
+      const d = RS_PASSES.rs_initial;
+      p = this.compile(d.file, 'rs_ris_nee', this.defines('rs_initial', { ...(this.o.instrumentation?.initialDefines ?? {}) }), this.pipelineLayout('rs_initial'), 'rs_ris_nee',
+        this.o.instrumentation?.extraSources ?? {})
+        .then((pl) => { this.ready.set(key, pl); return pl; });
       this.pipelines.set(key, p);
       p.catch(() => this.pipelines.delete(key));
     }
@@ -315,6 +361,7 @@ export class RestirKernel {
     if (this.settings.risNee) base.push('rs_light_tiles');
     if (this.settings.dupmap && this.settings.temporal) base.push('rs_dupmap');
     await Promise.all(base.map((n) => this.pipeline(n)));
+    if (this.risPrepassActive()) await this.risPrepassPipeline();
     if (this.colorFormat) await this.pipeline('rs_finalize_frame', {}, this.colorFormat);
     if (this.settings.rounds > 0) await this.spatial.prepare?.(this);
     if ((this.view?.members ?? 1) > 1) await this.ensemble.prepare?.(this);
@@ -495,10 +542,10 @@ export class RestirKernel {
    * args buffer + offset. Per-pixel passes use perPixelWorkgroups(rowBase, rowEnd).
    */
   encodePass(enc: GPUCommandEncoder, name: RsPassName, pipeline: GPUComputePipeline, g2: GPUBindGroup, d: Partial<RsDispatchCpu>,
-    work: [number, number] | { indirect: GPUBuffer; offset: number }, timestampWrites?: GPUComputePassTimestampWrites): void {
+    work: [number, number] | { indirect: GPUBuffer; offset: number }, timestampWrites?: GPUComputePassTimestampWrites, label?: string): void {
     const def = RS_PASSES[name];
     const off = this.dispatchSlot(d);
-    const pass = enc.beginComputePass({ label: name, timestampWrites });
+    const pass = enc.beginComputePass({ label: label ?? name, timestampWrites });
     pass.setPipeline(pipeline);
     pass.setBindGroup(0, this.ensureG0(), [off]);
     pass.setBindGroup(1, def.scene ? this.g1Scene : this.g1Empty);
@@ -515,7 +562,7 @@ export class RestirKernel {
   }
   /** Defines of a custom pipeline (scene + env + lights + LUTs + the given pass bindings; DEBUG_NO_BINDINGS). */
   customDefines(extra: Defines, scene = true): Defines {
-    return { ...restirCommonDefines(scene ? this.scene.defines(SCENE_GROUP) : undefined, false), ...this.m6Defines(), ...this.perfDefines(), ...extra };
+    return { ...restirCommonDefines(scene ? this.scene.defines(SCENE_GROUP) : undefined, false), ...this.m6Defines(), ...this.passPerfDefines(undefined), ...extra };
   }
   /** Encode a custom pipeline with the kernel's G0 (+ one RsDispatch) and G1. */
   encodeCustom(enc: GPUCommandEncoder, pipeline: GPUComputePipeline, g2: GPUBindGroup, d: Partial<RsDispatchCpu>, work: [number, number], scene = true): void {
@@ -651,10 +698,21 @@ export class RestirKernel {
     const initName: RsPassName = dump ? 'rs_initial_dump' : 'rs_initial';
     const initial = this.pipelineSync(initName);
     const chunk = this.treeChunk > 0 ? Math.min(this.treeChunk, s.trees) : s.trees;
+    // perf2 WP-2d (RS_RIS_PREPASS): rs_ris_nee writes each pixel's RIS-NEE selection into its own RP_DIAG plane of res[w]
+    // right before rs_initial reads it (trees = 1: one chunk)
+    const pre = this.risPrepassActive() ? this.ready.get(`rs_ris_nee:${this.variantKey()}`) : undefined;
+    if (this.risPrepassActive() && !pre) throw new Error('RestirKernel: pipeline rs_ris_nee not compiled (await kernel.prepare())');
     for (let tb = 0; tb < s.trees; tb += chunk) {
       const tc = Math.min(chunk, s.trees - tb);
       const flags = (tb === 0 ? K.RSD_FIRST_CHUNK : 0) | (tb + tc >= s.trees ? K.RSD_FINAL_CHUNK : 0);
       for (const [r0, r1] of bands) {
+        if (pre) {
+          units.push({
+            label: `rs_ris_nee[${tb}+${tc}][${r0}]`, costHint: a.atlasW * (r1 - r0) * 2,
+            encode: (enc) => this.encodePass(enc, initName, pre, res.g2(initName, w), { t, passId: K.RS_PASS_INITIAL, treeBase: tb, treeCount: tc, flags, rowBase: r0, rowEnd: r1 },
+              this.perPixelWorkgroups(r0, r1), undefined, 'rs_ris_nee'),
+          });
+        }
         units.push({
           label: `rs_initial[${tb}+${tc}][${r0}]`, costHint: a.atlasW * (r1 - r0) * tc * (s.maxBounces + 1),
           encode: (enc) => {

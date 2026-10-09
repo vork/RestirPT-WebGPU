@@ -223,4 +223,47 @@ describe('U-RES-1 (M6): m6-types.wgsl ≡ RS_M6_CONSTS; inline budget of the M6 
       expect(on.closest).toBe(off.closest);
     });
   }
+
+  // perf2 WP-2d (RS_RIS_PREPASS): the RIS loop leaves rs_initial for the lean pre-pass entry rs_ris_nee of the same
+  // module (one material_eval, the loop, no traversal, no bsdf_sample); rs_initial keeps one nee_draw_entry for the
+  // endpoint rebuild and loses its candidate bsdf_f_all_ctx / bsdf_query
+  it('rs_initial + RS_RIS_PREPASS: RIS loop only in rs_ris_nee; rs_initial rebuilds the endpoint', () => {
+    const def = RS_PASSES.rs_initial;
+    const ex: Defines = { ...M6, RS_RIS_HOIST: 1, RS_NEE_SITE: 1 };
+    const code = (extra: Defines) => composeWgsl(def.file, { sources: shaderSources, defines: restirDefines('rs_initial', { sceneDefines: SCENE_DEFINES, debug: true, extra }) }).code;
+    const off = code(ex), on = code({ ...ex, RS_RIS_PREPASS: 1 });
+    expect(off).not.toContain('fn rs_ris_nee(');
+    expect(inlineCount(off, 'rs_initial', 'ris_nee_select')).toBe(1);
+    expect(inlineCount(on, 'rs_initial', 'ris_nee_select')).toBe(0);
+    expect(inlineCount(on, 'rs_initial', 'ris_prepass_sel')).toBe(1);
+    expect(inlineCount(on, 'rs_initial', 'bsdf_f_all_ctx')).toBe(0);
+    expect(inlineCount(on, 'rs_initial', 'nee_draw_entry')).toBe(1);
+    const pre = { sel: inlineCount(on, 'rs_ris_nee', 'ris_nee_select'), mat: inlineCount(on, 'rs_ris_nee', 'material_eval'),
+      fAll: inlineCount(on, 'rs_ris_nee', 'bsdf_f_all_ctx'), sample: inlineCount(on, 'rs_ris_nee', 'bsdf_sample'),
+      any: inlineCount(on, 'rs_ris_nee', 'trace_any_ex'), closest: inlineCount(on, 'rs_ris_nee', 'trace_closest_ex') };
+    console.log(`[RS_RIS_PREPASS] rs_ris_nee ${JSON.stringify(pre)}`);
+    expect(pre).toEqual({ sel: 1, mat: 1, fAll: 1, sample: 0, any: 0, closest: 0 });
+    // without RIS-NEE the flag has no text (the kernel also drops it there: risPrepassActive)
+    expect(code({ ...ex, RS_RIS_NEE: 0, RS_RIS_PREPASS: 1 })).not.toContain('fn rs_ris_nee(');
+  });
+
+  // perf2 WP-2c: RS_LAST_ANYHIT reuses the continuation's call site (no new bvh_trace copy) and only in the Mode-A text;
+  // RS_ONE_CHUNK / RS_ESC_CSE / RS_LAZY_HASH add no traversal and no BSDF / material call
+  for (const modeB of [false, true]) {
+    it(`rs_initial (M6${modeB ? '' : ' Mode-A text'}) + the WP-2c flags: same trace sites, inline budget unchanged`, () => {
+      const def = RS_PASSES.rs_initial;
+      const ex: Defines = { ...M6, RS_MODE_B: modeB ? 1 : 0, RS_RIS_HOIST: 1, RS_NEE_SITE: 1 };
+      const code = (extra: Defines) => composeWgsl(def.file, { sources: shaderSources, defines: restirDefines('rs_initial', { sceneDefines: SCENE_DEFINES, debug: true, extra }) }).code;
+      const cnt = (c: string) => ({ bvh: inlineCount(c, def.entry, 'bvh_trace'), q: inlineCount(c, def.entry, 'bsdf_query'), s: inlineCount(c, def.entry, 'bsdf_sample'),
+        m: inlineCount(c, def.entry, 'material_eval'), uv: inlineCount(c, def.entry, 'envUV') });
+      const off = code(ex), on = code({ ...ex, RS_LAST_ANYHIT: 1, RS_ONE_CHUNK: 1, RS_ESC_CSE: 1, RS_LAZY_HASH: 1 });
+      const a = cnt(off), b = cnt(on);
+      console.log(`[WP-2c] modeB=${modeB} off ${JSON.stringify(a)} on ${JSON.stringify(b)}`);
+      expect(b.bvh).toBe(a.bvh);
+      expect({ ...b, uv: 0 }).toEqual({ ...a, uv: 0 });
+      expect(b.uv).toBeLessThan(a.uv);                     // the escape builds envUV once
+      expect(on.includes('let lastAny = B == maxB;')).toBe(!modeB);
+      expect(on).toContain('fn pt_nee_draw(');
+    });
+  }
 });
