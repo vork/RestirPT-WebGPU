@@ -8,10 +8,15 @@ stability temporal stability of the displayed image with a static camera: per-pi
           4-neighbour in the PT reference, dilated 1 px) and on interior pixels.
 recovery  frames until the denoised regional mean recovers 95 % of each ix-e step (tiles.bin of several seeds, the
           step masks from PT references before / after each step).
+relmse    perf2 WP-Q: relative MSE mean_{pixel,channel} (x - ref)^2 / (ref^2 + eps) (eps 0.01, Rousselle et al. 2011) of
+          images against a reference; also the 0.1 %-trimmed variant (the largest per-pixel terms dropped: robust to
+          a few fireflies) and, with --ref-var (per-pixel variance of the reference mean), the reference noise floor
+          mean Var/(ref^2 + eps), which a measured relMSE contains additively.
 
     python denoise_eval.py flip --ref mean.pfm --pairs raw_f16.pfm:dn_f16.pfm,... --out flip.json [--png DIR]
     python denoise_eval.py stability --ref REF.pfm --runs label=DIR,... --frames 48:64 --out stab.json
     python denoise_eval.py recovery --runs DIR,DIR --steps 32,56,80 --hold 24 --refs B0.pfm:A0.pfm,... --names a,b --out rec.json
+    python denoise_eval.py relmse --ref REF.pfm [--ref-var VAR.pfm] --images a.pfm,b.pfm [--eps 0.01] --out relmse.json
 """
 from __future__ import annotations
 
@@ -94,6 +99,41 @@ def cmd_flip(a: argparse.Namespace) -> int:
     out["ratio_hdr"] = out["hdr_raw"] / max(out["hdr_dn"], 1e-12)
     Path(a.out).write_text(json.dumps(out, indent=1))
     print(f"FLIP LDR raw {out['ldr_raw']:.4f} dn {out['ldr_dn']:.4f} ratio {out['ratio_ldr']:.2f} | HDR raw {out['hdr_raw']:.4f} dn {out['hdr_dn']:.4f} ratio {out['ratio_hdr']:.2f} ({len(rows)} images, flip-evaluator {out['flip_evaluator']})")
+    return 0
+
+
+RELMSE_EPS = 0.01
+
+
+def relmse(img: np.ndarray, ref: np.ndarray, eps: float = RELMSE_EPS, trim: float = 0.0) -> float:
+    """mean over pixels and channels of (img - ref)^2 / (ref^2 + eps); `trim` drops that fraction of the largest
+    per-pixel (channel-mean) terms."""
+    t = ((img.astype(np.float64) - ref) ** 2 / (ref.astype(np.float64) ** 2 + eps)).mean(axis=-1).reshape(-1)
+    if trim > 0:
+        k = int(len(t) * (1 - trim))
+        t = np.partition(t, k)[:k]
+    return float(t.mean())
+
+
+def relmse_floor(ref: np.ndarray, ref_var: np.ndarray, eps: float = RELMSE_EPS) -> float:
+    """Expected relMSE of the reference mean against its own expectation: mean Var(ref) / (ref^2 + eps)."""
+    return float((ref_var.astype(np.float64) / (ref.astype(np.float64) ** 2 + eps)).mean())
+
+
+def cmd_relmse(a: argparse.Namespace) -> int:
+    ref = read_pfm(a.ref)
+    rows = []
+    for p in a.images.split(","):
+        img = read_pfm(p)
+        if img.shape != ref.shape:
+            raise SystemExit(f"shape mismatch: ref {ref.shape} {p} {img.shape}")
+        rows.append({"image": p, "relmse": relmse(img, ref, a.eps), "relmse_trim": relmse(img, ref, a.eps, 1e-3)})
+    out = {"eps": a.eps, "metric": "mean (x - ref)^2 / (ref^2 + eps) over pixels and channels; trim drops the top 0.1 % pixels",
+           "n": len(rows), "relmse": float(np.mean([r["relmse"] for r in rows])), "relmse_trim": float(np.mean([r["relmse_trim"] for r in rows])), "rows": rows}
+    if a.ref_var:
+        out["ref_noise_floor"] = relmse_floor(ref, read_pfm(a.ref_var), a.eps)
+    Path(a.out).write_text(json.dumps(out, indent=1))
+    print(f"relMSE {out['relmse']:.5g} (trimmed {out['relmse_trim']:.5g}) over {len(rows)} images" + (f"; reference noise floor {out['ref_noise_floor']:.4g}" if a.ref_var else ""))
     return 0
 
 
@@ -246,8 +286,14 @@ def main() -> int:
     r.add_argument("--mask-rel", dest="mask_rel", type=float, default=0.10)
     r.add_argument("--max-frames", dest="max_frames", type=int, default=8)
     r.add_argument("--out", required=True)
+    q = sub.add_parser("relmse")
+    q.add_argument("--ref", required=True)
+    q.add_argument("--ref-var", dest="ref_var", help="per-pixel variance of the reference mean (PFM)")
+    q.add_argument("--images", required=True)
+    q.add_argument("--eps", type=float, default=RELMSE_EPS)
+    q.add_argument("--out", required=True)
     a = p.parse_args()
-    return {"flip": cmd_flip, "stability": cmd_stability, "recovery": cmd_recovery}[a.cmd](a)
+    return {"flip": cmd_flip, "stability": cmd_stability, "recovery": cmd_recovery, "relmse": cmd_relmse}[a.cmd](a)
 
 
 if __name__ == "__main__":

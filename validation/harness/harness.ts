@@ -8,6 +8,7 @@ import { renderRestirChains, type RenderRestirChainsOptions, type RenderRestirCh
 import { exportAndUpload } from './export-package.ts';
 import { renderDenoise, type RenderDenoiseOptions, type RenderDenoiseReport } from './denoise-run.ts';
 import { renderPerf, type PerfOptions, type PerfReport } from './perf-run.ts';
+import { exportPerfScene, type ExportPerfSceneOptions } from './perf-scene-export.ts';
 import { fetchScenePackage, type ExportScenePackageOptions } from '../../src/core/scene/scene-package.ts';
 import { denoiserT16State } from '../../src/core/render/denoise/registry.ts';
 
@@ -41,6 +42,8 @@ export interface Harness {
   renderPerf(opts: PerfOptions): Promise<PerfReport>;
   /** M2: re-export a scene package (read from `packageUrl`) to validation/out/<run>/ (bridge round trip). */
   reexportPackage(packageUrl: string, run: string, overrides?: Partial<ExportScenePackageOptions>): Promise<{ files: string[]; sha256: string }>;
+  /** perf2 WP-Q: a run-perf.ts glTF setup (Sponza + HDRI, autoSetup camera / light) as a scene package (no GPU). */
+  exportPerfScene(opts: ExportPerfSceneOptions): Promise<Awaited<ReturnType<typeof exportPerfScene>>>;
 }
 
 declare global {
@@ -159,6 +162,10 @@ const harness: Harness = {
       frames: p.frames, envSampling: p.json.env?.sampling, ...overrides,
     }, run);
     return { files: r.files, sha256: r.sha256 };
+  },
+
+  exportPerfScene(opts) {
+    return exportPerfScene(opts);
   },
 
   async log(run, entry) {
