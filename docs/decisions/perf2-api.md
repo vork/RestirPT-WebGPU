@@ -234,3 +234,21 @@ release additions, fresh paired timings, four-seed quality decisions, compiler s
 Use explicit complete flag sets for comparisons against an older release. `--abba FLAG=0` is not a subtraction
 operator: normalization removes zero-valued entries before overlaying release defaults. Named JSON jobs with a
 complete `perfFlags` value avoid that ambiguity. Keep the report's `perfFlags` field with every measurement.
+
+
+### Fixed-resolution follow-up
+
+[perf2-plan.md §7](perf2-plan.md#7-fixed-resolution-follow-up-2026-10-10) adds the bitwise release flags
+`CW_SCENE_STACK` and `CW_WG_STACK` (27 total). `CW_TREE_DEPTH` comes from the scene's CWBVH statistics;
+`CW_WG_STACK_ACTIVE` is set only for the 64-invocation initial/dump pass. Validation defaults still carry no flags.
+`PerfReport.bvh` now records binary/wide statistics. Performance research may explicitly set
+`PerfOptions.experimentalBuilderUrl` to a local builder module exporting `build`; the app never uses this selector.
+The tinybvh probe and compiler are in `validation/tools/tinybvh`, with build/use instructions in the research note.
+
+`gpu-bg.py` now parses IOKit property dictionaries instead of carrying a creator across text lines. Run
+`python3 validation/tools/perf/test_gpu_bg.py` to verify attribution. Earlier logs may attribute a client's GPU
+work to the preceding process and must not be used to identify background applications.
+
+`CW_SCENE_STACK` is suppressed for spatial shift because its 12-entry variant increased spills there.
+`spill-lint.ts` defaults to an explicit release flag set in both jobs and reports; `--kernel-flags ''` now
+means no flags. Experimental builder reports retain their URL and reject modules without a `build` export.

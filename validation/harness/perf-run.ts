@@ -24,6 +24,8 @@ import { ensureLightStore } from '../../src/core/scene/light-store.ts';
 import type { LightData, SceneData } from '../../src/core/scene/types.ts';
 
 export interface PerfOptions {
+  /** Local experimental builder module; performance research only. */
+  experimentalBuilderUrl?: string;
   /** Scene package directory URL (`/validation/scenes/cornell_i_512/`) or a glTF URL (`….gltf` / `.glb`). */
   scene: string;
   /** HDRI URL (glTF scenes; packages carry their own env). */
@@ -59,6 +61,8 @@ export interface PerfReport {
   ok: boolean; label: string; errors: string[];
   scene: string; width: number; height: number; triangles: number; lights: number; env: boolean;
   settings: unknown; rendererOptions: unknown;
+  bvh?: { kind: string; binary: unknown; wide: unknown };
+  experimentalBuilderUrl?: string;
   /** perf2: the perf-flag key the job ran with (the release set when the job set none; empty = no flags). */
   perfFlags?: string;
   frame: { meanMs: number; medianMs: number; minMs: number; maxMs: number; blocks: number[]; frames: number };
@@ -166,13 +170,15 @@ export async function renderPerf(ctx: GpuContext, o: PerfOptions): Promise<PerfR
     restirFeatures: { ...(o.restir ?? {}) } as RendererOptions['restirFeatures'], ...o.renderer,
   };
   if (o.perfFlags !== undefined) ropts.restirKernel = { ...ropts.restirKernel, perfFlags: normalizePerfFlags(o.perfFlags) };
-  const r = await Renderer.create({ device, debugLayout: debug.layout, debug, features: ctx.features, wgslLanguageFeatures: ctx.wgslLanguageFeatures }, ropts);
+  const buildBvh = o.experimentalBuilderUrl ? (await import(/* @vite-ignore */ o.experimentalBuilderUrl)).build : undefined;
+  if (o.experimentalBuilderUrl && typeof buildBvh !== 'function') throw new Error(`Builder module must export build: ${o.experimentalBuilderUrl}`);
+  const r = await Renderer.create({ buildBvh, device, debugLayout: debug.layout, debug, features: ctx.features, wgslLanguageFeatures: ctx.wgslLanguageFeatures }, ropts);
   const origin = computeRenderOrigin(scene.bounds, scene.quant);
   const fu = new FrameUniformBuffer(device);
   const color = device.createTexture({ label: 'perf-colour', size: [W, H], format: 'rgba16float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
   const depth = device.createTexture({ label: 'perf-depth', size: [W, H], format: 'r32float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
   const report: PerfReport = {
-    ok: false, label: o.label ?? '', errors, scene: o.scene, width: W, height: H, triangles: scene.geometry.indices.length / 3, lights: scene.lights.length, env: !!scene.env,
+    ok: false, label: o.label ?? '', errors, experimentalBuilderUrl: o.experimentalBuilderUrl, scene: o.scene, width: W, height: H, triangles: scene.geometry.indices.length / 3, lights: scene.lights.length, env: !!scene.env,
     settings: undefined, rendererOptions: ropts, perfFlags: perfFlagsKey(ropts.restirKernel?.perfFlags ?? RELEASE_PERF_FLAGS), frame: { meanMs: NaN, medianMs: NaN, minMs: NaN, maxMs: NaN, blocks: [], frames: 0 },
     adapter: describeContext(ctx), userAgent: navigator.userAgent, createdAt: new Date().toISOString(), wallS: 0,
   };
@@ -180,6 +186,7 @@ export async function renderPerf(ctx: GpuContext, o: PerfOptions): Promise<PerfR
     if (scene.env) await r.setEnvironment(scene.env);
     const g = await r.setScene(scene, origin);
     if (!g) throw new Error('setScene superseded');
+    report.bvh = { kind: g.bvhKind, binary: g.bvh.stats, wide: g.bvh.cwbvh?.stats };
     r.resize({ width: W, height: H, color, colorFormat: 'rgba16float', depth, frameUniforms: fu.buffer });
     const denoise = o.denoise ?? true;
     r.setDenoise(denoise);

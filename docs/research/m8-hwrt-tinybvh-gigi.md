@@ -203,3 +203,50 @@ Skip `BVH4_GPU` and compressed triangles.
 - Hardware ray tracing or ray queries in Chrome 154 WebGPU on Metal: not shipped, not behind any flag, no origin trial, nothing in upstream Dawn, and only an open discussion issue in gpuweb.
 - Gigi's and the Randall post's "ray tracing" are both software BVH2 in compute, so they are not a route to hardware RT.
 - Revisit only if gpuweb ships bindless and a ray-query proposal appears in `gpuweb/proposals`.
+
+
+## 6. WebAssembly probe revisited (2026-10-10)
+
+User-authorized revisit for fixed-resolution real-time rendering. The reproduction lives in
+`validation/tools/tinybvh/{build.sh,builder.cpp,probe.ts}`. This is **research code**, not an app builder.
+It pins upstream commit `4b8509fd26b29801c8f79386cf8a1ce5713070fb` (1.9.0, MIT), compiles with Emscripten
+6.0.11, scalar single-threaded C++17, no relaxed SIMD, and produces a roughly 62 KiB WASM module. No new
+runtime dependency or binary enters the app. The build script downloads the pinned source into ignored output.
+
+```sh
+sh validation/tools/tinybvh/build.sh
+# In a run-perf JSON job, set:
+# "experimentalBuilderUrl": "/validation/tools/tinybvh/probe.ts?mode=opt"
+# Modes: sah (object splits), opt (object splits + 25 optimization iterations), hq (spatial splits).
+npx tsx validation/harness/run-perf.ts --jobs path/to/jobs.json --tag tinybvh-probe
+```
+
+The adapter exports tinybvh's binary nodes and primitive indices, emits our own original-vertex MT/Woop
+records and welded vertex IDs, and uses our existing conservative CWBVH quantizer and WGSL traversal.
+The upstream `SplitLeafs(3)` makes chains with inherited loose bounds. The retained probe instead splits
+oversized leaves at a balanced centroid median, tightens their boxes within the source leaf box, and emits
+preorder binary nodes and contiguous leaf ranges. Both the binary and wide depth limits are checked;
+an optimized binary tree deeper than 30 is allowed only when its checked eight-wide tree is used.
+
+On M5 Pro / Metal 3 / Chrome 155.0.8059.40, Sponza 960×540, unchanged quality settings and the new stack
+optimizations, one forward/reverse screening sequence gave:
+
+| Builder | Mean frame ms | CWBVH SAH cost | Wide depth | Triangle references |
+|---|---:|---:|---:|---:|
+| Current TS builder | 43.697 | 14.752 | 12 | 262,266 |
+| tinybvh object splits | 44.861 | 13.471 | 14 | 262,266 |
+| tinybvh optimized object splits | 41.945 | 11.309 | 13 | 262,266 |
+| tinybvh spatial splits | 41.244 | 12.974 | 11 | 293,573 |
+
+Raw evidence: `validation/out/m8-perf/tinybvh-{probe2,probe3,balanced}.json` and
+`validation/out/tinybvh-probe/`. These are performance screens, **not equal-quality release evidence**.
+Object splits alone regress despite a lower SAH cost; optimize saves about 4%, spatial splits about 5.6%.
+The optimized build's binary depth is 33, which is why it cannot be passed to the existing BVH2 traversal.
+Spatial splitting duplicates about 12% of the primitives. The full conversion keeps setup below a second
+in these samples; setup time is excluded from frame timings.
+
+The clipping concern in §5.2 remains. Padding the CWBVH quantizer does not repair an already undersized
+source fragment bound. Spatial splits need conservative clipping and missed-hit / seam / alpha / glass
+checks before promotion. Optimized object splits avoid clipping, but their changed traversal order still
+needs the equal-quality protocol (including motion) and full primitive/tie checks. Neither alternative is
+enabled by default. Even the fastest experiment is around 24 FPS here, far from the requested 60 FPS at 540p.

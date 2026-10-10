@@ -1,0 +1,441 @@
+{
+  "date": "2026-10-10",
+  "baselineCommit": "dd87b5c",
+  "hardware": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": "Apple M5 Pro",
+    "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+    ],
+    "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+    ],
+    "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+    },
+    "belowProfile": {}
+  },
+  "chrome": "155.0.8059.40",
+  "baselineFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_TRI_BUDGET=2,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+  "optimizedFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+  "settings": {
+    "maxBounces": 3,
+    "rr": true,
+    "rrMinBounces": 2,
+    "trees": 1,
+    "rounds": 1,
+    "slots": 3,
+    "diskRadius": 30,
+    "criteria": "enhanced",
+    "tau": 0.0002,
+    "alphaMin": 0.2,
+    "temporal": true,
+    "cCap": 5,
+    "temporalMis": "contribution",
+    "temporalCheck": "none",
+    "refresh": "exact",
+    "boostSlots": 3,
+    "pairing": "gauss",
+    "pairSigma": 16,
+    "risNee": true,
+    "risM": 32,
+    "dualMv": true,
+    "dupmap": false
+  },
+  "method": "Fixed resolution, 64 timed frames/job, same-session ABBA per case. Per-pass split and denoiser timestamp reruns are separate from frame measurements. No dynamic resolution.",
+  "results": [
+    {
+      "case": "540p",
+      "baselineMs": 46.26874999888241,
+      "optimizedMs": 43.890625,
+      "changePercent": -5.139808183579319,
+      "fps": 22.78390886436454,
+      "baselineSamplesMs": [
+        46.17656249925494,
+        46.360937498509884
+      ],
+      "optimizedSamplesMs": [
+        43.875,
+        43.90625
+      ],
+      "denoiserMs": 2.2435989140625
+    },
+    {
+      "case": "720p",
+      "baselineMs": 81.875,
+      "optimizedMs": 77.89687499962747,
+      "changePercent": -4.858778626409199,
+      "fps": 12.8374854575974,
+      "baselineSamplesMs": [
+        81.88906249776483,
+        81.86093750223517
+      ],
+      "optimizedSamplesMs": [
+        77.859375,
+        77.93437499925494
+      ],
+      "denoiserMs": 4.000721859375
+    },
+    {
+      "case": "1080p",
+      "baselineMs": 185.97031250223517,
+      "optimizedMs": 174.95859375037253,
+      "changePercent": -5.921223986613611,
+      "fps": 5.715638075068094,
+      "baselineSamplesMs": [
+        184.07656250149012,
+        187.86406250298023
+      ],
+      "optimizedSamplesMs": [
+        174.87968749925494,
+        175.03750000149012
+      ],
+      "denoiserMs": 9.0289556796875
+    },
+    {
+      "case": "540p-moving",
+      "baselineMs": 49.66562500037253,
+      "optimizedMs": 46.5546875,
+      "changePercent": -6.263763921926269,
+      "fps": 21.480114113106225,
+      "baselineSamplesMs": [
+        48.71875,
+        50.61250000074506
+      ],
+      "optimizedSamplesMs": [
+        46.49687499925494,
+        46.61250000074506
+      ],
+      "denoiserMs": 3.0043106484375
+    },
+    {
+      "case": "cornell-540p",
+      "baselineMs": 9.985937500372529,
+      "optimizedMs": 9.978125000372529,
+      "changePercent": -0.07823501799113508,
+      "fps": 100.21922956093108,
+      "baselineSamplesMs": [
+        10.126562502235174,
+        9.845312498509884
+      ],
+      "optimizedSamplesMs": [
+        10.0078125,
+        9.948437500745058
+      ],
+      "denoiserMs": 1.2293028515625
+    }
+  ],
+  "source": "validation/out/m8-perf/perf3-final-clean.json",
+  "confirmation": {
+    "source": "validation/out/m8-perf/perf3-confirm-clean.json",
+    "jobs": 16,
+    "baselineMs": 48.080664061475545,
+    "optimizedMs": 44.370898437686265,
+    "changePercent": -7.715712118796869,
+    "samples": [
+      {
+        "label": "540p base confirm 0",
+        "meanMs": 46.649999998509884,
+        "blocks": [
+          46.19999998807907,
+          46.25,
+          46.537499994039536,
+          46.5625,
+          46.66250002384186,
+          46.75,
+          46.79999998211861,
+          47.4375
+        ]
+      },
+      {
+        "label": "540p opt confirm 0",
+        "meanMs": 44.201562501490116,
+        "blocks": [
+          43.88749998807907,
+          44.01250001788139,
+          44.0625,
+          44.087500005960464,
+          44.01249998807907,
+          44.162499994039536,
+          44.51250001788139,
+          44.875
+        ]
+      },
+      {
+        "label": "540p opt confirm 0",
+        "meanMs": 44.26875000074506,
+        "blocks": [
+          43.900000005960464,
+          43.88749998807907,
+          44.125,
+          44.07499998807907,
+          44.16250002384186,
+          44.36249998211861,
+          44.724999994039536,
+          44.91250002384186
+        ]
+      },
+      {
+        "label": "540p base confirm 0",
+        "meanMs": 46.55000000074506,
+        "blocks": [
+          46.212500005960464,
+          46.25,
+          46.349999994039536,
+          46.349999994039536,
+          46.8125,
+          46.875,
+          46.724999994039536,
+          46.82500001788139
+        ]
+      },
+      {
+        "label": "540p base confirm 1",
+        "meanMs": 47.060937497764826,
+        "blocks": [
+          46.474999994039536,
+          46.36249998211861,
+          46.60000002384186,
+          47.037499994039536,
+          46.962500005960464,
+          47.64999997615814,
+          47.32500001788139,
+          48.07499998807907
+        ]
+      },
+      {
+        "label": "540p opt confirm 1",
+        "meanMs": 44.8828125,
+        "blocks": [
+          44.22500002384186,
+          44.5,
+          44.92499998211861,
+          44.537499994039536,
+          44.86250001192093,
+          44.349999994039536,
+          45.01250001788139,
+          46.64999997615814
+        ]
+      },
+      {
+        "label": "540p opt confirm 1",
+        "meanMs": 45.8203125,
+        "blocks": [
+          44.1875,
+          44.349999994039536,
+          44.5,
+          45.162499994039536,
+          45.9375,
+          46.67500001192093,
+          47.44999998807907,
+          48.30000001192093
+        ]
+      },
+      {
+        "label": "540p base confirm 1",
+        "meanMs": 59.0390625,
+        "blocks": [
+          56.32499998807907,
+          58.650000005960464,
+          60.3125,
+          61.1875,
+          61.962500005960464,
+          61.73749998211861,
+          58.087500005960464,
+          54.05000001192093
+        ]
+      },
+      {
+        "label": "540p base confirm 2",
+        "meanMs": 46.665624998509884,
+        "blocks": [
+          46.26249998807907,
+          46.375,
+          46.525000005960464,
+          46.5,
+          46.400000005960464,
+          46.64999997615814,
+          46.92500001192093,
+          47.6875
+        ]
+      },
+      {
+        "label": "540p opt confirm 2",
+        "meanMs": 44.02031250298023,
+        "blocks": [
+          43.92500001192093,
+          43.900000005960464,
+          43.9375,
+          43.92499998211861,
+          44.01250001788139,
+          44.099999994039536,
+          44.212500005960464,
+          44.150000005960464
+        ]
+      },
+      {
+        "label": "540p opt confirm 2",
+        "meanMs": 43.96562499925494,
+        "blocks": [
+          43.912499994039536,
+          43.837500005960464,
+          43.88749998807907,
+          43.900000005960464,
+          43.88749998807907,
+          44.05000001192093,
+          44.07499998807907,
+          44.17500001192093
+        ]
+      },
+      {
+        "label": "540p base confirm 2",
+        "meanMs": 46.20624999701977,
+        "blocks": [
+          46.19999998807907,
+          46.150000005960464,
+          46.19999998807907,
+          46.25,
+          46.25,
+          46.212500005960464,
+          46.19999998807907,
+          46.1875
+        ]
+      },
+      {
+        "label": "540p base confirm 3",
+        "meanMs": 46.23906249925494,
+        "blocks": [
+          46.3125,
+          46.21249997615814,
+          46.25,
+          46.275000005960464,
+          46.1875,
+          46.26250001788139,
+          46.224999994039536,
+          46.1875
+        ]
+      },
+      {
+        "label": "540p opt confirm 3",
+        "meanMs": 43.912499997764826,
+        "blocks": [
+          43.92499998211861,
+          43.875,
+          43.92500001192093,
+          43.912499994039536,
+          43.912499994039536,
+          43.962500005960464,
+          43.88750001788139,
+          43.89999997615814
+        ]
+      },
+      {
+        "label": "540p opt confirm 3",
+        "meanMs": 43.89531249925494,
+        "blocks": [
+          43.88750001788139,
+          43.849999994039536,
+          43.88749998807907,
+          43.88750001788139,
+          43.912499994039536,
+          43.974999994039536,
+          43.88749998807907,
+          43.875
+        ]
+      },
+      {
+        "label": "540p base confirm 3",
+        "meanMs": 46.234375,
+        "blocks": [
+          46.23750001192093,
+          46.224999994039536,
+          46.1875,
+          46.32499998807907,
+          46.25,
+          46.23750001192093,
+          46.19999998807907,
+          46.212500005960464
+        ]
+      }
+    ],
+    "abbaChangesPercent": [
+      -5.074771992551053,
+      -14.511663523175478,
+      -5.260944170158788,
+      -5.0453677600908575
+    ],
+    "medianAbbaChangePercent": -5.16785808135492,
+    "note": "One baseline job took 59.039 ms. Keep all samples; the aggregate mean overstates the typical gain. The median ABBA group is consistent with the fixed-resolution matrix."
+  },
+  "backgroundGpu": {
+    "source": "validation/out/perf3-final-clean-bg.log",
+    "samples": 147,
+    "otherMeanGpuMsPerSecond": 0.5918367346938775,
+    "otherP95GpuMsPerSecond": 2,
+    "otherMaxGpuMsPerSecond": 17
+  },
+  "compilerSpills": {
+    "source": "validation/out/perf2-spill/perf3-stack-final/report.json",
+    "sponzaInitialBytesPerThread": [
+      768,
+      528
+    ],
+    "sponzaTemporalForward": [
+      576,
+      544
+    ],
+    "sponzaTemporalInverse": [
+      752,
+      720
+    ],
+    "sponzaSpatialShift": [
+      384,
+      384
+    ],
+    "hotKernelGrowth": false
+  }
+}

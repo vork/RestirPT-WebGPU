@@ -5,19 +5,31 @@ AppUsage.accumulatedGPUTime (ns) deltas.
 usage: gpu-bg.py [secs]                    one interval (default 5 s): top processes by GPU ms/s + device utilisation
        gpu-bg.py --loop <interval_s> <log>  append one line per interval (GPU lock holder, Chrome vs other ms/s) until killed
 """
-import collections, os, re, subprocess, sys, time
+import collections, os, plistlib, re, subprocess, sys, time
 
 LOCK = '/tmp/restirpt-gpu.lock'
 
 
-def snap():
-    s = subprocess.run(['ioreg', '-r', '-c', 'AGXDeviceUserClient', '-w0', '-l'], capture_output=True, text=True).stdout
-    acc = collections.Counter(); cur = None
-    for line in s.splitlines():
-        m = re.search(r'"IOUserClientCreator" = "pid (\d+), (.*)"', line)
-        if m: cur = f'{m.group(2).strip()} ({m.group(1)})'; continue
-        if '"AppUsage"' in line and cur: acc[cur] += sum(int(x) for x in re.findall(r'"accumulatedGPUTime"=(\d+)', line))
+def usage_from_registry(entries):
+    """Pair usage with its owning registry object, independent of property order."""
+    acc = collections.Counter()
+    pending = list(entries)
+    while pending:
+        entry = pending.pop()
+        pending.extend(entry.get('IORegistryEntryChildren', []))
+        match = re.fullmatch(r'pid (\d+), (.*)', entry.get('IOUserClientCreator', ''))
+        if not match:
+            continue
+        key = f'{match.group(2).strip()} ({match.group(1)})'
+        acc[key] += sum(item.get('accumulatedGPUTime', 0) for item in entry.get('AppUsage', []))
     return acc
+
+
+def snap():
+    # Text ioreg output can list AppUsage BEFORE IOUserClientCreator. Carrying the last creator across lines
+    # attributes that usage to another process. The archive form preserves each client's property dictionary.
+    raw = subprocess.check_output(['ioreg', '-a', '-r', '-c', 'AGXDeviceUserClient'])
+    return usage_from_registry(plistlib.loads(raw))
 
 
 def util():

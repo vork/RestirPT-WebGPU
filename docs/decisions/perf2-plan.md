@@ -1,6 +1,6 @@
 # perf2 optimisation plan
 
-Current integration status and measured results are in [§6](#6-recovered-second-wave-2026-10-10). The earlier estimates below are historical.
+Current integration status and measured results are in [§7](#7-fixed-resolution-follow-up-2026-10-10), following the recovered checkpoint in [§6](#6-recovered-second-wave-2026-10-10). The earlier estimates below are historical.
 
 At the original planning checkpoint, no perf2 source had been edited. Five prototype diffs were exported in `/private/tmp/claude-502/-Users-mark-boss-Dev-WebGPURestirPT/4e489933-ea73-491f-b7b7-6d0aab1ffce1/scratchpad/plan-patches/`:
 - `vis-merge-shift.patch`
@@ -32,7 +32,7 @@ The scratchpad is session-temporary, so copy these into the package worktrees ea
    - Use constant upper bounds on loops (`for i < CONST { if i >= n break }`). This removes the `tint_loop_idx` guards.
    - No `return` inside `switch` (removes the `tint_volatile_zero` guards).
    - No non-constant integer `%` or `/` on hot paths.
-   - Never place a traversal stack at module scope on CWBVH.
+   - Never use a module-private traversal stack on CWBVH. The separately measured workgroup-memory stack is described in §7.
    - Fewer inlined `bvh_trace` call sites. This turned out to be the biggest lever: each copy carries its own stack and code.
 
 ## 1. Ranked candidates
@@ -694,6 +694,100 @@ and fresh evidence are distinguished above. Other GPU families still need their 
 This is a measured second-wave improvement, **not a 60 FPS Sponza result**: 46.18 ms at 540p still needs about
 2.77× more throughput to reach 16.67 ms. The remaining initial path-building shader dominates (~25 ms); RIS selection
 and spatial shift are the next large components. Further work should target traversal/path construction and test
-WP-4b environment presampling against the block-correlation and equal-quality gates. Dynamic resolution is already
-available as an explicit quality/performance trade. Do not silently adopt smaller RIS M, two slots, earlier RR or
+WP-4b environment presampling against the block-correlation and equal-quality gates. The subsequent user instruction excludes dynamic resolution; §7 uses fixed resolution throughout. Do not silently adopt smaller RIS M, two slots, earlier RR or
 half-rate path trees: the existing quality failures and D6 constraints still apply.
+
+
+## 7. Fixed-resolution follow-up (2026-10-10)
+
+The recovered checkpoint `dd87b5c` was pushed to `origin/perf2` before starting this work. The user's targets
+are 960×540 near 60 FPS, 1280×720 near 30 FPS, and 1920×1080 allowed below 30 FPS, preserving high quality.
+**No dynamic resolution, sample-count reduction, material simplification or denoiser-quality reduction was introduced.**
+
+### Released changes
+
+- `CW_SCENE_STACK` (WP-3g): size private CWBVH stacks to the encoder's actual maximum wide-tree depth,
+  except spatial shift (its smaller stack increased compiler spills and was removed from that pass).
+  The encoder counts root depth as one; at most one pending node group is pushed per level. Both the allocation
+  and overflow guard use the same scene define. Sponza's maximum wide depth is **12**, versus the old 16 entries.
+- `CW_WG_STACK` (WP-3h): the initial path pass uses a column per invocation in a workgroup-memory stack.
+  The pass is 8×8; `(gid.y & 7) * 8 + (gid.x & 7)` selects its unique column. Only that invocation accesses it,
+  and every pop follows its push, including successive rays. No inter-invocation synchronization is required.
+  Scene depth × 64 × 8 bytes is 6 KiB for Sponza. The flag activates only for `rs_initial` and its dump entry;
+  other passes and BVH2 retain their established storage. This is distinct from the rejected module-private stack.
+
+These are two **bitwise** additions to the 25-flag release. Neither golden tier was re-recorded. Sampling,
+RNG, primitive order, traversal order and denoiser outputs are unchanged. No new builder is selected by the app.
+
+### Measurements
+
+M5 Pro, Metal 3, Chrome 155.0.8059.40. Each row uses same-session ABBA, 64 timed frames per job,
+identical settings and scene assets. Baseline is the complete `dd87b5c` release flag set; optimized adds only
+the two stack flags. Frame time includes the denoiser. Split-pass times and denoiser timestamps are measured
+in separate reruns and must not be summed into frame time. Exact flag sets/settings and numeric samples are
+committed in [perf3-results.json](perf3-results.json); full reports are `validation/out/m8-perf/perf3-final-clean.json`.
+
+| Scene / fixed resolution | Before ms | After ms | Change | FPS |
+|---|---:|---:|---:|---:|
+| 540p | 46.269 | 43.891 | -5.14% | 22.78 |
+| 720p | 81.875 | 77.897 | -4.86% | 12.84 |
+| 1080p | 185.970 | 174.959 | -5.92% | 5.72 |
+| 540p-moving | 49.666 | 46.555 | -6.26% | 21.48 |
+| cornell-540p | 9.986 | 9.978 | -0.08% | 100.22 |
+
+Sponza's initial pass falls from approximately 25.2 to 23.0 ms at 540p. The denoiser remains about 2.24 ms
+(3.98 ms at 720p, 8.92 ms at 1080p), so denoiser-only changes cannot close the target gap.
+The longer 16-job Sponza confirmation (`perf3-confirm-clean.json`, four ABBA groups, 512 measured frames per
+configuration) averaged 48.081→44.371 ms, -7.72%, but includes one 59.039 ms baseline job.
+All samples are retained in the JSON; this mean overstates the typical gain. The median ABBA-group change
+is -5.17%, consistent with the matrix above.
+
+A telemetry issue was found while checking background load: `gpu-bg.py` assumed `IOUserClientCreator`
+preceded `AppUsage` in textual IOKit output. On this host, the order is reversed, assigning Chrome's work to
+the preceding Safari helper. It now parses structured registry objects; two regression tests cover property
+order, nesting and multiple clients. The corrected live sample attributes 983.8 GPU ms/s to Chrome, with
+negligible other load. Old background **process attribution** logs are invalid; this does not affect frame
+measurements or GPU-lock ownership. The final matrix and confirmation use the corrected logger (`perf3-final-clean-bg.log`): 147 samples,
+other-process load mean 0.59 GPU ms/s, p95 2, maximum 17. No competing benchmark or trace ran concurrently.
+
+### Experiments retained or rejected
+
+- Smaller private stack alone: Sponza 46.234→44.371 ms; Cornell unchanged. Shared stack in initial adds roughly
+  0.8 ms. Expanding shared stacks to spatial shift or all reuse passes regresses (43.778→44.073/44.298 ms), so
+  those variants were removed.
+- Four specialized à-trous pipelines: 46.234→46.269 ms total; denoiser improvement only about 0.02 ms. Removed.
+- Initial workgroups 8×4: about 0.22 ms, below the affected-pass 2% threshold; removed. 8×2 regresses to
+  56.920 ms. Constant-bound path loop is neutral; removed. All retained pixels still receive the same work.
+- tinybvh WebAssembly is now a reproducible optional performance probe, **not a released renderer path**.
+  Optimized object splits screen about 4% faster than the new TS baseline, spatial splits about 5.6%.
+  Plain object splits regress. See [the pinned build, conversion and bounds findings](../research/m8-hwrt-tinybvh-gigi.md#6-webassembly-probe-revisited-2026-10-10).
+  Spatial clipping is not yet proven conservative; changed primitive tie order in either alternative needs
+  its own quality validation. The experimental harness selector is never enabled without an explicit job URL.
+
+### Correctness and target status
+
+Production build/typecheck and CPU suite pass (590 passed, 7 skipped, 64 files), including unchanged validation
+shader text. M8 Anchor/Shipped/PT/Mode-B/plumbing pass three times (36 each; all 40 reported hash arrays repeat
+exactly). M4/M5 predecessor-bit cases add 11 passes. New million-ray comparisons on procedural geometry and
+Sponza match every closest-hit/any-hit output word and every traversal counter for MT and Woop, both private
+and shared stacks, nested and budgeted traversal loops. Overflow and iteration-cap flags are zero.
+
+App smokes: M4 31/31, M5 87/87, M5.5 37/37, M6 16/16, M7 21/21. Screenshots and logs are under
+`validation/out/perf3-m*`. After the final spatial-shift guard, M8 was rerun and the 40-frame, three-round,
+six-slot CWBVH production stress was repeated twice with identical counters and zero pending, mismatch,
+non-finite failures. Tests selected by name leave unrelated exhaustive gates skipped; this is not
+an assertion that the full Stage-B suite was rerun. The four-seed quality evidence at `dd87b5c` is inherited;
+this release preserves its sampled outputs bitwise.
+
+Compiler spill/lint comparison: `validation/out/perf2-spill/perf3-stack-final/report.{json,md}` against
+`resume-opt`. Sponza initial 768→528 B/thread, temporal forward 576→544, inverse 752→720; spatial shift
+stays 384. No hot-kernel spill or robustness-clamp growth; Cornell unchanged. An earlier version had +16 B
+in spatial shift, which is why that pass now keeps its old stack size. As in §6, xctrace reports exit 2 during
+recording but exported compiler-event/encoder tables are usable; no hardware performance counters are claimed.
+`spill-lint.ts` now records and passes explicit release flags when no override is supplied, and an explicit
+empty flag string correctly means no flags. Its older default-run report header could misleadingly say “none”.
+
+**The requested Sponza targets are not reached.** At the same quality, the released 540p result still needs
+about 2.6× more throughput and 720p needs about 2.3×. The fastest tinybvh experiment also remains around
+24 FPS at 540p. The large remaining cost is path construction/traversal; the experiments here do not justify
+promising that another local shader tweak or denoiser change will deliver the missing factor.

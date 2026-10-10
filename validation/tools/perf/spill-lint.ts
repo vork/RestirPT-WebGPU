@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { acquireGpuLock } from '../../harness/gpu-lock.ts';
 import { PERF_SCENES, pinnedJob } from '../../harness/run-perf.ts';
-import { normalizePerfFlags, perfFlagsKey } from '../../../src/core/render/restir/perf-flags.ts';
+import { RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagsKey } from '../../../src/core/render/restir/perf-flags.ts';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -34,7 +34,7 @@ const { values: a } = parseArgs({ options: {
   tag: { type: 'string' }, out: { type: 'string', default: 'validation/out/perf2-spill' }, 'no-dump': { type: 'boolean', default: false },
   'no-trace': { type: 'boolean', default: false }, compare: { type: 'string' }, 'xct-secs': { type: 'string', default: '4' },
 } });
-const flags = normalizePerfFlags(a['kernel-flags']);
+const flags = normalizePerfFlags(a['kernel-flags'] ?? RELEASE_PERF_FLAGS);
 const tag = a.tag ?? `spill-${new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-')}${perfFlagsKey(flags) ? `-${perfFlagsKey(flags).replace(/[^\w]+/g, '_')}` : ''}`;
 const dir = path.resolve(ROOT, a.out!, tag);
 mkdirSync(dir, { recursive: true });
@@ -66,7 +66,7 @@ async function locked(name: string, cmd: string, argv: string[]): Promise<boolea
 async function scene(sc: string): Promise<SceneReport> {
   if (!PERF_SCENES[sc]) throw new Error(`unknown scene ${sc} (${Object.keys(PERF_SCENES).join(', ')})`);
   const rep: SceneReport = { scene: sc, perfFlags: perfFlagsKey(flags), spill: {}, lint: {}, errors: [] };
-  const base = { ...pinnedJob(sc), width: W, height: H, lightAnim: PERF_SCENES[sc].lightAnim, ...(perfFlagsKey(flags) ? { perfFlags: flags } : {}) };
+  const base = { ...pinnedJob(sc), width: W, height: H, lightAnim: PERF_SCENES[sc].lightAnim, perfFlags: flags };
   // --no-dump / --no-trace reuse the step's earlier result of the same tag when present
   const prev = (f: string) => (existsSync(path.join(dir, f)) ? JSON.parse(readFileSync(path.join(dir, f), 'utf8')) : {});
   if (a['no-dump']) rep.lint = prev(`${sc}-lint.json`);
