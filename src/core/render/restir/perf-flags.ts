@@ -59,6 +59,8 @@ export const PERF_FLAGS = {
   RS_RIS_PREPASS: { ...reserved('WP-2d', 'unbiased', 'lean RIS pre-pass rs_ris_nee (RIS-NEE, trees = 1, no dump / test text): the selection (j, W, entry, mult) in the pixel\'s RP_DIAG plane, rs_initial rebuilds the endpoint'), landed: true, release: true },
   RS_ENV_WRAP: { ...reserved('WP-4a', 'bitwise', 'envTexel select-wrap instead of emulated i32 modulos (lights/env.wgsl)'), landed: true },
   RS_ENV_PRESAMPLE: reserved('WP-4b', 'unbiased', 'env-presampled light tiles inside the RIS pre-pass (adds correlation)'),
+  CW_WG_STACK: landed('WP-3h', 'bitwise', 'initial CWBVH traversal stacks in workgroup memory, disjoint per lane', { release: true }),
+  CW_SCENE_STACK: landed('WP-3g', 'bitwise', 'CWBVH private stacks sized to scene depth, except spatial shift', { release: true }),
   CW_TRI_BUDGET: landed('WP-3', 'bitwise', 'CWBVH triangle budget: one traversal loop, at most K triangles per iteration (value = K)', { release: true, value: 2 }),
   BVH_ALPHA_BIT: landed('WP-3', 'bitwise', 'alpha bit in the MT triangle record; CUSTOM_ALPHA compiled out without MASK', { release: true }),
   BVH2_PRIV_STACK: landed('WP-3', 'bitwise', 'module-private traversal stack (BVH2 only; never on CWBVH)', { release: true }),

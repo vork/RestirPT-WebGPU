@@ -31,6 +31,11 @@ const CW_TRI_K: u32 = $CW_TRI_BUDGETu;
 const CW_OUTER_CAP: u32 = (BVH_ITER_CAP + 2u) * 24u;
 #endif
 
+#if CW_WG_STACK && CW_WG_STACK_ACTIVE
+// Each invocation owns one column. No other invocation reads or writes it; pushes precede pops.
+var<workgroup> cw_wstack: array<vec2u, $CW_TREE_DEPTH * 64>;
+var<private> cw_lane: u32;
+#endif
 fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u32) -> Hit {
   var hit = Hit(tmax, 0.0, 0.0, BVH_MISS);
   let rd = vec3f(bvh_safe_rcp(d.x), bvh_safe_rcp(d.y), bvh_safe_rcp(d.z));
@@ -40,7 +45,12 @@ fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u3
 #endif
   let oct = select(0u, 4u, d.x < 0.0) | select(0u, 2u, d.y < 0.0) | select(0u, 1u, d.z < 0.0);
   let octinv4 = (7u - oct) * 0x01010101u;
+#if CW_WG_STACK && CW_WG_STACK_ACTIVE
+#elif CW_SCENE_STACK
+  var stack: array<vec2u, $CW_TREE_DEPTH>;
+#else
   var stack: array<vec2u, 16>;
+#endif
   var sp = 0u;
   var ng = vec2u(0u, 0x80000000u);   // the root: slot bit 31 of a virtual parent, imask 0 ⇒ node 0
   var tg = vec2u(0u, 0u);
@@ -54,7 +64,11 @@ fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u3
       if (ng.y <= 0x00ffffffu) {
         if (sp == 0u) { break; }
         sp -= 1u;
-        ng = stack[sp];
+#if CW_WG_STACK && CW_WG_STACK_ACTIVE
+      ng = cw_wstack[sp * 64u + cw_lane];
+#else
+      ng = stack[sp];
+#endif
       }
 #elif BVH_CONST_LOOPS
   // perf2 WP-3c: constant loop bound (no Tint loop guard); iteration iter + 1 of the old loop, same cap and flag
@@ -76,8 +90,16 @@ fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u3
       let cbi = firstLeadingBit(ng.y);
       ng.y &= ~(1u << cbi);
       if (ng.y > 0x00ffffffu) {
+#if CW_SCENE_STACK || (CW_WG_STACK && CW_WG_STACK_ACTIVE)
+        if (sp < $CW_TREE_DEPTHu) {
+#else
         if (sp < 16u) {
+#endif
+#if CW_WG_STACK && CW_WG_STACK_ACTIVE
+          cw_wstack[sp * 64u + cw_lane] = ng;
+#else
           stack[sp] = ng;
+#endif
           sp += 1u;
 #if BVH_STATS
           bvh_flags = max(bvh_flags, (bvh_flags & 0xffu) | (sp << 8u));
@@ -198,7 +220,11 @@ fn bvh_trace(o: vec3f, d: vec3f, tmax: f32, any_hit: bool, skipA: u32, skipB: u3
     if (ng.y <= 0x00ffffffu) {
       if (sp == 0u) { break; }
       sp -= 1u;
+#if CW_WG_STACK && CW_WG_STACK_ACTIVE
+      ng = cw_wstack[sp * 64u + cw_lane];
+#else
       ng = stack[sp];
+#endif
     }
 #endif
   }

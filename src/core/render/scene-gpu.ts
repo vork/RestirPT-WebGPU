@@ -365,7 +365,7 @@ export class SceneGpu {
       BVH_DECLARE_BINDINGS: true, BVH_GROUP: group, BVH_BINDING_NODES: SCENE_BINDING.bvhNodes, BVH_BINDING_TRIS: SCENE_BINDING.bvhTris,
       WATERTIGHT: this.watertight,
       // M8: only CWBVH scenes get the key (every BVH2 define set is the M7 one, U-M7-BITS)
-      ...(this.bvh.cwbvh ? { BVH_CWBVH: true } : {}),
+      ...(this.bvh.cwbvh ? { BVH_CWBVH: true, CW_TREE_DEPTH: Math.max(1, this.bvh.cwbvh.stats.maxDepth) } : {}),
       CUSTOM_ALPHA: true,
       // perf2 WP-3b: no MASK triangle (alpha_pass is constant true); read only under the BVH_ALPHA_BIT flag
       ...(this.noAlphaMask ? { BVH_NO_ALPHA: true } : {}),

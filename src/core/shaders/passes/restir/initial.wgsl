@@ -11,6 +11,9 @@
 
 @compute @workgroup_size(8, 8, 1)
 fn rs_initial(@builtin(global_invocation_id) gid: vec3u) {
+#if CW_WG_STACK && CW_WG_STACK_ACTIVE && BVH_CWBVH
+  cw_lane = (gid.y & 7u) * 8u + (gid.x & 7u);
+#endif
   let p = rs_pix(vec2u(gid.x, gid.y + rsDispatch.rowBase));
   if (!p.valid) { return; }
   let key = rs_frame_key(p.member, rs_t(), p.localIdx);

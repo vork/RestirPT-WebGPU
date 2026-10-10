@@ -54,6 +54,9 @@ fn flush_stats() {
 
 // stride 2: [o | tmax_any] [d | 0]
 @compute @workgroup_size(64) fn closest_any(@builtin(global_invocation_id) gid: vec3u) {
+#if CW_WG_STACK && CW_WG_STACK_ACTIVE
+  cw_lane = gid.x & 63u;
+#endif
   let i = gid.x + gid.y * 65535u * 64u;
   if (i >= P.n) { return; }
   bvh_stats_reset();
@@ -1163,4 +1166,38 @@ describe(`perf2 WP-3 traversal flags: per-ray bit equality (${lane()})`, () => {
       nodes.destroy(); tris.destroy();
     }
   }, 300_000);
+});
+
+// The stack storage changes must preserve every hit word and traversal counter, including serial closest/any calls.
+describe('perf3 scene-sized CWBVH stacks', () => {
+  afterAll(releaseTestGpu);
+  for (const sc of ['procedural', 'sponza'] as const) it(`${sc}: one million rays with private and workgroup stacks`, async (test) => {
+    const m = sc === 'sponza' ? await loadGltfMesh() : proceduralScene(7);
+    if (!m) { test.skip('Sponza asset is not installed'); return; }
+    const ctx = await getTestGpu();
+    const { cw } = buildCwbvhFromMesh(m.positions, m.indices);
+    const rays = makeRays(m, N_RAYS, 192837);
+    for (const watertight of [false, true]) {
+      const bufs = uploadCwbvh(ctx.device, cw, {watertight});
+      try {
+        const base: Variant = {watertight, stats:true, cwbvh:true};
+        const ref = await run(ctx, base, 'closest_any', bufs, rays, N_RAYS);
+        ref.outBuf.destroy();
+        expect(ref.ctr[3]).toBe(0);
+        expect(ref.ctr[4]).toBeGreaterThan(1);
+        const configurations: Record<string, number | boolean>[] = [
+          {CW_SCENE_STACK:1},
+          {CW_SCENE_STACK:1,CW_WG_STACK:1,CW_WG_STACK_ACTIVE:1},
+          {CW_SCENE_STACK:1,CW_WG_STACK:1,CW_WG_STACK_ACTIVE:1,CW_TRI_BUDGET:2,CW_EXP_OR:1,BVH_CONST_LOOPS:1},
+        ];
+        for (const flags of configurations) {
+          const v:Variant={...base,flags:{...flags,CW_TREE_DEPTH:cw.stats.maxDepth}};
+          const got=await run(ctx,v,'closest_any',bufs,rays,N_RAYS);
+          got.outBuf.destroy();
+          expect(firstDiff(ref.out,got.out),`${sc} watertight=${watertight} ${flagName(v.flags!)}`).toBe('');
+          expect(firstDiff(ref.ctr,got.ctr),'all traversal counters').toBe('');
+        }
+      } finally {bufs.nodes.destroy();bufs.tris.destroy();}
+    }
+  },180_000);
 });

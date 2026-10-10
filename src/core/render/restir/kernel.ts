@@ -237,6 +237,10 @@ export class RestirKernel {
    *  text (other passes, the dump, custom / test pipelines that call pathtree_run) composes without it. */
   private passPerfDefines(name: RsPassName | undefined): Record<string, number> {
     const d = this.perfDefines();
+    // A smaller private stack grows Metal spills in the dense spatial-shift kernel; keep its proven 16 entries.
+    if (name === 'rs_spatial_shift') delete d.CW_SCENE_STACK;
+    // The initial pass has 64 invocations; each owns a workgroup-stack column. Other passes keep private stacks.
+    if (d.CW_WG_STACK && (name === 'rs_initial' || name === 'rs_initial_dump')) d.CW_WG_STACK_ACTIVE = 1;
     if (d.RS_RIS_PREPASS && !(name === 'rs_initial' && this.risPrepassActive())) delete d.RS_RIS_PREPASS;
     // perf2 WP-2c: the last continuation is an any-hit query only where a hit can end no candidate (no TRI_EMISSIVE
     // triangle in the scene; the Mode-A text is checked in WGSL)
