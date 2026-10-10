@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
-  DENOISER_DEFAULTS, DENOISER_VIEWS, DN_PARAMS_SIZE, DN_TSTATE, DN_VIEW, DNF, DNI, DNT, atrousPlan, denoiseModeKey, denoiserAllowed, denoiserDefault, dnTiles, packDnParams,
+  DENOISER_DEFAULTS, DENOISER_VIEWS, DN_PARAMS_SIZE, DN_TSTATE, DN_VIEW, DNF, DNI, DNT, atrousPlan, denoiseModeKey, denoiserAllowed, denoiserDefault, denoiserAppSettings, dnTiles, packDnParams,
 } from '../../src/core/render/denoise/layout.ts';
 import { denoiserT16State, liveDenoisers, registerDenoiser, unregisterDenoiser } from '../../src/core/render/denoise/registry.ts';
 import { BUILTIN_VIEWS } from '../../src/core/render/debug-views.ts';
@@ -94,12 +94,17 @@ describe('uniforms and the à-trous plan', () => {
 });
 
 describe('modes (denoiser.md §8, DN4)', () => {
-  it('forced off in ReSTIR-unbiased and albedo, allowed elsewhere; default on only in ReSTIR-interactive', () => {
+  it('forced off in ReSTIR-unbiased and albedo, allowed elsewhere; default on in ReSTIR-interactive and Potato', () => {
     expect(denoiserAllowed('restir', 'unbiased')).toBe(false);
     expect(denoiserAllowed('albedo', 'interactive')).toBe(false);
-    for (const m of ['interactive', 'criteria2022', 'offline', 'initial'] as const) expect(denoiserAllowed('restir', m)).toBe(true);
+    for (const m of ['interactive', 'potato', 'criteria2022', 'offline', 'initial'] as const) expect(denoiserAllowed('restir', m)).toBe(true);
     expect(denoiserAllowed('pt', 'unbiased')).toBe(true);
     expect(denoiserDefault('restir', 'interactive')).toBe(true);
+    expect(denoiserDefault('restir', 'potato')).toBe(true);
+    expect(denoiserAppSettings('restir', 'potato').iterations).toBe(3);
+    expect(denoiserAppSettings('restir', 'interactive')).toEqual(DENOISER_DEFAULTS);
+    expect(denoiserAppSettings('pt', 'potato')).toEqual(DENOISER_DEFAULTS);
+    expect(denoiserAppSettings('restir', 'potato', { iterations: 5 }).iterations).toBe(5);
     for (const m of ['unbiased', 'criteria2022', 'offline', 'initial'] as const) expect(denoiserDefault('restir', m)).toBe(false);
     expect(denoiserDefault('pt', 'interactive')).toBe(false);
     expect(denoiseModeKey('pt', 'offline')).toBe('pt');

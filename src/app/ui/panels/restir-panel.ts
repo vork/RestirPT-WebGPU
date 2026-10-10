@@ -13,7 +13,7 @@ export interface RestirPanelHandle { folder: TpFolder; refresh(): void }
 
 /** Short names of the app modes; the full preset description (RESTIR_APP_MODES) is the tooltip. */
 const MODE_NAMES: Record<RestirAppMode, string> = {
-  interactive: 'interactive', unbiased: 'unbiased', criteria2022: '2022 criteria', offline: 'offline (S 32)', initial: 'initial candidates only',
+  interactive: 'interactive', potato: 'Potato ReSTIR', unbiased: 'unbiased', criteria2022: '2022 criteria', offline: 'offline (S 32)', initial: 'initial candidates only',
 };
 
 export function addRestirPanel(app: App, r: Renderer, inspector: RestirInspector | undefined): RestirPanelHandle | undefined {
@@ -34,7 +34,7 @@ export function addRestirPanel(app: App, r: Renderer, inspector: RestirInspector
   tip(f.addBinding(ui, 'mode', { label: 'preset', options: modes }), Object.values(RESTIR_APP_MODES).join('\n'))
     .on('change', q((e) => { void r.setOptions({ restirMode: e.value as RestirAppMode }).then(() => app.resetHistory()); }));
   // Temporal reuse (M5): a settings change, i.e. a config-hash reset (and a reallocation of the temporal buffers).
-  f.addBinding(ui, 'temporal', { label: 'temporal reuse' }).on('change', q((e) => {
+  const temporalToggle = f.addBinding(ui, 'temporal', { label: 'temporal reuse' }).on('change', q((e) => {
     void r.setOptions({ temporal: e.value }).then(() => app.resetHistory());
   }));
   tip(f.addBinding(app.render, 'freezeHistory', { label: 'freeze history' }), 'Suspend temporal reuse: every frame resets the temporal history.');
@@ -66,7 +66,8 @@ export function addRestirPanel(app: App, r: Renderer, inspector: RestirInspector
     quiet = true;
     try {
       ui.mode = r.options.restirMode;
-      ui.temporal = r.options.temporal;
+      ui.temporal = eff().temporal;
+      temporalToggle.disabled = r.options.restirMode === 'potato';
       { const e = eff(); fx.gauss = e.pairing === 'gauss'; fx.ris = e.risNee; fx.dualMv = e.dualMv; fx.dupmap = e.dupmap; fx.rrMin = e.rrMinBounces; }
       ui.inspector = !!inspector?.visible;
       ui.stats = r.options.renderMode === 'restir' ? (r.restirHud?.lines().join('\n') ?? r.restirError ?? 'compiling ...') : 'off (Render › integrator is not ReSTIR PT)';

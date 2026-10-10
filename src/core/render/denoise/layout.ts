@@ -113,7 +113,7 @@ export function atrousPlan(n: number): [number, number, number][] {
 // ------------------------------------------------------------------------------------------------ app modes (§8)
 
 export type DenoiseRenderMode = 'pt' | 'albedo' | 'restir';
-export type DenoiseRestirMode = 'interactive' | 'unbiased' | 'criteria2022' | 'offline' | 'initial';
+export type DenoiseRestirMode = 'interactive' | 'potato' | 'unbiased' | 'criteria2022' | 'offline' | 'initial';
 
 /** Whether the denoiser may run (denoiser.md §8): never in ReSTIR-unbiased (the validation-mode preset) or albedo. */
 export function denoiserAllowed(render: DenoiseRenderMode, restir: DenoiseRestirMode): boolean {
@@ -121,9 +121,13 @@ export function denoiserAllowed(render: DenoiseRenderMode, restir: DenoiseRestir
   if (render === 'restir' && restir === 'unbiased') return false;
   return true;
 }
-/** Default toggle state of a mode: on in ReSTIR-interactive, off elsewhere. */
+/** Default toggle state of a mode: on in ReSTIR-interactive and Potato, off elsewhere. */
 export function denoiserDefault(render: DenoiseRenderMode, restir: DenoiseRestirMode): boolean {
-  return render === 'restir' && restir === 'interactive';
+  return render === 'restir' && (restir === 'interactive' || restir === 'potato');
+}
+/** App defaults only: Potato drops the widest à-trous pass. Explicit session overrides win in every mode. */
+export function denoiserAppSettings(render: DenoiseRenderMode, restir: DenoiseRestirMode, overrides: Partial<DenoiserSettings> = {}): DenoiserSettings {
+  return { ...DENOISER_DEFAULTS, ...(render === 'restir' && restir === 'potato' ? { iterations: 3 } : {}), ...overrides };
 }
 /** Key of the per-mode toggle memory. */
 export const denoiseModeKey = (render: DenoiseRenderMode, restir: DenoiseRestirMode): string => (render === 'restir' ? `restir:${restir}` : render);

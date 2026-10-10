@@ -53,16 +53,17 @@ import { RestirKernel, type RestirAdvance, type RestirFramePass } from './restir
 import { DEFAULT_RESTIR_SETTINGS, RESTIR_PRESETS, type RestirSettings } from './restir/presets.ts';
 import { RestirDebugPass, RestirHud } from './restir/debug.ts';
 import { Denoiser, type DenoiseFrame } from './denoise/denoiser.ts';
-import { denoiseModeKey, denoiserAllowed, denoiserDefault, type DenoiserSettings } from './denoise/layout.ts';
+import { denoiseModeKey, denoiserAllowed, denoiserDefault, denoiserAppSettings, type DenoiserSettings } from './denoise/layout.ts';
 import { arenaWords, RS_WGSL_CONSTS } from './restir/layout.ts';
 import { RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagDefines, perfFlagsKey, type PerfFlagsInput } from './restir/perf-flags.ts';
 
 /** App ReSTIR modes (PLAN §3, restir-temporal-api.md §3.7): ReSTIR-interactive (interactive preset: temporal, RR, boost
  *  3), ReSTIR-unbiased (the `full` preset: temporal, RR off, no boost), ReSTIR-2022-criteria (interactive preset with the
  *  2022 criteria), Offline, initial only (no spatial reuse: rung 3.1, or rung 3.3 with temporal on). */
-export type RestirAppMode = 'interactive' | 'unbiased' | 'criteria2022' | 'offline' | 'initial';
+export type RestirAppMode = 'interactive' | 'potato' | 'unbiased' | 'criteria2022' | 'offline' | 'initial';
 export const RESTIR_APP_MODES: Record<RestirAppMode, string> = {
   interactive: 'ReSTIR-interactive (S 1, 1 round × 3 + boost 3, σ 16, RIS-NEE, dual MV, RR after bounce 2; unbiased: duplication map off by default)',
+  potato: 'Potato ReSTIR (max bounces capped at 1, 1 spatial partner, RIS 4, RR after bounce 1, no reservoir history; temporal denoising on). Faster, with darker indirect light and more noise.',
   unbiased: 'ReSTIR-unbiased (S 1, 1 round × 3, σ 16, RIS-NEE)', criteria2022: 'ReSTIR-2022-criteria', offline: 'Offline (S 32, 3 rounds × 6, σ 16, RIS-NEE)',
   initial: 'initial only (rung 3.1 / 3.3)',
 };
@@ -74,8 +75,9 @@ export const RESTIR_APP_MODES: Record<RestirAppMode, string> = {
 export function restirAppSettings(mode: RestirAppMode, maxBounces: number, temporal = true, features: Partial<RestirSettings> = {}): RestirSettings {
   const base = mode === 'offline' ? RESTIR_PRESETS['offline-m6'] : mode === 'unbiased' ? RESTIR_PRESETS['full-m6']
     : mode === 'initial' ? { ...RESTIR_PRESETS.interactive, rounds: 0 } : RESTIR_PRESETS.interactive;
-  const app = mode === 'interactive' ? INTERACTIVE_APP_DEFAULTS : {};
-  return { ...DEFAULT_RESTIR_SETTINGS, ...base, ...app, criteria: mode === 'criteria2022' ? '2022' : 'enhanced', maxBounces, temporal, ...features };
+  const app = mode === 'potato' ? POTATO_APP_DEFAULTS : mode === 'interactive' ? INTERACTIVE_APP_DEFAULTS : {};
+  return { ...DEFAULT_RESTIR_SETTINGS, ...base, ...app, criteria: mode === 'criteria2022' ? '2022' : 'enhanced',
+    maxBounces: mode === 'potato' ? Math.min(maxBounces, 1) : maxBounces, temporal: mode !== 'potato' && temporal, ...features };
 }
 
 /** perf2 (perf2-plan.md §5 user decisions, WP-10 rule): app-level defaults of app mode 'interactive', applied over the
@@ -90,6 +92,13 @@ export function restirAppSettings(mode: RestirAppMode, maxBounces: number, tempo
  *  D2 / D4 (risM, slots) did not pass WP-Q and stay at the preset. The panel's feature toggles (restirFeatures) still
  *  override these per session (the duplication map can be switched back on there). */
 export const INTERACTIVE_APP_DEFAULTS: Readonly<Partial<RestirSettings>> = Object.freeze({ rrMinBounces: 2, dupmap: false });
+
+/** Explicit quality-for-speed app mode; validation presets and saved renderer options stay unchanged.
+ *  maxBounces=1 permits two scattering vertices (Cycles convention). No reservoir history; the denoiser still
+ *  reprojects colour history. See perf2-plan.md §9 for measurements and the truncated-indirect-light tradeoff. */
+export const POTATO_APP_DEFAULTS: Readonly<Partial<RestirSettings>> = Object.freeze({
+  slots: 1, boostSlots: 0, risM: 4, rrMinBounces: 1, dupmap: false, dualMv: false,
+});
 
 /** M6 feature toggles of the app (restir-m6-api.md MD13) and the perf2 D1 RR start: per-session overrides of the mode's
  *  settings (preset ⊕ INTERACTIVE_APP_DEFAULTS; empty = those). */
@@ -757,12 +766,13 @@ export class Renderer {
 
   // ---- M5.5 denoiser (docs/decisions/denoiser.md) -------------------------------------------------------------------
 
-  /** Follow mode switches: each mode keeps its own toggle (default on in ReSTIR-interactive only). */
+  /** Follow mode switches: each mode keeps its own toggle (default on in ReSTIR-interactive and Potato). */
   private syncDenoiseMode(): void {
     const o = this.options;
     const key = denoiseModeKey(o.renderMode, o.restirMode);
     if (key === this.denoiseModeKey) return;
     this.denoiseModeKey = key;
+    this.denoiser?.setSettings(this.denoiserSettings());
     o.denoise = this.denoiseByMode[key] ?? denoiserDefault(o.renderMode, o.restirMode);
   }
   /** The denoiser may run in the current mode (never in ReSTIR-unbiased: DN4). */
@@ -781,7 +791,10 @@ export class Renderer {
   /** Denoiser settings (iterations, α_min, gradient ramp, edge stops); applied on the next frame. */
   setDenoiserSettings(s: Partial<DenoiserSettings>): void {
     Object.assign(this.pendingDenoiserSettings, s);
-    this.denoiser?.setSettings(this.pendingDenoiserSettings);
+    this.denoiser?.setSettings(this.denoiserSettings());
+  }
+  denoiserSettings(): DenoiserSettings {
+    return denoiserAppSettings(this.options.renderMode, this.options.restirMode, this.pendingDenoiserSettings);
   }
   readonly pendingDenoiserSettings: Partial<DenoiserSettings> = {};
 
@@ -790,7 +803,7 @@ export class Renderer {
     const p = (async () => {
       try {
         const d = await Denoiser.create(this.device, { debugLayout: this.ctx.debugLayout, colorFormat, features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures, perfFlags: this.perfFlags() });
-        d.setSettings(this.pendingDenoiserSettings);
+        d.setSettings(this.denoiserSettings());
         this.denoiser?.destroy();
         this.denoiser = d;
         this.denoiserError = undefined;

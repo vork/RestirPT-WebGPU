@@ -15,7 +15,7 @@
 import { describeContext, type GpuContext } from '../../src/core/gpu/device.ts';
 import { encodePFM } from '../../src/core/io/pfm.ts';
 import { DebugResources, DebugViewRegistry } from '../../src/core/render/debug-views.ts';
-import { DENOISER_DEFAULTS, type DenoiserSettings } from '../../src/core/render/denoise/layout.ts';
+import { type DenoiserSettings } from '../../src/core/render/denoise/layout.ts';
 import { FrameUniformBuffer, JITTER_IID, JITTER_NONE, JITTER_R2, boundsDiagonal, computeRenderOrigin, r2Jitter, type CameraState } from '../../src/core/render/frame-uniforms.ts';
 import { Renderer, type RendererOptions, type RestirAppMode } from '../../src/core/render/renderer.ts';
 import type { RestirSettings } from '../../src/core/render/restir/presets.ts';
@@ -148,7 +148,7 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
   const debug = new DebugResources(device, new DebugViewRegistry());
   await debug.init();
   debug.resize(W, H);
-  const settings0 = { ...DENOISER_DEFAULTS, ...o.denoiser };
+  const settings0 = o.denoiser ?? {};
   const restirKernel = o.perfFlags?.length ? { ...o.renderer?.restirKernel, perfFlags: o.perfFlags } as RendererOptions['restirKernel'] : o.renderer?.restirKernel;
   const ropts: Partial<RendererOptions> = {
     textureMode: 'validation', watertight: true, renderMode: 'restir', restirMode: o.restirMode ?? 'interactive', temporal: true, accumulate: !!o.accumulate,
@@ -334,7 +334,7 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
     const meta = {
       kind: 'denoise-eval', mode: o.mode, run: o.run, package: o.package, packageSha256: hash.sha256, seed: o.seed, width: W, height: H, frames: total,
       pkgFrames: Array.from({ length: total }, (_, i) => pkgFrame(i)), evalFrames: o.evalFrames ?? [], tiles: o.mode === 'recovery' ? { tile: TILE, x: tilesX, y: tilesY, layout: 'f32 [frame][tile][dn, raw]' } : undefined,
-      renderer: { renderMode: 'restir', restirMode: o.restirMode ?? 'interactive', settings: r.restir?.settings, textureMode: ropts.textureMode, intersector: ropts.watertight ? 'woop-watertight' : 'moller-trumbore', jitter: 'iid', accumulate: false, lightMode, bvhKind: ropts.bvhKind ?? 'bvh2', overrides: o.renderer, restir: o.restir, perfFlags: o.perfFlags ?? [] },
+      renderer: { renderMode: ropts.renderMode, restirMode: ropts.restirMode, settings: r.restir?.settings, textureMode: ropts.textureMode, intersector: ropts.watertight ? 'woop-watertight' : 'moller-trumbore', jitter: 'iid', accumulate: false, lightMode, bvhKind: ropts.bvhKind ?? 'bvh2', overrides: o.renderer, restir: o.restir, perfFlags: o.perfFlags ?? [] },
       denoiser: { on: denoise, settings: r.denoiser?.settings, perFrame }, jitter: o.jitter ?? 'iid', accumulate: !!o.accumulate, pan: o.pan, lightAnim: o.lightAnim, panOsc: o.panOsc, lightOsc: o.lightOsc, vbuf: { primIdMismatch: vbufMismatch, maxBaryDiff: vbufMaxBary }, timing, finalizeCounters: fin,
       experimentalBuilderUrl: o.experimentalBuilderUrl, captureVbuffer: o.captureVbuffer,
       adapterInfo: { vendor: info.vendor, architecture: info.architecture, description: info.description }, chromeVersion: o.chromeVersion, userAgent: navigator.userAgent,

@@ -967,3 +967,162 @@ require a compiled WASM artifact. Harness changes are research-only builder inje
 Build/typecheck passed; CPU suite 590 passed / 7 skipped. All 16 profile jobs and 36 capture jobs passed.
 The six million-ray/intersector comparisons passed, and browser checks covered all six viewer combinations,
 difference mode and playback. These checks do not replace the full unbiased Stage-B gate for a future builder release.
+
+
+## 9. Potato ReSTIR
+
+User authorized a separate quality-for-speed mode on 2026-10-10. Interactive stays the launch default.
+No dynamic resolution, reduced render target, sparse pixel dispatch or upscaling was introduced. All output pixels
+still trace primary geometry and receive freshly sampled lighting. This mode is an explicit approximation to the
+longer-path image, not an equal-quality optimization or a change to the validation presets.
+
+### Implemented settings and behavior
+
+Potato caps the renderer's effective `maxBounces` at `min(requested, 1)` (up to two scattering vertices under the
+existing Cycles convention). It uses one spatial round with one partner, no disocclusion boost, RIS M=4, RR after
+bounce 1, and no temporal reservoirs, dual motion vectors or duplication map. The denoiser retains colour-history
+reprojection and resolve, with three à-trous levels instead of four. Textures, alpha testing, environment lighting,
+geometry, primary sampling, BVH selection and release flags are unchanged. Dropping longer paths darkens indirect
+lighting and loses multi-bounce specular/transmission contributions; lower sampling/reuse increases noise.
+
+Effective defaults are derived on mode changes without rewriting the saved renderer depth or temporal option.
+The reservoir-history checkbox shows the effective false value and is disabled in Potato. The depth tooltip
+explains the cap; the HUD reports effective settings. Returning to interactive restores normal depth, reuse and
+four denoising passes. Explicit feature/denoiser overrides still win across the session. Denoiser controls now
+write only the edited field, preventing a Potato default from becoming a persistent override of another mode.
+Both evaluation harnesses use mode defaults instead of silently pinning interactive denoising, and capture metadata
+now reports the actual renderer mode.
+
+### Tiny Glade talk and transcript research
+
+Identified the original [Rendering Tiny Glades With Entirely Too Much Ray Marching](https://www.youtube.com/watch?v=jusWW2pPnA0),
+Tomasz Stachowiak, Graphics Programming Conference 2024, published 2024-12-04, duration 59:20. Retrieved the English
+automatic captions with yt-dlp and reviewed the lighting/denoising sections and Q&A. Captions contain recognition
+errors (especially ReSTIR, BVH, SH and author names); these notes paraphrase the content and cross-check the linked
+implementation/literature. Source caption data is a local research download under `validation/out/potato/`, not
+vendored into the repository. Timestamp links below lead to the original talk, not a synthetic transcript.
+
+- [11:26–15:05](https://www.youtube.com/watch?v=jusWW2pPnA0&t=686s): soft sun shadows use shadow maps and temporal
+  stabilization, deriving rejection statistics in shadow-filter space. This is a different estimator from our
+  per-sample visibility and should not be silently substituted into the unbiased mode.
+- [15:05–20:06](https://www.youtube.com/watch?v=jusWW2pPnA0&t=905s): screen-space contact shadows use a short depth
+  march. Combining point and bilinear depth tests reduces self-shadow stair steps while rejecting false hits at
+  discontinuities. The [author's ray marcher](https://gist.github.com/h3r2tic/9c8356bdaefbe80b1a22ae0aaee192db)
+  is available under MIT/Apache-2.0. It also demonstrates SSR fallback. The code is not copied into this change.
+- [20:59–23:50](https://www.youtube.com/watch?v=jusWW2pPnA0&t=1259s): compare approximations against a reference
+  renderer. Tiny Glade uses software wide-BVH traversal over coarse collision proxies, combined with screen data.
+  It is not an SDF or Radiance Cascades renderer in this talk. Its proxy geometry even omits some roofs, so this
+  technique cannot simply replace Sponza geometry without testing leaks and missing occluders.
+- [23:53–28:34](https://www.youtube.com/watch?v=jusWW2pPnA0&t=1433s): DDGI and screen probes were tried, with density,
+  placement, filtering and response problems. ReSTIR GI was also tried, then dropped because the mostly outdoor
+  lighting had sufficiently low variance. Reservoir exchanges and memory traffic cost more than their benefit.
+  This is scene-dependent evidence, not a claim that ReSTIR never helps interiors or many-light scenes.
+- [28:35–32:32](https://www.youtube.com/watch?v=jusWW2pPnA0&t=1715s): the shipped GI traces one ray per 16 screen
+  pixels, marches screen depth first, then falls back to proxy tracing on misses. Visible hits reuse screen
+  radiance. Directional lighting is projected to low-order SH, reprojected and recurrently filtered with a radius
+  that shrinks as history becomes reliable. AO also guides filtering near corners. Its fixed sparse GI sampling
+  is distinct from dynamic resolution, but neither is implemented in our new mode.
+- [33:20–35:10](https://www.youtube.com/watch?v=jusWW2pPnA0&t=2000s): water reflections compact screen-space misses
+  into a separate tracing dispatch. This improves utilization for that sparse miss workload; it does not imply
+  that splitting our mostly-live initial paths will help (previous wavefront experiment failed).
+- [56:13–59:04](https://www.youtube.com/watch?v=jusWW2pPnA0&t=3373s): Q&A confirms the low-variance outdoor rationale
+  and that gameplay uses final gathering with temporal lighting feedback, rather than full multi-bounce path
+  tracing. The reference mode uses a few bounces.
+
+### Related primary literature and what to transfer
+
+[Dmitry Zhdan, Fast Denoising With Self-Stabilizing Recurrent Blurs, 2020](https://developer.download.nvidia.com/video/gputechconf/gtc/2020/presentations/s22699-fast-denoising-with-self-stabilizing-recurrent-blurs.pdf),
+especially slides 49–54: sparse recurrent filtering, history-dependent radius and disocclusion reconstruction;
+SH helps retain normal-map lighting detail. Temporal stabilization is separate from accumulation; layering temporal
+accumulators can create lag. Our denoiser already feeds its first spatial level back into history, so merely
+calling it recurrent would not be a new optimization. A smaller adaptive filter needs first-frame, disocclusion,
+light-change and glossy-motion tests. Dropping the fourth pass is the measured first step here, not an NRD port.
+
+[Tiago Sousa, Fast as Hell: idTech8 Global Illumination, SIGGRAPH 2025](https://advances.realtimerendering.com/s2025/content/SOUSA_SIGGRAPH_2025_Final.pdf),
+slides 15–22: separate visibility queries from cached shading, update irradiance volumes in an interleaved schedule,
+and shade roughly 20k active radiance-cache entries per frame. Final gathering queries screen radiance first, then
+world radiance and irradiance caches, rather than shading every hit again. SH and bilateral filtering reconstruct
+lighting. The hardware-RT and lower-resolution GI timings are not predictions for this full-resolution WebGPU
+software tracer. Transfer the separation of expensive shading from visibility and reuse of shaded results.
+
+[AMD GI-1.0, Boissé et al., 2022](https://gpuopen.com/download/GPUOpen2022_GI1_0.pdf) maintains incoming radiance in
+screen probes and outgoing radiance in a persistent world cache. It offers a concrete placement, reprojection
+and cache design for a later approximate GI mode. It also illustrates why that work is more than changing a BVH
+builder: the shading signal and reuse architecture change. The published Sponza timing is on RX 6900 XT with
+hardware tracing and cannot be compared directly to this laptop's WGSL traversal.
+
+### Next architectural experiment
+
+The next substantial opportunity is a separate approximate indirect-light gather: use the full-resolution
+G-buffer, march screen depth for nearby diffuse hits, then compact misses and trace the existing BVH. Fetch
+previously shaded radiance only when depth/normal/material validity succeeds; fall back to real shading otherwise.
+Keep primary visibility and direct-light shadows accurate, and keep glossy/transmission on the existing path until
+there is a suitable directional cache. Start with full-resolution gathering so its benefit is measurable without
+changing sampling density. Instrument screen-hit rate, fallback occupancy, shading work and disocclusion recovery.
+Only then evaluate a fixed sparse GI grid and SH reconstruction as an explicit Potato quality option.
+
+A cache cannot be inserted into the existing ReSTIR path suffix while retaining its current unbiased target,
+weights and Jacobians. This belongs to the approximate mode with its own error/response tests. No screen marcher,
+proxy scene, lighting cache or SH reconstruction is claimed as implemented by this preset change.
+
+### Measured outcome (M5 Pro / Chrome 155 / Metal 3)
+
+Same-session fixed-resolution Sponza measurements: 96 measured frames after 32 warmup frames, released flags,
+Mode B, MT intersections, current TypeScript CWBVH builder. 540p and 720p use ABBA (two runs per mode); 1080p
+is one paired run. Times are pipelined harness throughput, including denoising, excluding the app UI and display
+pacing; equivalent FPS is not a claim of measured whole-app presentation rate.
+
+| Resolution | Interactive ms / FPS | Potato ms / FPS | Speedup |
+|---|---:|---:|---:|
+| 540p | 43.853 / 22.80 | 17.348 / 57.64 | 2.53× |
+| 720p | 77.655 / 12.88 | 30.208 / 33.10 | 2.57× |
+| 1080p | 174.817 / 5.72 | 67.166 / 14.89 | 2.60× |
+
+540p motion-throughput probes: camera pan 17.519 ms (57.08 FPS), moving light 17.335 ms (57.69 FPS).
+These are different motion schedules from the quality captures, not timings of the exported videos.
+
+Screening measured the combined changes, rather than adding individual ablation savings: shallow paths plus
+one partner and RIS 8 with temporal reuse took 25.11 ms; removing reservoirs brought that to 18.78 ms; RIS 4
+brought it to 18.36 ms; earlier roulette to 17.72 ms. Three denoising passes brought it to 17.34 ms. A second
+spatial partner cost about 0.8 ms; keeping two bounces cost roughly 8 ms. RIS 1 saved only about 0.5 ms against
+RIS 4 before the roulette reduction, so four candidates were retained. Three versus four denoising passes had
+small mixed quality differences (one seed): static FLIP .0961 vs .0967, camera .1288 vs .1275, light .1019 vs .1023.
+
+The final 540p isolated rerun still spends roughly 11.3 ms on initial paths, 1.7 ms on primary geometry,
+0.9 ms on RIS, and 1.9 ms on denoising. Reservoir temporal passes are absent. These split-submit pass costs
+are diagnostics and must not be added to reconstruct pipelined frame time. Initial tracing remains the main target.
+
+### Quality evidence and validation
+
+12 final captures: static / camera oscillation ±0.5 m / light oscillation ±1 m, each with seeds 1–4, 64 frames
+at 960×540. Compare frames 16/32/48/63 at the reference pose against the saved 12,288 spp three-bounce PT
+reference (relative-MSE noise floor .000322). Matched interactive captures from §8 are reused; shipped golden
+checks and fresh timing controls confirm the ordinary mode is unchanged. Captures are rgba32float; timing uses
+rgba16float like the app. Display transform is exposure 1, clamp and sRGB for both modes.
+
+| Sequence | Interactive FLIP | Potato FLIP | Interactive relative MSE | Potato relative MSE |
+|---|---:|---:|---:|---:|
+| static | 0.06716 | 0.09625 | 0.09164 | 0.08910 |
+| pan | 0.10011 | 0.12875 | 0.21445 | 0.11929 |
+| light | 0.11073 | 0.10168 | 2.92109 | 0.87452 |
+
+This is a perceptible quality trade: FLIP is about 43% higher static and 29% higher in camera motion.
+Moving-light FLIP is about 8% lower. Relative MSE can improve while perceptual error worsens because it is
+sensitive to the baseline fireflies; it is not evidence of equal quality. Qualitatively, interior fill is darker and
+more motion noise remains. The shorter paths particularly limit multi-bounce reflections and transmission.
+
+Validation: 602 CPU tests passed (7 skipped), the dedicated GPU mode-switch regression passed, all 10 shipped
+rendering golden checks passed (26 unrelated tests skipped), and the production build passed. The mode-switch
+regression traverses interactive → Potato → Offline → Potato → interactive and compares returned modes with
+fresh renderer outputs pixel for pixel. 11 screening + 12 final performance jobs and 6 screening + 12 final
+quality captures passed. A Chrome UI check also confirmed interactive startup, actual dropdown switches,
+image controls and video playback without WebGPU/page errors. This is not a new Stage-B unbiasedness
+certification for the approximate mode.
+
+Reproducible measurements, exact job manifests, release flags, effective renderer/denoiser settings, timing blocks
+and per-seed image metrics: [`potato-results.json`](potato-results.json). Run `validation/tools/potato-review.py`
+with the listed local captures to regenerate figures and videos. The local viewer is
+`validation/out/potato/review.html`, with `static-comparison.png`, `pan.mp4` and `light.mp4`; the videos are
+illustrative playback of captured frames, not real-time screen recordings.
+
+Transcript provenance: yt-dlp English automatic captions for `jusWW2pPnA0`; fetched 2026-10-10. JSON3 SHA-256: `756fca9ea5669f190d704d322651870b369f787c1a5095c8818f117d2b0d2dad`.

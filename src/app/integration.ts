@@ -229,7 +229,8 @@ function addRendererPanel(app: App, r: Renderer): void {
     'How BSDF rays treat area lights. B (default): area lights are hit by BSDF rays and combined with NEE by MIS. '
     + 'A: analytic lights are reached by NEE only (no reflections in mirrors / glass). A′: hittable only after a delta lobe.')
     .on('change', () => { void r.setOptions({ lightMode: o.lightMode }); app.resetHistory(); });
-  f.addBinding(o, 'maxBounces', { label: 'max bounces', min: 0, max: 13, step: 1, index: i++ })
+  tip(f.addBinding(o, 'maxBounces', { label: 'max bounces', min: 0, max: 13, step: 1, index: i++ }),
+    'Path depth limit. Potato ReSTIR caps the effective value at 1; other modes retain this setting.')
     .on('change', () => { void r.setOptions({ maxBounces: o.maxBounces }); app.resetHistory(); });
   f.addBinding(o, 'rr', { label: 'Russian roulette', index: i++ }).on('change', () => { void r.setOptions({ rr: o.rr }); app.resetHistory(); });
   tip(f.addBinding(o, 'accumulate', { label: 'accumulate', index: i++ }), 'Progressive mean over frames while nothing changes.').on('change', () => app.resetHistory());

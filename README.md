@@ -181,6 +181,15 @@ panel lists the same bindings.
 Light edits and playback restart only the progressive accumulation. The ReSTIR temporal history survives them: each
 edit is refreshed in the kernel.
 
+## Potato ReSTIR
+
+The app starts in **interactive ReSTIR**. For speed, choose **ReSTIR → preset → Potato ReSTIR**.
+It caps max bounces at 1 (two scattering vertices), uses one spatial partner and four RIS light candidates,
+and disables reservoir history. Temporal denoising stays on, with three à-trous passes. Render resolution,
+geometry, materials, and primary visibility are unchanged. Expect darker indirect light, reduced multi-bounce
+reflections/transmission, and more noise during motion. Returning to interactive restores its normal defaults;
+explicit feature and denoiser overrides remain session-wide. Performance and research: [perf2 §9](docs/decisions/perf2-plan.md#9-potato-restir).
+
 ## The panel
 
 Top-level folders, in order. Expert sub-folders start collapsed.

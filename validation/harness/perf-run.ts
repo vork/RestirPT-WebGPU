@@ -12,7 +12,7 @@
 // Moving lights: `lightAnim` moves light `index` sinusoidally along x every frame (the app's timeline playback).
 import { describeContext, type GpuContext } from '../../src/core/gpu/device.ts';
 import { DebugResources, DebugViewRegistry } from '../../src/core/render/debug-views.ts';
-import { DENOISER_DEFAULTS, type DenoiserSettings } from '../../src/core/render/denoise/layout.ts';
+import { type DenoiserSettings } from '../../src/core/render/denoise/layout.ts';
 import { FrameUniformBuffer, JITTER_IID, boundsDiagonal, computeRenderOrigin, type CameraState } from '../../src/core/render/frame-uniforms.ts';
 import { Renderer, type RendererOptions } from '../../src/core/render/renderer.ts';
 import type { RestirSettings } from '../../src/core/render/restir/presets.ts';
@@ -190,7 +190,7 @@ export async function renderPerf(ctx: GpuContext, o: PerfOptions): Promise<PerfR
     r.resize({ width: W, height: H, color, colorFormat: 'rgba16float', depth, frameUniforms: fu.buffer });
     const denoise = o.denoise ?? true;
     r.setDenoise(denoise);
-    r.setDenoiserSettings({ ...DENOISER_DEFAULTS, ...o.denoiser });
+    r.setDenoiserSettings(o.denoiser ?? {});
     if (!await r.prepareRestir()) throw new Error(`ReSTIR compile failed: ${r.restirError}`);
     if (denoise && !await r.prepareDenoiser()) throw new Error(`denoiser compile failed: ${r.denoiserError}`);
     await r.warmup(false);
