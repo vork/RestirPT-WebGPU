@@ -226,8 +226,14 @@ async function scenePass(page: Page, OUT: string, name: string, load: number): P
   let rendered = 0;
   const views: [number, number][] = [...M5_VIEWS.map((id) => [id, 0] as [number, number]), ...RES_VIEWS_T.map((id) => [id, 2] as [number, number])];
   for (const [id, tap] of views) {
-    await page.evaluate(([v, tp]) => { const a = window.__app!; a.selectDebugView(v); a.debugSettings.tap = tp; }, [id, tap] as const);
-    await frames(page, 3);
+    const beforeView = await page.evaluate(([v, tp]) => {
+      const a = window.__app!; a.selectDebugView(v); a.debugSettings.tap = tp;
+      return window.__integration!.renderer()!.restirTemporal!.temporalFrames;
+    }, [id, tap] as const);
+    // RS_DEBUG_STRIP prepares instrumented shaders on the first view. Screen frames may show the PT fallback;
+    // wait for three actual ReSTIR advances before inspecting this view's AOV.
+    await page.waitForFunction((n) => (window.__integration!.renderer()!.restirTemporal?.temporalFrames ?? 0) >= n + 3,
+      beforeView, { timeout: 180_000, polling: 50 });
     const s = await readState(page);
     rendered++;
     written[id] = s.aovWritten;

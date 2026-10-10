@@ -400,6 +400,7 @@ export class Renderer {
         const debug = this.ctx.debug;
         const pass = await RestirKernel.interactive(this.device, state.gpu, this.env, colorFormat, {
           settings: this.restirSettings(), lightMode: this.options.lightMode, debug,
+          debugActive: !!debug && (debug.settings.mode !== 0 || debug.settings.probeEnabled),
           env: { nee: this.options.envNee, importanceCap: this.options.envImportanceCap },
           features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures, ...this.options.restirKernel, perfFlags: this.perfFlags(),
         });
@@ -727,6 +728,7 @@ export class Renderer {
     // A light-mode / feature toggle switches the kernel's pipeline variant at once and compiles it asynchronously
     // (setOptions awaits it, but frames keep coming): until it is compiled the PT beauty is shown (before advancing the
     // temporal state, so the history is not consumed by a frame that never ran).
+    k.setDebugActive(!!this.ctx.debug && (this.ctx.debug.settings.mode !== 0 || this.ctx.debug.settings.probeEnabled));
     k.syncLightModeVariant();   // M8 P-4: the Mode-A text while no rect / disk light exists (a frame boundary)
     if (!rs.pass.ready) { void this.prepareRestirVariant(rs); return false; }
     let arena: GPUBuffer;

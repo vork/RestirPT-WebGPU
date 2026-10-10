@@ -18,6 +18,7 @@
 //            cross-seed metrics) and its PFMs deleted (seed 1 keeps dn_f63 / raw_f63); finished groups are skipped. Then eq_eval.py summary → wpq-eq/<config>.json.
 //              npx tsx validation/harness/run-eq.ts run --config baseline [--scenes cornell,sponza] [--seqs static,pan,light]
 //              npx tsx validation/harness/run-eq.ts run --config my-cand --restir '{"risM":16}' [--perf-flags RS_VIS_MERGE,…]
+//   run accepts --renderer JSON to match the measured app intersector / texture options; defaults stay unchanged.
 //   perf     run-perf.ts timing of configurations, same session, ABBA order (block r runs the configs forward for even r,
 //            reversed for odd r; each block runs every scene), 540p N3, → wpq-eq/perf-<tag>.json and a summary
 //            wpq-eq/perf.json (per config / scene: mean frame ms over the reps, and the paired ratio to the baseline).
@@ -130,12 +131,12 @@ async function cmdRef(a: Record<string, string | boolean | undefined>): Promise<
 }
 
 // ------------------------------------------------------------------------------------------------ run
-function jobArgs(config: string, scene: string, seq: string, seed: number, restir: Partial<RestirSettings>, perfFlags?: string): string[] {
+function jobArgs(config: string, scene: string, seq: string, seed: number, restir: Partial<RestirSettings>, perfFlags?: string, renderer: PerfOptions['renderer'] = {}): string[] {
   const sc = EQ_SCENES[scene];
   const evalFrames = [...new Set([...EVAL, ...Array.from({ length: WINDOW[1] - WINDOW[0] }, (_, i) => WINDOW[0] + i)])].sort((x, y) => x - y);
   return [
     '--package', sc.pkg, '--mode', 'flip', '--frames', String(FRAMES), '--eval-frames', evalFrames.join(','), '--seed', String(seed),
-    '--run', runName(config, scene, seq, seed), '--width', String(W), '--height', String(H), '--renderer', JSON.stringify(RENDERER),
+    '--run', runName(config, scene, seq, seed), '--width', String(W), '--height', String(H), '--renderer', JSON.stringify({ ...RENDERER, ...renderer }),
     '--restir', JSON.stringify(restir), '--osc-knots', KNOTS.join(','),
     ...(seq === 'pan' ? ['--pan-osc', String(sc.pan)] : seq === 'light' ? ['--light-osc', `${sc.light.index}:${sc.light.amp}`] : []),
     ...(perfFlags ? ['--perf-flags', perfFlags] : []),
@@ -159,9 +160,9 @@ async function cmdRun(a: Record<string, string | boolean | undefined>): Promise<
       const todo = seeds.filter((s) => !existsSync(path.join(OUT, runName(config, scene, seq, s), 'metrics.json')));
       if (!todo.length) { console.log(`skip ${config} ${scene} ${seq} (complete)`); continue; }
       const jobsFile = path.join(EQ_DIR, `jobs-${config}-${scene}-${seq}.json`);
-      writeFileSync(jobsFile, JSON.stringify(todo.map((s) => jobArgs(config, scene, seq, s, restir, perfFlags))));
+      writeFileSync(jobsFile, JSON.stringify(todo.map((s) => jobArgs(config, scene, seq, s, restir, perfFlags, a.renderer ? JSON.parse(String(a.renderer)) : {}))));
       const c = await tsx('run-denoise.ts', ['--jobs', path.relative(ROOT, jobsFile), '--lock-per-job']);
-      if (c) { console.log(`run-denoise exit ${c} (${config} ${scene} ${seq})`); fails++; }
+      if (c) { console.log(`run-denoise exit ${c} (${config} ${scene} ${seq})`); return c; }
       await pool(todo, 4, async (s) => {
         const d = path.join(OUT, runName(config, scene, seq, s));
         if (!existsSync(path.join(d, 'meta.json'))) { fails++; return; }
@@ -259,7 +260,7 @@ async function main(): Promise<number> {
   const cmd = process.argv[2];
   const { values: a } = parseArgs({ args: process.argv.slice(3), options: {
     scene: { type: 'string' }, scenes: { type: 'string' }, spp: { type: 'string' }, batches: { type: 'string' }, chunk: { type: 'string' }, 'from-batch': { type: 'string' },
-    'no-merge': { type: 'boolean' }, keep: { type: 'boolean' }, config: { type: 'string' }, configs: { type: 'string' }, restir: { type: 'string' }, seqs: { type: 'string' },
+    'no-merge': { type: 'boolean' }, keep: { type: 'boolean' }, config: { type: 'string' }, configs: { type: 'string' }, restir: { type: 'string' }, renderer: { type: 'string' }, seqs: { type: 'string' },
     seeds: { type: 'string' }, 'perf-flags': { type: 'string' }, reps: { type: 'string' }, tag: { type: 'string' }, frames: { type: 'string' }, merge: { type: 'string' },
     candidates: { type: 'string' }, baseline: { type: 'string' }, perf: { type: 'string' }, out: { type: 'string' },
   } });

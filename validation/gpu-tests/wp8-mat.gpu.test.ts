@@ -9,7 +9,7 @@ import { readBuffer } from '../../src/core/gpu/readback.ts';
 import type { LightData, MaterialData, SceneData } from '../../src/core/scene/types.ts';
 import { fetchScenePackage } from '../../src/core/scene/scene-package.ts';
 import { INTERACTIVE_PINNED } from '../../src/core/render/restir/presets.ts';
-import { RELEASE_PERF_FLAGS, type PerfFlagsInput } from '../../src/core/render/restir/perf-flags.ts';
+import { KERNEL_RELEASE_PERF_FLAGS, normalizePerfFlags, type PerfFlagsInput } from '../../src/core/render/restir/perf-flags.ts';
 import { allLightsScene, boxCamera, hashF32, restirRig, type GpuSceneOptions } from './restir-fixtures.ts';
 
 type Cam = { camToWorld: number[]; yfov: number };
@@ -60,8 +60,9 @@ async function chain(scene: SceneData, cam0: Cam, perfFlags: PerfFlagsInput, gpu
 async function ab(scene: SceneData, cam: Cam, gpu?: GpuSceneOptions, maxBounces = 3): Promise<void> {
   const base = await chain(scene, cam, {}, gpu, maxBounces);
   expect(await chain(scene, cam, { MAT_VARIANTS: 1 }, gpu, maxBounces)).toEqual(base);
-  const rel = await chain(scene, cam, RELEASE_PERF_FLAGS, gpu, maxBounces);
-  expect(await chain(scene, cam, { ...RELEASE_PERF_FLAGS, MAT_VARIANTS: 1 }, gpu, maxBounces)).toEqual(rel);
+  const baseFlags = normalizePerfFlags({ ...KERNEL_RELEASE_PERF_FLAGS, MAT_VARIANTS: 0 });
+  const rel = await chain(scene, cam, baseFlags, gpu, maxBounces);
+  expect(await chain(scene, cam, { ...KERNEL_RELEASE_PERF_FLAGS, MAT_VARIANTS: 1 }, gpu, maxBounces)).toEqual(rel);
   // the frames differ (a degenerate chain would prove nothing)
   expect(new Set(base.map((h) => h.split(':')[1])).size).toBeGreaterThan(1);
 }

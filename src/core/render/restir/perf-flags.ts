@@ -52,11 +52,11 @@ export const PERF_FLAGS = {
   RS_REFRESH_VIS: { ...reserved('WP-1', 'bitwise', 'refresh_record: the per-class visibility rays (D-NEE, N1, D-cross, B1-ana) traced at one call site (vis_ray); N1+moving only'), landed: true, release: true },
   RS_RIS_HOIST: { ...reserved('WP-2a', 'bitwise', 'bsdf_prepare hoisted out of the RIS candidate loop; dead nee_draw at B=1 skipped'), landed: true, release: true },
   RS_NEE_SITE: { ...reserved('WP-2b', 'bitwise', 'rs_initial: one NEE visibility site (visible + visibleInf + k=B retest) and one post-hit retest site'), landed: true, release: true },
-  RS_LAST_ANYHIT: { ...reserved('WP-2c', 'bitwise', 'rs_initial: the last continuation ray (B = maxB) as an any-hit query at the same call site (Mode-A text, scene without TRI_EMISSIVE)', ['counters']), landed: true },
+  RS_LAST_ANYHIT: { ...reserved('WP-2c', 'bitwise', 'rs_initial: the last continuation ray (B = maxB) as an any-hit query at the same call site (Mode-A text, scene without TRI_EMISSIVE)', ['counters']), landed: true, release: true },
   RS_ONE_CHUNK: landed('WP-2c', 'bitwise', 'rs_initial with one tree chunk: Σw / nCand / the selection\'s F in registers, no empty 10-plane write and no record read-backs'),
   RS_ESC_CSE: landed('WP-2c', 'bitwise', 'rs_initial BSDF escape: envUV and p1Env of the direction once (MIS weight, radiance, p1)'),
   RS_LAZY_HASH: landed('WP-2c', 'bitwise', 'rs_initial NEE draw (B ≥ 2): the SEL2 / L0–L2 path hashes computed only where nee_draw reads them'),
-  RS_RIS_PREPASS: { ...reserved('WP-2d', 'unbiased', 'lean RIS pre-pass rs_ris_nee (RIS-NEE, trees = 1, no dump / test text): the selection (j, W, entry, mult) in the pixel\'s RP_DIAG plane, rs_initial rebuilds the endpoint'), landed: true },
+  RS_RIS_PREPASS: { ...reserved('WP-2d', 'unbiased', 'lean RIS pre-pass rs_ris_nee (RIS-NEE, trees = 1, no dump / test text): the selection (j, W, entry, mult) in the pixel\'s RP_DIAG plane, rs_initial rebuilds the endpoint'), landed: true, release: true },
   RS_ENV_WRAP: { ...reserved('WP-4a', 'bitwise', 'envTexel select-wrap instead of emulated i32 modulos (lights/env.wgsl)'), landed: true },
   RS_ENV_PRESAMPLE: reserved('WP-4b', 'unbiased', 'env-presampled light tiles inside the RIS pre-pass (adds correlation)'),
   CW_TRI_BUDGET: landed('WP-3', 'bitwise', 'CWBVH triangle budget: one traversal loop, at most K triangles per iteration (value = K)', { release: true, value: 2 }),
@@ -71,9 +71,10 @@ export const PERF_FLAGS = {
   RS_TSEL_FOLD: { ...reserved('WP-6', 'bitwise', 'T3 phase B folded into T4 for contribution MIS (RSD_TFOLD); the T4 replay / non-replay split was measured and dropped'), landed: true, release: true },
   RS_TSTATE_SOA: { ...reserved('WP-6', 'bitwise', 'tState word-major (word w of pixel ai at w·P + ai); T1 writes every word once'), landed: true, release: true },
   RS_AGG_COUNTERS: reserved('WP-6', 'bitwise', 'subgroup-aggregated arena counter atomics (not built: stubbing every temporal counter out measured ≈ 0; tpick_ring branch-free measured ≈ 0)'),
+  RS_DEBUG_STRIP: { ...landed('WP-9a', 'bitwise', 'compile out debug hooks while no view or probe is active; preserve temporal history', { release: true }), rendererOnly: true },
   RS_NO_PLANTS: reserved('WP-9b', 'bitwise', 'U8-*, TP_* and 2022-criteria plant code compiled out'),
   RS_NO_DIAG: reserved('WP-9b', 'bitwise', 'P9 diagnostic writes / copies skipped (allocation kept)', ['P9']),
-  MAT_VARIANTS: landed('WP-8', 'bitwise', 'material compile variants (models / texture slots / texture transforms present in the scene only), field-wise material loads, no return in the texture / lobe_roughness switches'),
+  MAT_VARIANTS: landed('WP-8', 'bitwise', 'material compile variants (models / texture slots / texture transforms present in the scene only), field-wise material loads, no return in the texture / lobe_roughness switches', { release: true }),
   RS_PRIMARY_EXT: { ...reserved('WP-7e', 'unbiased', 'rs_primary reads the M1 V-buffer (bits(t) in vbuf.w) instead of tracing again (ulp edge ties)'), landed: true, release: true, rendererOnly: true },
   // WP-7 a–d, f (added by WP-7; app-only passes: the M1 primary, the interactive finalize, the denoiser)
   DN_GRAD_SKIP: { ...reserved('WP-7a', 'bitwise', 'denoiser: dn_gradient / dn_grad_filter skipped on frames where no pass reads λ (host only)'), landed: true, release: true },
@@ -95,7 +96,7 @@ export type PerfFlagsInput = PerfFlags | Partial<Record<PerfFlagName, number | b
 export const PERF_FLAG_NAMES = Object.keys(PERF_FLAGS) as PerfFlagName[];
 export const isPerfFlagName = (n: string): n is PerfFlagName => Object.prototype.hasOwnProperty.call(PERF_FLAGS, n);
 
-/** Flags on in the app by default (RestirKernel.interactive). Empty until a package's flag is accepted. */
+/** Flags on in the renderer by default; the standalone interactive kernel omits renderer-only entries below. */
 export const RELEASE_PERF_FLAGS: PerfFlags = Object.fromEntries(
   PERF_FLAG_NAMES.filter((n) => (PERF_FLAGS[n] as PerfFlagDef).release).map((n) => [n, (PERF_FLAGS[n] as PerfFlagDef).value ?? 1])) as PerfFlags;
 
@@ -113,7 +114,7 @@ export function normalizePerfFlags(input: PerfFlagsInput): PerfFlags {
       entries.push([n, v === undefined ? 1 : Number(v)]);
     }
   } else if (Array.isArray(input)) {
-    for (const n of input as readonly string[]) entries.push([n, 1]);
+    return normalizePerfFlags((input as readonly string[]).join(','));
   } else {
     entries.push(...Object.entries(input as Record<string, number | boolean>));
   }

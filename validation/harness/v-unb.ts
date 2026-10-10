@@ -2,7 +2,8 @@
 // forced on in the trees = 1 chain configuration it affects, against our PT at the unchanged Stage-B δ (0.2 % global /
 // 1 % per 32² tile), through the M5 / M6 gates' own chain machinery (pilots + joint sizing, PT references, chains,
 // compare.py, one confirmatory re-run on disjoint seeds per failed test frame, T16).
-//   npx tsx validation/harness/v-unb.ts --kernel-flags RS_RIS_PREPASS [--only id,…] [--pilot-only]
+//   npx tsx validation/harness/v-unb.ts --kernel-flags RS_RIS_PREPASS [--only id,…] [--plants U8-8,U8-10] [--pilot-only]
+// (--only none --plants … runs the plant units only.)
 // Units: full-m6 Mode A (m5s_cornell_i, the rung-3.7 chain unit), full-m6 Mode B (m6_crossings_B_256, the rung-3.11
 // chain unit) and an HDRI package (m7_nm_env_256: normal maps under the overcast HDRI, full-m6). Each unit's run-batches
 // call gets `--kernel-flags`; the flags are recorded in every chain meta (meta.config.perfFlags). The statistics use the
@@ -14,12 +15,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { EXT, runExternalChainUnits } from './gate-m5.ts';
-import { CHAIN_UNITS, M6_OUT, SEEDS, nUnits, pkgDirM6, type ChainUnitM6 } from './gate-m6.ts';
+import { CHAIN_UNITS, M6_OUT, PLANTS_M6, RS_EXTRA_ARGS, SEEDS, nUnits, pkgDirM6, plantUnit, type ChainUnitM6 } from './gate-m6.ts';
 import { codeHashes } from './gate-m4.ts';
 import { checkValidationPerfFlags } from '../../src/core/render/restir/perf-flags.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const { values: a } = parseArgs({ options: { 'kernel-flags': { type: 'string' }, only: { type: 'string' }, 'pilot-only': { type: 'boolean', default: false } } });
+const { values: a } = parseArgs({ options: { 'kernel-flags': { type: 'string' }, only: { type: 'string' }, plants: { type: 'string' }, 'pilot-only': { type: 'boolean', default: false } } });
 if (!a['kernel-flags']) { console.error('usage: v-unb.ts --kernel-flags A,B [--only id,…] [--pilot-only]'); process.exit(2); }
 const { key: flags } = checkValidationPerfFlags(a['kernel-flags'], false);
 
@@ -33,6 +34,9 @@ const UNITS: ChainUnitM6[] = [
 ];
 const only = a.only ? new Set(a.only.split(',')) : undefined;
 const units = UNITS.filter((u) => !only || only.has(u.id) || only.has(u.pkg)).map((u) => ({ ...u, extra: [...u.extra, '--kernel-flags', flags] }));
+// --plants U8-8,U8-10: the M6 gate's plant units (detection + predicted sign) with the flags forced on
+const plants = a.plants ? PLANTS_M6.filter((p) => a.plants!.split(',').includes(p.id)) : [];
+RS_EXTRA_ARGS.push('--kernel-flags', flags);
 
 const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
 const runId = `v-unb-${flags.replace(/[^\w]+/g, '_')}-${stamp()}`;
@@ -54,7 +58,8 @@ const nU = nUnits();
 const h = codeHashes();
 console.log(`V-UNB ${runId}: flags ${flags}, units ${units.map((u) => u.id).join(', ')}, n_units ${nU} (M6 gate), PT code ${h.pt.slice(0, 12)}, ReSTIR ${h.restir.slice(0, 12)}`);
 const t0 = performance.now();
-const r = runExternalChainUnits(units, { dir, runId, nU, add, pilotOnly: a['pilot-only'] });
+const r = units.length ? runExternalChainUnits(units, { dir, runId, nU, add, pilotOnly: a['pilot-only'] }) : { results: [] as Record<string, any>[], sizing: {} };
+for (const p of plants) r.results.push(plantUnit(p, PLANTS_M6.indexOf(p), 0, dir, runId, nU, add));
 const failed = steps.filter((x) => !x.ok).map((x) => x.name);
 const summary = { runId, flags, nUnits: nU, codeHashes: h, ok: failed.length === 0 && r.results.length > 0, failed, seconds: Math.round((performance.now() - t0) / 1000), results: r.results, sizing: r.sizing, steps };
 writeFileSync(path.join(ROOT, dir, 'summary.json'), `${JSON.stringify(summary, null, 1)}\n`);

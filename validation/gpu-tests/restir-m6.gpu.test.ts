@@ -158,6 +158,9 @@ describe('M6 functional smoke: ReSTIR ≡ PT (global z ≤ 4, 16 tiles z ≤ 4.5
     { name: 'Mode B offline (crossing shifts)', scene: allLightsScene, preset: 'offline', settings: { trees: 4 }, mode: 'B', frames: F / 8, mb: 2 },
     { name: 'Mode B + RIS offline, gauss maps', scene: allLightsScene, preset: 'offline', settings: { trees: 4, risNee: true, pairing: 'gauss' }, mode: 'B', frames: F / 8, mb: 2 },
     { name: 'Mode A′ initial', scene: allLightsScene, preset: 'initial', mode: 'A′', frames: F, mb: 2 },
+    // U3-RIS at M ∈ {1, 4, 16} (M = 32: 'RIS-NEE initial'); with VITE_PERF_FLAGS=RS_RIS_PREPASS the selection comes from
+    // the pre-pass (perf2 WP-2d V-UNB)
+    ...[1, 4, 16].map((M) => ({ name: `U3-RIS: RIS-NEE initial, M = ${M}`, scene: allLightsScene, preset: 'initial' as RestirPresetName, settings: { risNee: true, risM: M }, frames: F, mb: 2 })),
   ];
   for (const c of cases) {
     it(c.name, async () => {

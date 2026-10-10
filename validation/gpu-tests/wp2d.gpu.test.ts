@@ -14,7 +14,8 @@ import type { SceneData } from '../../src/core/scene/types.ts';
 import type { RestirPresetName, RestirSettings } from '../../src/core/render/restir/presets.ts';
 import type { LightMode } from '../../src/core/render/lights-gpu.ts';
 import { fetchScenePackage } from '../../src/core/scene/scene-package.ts';
-import { allLightsScene, boxCamera, restirRig, type GpuSceneOptions } from './restir-fixtures.ts';
+import { allLightsScene, boxCamera, restirRig, testPerfFlags, type GpuSceneOptions } from './restir-fixtures.ts';
+import { normalizePerfFlags } from '../../src/core/render/restir/perf-flags.ts';
 import { m8BitsScene } from './m8-bits.ts';
 
 afterAll(async () => { await releaseTestGpu(); });
@@ -50,7 +51,7 @@ describe('U-WP2D-DIAG: the pre-pass selection ≡ the inline ris_nee_select (end
       const [W, H] = c.size ?? [64, 64];
       const rig = await restirRig(scene, W, H, {
         preset: 'initial' as RestirPresetName, settings: c.settings, lightMode: c.lightMode, cam, members: c.members, gpu: c.gpu, resLayout: c.resLayout,
-        modeBNeedsAreaLights: c.scene === 'sponza_lite', perfFlags: 'RS_RIS_HOIST,RS_NEE_SITE,RS_RIS_PREPASS', initialDefines: { RS_RIS_PREPASS_DIAG: 1 }, seed: 23,
+        modeBNeedsAreaLights: c.scene === 'sponza_lite', perfFlags: { ...normalizePerfFlags(testPerfFlags()), RS_RIS_HOIST: 1, RS_NEE_SITE: 1, RS_RIS_PREPASS: 1 }, initialDefines: { RS_RIS_PREPASS_DIAG: 1 }, seed: 23,
       });
       expect(rig.kernel.risPrepassActive()).toBe(true);
       expect(rig.kernel.frameUnits(0, { accum: rig.accum, counters: rig.counters }).some((u) => u.label.startsWith('rs_ris_nee'))).toBe(true);

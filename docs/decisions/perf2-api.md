@@ -33,6 +33,7 @@ the packages never collide:
 | `RS_TSEL_FOLD` | WP-6 | bitwise | T4 split / phase B folded into T4 |
 | `RS_TSTATE_SOA` | WP-6 | bitwise | tState plane-major |
 | `RS_AGG_COUNTERS` | WP-6 | bitwise | subgroup-aggregated counters |
+| `RS_DEBUG_STRIP` | WP-9a | bitwise | omit debug hooks while no view/probe is active; renderer-only |
 | `RS_NO_PLANTS` | WP-9b | bitwise | plant code compiled out |
 | `RS_NO_DIAG` | WP-9b | bitwise (exception: P9) | P9 diagnostic writes skipped |
 | `MAT_VARIANTS` | WP-8 | bitwise | material compile variants |
@@ -51,7 +52,7 @@ Each entry has `wp`, `cls` (`bitwise` / `unbiased` / `biased`), optional `except
 
 ### Flow
 
-- `RestirKernelOptions.perfFlags` (a `PerfFlagsInput`: `'A,B=2'`, `['A', 'B']` or `{ A: 1, B: 2 }`) is normalised once.
+- `RestirKernelOptions.perfFlags` (a `PerfFlagsInput`: `'A,B=2'`, `['A', 'B=2']` or `{ A: 1, B: 2 }`) is normalised once.
   Unknown names throw; `0` / `false` entries are dropped; keys are sorted.
 - `RestirKernel.perfDefines()` returns the composer defines. A flag that is off is **absent**, never `NAME: 0`. The
   composer treats an undefined identifier in `#if` as false, so a flag-free kernel composes the pre-perf2 text.
@@ -64,8 +65,12 @@ Each entry has `wp`, `cls` (`bitwise` / `unbiased` / `biased`), optional `except
 - `variantKey()` appends `|<flags key>` only when flags are set. A flag-free key is the pre-perf2 key.
   `setPerfFlags(f)` switches the set at a frame boundary: a new variant (`await prepare()`) and a history reset
   (`frameState.invalidate('perf-flags')`).
+- `RS_DEBUG_STRIP`: `setDebugActive` changes a `:dbg0/1` variant-key suffix at the frame boundary.
+  Unlike changing perf flags, changing instrumentation does not invalidate temporal history. The renderer restores
+  hooks whenever a view or probe is active; diagnostic view pipelines retain their own debug defines.
 - Defaults: `RestirKernel.create` (every validation caller) has no flags. `RestirKernel.interactive` (the app) uses
-  `RELEASE_PERF_FLAGS` (the `release: true` entries; empty today).
+  `KERNEL_RELEASE_PERF_FLAGS` (released entries excluding renderer-only flags). The renderer supplies the full
+  `RELEASE_PERF_FLAGS` set, including `RS_PRIMARY_EXT` and `RS_DEBUG_STRIP`.
 
 ### Where flags are set
 
@@ -139,7 +144,9 @@ New cases (`PERF2_BITS_CASES`), recorded on the unmodified perf2 text (6d46432),
 | `alpha-full-m6-A-cwbvh` | m5s_alpha_foliage | full-m6, Mode A, CWBVH + Woop, 3 frames (bit-equal to the BVH2 case) |
 | `sponza-lite-interactive-B` | Sponza + kloofendal HDRI | 160×90, interactive (pinned), Mode B compiled as Mode A (P-4), SoA, CWBVH + MT, exact texels, the perf auto setup, 3 frames with motion |
 
-The existing six cases gained P9-excluded goldens. All 10 cases are in the Anchor tier, and Shipped = Anchor.
+The existing six cases gained P9-excluded goldens. All 10 cases are in the Anchor tier. Shipped was initially equal
+to Anchor; the 2026-10-10 RIS pre-pass release updates only Shipped after endpoint/weight diagnostics and equal-quality
+checks ([perf2-plan.md §6](perf2-plan.md#6-recovered-second-wave-2026-10-10)).
 
 ## 4. Profiling tools (`validation/tools/perf/`)
 
@@ -218,3 +225,12 @@ variant runs the same text as the base. The report is in `validation/out/perf2-w
   the lock holds.
 - That is the noise floor under shared load. Keep/drop runs need the quiet machine (D10), at least 2 blocks, and
   gpu-bg.py logging.
+
+
+### Current release evidence (2026-10-10)
+
+[perf2-plan.md §6](perf2-plan.md#6-recovered-second-wave-2026-10-10) records the recovered packages, complete
+release additions, fresh paired timings, four-seed quality decisions, compiler spill deltas and remaining Sponza gap.
+Use explicit complete flag sets for comparisons against an older release. `--abba FLAG=0` is not a subtraction
+operator: normalization removes zero-valued entries before overlaying release defaults. Named JSON jobs with a
+complete `perfFlags` value avoid that ambiguity. Keep the report's `perfFlags` field with every measurement.

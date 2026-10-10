@@ -20,6 +20,7 @@ import {
 } from '../../tests/denoise/dn-ref.ts';
 import { getTestGpu, releaseTestGpu } from './device-factory.ts';
 import { testPerfFlags } from './restir-fixtures.ts';
+import { tStateAosToSoa } from '../../src/core/render/restir/layout.ts';
 import { normalizePerfFlags } from '../../src/core/render/restir/perf-flags.ts';
 
 /** perf2 (perf2-api.md): VITE_PERF_FLAGS reaches the denoiser's pipelines (WP-7: GBUF_48, DN_ZGRAD_TEX, …). */
@@ -332,7 +333,7 @@ describe('denoiser passes vs the f64 reference', () => {
     }
     rig.device.queue.writeBuffer(rig.resFinal, 0, res);
     const radA = noisy(px, 4), l1 = l1Of(px);
-    const restirA = { arena: rig.arena, resW: rig.resW, resFinal: rig.resFinal, tsBase: 64, gradient: false, lightingChanged: false, inverse: true };
+    const restirA = { arena: rig.arena, resW: rig.resW, resFinal: rig.resFinal, tsBase: 64, tsStride: P, gradient: false, lightingChanged: false, inverse: true };
     encodeFrame({ cam, prev: cam, px, radiance: radA, l1, reset: false, settings: S, kind: 'restir', restir: restirA });
     const gA = await gpuState();
     for (let i = 0; i < P; i++) expect(Math.abs(gA.mom[4 * i + 3] - fwRef[i])).toBeLessThanOrEqual(1e-3 * fwRef[i]);   // FW for every pixel (background too)
@@ -356,6 +357,7 @@ describe('denoiser passes vs the f64 reference', () => {
       const Fc = [Math.fround(0.3 + r()), Math.fround(0.3 + r()), Math.fround(0.3 + r())];
       resWv.set(new Uint32Array(Float32Array.from([1, ...Fc]).buffer), i * 40);
     }
+    if (PERF.RS_TSTATE_SOA) words.set(tStateAosToSoa(words.subarray(64), P), 64);
     rig.device.queue.writeBuffer(rig.arena, 0, words);
     rig.device.queue.writeBuffer(rig.resW, 0, resWv);
     const piC = (i: number) => { const F = new Float32Array(resWv.buffer, i * 160 + 4, 3); return 0.2126 * F[0] + 0.7152 * F[1] + 0.0722 * F[2]; };

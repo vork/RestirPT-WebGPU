@@ -159,8 +159,13 @@ async function scenePass(page: Page, OUT: string, scene: string): Promise<void> 
   const bad: string[] = [];
   const written: Record<number, number> = {};
   for (const id of DN_VIEWS) {
-    await page.evaluate((v) => window.__app!.selectDebugView(v), id);
-    await frames(page, 3);
+    const beforeView = await page.evaluate((v) => {
+      window.__app!.selectDebugView(v);
+      return window.__integration!.renderer()!.restirTemporal!.temporalFrames;
+    }, id);
+    // The first diagnostic view may compile the instrumented ReSTIR variant (RS_DEBUG_STRIP).
+    await page.waitForFunction((n) => (window.__integration!.renderer()!.restirTemporal?.temporalFrames ?? 0) >= n + 3,
+      beforeView, { timeout: 180_000, polling: 50 });
     const s = await readState(page);
     written[id] = s.aovWritten;
     if (s.aovNonFinite > 0) bad.push(`${id}: ${s.aovNonFinite} non-finite`);

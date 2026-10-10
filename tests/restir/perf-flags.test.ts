@@ -16,7 +16,7 @@ import { denoiseSources } from '../../src/core/render/denoise/denoiser.ts';
 /** perf2-plan.md WP-0 step 1 (+ RS_HALF_RATE, user decision D6). */
 const RESERVED = ['RS_VIS_MERGE', 'RS_RIS_HOIST', 'RS_NEE_SITE', 'RS_LAST_ANYHIT', 'RS_RIS_PREPASS', 'RS_ENV_WRAP', 'RS_ENV_PRESAMPLE',
   'CW_TRI_BUDGET', 'BVH_ALPHA_BIT', 'BVH2_PRIV_STACK', 'RS_DENSE_SLOTS', 'RS_BOOST_GATE', 'RS_TSEL_FOLD', 'RS_TSTATE_SOA', 'RS_AGG_COUNTERS',
-  'RS_NO_PLANTS', 'RS_NO_DIAG', 'MAT_VARIANTS', 'RS_PRIMARY_EXT', 'RS_HALF_RATE',
+  'RS_DEBUG_STRIP', 'RS_NO_PLANTS', 'RS_NO_DIAG', 'MAT_VARIANTS', 'RS_PRIMARY_EXT', 'RS_HALF_RATE',
   'RS_REFRESH_VIS',  // WP-1's optional refresh merge (perf2-plan.md WP-1 "separate flag")
   'BVH_CONST_LOOPS', 'CW_EXP_OR',   // WP-3c (constant-bound traversal loops) and WP-3e (exponent-OR decode), added by WP-3
   // added by WP-5 (separately measurable parts of #6 / #16)
@@ -69,6 +69,8 @@ describe('perf-flag parsing and keys', () => {
     expect(normalizePerfFlags('RS_VIS_MERGE, CW_TRI_BUDGET=2')).toEqual({ CW_TRI_BUDGET: 2, RS_VIS_MERGE: 1 });
     expect(Object.keys(normalizePerfFlags('RS_VIS_MERGE,CW_TRI_BUDGET'))).toEqual(['CW_TRI_BUDGET', 'RS_VIS_MERGE']);
     expect(normalizePerfFlags(['RS_RIS_HOIST'])).toEqual({ RS_RIS_HOIST: 1 });
+    expect(normalizePerfFlags(['RS_RIS_HOIST', 'CW_TRI_BUDGET=2', 'RS_RIS_HOIST=0'])).toEqual({ CW_TRI_BUDGET: 2 });
+    expect(() => normalizePerfFlags(['CW_TRI_BUDGET=bad'])).toThrow(/non-negative integer/);
     expect(normalizePerfFlags({ RS_RIS_HOIST: true, RS_VIS_MERGE: false, RS_NO_DIAG: 0 })).toEqual({ RS_RIS_HOIST: 1 });
   });
   it('rejects unknown names and bad values', () => {

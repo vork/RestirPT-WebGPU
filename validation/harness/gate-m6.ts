@@ -273,8 +273,10 @@ const ptKey = (pkg: string, spp: number, B: number, seed: number) => ({ kind: 'p
 const ptsizeFile = (root: string, pkg: string) => path.join(root, 'ptsize', `${pkg}-${codeHashes().pt.slice(0, 16)}-${packageHash(pkgDirM6(pkg)).slice(0, 16)}.json`);
 const pilotFrames = (preset: string) => (/^offline/.test(preset) || preset === 'criteria2022' ? 8 : 128);
 const roundsOf = (preset: RestirPresetName, settings?: Partial<RestirSettings>) => restirSettings(preset, settings ?? {}).rounds;
+/** perf2 V-UNB (v-unb.ts): extra run-batches args of every sequential ReSTIR run (e.g. --kernel-flags); empty in the gate. */
+export const RS_EXTRA_ARGS: string[] = [];
 function rsArgs(pkg: string, preset: string, settings?: Partial<RestirSettings>): string[] {
-  return ['--package', pkgDirM6(pkg), '--kernel', 'restir', '--preset', preset, ...(settings && Object.keys(settings).length ? ['--restir-settings', json(settings)] : [])];
+  return ['--package', pkgDirM6(pkg), '--kernel', 'restir', '--preset', preset, ...(settings && Object.keys(settings).length ? ['--restir-settings', json(settings)] : []), ...RS_EXTRA_ARGS];
 }
 
 interface Sized { B: number; ptSpp: number; ptSeconds: number; frames: number; seconds: number; tile: 32 | 64; notes: string[]; ptSide: PilotSide; ptPilot: string }
@@ -440,7 +442,7 @@ function plantMasks(p: PlantM6, ptPilot: PilotSide, dir: string): { name: string
   return out;
 }
 
-function plantUnit(p: PlantM6, i: number, seedOffset: number, dir: string, runId: string, nU: number, add: Add): Record<string, any> {
+export function plantUnit(p: PlantM6, i: number, seedOffset: number, dir: string, runId: string, nU: number, add: Add): Record<string, any> {
   const t0 = performance.now();
   const data: Record<string, any> = { unit: `plant-${p.id}`, kind: 'plant', part: 'plants', scene: p.pkg, plant: p.name, preset: p.preset, predict: p.predict, derivation: p.derivation, ok: false };
   const z = sizeUnit(p.pkg, p.preset, Object.keys(p.base).length ? p.base : undefined, 'm6', 'tight', add, `plantbase-${p.id}`);

@@ -1,6 +1,8 @@
 # perf2 optimisation plan
 
-Nothing in the perf2 worktree was edited. The only files written are five prototype diffs, exported for engineers to port, in `/private/tmp/claude-502/-Users-mark-boss-Dev-WebGPURestirPT/4e489933-ea73-491f-b7b7-6d0aab1ffce1/scratchpad/plan-patches/`:
+Current integration status and measured results are in [§6](#6-recovered-second-wave-2026-10-10). The earlier estimates below are historical.
+
+At the original planning checkpoint, no perf2 source had been edited. Five prototype diffs were exported in `/private/tmp/claude-502/-Users-mark-boss-Dev-WebGPURestirPT/4e489933-ea73-491f-b7b7-6d0aab1ffce1/scratchpad/plan-patches/`:
 - `vis-merge-shift.patch`
 - `ris-hoist.patch`
 - `ris-hoist-skip-needraw.patch`
@@ -570,3 +572,128 @@ the map's confidence cap also damped temporal noise that the denoiser now sees.
 - Stage-B evidence: `npm run validate -- --milestone M6 --part decisions` (opt-in part; δ and the Bonferroni count of
   the M6 gate unchanged). Results in [validation.md](validation.md#perf2-app-defaults-d1--d3).
 - Performance: same-session ABBA `run-perf.ts --abba-restir app-defaults` (results in validation.md, same section).
+
+
+## 6. Recovered second wave (2026-10-10)
+
+Recovered WP-2d, WP-7e, WP-8 and WP-6 into `perf2` in that order (merge commits `5980fba`, `f86517b`,
+`03de591`, `81d62dc`). Their original worktrees and uncommitted notes are preserved. This closes the interrupted
+light-candidate pre-pass, primary-hit reuse/HUD attribution, material-identity and temporal-layout work.
+
+### Accepted implementation
+
+The release set adds `RS_RIS_PREPASS`, `RS_PRIMARY_EXT`, `MAT_VARIANTS`, `RS_LAST_ANYHIT`, `RS_TSEL_FOLD`,
+`RS_TSTATE_SOA` and `RS_DEBUG_STRIP` to the prior 18 flags. Primary-hit reuse and debug stripping are renderer-only
+(the standalone interactive kernel uses `KERNEL_RELEASE_PERF_FLAGS`).
+
+- RIS selection runs in a lean pre-pass, using the pixel's dead RP_DIAG plane for the selected endpoint and weight.
+  The initial path kernel reconstructs the endpoint. The original inline path remains for unsupported configurations.
+- The renderer's M1 hit is reused instead of tracing the camera ray again.
+- Material variants compile only the scene's material models, texture slots and transforms; field-wise loads reduce
+  live state. The last continuation uses any-hit where applicable (Mode A without emissive triangles).
+- Temporal selection phase B folds into T4; temporal state is word-major. The replay/non-replay split was dropped.
+- With no active diagnostic view or probe, ReSTIR shaders omit debug hooks. Switching diagnostics selects a cached
+  pipeline variant without resetting history; the debug-view pass retains its own instrumentation.
+- The recovered HUD fix attributes held diagnostic timing submits separately. Frame timings below come from the
+  independent frame harness, not sums of HUD pass times.
+
+App quality settings stay at maxBounces 3, RIS M 32, spatial slots 3, RR start 2 and duplication map off. No new biased
+flag, shading-rate reduction or reduced-resolution default is enabled.
+
+### Fresh performance and quality
+
+Apple M5 Pro / Metal-3, Chrome 155.0.8059.40. Each scenario has 2 blocks of 8 jobs in ABBA order (8 baseline and
+8 candidate runs), 64 frames per job, 8 split pass frames. Baseline flags are explicitly the old 18-flag release set;
+candidate flags are explicitly the 25-flag set above. Both sides use the same app settings, MT intersection,
+textures, normal maps and automatic BVH selection (CWBVH on Sponza). The shared GPU lock was held for each job and
+no xctrace ran during timing. External background GPU load was not independently logged for these runs.
+
+| Scenario | Baseline ms | Candidate ms | Paired time reduction | Candidate FPS | Four ABBA pair reductions |
+|---|---:|---:|---:|---:|---:|
+| Sponza 960×540, static | 53.379 | 46.182 | 13.48% | 21.65 | 13.35–13.68% |
+| Cornell 960×540, static | 12.151 | 9.507 | 21.76% | 105.18 | 21.33–22.09% |
+| Sponza 1280×720, static | 94.717 | 81.869 | 13.56% | 12.21 | 13.31–13.76% |
+| Sponza 960×540, moving light, N3 | 56.135 | 48.691 | 13.26% | 20.54 | 13.09–13.53% |
+
+`validation/out/m8-perf/perf2-final.json` contains all 64 successful jobs; `perf2-final-summary.json` records paired
+ratios and per-pass observations. Static denoiser time is effectively unchanged (Sponza 2.238→2.239 ms, Cornell
+1.166→1.167 ms). Normalizing static pass observations by this unchanged work leaves the gains intact. Sponza initial
+work is 32.516→25.227 ms plus a new 3.358 ms RIS pre-pass (net −3.931 ms); camera-hit work is 1.570→0.153 ms;
+spatial shift 6.680→5.984 ms; temporal classification 3.703→3.211 ms; temporal selection 1.564→1.084 ms. These are
+split-pass observations, not additive frame timestamps.
+
+Fresh WP-Q: both configurations, two scenes, static/pan/light sequences, four seeds, 64 frames; evaluate
+{16,32,48,63}, temporal window 40:64, using the existing converged PT references. The quality renderer is pinned to
+`watertight:false` to match the timing jobs. **All 12 denoised FLIP/temporal-stability comparisons are inside the
+baseline's seed-to-seed 95% confidence intervals.** Raw trimmed relMSE changes by −0.001% on Cornell and +0.011% on
+Sponza; raw relMSE × frame time improves by 21.8% and 13.5%, respectively. Formal verdict: equal quality on both scenes.
+Evidence: `validation/out/wpq-eq/resume-{base,opt,perf,decision}.json` and the 48 `wpq-resume-*` run directories.
+These are finite-seed checks on the stated scenes/sequences, not a proof for all content or hardware.
+
+### Identity, unbiasedness and compiler evidence
+
+Bitwise flags reproduced Anchor hashes twice before release. The pre-pass diagnostic reports zero endpoint
+mismatches and maximum relative W error 5.281e-7. Results change only in the expected last-bit weight arithmetic;
+Shipped hashes are re-recorded for the combined release set while Anchor tables remain unchanged. Primary-hit
+reuse has its separate V-buffer identity tests and app-level equal-quality evidence.
+
+The recovered, unchanged pre-pass already passed Stage-B Cornell Mode A, crossings Mode B and HDRI chains at
+frames 1/24, plus U8-8/U8-10 plant detection and controls. Evidence remains in the WP-2d worktree:
+`validation/out/v-unb-RS_RIS_PREPASS-20261009-151838/summary.json` (6/6, 4078 seconds) and
+`validation/out/v-unb-RS_RIS_PREPASS-20261009-174408/summary.json` (plants 10/10; controls 10/10).
+These Stage-B runs are inherited evidence, not fresh full-gate reruns. Fresh combined checks cover the diagnostic,
+RIS M=1/4/16/32, shift smoke, CWBVH production stress (40 frames, 3 rounds × 6 slots, no pending/mismatch/non-finite
+counters) and the four-seed quality protocol. An accidentally started exhaustive shift suite was interrupted;
+its partial output is not counted as a completed gate.
+
+Fresh compiler-spill reports: `validation/out/perf2-spill/resume-{base,opt}/report.{json,md}`. No hot-kernel spill
+growth. Sponza initial 800→768 B/thread, classification 464→384, temporal forward 640→576, inverse 784→752,
+spatial replay 656→560, spatial shift 464→384, refresh forward 304→176. Cornell initial 944→704, classification
+592→400, temporal forward 720→480, inverse 720→496, spatial replay 704→448, spatial shift 592→384, refresh forward
+384→144. The pre-pass and primary extraction have zero spills. Field-wise material loads increase some syntactic
+robustness-clamp counts (e.g. Sponza temporal forward 58→74) despite lower spills and measured time.
+xctrace returned its known unsupported-counter/log-archive warnings; compiler events and encoder tables exported
+successfully. These reports do not establish hardware-counter behavior.
+
+### Harness repairs and rejected experiments
+
+- Preserve array-form flag values (`CW_TRI_BUDGET=2`) instead of treating the complete token as an unknown name.
+  The failed first quality attempt produced no metrics; all quality jobs above were rerun after the repair.
+- `run-eq --renderer JSON` now pins the same intersector/options as performance jobs and stops on a failed render.
+- Synthetic temporal/debug and denoiser fixtures now encode the chosen temporal SoA layout. Material A/B fixtures
+  use the standalone kernel's release set, excluding renderer-only flags. The recovered V-UNB plant runner forwards
+  kernel flags and supports explicit U8-8/U8-10 runs.
+- Earlier harness bug `4b760d6` could drop release flags from ABBA variants. Historical package timings are not used
+  as evidence for the combined result above; every fresh timing report records both complete flag sets.
+- `RS_NO_PLANTS` was prototyped, changed Anchor hashes and provided only a small gain; removed. `RS_NO_DIAG` remains
+  off (the pre-pass needs RP_DIAG scratch storage).
+- Initial thread groups 16×4, 32×2 and 64×1 did not beat 8×8. CWBVH triangle budgets 1,4,8 did not beat 2. All were
+  dropped. Screening reports: `perf2-resume-screen.json` and `perf2-resume-tuning.json` in `validation/out/m8-perf/`.
+
+### Final release verification
+
+- Production build and TypeScript checks pass; CPU suite: 590 passed, 7 intentionally skipped (64 files).
+- Released M8 Anchor/Shipped, debug and denoiser suites: 63/63. M8 repeated: 36/36, all 40 logged full/P9-excluded
+  hash arrays identical between runs. Anchor, Anchor_NOP9 and PT reference tables are unchanged.
+- M4/M5 bitwise suites: 11/11. Default interactive frame/refresh checks: 3/3. Material/primary-hit identity: 14/14,
+  including an explicitly MAT_VARIANTS-disabled baseline so the A/B remains meaningful after release.
+- Production CWBVH stress repeated: identical accepted/queued/shift-code counters; zero pending, mismatch or
+  non-finite errors in both runs.
+- App smokes: M4 31/31, M5 87/87, M5.5 37/37, M6 16/16, M7 21/21. No console/WebGPU errors.
+  M5/M5.5/M6 view checks wait for three actual ReSTIR advances after selecting a view: the first instrumented
+  variant compiles asynchronously, and screen frames during compilation show the existing PT fallback. Counting
+  those screen frames caused the earlier blank-view smoke failures; all required AOVs pass after waiting for
+  completed ReSTIR frames. Pause/resume, history, probes, normal maps and HUD timing also pass.
+
+Logs are `validation/out/perf2-release-{build,cpu,bits-1,bits-2,interactive,m45-bits,stress-repeat,material-primary}.log`
+and the `perf2-release-*-smoke*` report directories. Full exhaustive Stage-B/shift gates were not rerun; inherited
+and fresh evidence are distinguished above. Other GPU families still need their platform-lane checks.
+
+### Remaining real-time gap
+
+This is a measured second-wave improvement, **not a 60 FPS Sponza result**: 46.18 ms at 540p still needs about
+2.77× more throughput to reach 16.67 ms. The remaining initial path-building shader dominates (~25 ms); RIS selection
+and spatial shift are the next large components. Further work should target traversal/path construction and test
+WP-4b environment presampling against the block-correlation and equal-quality gates. Dynamic resolution is already
+available as an explicit quality/performance trade. Do not silently adopt smaller RIS M, two slots, earlier RR or
+half-rate path trees: the existing quality failures and D6 constraints still apply.

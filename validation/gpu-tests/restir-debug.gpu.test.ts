@@ -646,7 +646,7 @@ describe('U-TD-1 (a) / U-TD-3: temporal views 480–496 and probe tags 73–78 (
     const g2l = device.createBindGroupLayout({ entries: [0, 1, 2].map((binding) => ({ binding, visibility: c, buffer: { type: binding === 0 ? 'read-only-storage' as const : 'storage' as const } })) });
     const layout = device.createPipelineLayout({ bindGroupLayouts: [rig.kernel.layouts.g0, rig.kernel.layouts.empty, g2l, rig.kernel.layouts.g3] });
     const pl = await rig.kernel.compile('tests/rsdbg-thooks.wgsl', 't_thooks', {
-      ...restirCommonDefines(undefined, true), RS_TEMPORAL: 1, RS_RES_IN_BINDING: '0u', RS_RES_OUT_BINDING: '1u', RS_ARENA_BINDING: '2u', RS_ARENA_RW: true,
+      ...restirCommonDefines(undefined, true), ...rig.kernel.perfDefines(), RS_TEMPORAL: 1, RS_RES_IN_BINDING: '0u', RS_RES_OUT_BINDING: '1u', RS_ARENA_BINDING: '2u', RS_ARENA_RW: true,
     }, layout, 't_thooks', { 'tests/rsdbg-thooks.wgsl': THOOK_CALLER });
     const g2 = device.createBindGroup({ layout: g2l, entries: [{ binding: 0, resource: { buffer: inBuf } }, { binding: 1, resource: { buffer: outBuf } }, { binding: 2, resource: { buffer: rig.kernel.resources.arena } }] });
     const run = (s: Partial<DebugSettings>) => rig.frame(0, s, {
@@ -1023,4 +1023,36 @@ describe('U-PAIR-VIEW / U-DUP-VIEW (restir-m6-api.md §1.1, §1.6): views 471–
     expect(capF.aovF[0]).toBeLessThanOrEqual(20);
     rig.destroy();
   });
+});
+
+
+describe('perf2 lean debug variants', () => {
+  it('switching hooks preserves temporal history and restores views and probes', async () => {
+    const rig = await debugRig(32, 24, 'interactive', { maxBounces: 3 });
+    const k = rig.kernel;
+    try {
+      k.setPerfFlags({ ...k.perfFlags, RS_DEBUG_STRIP: 1 });
+      k.setDebugActive(false);
+      await k.prepare();
+      expect(k.defines('rs_initial').DEBUG_NO_BINDINGS).toBe(true);
+      await temporalFrame(rig, 0, camAt(0), {});
+      const second = await temporalFrame(rig, 1, camAt(0), {});
+      expect(second.adv.histValid).toBe(true);
+      const leanKey = k.variantKey();
+      k.setDebugActive(true);
+      expect(k.isPrepared()).toBe(false);
+      await k.prepare();
+      expect(k.variantKey()).not.toBe(leanKey);
+      expect(k.defines('rs_initial').DEBUG_NO_BINDINGS).toBe(false);
+      const shown = await temporalFrame(rig, 2, camAt(0), { mode: RS_VIEW.W, tap: TAP.initial, probeEnabled: true, probePixel: [16, 12] });
+      expect(shown.adv.histValid, shown.adv.reasons.join(',')).toBe(true);
+      expect(Array.from(shown.fr.aovF).some(x => Number.isFinite(x) && x > 0)).toBe(true);
+      expect(shown.fr.probe.records.length).toBeGreaterThan(0);
+      k.setDebugActive(false);
+      await k.prepare();
+      const back = await temporalFrame(rig, 3, camAt(0), {});
+      expect(back.adv.histValid, back.adv.reasons.join(',')).toBe(true);
+      expect(k.variantKey()).toBe(leanKey);
+    } finally { rig.destroy(); }
+  }, 120_000);
 });
