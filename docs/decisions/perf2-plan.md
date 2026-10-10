@@ -791,3 +791,179 @@ empty flag string correctly means no flags. Its older default-run report header 
 about 2.6× more throughput and 720p needs about 2.3×. The fastest tinybvh experiment also remains around
 24 FPS at 540p. The large remaining cost is path construction/traversal; the experiments here do not justify
 promising that another local shader tweak or denoiser change will deliver the missing factor.
+
+## 8. tinybvh quality, fresh profiling, and the remaining gap (2026-10-10)
+
+Follow-up to the user's request to compare tinybvh visually, profile current code and investigate game-engine
+techniques. Renderer/shader source is `02a56bd`; **no production shader, sampling, resolution, builder or default
+was changed in this investigation**. The user judged the initial comparison visually identical. Reproduction
+jobs, exact timing blocks, pass reports, quality measurements and ray comparisons are committed in
+[perf4-results.json](perf4-results.json). Large captures are local, under `validation/out/perf4-*`.
+
+### Fresh timing and bottlenecks
+
+Apple M5 Pro, Chrome 155, existing 27 release flags, interactive ReSTIR, RR minimum 2, RIS 32, three slots,
+three bounces, duplication map off, denoising on. Each tinybvh comparison is same-session ABBA with 32 warm-up
+and 64 timed frames per job. Two variant measurements and two controls per comparison:
+
+| 960×540 builder | Control ms | Variant ms | Change | Variant FPS |
+|---|---:|---:|---:|---:|
+| tinybvh optimized object splits | 43.807 | 42.060 | −3.99% | 23.78 |
+| tinybvh spatial splits | 43.887 | 41.354 | −5.77% | 24.18 |
+
+Fresh current 1280×720: **77.684 ms / 12.87 FPS**. Neither builder bridges the target gap. WASM builds the
+acceleration structure on the CPU; rays still traverse it in WGSL compute. This is not hardware ray tracing.
+
+The four current 540p controls agree within 0.12 ms. Their isolated pass reruns identify approximately:
+
+| Work | 540p ms | 720p ms |
+|---|---:|---:|
+| Initial path trees (`rs_initial`) | 23.0 | 40.55 |
+| Spatial shifts | 6.0 | 11.39 |
+| Temporal classify / forward / select / inverse, combined | 5.6 | 9.11 |
+| First-surface RIS light selection | 3.4 | 5.66 |
+| Primary geometry | 1.7 | 2.79 |
+| Denoiser (own timestamp rerun) | 2.24 | 3.98 |
+
+**Do not sum these into frame time:** split submits change scheduling and include residual per-submit costs;
+the denoiser column comes from a separate timestamp rerun. The pipelined frame measurement remains the target.
+The previous compiler trace still applies to unchanged shader source: initial spills 528 B/thread, spatial shift
+384 B/thread, temporal inverse 720 B/thread. This is evidence of register pressure, not a hardware occupancy or
+bandwidth measurement. No new GPU hardware-counter capture is claimed.
+
+Diagnostic ablations at 540p: no textures 35.559 ms, alpha made opaque 43.386, no environment 43.613,
+`maxBounces=1` 32.516, `maxBounces=2` 40.459, RIS M=1 41.333, temporal ReSTIR off 33.845.
+**These are cost probes, not proposed quality settings.** Removing textures changes material values and the
+subsequent path workload, so the 8.3 ms difference is not an isolated texture-fetch cost. Disabling temporal reuse
+also changes downstream spatial work. Differences cannot be added. Even the severe individual reductions do not
+reach 60 FPS. Previous quality failures for fewer samples/slots remain applicable.
+
+The million-ray standalone test explains why lower BVH SAH does not imply a large frame gain: optimized object
+splits reduce box tests by about 22% but increase triangle tests by about 16%. Spatial splits reduce box tests by
+about 10% and triangle tests by about 16%. These are traversal-test workloads, not measured in-frame ray counts.
+
+### Visual and numerical comparison
+
+36 runs = three builders × static / oscillating camera / oscillating point light × four seeds. Every run renders
+64 frames at 960×540 with the same renderer, materials, RNG seeds and denoiser. Camera motion is ±0.5 m, light
+motion ±1 m. Evaluation frames 16/32/48/63 are motion knots at the reference camera/light state. Comparisons use
+the existing 12,288-sample PT reference; its residual relative-MSE noise floor is 0.000322. Captures use the
+quality harness's rgba32float target; performance uses the production-style rgba16float target.
+
+| Mean denoised LDR-FLIP (16 images per cell; lower is better) | Current | tiny opt | tiny spatial |
+|---|---:|---:|---:|
+| Static | 0.06715650 | 0.06715666 | 0.06715634 |
+| Camera motion | 0.10010992 | 0.10011062 | 0.10011083 |
+| Light motion | 0.11073028 | 0.11073044 | 0.11073384 |
+
+Largest aggregate FLIP change is **0.00000356**. Mean absolute display-RGB difference from current, averaged
+across the 48 matched denoised images: opt **0.00000351**, spatial **0.00001809**. Worst captured image has
+545 (0.105%) / 3,084 (0.595%) pixels differing by more than one 8-bit code in any channel, respectively.
+The worst isolated display-channel change is 0.704 during light motion (seed 2, frame 63);
+`worst-pixel.png` shows it at 4× magnification, so aggregate scores do not conceal this outlier.
+The overall differences are small, but the images are not bitwise identical. Rare path/primitive ties can spread through
+resampling and denoising. Sampled temporal changes are essentially identical between builders; these short,
+seeded motion sequences are not exhaustive temporal-robustness proof.
+
+Each builder has 96 primary-hit captures (49,766,400 pixel samples). Opt changes 148 primitive IDs, spatial
+817; **zero hit-versus-miss changes**. Changed IDs alone do not prove cracks, and they were not individually
+classified as geometric ties by this image test.
+
+An opt-in GPU test compares each builder in MT and Woop modes against the f64 CPU reference on **one million
+rays, including 100,000 edge-directed rays**. Brute-force queries anchor a 32-ray subset. All six combinations have
+zero unexplained closest-hit or any-hit discrepancies, zero random-ray precision exceptions, and zero stack
+or iteration-cap flags. Expected coincident-surface ties and edge precision cases are reported, not suppressed.
+The ray test uses opaque geometry; alpha/material behaviour is exercised by the full-scene image runs.
+
+**Conclusion:** optimized object splits are a credible quality-preserving candidate for production integration.
+Spatial splits also look good here, but the known conservative-clipping issue is not disproved by sampled tests.
+Keep the spatial builder experimental until source fragment bounds, seams and additional difficult scenes are
+covered. No new golden images were recorded and neither builder was made the default.
+
+Review locally:
+- `validation/out/perf4/review.html`: native-resolution wipe, static/camera/light selectors and ×16 difference view.
+- `validation/out/perf4/static-comparison.png`: overview and native pixel crop.
+- `validation/out/perf4/pan.mp4`, `light.mp4`: synchronized three-way captures. These are **offline playback**, not
+  real-time FPS recordings; one captured image per four simulation frames, repeated into 24 FPS video.
+
+### What game engines do, and what transfers here
+
+Sources were checked on 2026-10-10; these are primary engine/vendor publications.
+
+1. [Epic's Lumen performance guide](https://dev.epicgames.com/documentation/en-us/unreal-engine/lumen-performance-guide-for-unreal-engine)
+   budgets 4/8 ms at 1080p for GI/reflections, using cached lighting and selective ray tracing. Rough surfaces can
+   reuse the GI representation instead of tracing dedicated reflection rays; probe updates have a per-frame budget.
+   Its figures cover a lighting subsystem, not our complete renderer, and rely on different platforms/settings.
+   We can borrow caching and ray allocation while retaining fixed output resolution. We are not adopting its
+   upscaling or reduced-resolution reflection modes.
+2. [AMD Brixelizer GI](https://gpuopen.com/manuals/fidelityfx_sdk/techniques/brixelizer-gi/) uses sparse distance-field
+   tracing, world-space radiance/irradiance caches and screen probes. Prior-frame lighting contributes indirect
+   transport. This amortizes shading across pixels and frames; it does not evaluate a full triangle path at every
+   pixel. Its scene representation and interpolation have different error modes from our triangle tracer.
+3. [NVIDIA SHaRC integration](https://github.com/NVIDIA-RTX/SHARC/blob/main/docs/Integration.md) separates sparse
+   path updates, cache resolve, and rendering that terminates eligible secondary paths at cached radiance.
+   Its example sparse update processes about 4% of pixels. The supplied hash/cache design needs a WGSL port,
+   memory budgeting and synchronization work; it is not a drop-in replacement for our ReSTIR path suffixes.
+4. [Laine, Karras & Aila, wavefront path tracing](https://research.nvidia.com/index.php/publication/2013-07_megakernels-considered-harmful-wavefront-path-tracing-gpus)
+   explains why divergent material code and large live register sets can make large kernels inefficient. However,
+   our earlier per-bounce prototype increased spills (1280 vs 1104 B/thread). A useful new experiment must split
+   traversal from shading/reservoir work with compact state; merely splitting by bounce repeats a failed idea.
+5. [ReSTIR PT Enhanced](https://research.nvidia.com/labs/rtr/publication/lin2026restirptenhanced/) combines reciprocal
+   spatial pairing, footprint criteria and joint direct/indirect reservoirs. Much of this is already implemented
+   here. Its published 2–3× improvement is over an older algorithm; it is not another 2–3× waiting to be applied.
+   [WebGPU's ray-tracing extension discussion](https://github.com/gpuweb/gpuweb/issues/535) remains open; native
+   DXR/Vulkan/Metal RT performance is not evidence for equivalent throughput in this WGSL software traversal.
+
+### Recommended route, with explicit checkpoints
+
+**First, take the modest exact gain:** productionize the optimized object builder behind an explicit experimental
+selector, with a worker, pinned WASM artifact, deterministic input/buffer hashes and TS fallback. Validate Cornell,
+alpha-heavy geometry, glass and moving lights before promoting it. Expect the measured ~4%, not a step to 60 FPS.
+
+**Highest-value architectural experiment: cached diffuse transport in an interactive hybrid mode.** Retain full
+resolution primary geometry and direct-light visibility. Use ReSTIR for direct lighting, a world-space cache for
+rough diffuse indirect transport, and explicit rays for sharp reflection/refraction. Refresh cache entries on
+light/geometry changes and trace normally on cache misses/disocclusions. Full ReSTIR PT remains the reference.
+This is a biased interactive approximation: do not insert cached radiance into existing path reservoirs without
+re-deriving their shift targets, Jacobians and history invalidation. A separate first prototype makes that boundary
+reviewable and avoids silently changing validation semantics. It offers a plausible way to reduce both the initial
+path work and expensive general path shifts; it is **not yet a measured speedup or quality guarantee**.
+
+For an initial 540p target budget, allocate roughly 2 ms primary geometry, 3 ms direct lighting, 4 ms indirect
+cache update/query, 3 ms explicit glossy/transmission work, 2 ms denoising and 2 ms other work. This **16 ms budget
+is a design target, not a forecast**. Prototype on the measured Sponza view before scaling scope; abandon or revise
+it if update cost/quality cannot fit. Test cold start, fast turns, thin walls, foliage, glossy surfaces and moving
+lights against the same reference protocol, including localized error and temporal lag, not just whole-image means.
+
+**For a quality-equivalent path:** benchmark traversal-only queues separated from material/reservoir processing,
+while keeping RNG keys and estimator arithmetic fixed. Count rays by category, measure queue traffic and register
+spills, then compare complete frame time. Stop if the combined result does not beat the current initial+reuse
+passes. This is lower confidence than the cache route because earlier splits and visibility queues did not pay off.
+
+**Denoising is supporting work.** Even a hypothetical free denoiser recovers only about 2.24 ms at 540p / 3.98 ms
+at 720p. Better temporal reconstruction may enable fewer *indirect* samples at equal visible quality in the hybrid
+mode, but weakening the current denoiser or simply lowering RIS/slots already has adverse quality evidence.
+
+The remaining required speedup is ~2.63× at 540p / ~2.33× at 720p. Optimizing only a small pass cannot close it.
+No dynamic resolution is proposed or introduced.
+
+### Reproduction / checks
+
+`perf4-results.json` includes both job arrays; extract them with Python or jq into ignored output, then run:
+
+```sh
+sh validation/tools/tinybvh/build.sh
+npx tsx validation/harness/run-perf.ts --jobs validation/out/perf4/profile-jobs.json --out validation/out/perf4 --tag profile
+npx tsx validation/harness/run-denoise.ts --jobs validation/out/perf4/quality-jobs.json --lock-per-job
+VITE_TINYBVH_QUALITY=1 npx tsx validation/harness/with-gpu-lock.ts tinybvh-quality -- npx vitest run --project chrome validation/gpu-tests/bvh.gpu.test.ts -t 'tinybvh quality'
+validation/.venv/bin/python validation/tools/tinybvh/review.py
+```
+
+The quality jobs require the existing `wpq-sponza_perf_540` scene package and `wpq-ref-sponza` reference. Recreate
+those with the existing equal-quality harness if absent. `review.py` produces PNGs, metrics and the viewer; the
+MP4s use ffmpeg at six input captures/second, repeated to 24 FPS. The ray gate is opt-in so ordinary suites do not
+require a compiled WASM artifact. Harness changes are research-only builder injection and primary-hit capture.
+
+Build/typecheck passed; CPU suite 590 passed / 7 skipped. All 16 profile jobs and 36 capture jobs passed.
+The six million-ray/intersector comparisons passed, and browser checks covered all six viewer combinations,
+difference mode and playback. These checks do not replace the full unbiased Stage-B gate for a future builder release.

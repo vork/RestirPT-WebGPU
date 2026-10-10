@@ -1201,3 +1201,51 @@ describe('perf3 scene-sized CWBVH stacks', () => {
     }
   },180_000);
 });
+
+// Research-only gate; requires `sh validation/tools/tinybvh/build.sh`. No WASM fetch in ordinary suites.
+// VITE_TINYBVH_QUALITY=1 npx vitest run --project chrome validation/gpu-tests/bvh.gpu.test.ts -t 'tinybvh quality'
+describe.skipIf(import.meta.env.VITE_TINYBVH_QUALITY !== '1')('tinybvh quality', () => {
+  afterAll(releaseTestGpu);
+  it('Sponza: optimized and spatial builders vs f64 on one million rays, including 100k edge-directed rays', async () => {
+    expect(lane(), 'WASM probe needs the browser asset server').toBe('chrome');
+    const m = await loadGltfMesh();
+    if (!m) throw new Error('Sponza asset required for tinybvh quality gate');
+    const { tinyBuild } = await import('../tools/tinybvh/probe.ts');
+    const ctx = await getTestGpu();
+    const bvh = buildBvh(m.positions, m.indices, { maxLeafSize: 3 });
+    const rays = makeRays(m, N_RAYS, 192837);
+    const ref = cpuReference(m, bvh, rays, N_RAYS);
+    // Anchor the accelerated f64 reference to brute force independently of all GPU builders.
+    for (let i = 0; i < 32; i++) {
+      const o = Array.from(rays.slice(i * 8, i * 8 + 3));
+      const d = Array.from(rays.slice(i * 8 + 4, i * 8 + 7));
+      expect(bruteClosest(m.positions, m.indices, o, d).primId).toBe(ref.prim[i]);
+      expect(Number(bruteAny(m.positions, m.indices, o, d, rays[i * 8 + 3]))).toBe(ref.occ[i]);
+    }
+    const baseline = buildCwbvhFromMesh(m.positions, m.indices).cw;
+    const rows: Record<string, ReturnType<typeof compare>> = {};
+    for (const mode of ['current', 'opt', 'hq'] as const) {
+      const cw = mode === 'current' ? baseline : (await tinyBuild(m.positions, m.indices, { cwbvh: true }, mode === 'opt' ? 1 : 2)).cwbvh!;
+      for (const watertight of [false, true]) {
+        const bufs = uploadCwbvh(ctx.device, cw, { watertight });
+        try {
+          const v: Variant = { watertight, stats: true, cwbvh: true, flags: {
+            CW_SCENE_STACK: 1, CW_TREE_DEPTH: cw.stats.maxDepth, CW_WG_STACK: 1, CW_WG_STACK_ACTIVE: 1,
+            CW_TRI_BUDGET: 2, CW_EXP_OR: 1, BVH_CONST_LOOPS: 1,
+          } };
+          const res = await run(ctx, v, 'closest_any', bufs, rays, N_RAYS);
+          const c = compare(m, rays, ref, res.out, N_RAYS);
+          const key = `${mode}-${watertight ? 'woop' : 'mt'}`;
+          rows[key] = c;
+          console.log('TINYBVH_QUALITY', JSON.stringify({ key, ...c, counters: Array.from(res.ctr), wide: cw.stats }));
+          expect(res.ctr[3], key + ' overflow/itercap').toBe(0);
+        } finally { bufs.nodes.destroy(); bufs.tris.destroy(); }
+      }
+    }
+    for (const [key, c] of Object.entries(rows)) {
+      expect(c.unexplained, key + ': ' + c.examples.join('\n')).toBe(0);
+      expect(c.anyUnexplained, key + ': any-hit').toBe(0);
+      expect(c.precisionRandom + c.anyPrecisionRandom, key + ': non-edge precision cases').toBeLessThan(N_RAYS * 1e-4);
+    }
+  }, 600_000);
+});

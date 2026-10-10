@@ -24,6 +24,10 @@ import { packageSha256, uploadFile } from './export-package.ts';
 
 export interface RenderDenoiseOptions {
   run: string;
+  /** Research-only builder override; never selected by the app. */
+  experimentalBuilderUrl?: string;
+  /** Export primary hit IDs/barycentrics at evalFrames for builder comparisons. */
+  captureVbuffer?: boolean;
   package: string;
   seed: number;
   mode: 'flip' | 'recovery' | 'timing';
@@ -151,7 +155,9 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
     maxBounces: p.render.maxBounces ?? 3, envNee: (p.json.env?.sampling ?? 'AUTOMATIC') !== 'NONE',
     ...o.renderer, lightMode, restirFeatures: { ...o.renderer?.restirFeatures, ...o.restir } as RendererOptions['restirFeatures'], ...(restirKernel ? { restirKernel } : {}),
   };
-  const r = await Renderer.create({ device, debugLayout: debug.layout, debug, features: ctx.features, wgslLanguageFeatures: ctx.wgslLanguageFeatures }, ropts);
+  const buildBvh = o.experimentalBuilderUrl ? (await import(/* @vite-ignore */ o.experimentalBuilderUrl)).build : undefined;
+  if (o.experimentalBuilderUrl && typeof buildBvh !== 'function') throw new Error(`Builder module must export build: ${o.experimentalBuilderUrl}`);
+  const r = await Renderer.create({ buildBvh, device, debugLayout: debug.layout, debug, features: ctx.features, wgslLanguageFeatures: ctx.wgslLanguageFeatures }, ropts);
   const origin = computeRenderOrigin(p.scene.bounds, p.scene.quant);
   const fu = new FrameUniformBuffer(device);
   const color = device.createTexture({ label: 'dn-eval-colour', size: [W, H], format: 'rgba32float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST });
@@ -267,6 +273,12 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
         if (vbufMismatch > 1e-4 * W * H || vbufMaxBary > 1e-2) errors.push(`M1 V-buffer vs rsVbuf: ${vbufMismatch} primId mismatches, max |Δbary| ${vbufMaxBary} (denoiser albedo from another sample)`);
       }
       if (o.mode === 'flip' && o.evalFrames?.includes(i)) {
+        if (o.captureVbuffer) {
+          const vb = await readTexture4(device, rs.vbuf);
+          const name = `vbuf_f${i}.bin`;
+          await uploadFile(o.run, name, new Uint8Array(vb.buffer));
+          files.push(name);
+        }
         const dn = await readTexture(device, color);
         const raw = await readTexture(device, rs.frameTex);
         for (const [name, img] of [[`dn_f${i}.pfm`, dn], [`raw_f${i}.pfm`, raw]] as const) {
@@ -324,6 +336,7 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
       pkgFrames: Array.from({ length: total }, (_, i) => pkgFrame(i)), evalFrames: o.evalFrames ?? [], tiles: o.mode === 'recovery' ? { tile: TILE, x: tilesX, y: tilesY, layout: 'f32 [frame][tile][dn, raw]' } : undefined,
       renderer: { renderMode: 'restir', restirMode: o.restirMode ?? 'interactive', settings: r.restir?.settings, textureMode: ropts.textureMode, intersector: ropts.watertight ? 'woop-watertight' : 'moller-trumbore', jitter: 'iid', accumulate: false, lightMode, bvhKind: ropts.bvhKind ?? 'bvh2', overrides: o.renderer, restir: o.restir, perfFlags: o.perfFlags ?? [] },
       denoiser: { on: denoise, settings: r.denoiser?.settings, perFrame }, jitter: o.jitter ?? 'iid', accumulate: !!o.accumulate, pan: o.pan, lightAnim: o.lightAnim, panOsc: o.panOsc, lightOsc: o.lightOsc, vbuf: { primIdMismatch: vbufMismatch, maxBaryDiff: vbufMaxBary }, timing, finalizeCounters: fin,
+      experimentalBuilderUrl: o.experimentalBuilderUrl, captureVbuffer: o.captureVbuffer,
       adapterInfo: { vendor: info.vendor, architecture: info.architecture, description: info.description }, chromeVersion: o.chromeVersion, userAgent: navigator.userAgent,
       files, ok: errors.length === 0, errors, timings: { totalMs: performance.now() - t0 }, createdAt: new Date().toISOString(),
     };
