@@ -34,10 +34,11 @@ struct DnParams {          // 112 B
   taaFlags: u32,           // 92  DNT_* (DN-16)
   taaGammaLight: f32,      // 96  resolve variance-clipping γ in the lighting window, static camera (0 = none; DN-16)
   taaGammaCam: f32,        // 100 resolve variance-clipping γ while the camera moves (0 = none; DN-16)
-  pad6: u32, pad7: u32,
+  pad6: u32, indirectStride: u32,
 }
 @group(0) @binding(1) var<uniform> dn: DnParams;
 
+const DNF_CACHE_LIGHT: u32 = 512u; // Potato cache: lighting changed, shorten the response
 const DNF_RESET: u32 = 1u;         // full history reset this frame
 const DNF_LAMBDA: u32 = 2u;        // the change bits open the gate: a light or env change between t−1 and t
 const DNF_HAS_L1: u32 = 4u;        // the input has a separate length-1 term (ReSTIR rsL1); PT: L1 = 0

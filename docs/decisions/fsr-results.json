@@ -1,0 +1,1313 @@
+{
+ "reports": [
+  {
+   "input": [
+    960,
+    540
+   ],
+   "output": [
+    1920,
+    1080
+   ],
+   "filter": "bicubic",
+   "means": {
+    "tonemap": 0.05156071875000001,
+    "present": 0.58552328125
+   },
+   "totalMs": 0.637084,
+   "samples": [
+    {
+     "tonemap": 0.059034,
+     "present": 0.787082
+    },
+    {
+     "tonemap": 0.062161,
+     "present": 0.749503
+    },
+    {
+     "tonemap": 0.059036,
+     "present": 0.786958
+    },
+    {
+     "tonemap": 0.060243,
+     "present": 0.789165
+    },
+    {
+     "tonemap": 0.059953,
+     "present": 0.787583
+    },
+    {
+     "tonemap": 0.059119,
+     "present": 0.787623
+    },
+    {
+     "tonemap": 0.060411,
+     "present": 0.789083
+    },
+    {
+     "tonemap": 0.060119,
+     "present": 0.788166
+    },
+    {
+     "tonemap": 0.060327,
+     "present": 0.788375
+    },
+    {
+     "tonemap": 0.059452,
+     "present": 0.787291
+    },
+    {
+     "tonemap": 0.059535,
+     "present": 0.786416
+    },
+    {
+     "tonemap": 0.060118,
+     "present": 0.787832
+    },
+    {
+     "tonemap": 0.059827,
+     "present": 0.787998
+    },
+    {
+     "tonemap": 0.044995,
+     "present": 0.361669
+    },
+    {
+     "tonemap": 0.044497,
+     "present": 2.692877
+    },
+    {
+     "tonemap": 0.081161,
+     "present": 0.716207
+    },
+    {
+     "tonemap": 0.045872,
+     "present": 0.181822
+    },
+    {
+     "tonemap": 0.016999,
+     "present": 0.205363
+    },
+    {
+     "tonemap": 0.063246,
+     "present": 0.291108
+    },
+    {
+     "tonemap": 0.031748,
+     "present": 1.032396
+    },
+    {
+     "tonemap": 0.01729,
+     "present": 0.179031
+    },
+    {
+     "tonemap": 0.016207,
+     "present": 0.176489
+    },
+    {
+     "tonemap": 0.014625,
+     "present": 0.175114
+    },
+    {
+     "tonemap": 0.014833,
+     "present": 0.176322
+    },
+    {
+     "tonemap": 0.232985,
+     "present": 0.87103
+    },
+    {
+     "tonemap": 0.105785,
+     "present": 0.329188
+    },
+    {
+     "tonemap": 0.017208,
+     "present": 0.179281
+    },
+    {
+     "tonemap": 0.014499,
+     "present": 0.176239
+    },
+    {
+     "tonemap": 0.014832,
+     "present": 0.154532
+    },
+    {
+     "tonemap": 0.061912,
+     "present": 0.280691
+    },
+    {
+     "tonemap": 0.01604,
+     "present": 0.177614
+    },
+    {
+     "tonemap": 0.015874,
+     "present": 0.176697
+    }
+   ]
+  },
+  {
+   "input": [
+    960,
+    540
+   ],
+   "output": [
+    1920,
+    1080
+   ],
+   "filter": "fsr1",
+   "means": {
+    "tonemap": 0.045385312500000004,
+    "easu": 0.29392484375000005,
+    "present": 0.4701119374999999
+   },
+   "totalMs": 0.80942209375,
+   "samples": [
+    {
+     "tonemap": 0.018124,
+     "easu": 0.237243,
+     "present": 0.333572
+    },
+    {
+     "tonemap": 0.017374,
+     "easu": 0.23716,
+     "present": 0.354239
+    },
+    {
+     "tonemap": 0.017499,
+     "easu": 0.237618,
+     "present": 0.334532
+    },
+    {
+     "tonemap": 0.017583,
+     "easu": 0.237202,
+     "present": 0.354198
+    },
+    {
+     "tonemap": 0.037958,
+     "easu": 0.241827,
+     "present": 1.455623
+    },
+    {
+     "tonemap": 0.031041,
+     "easu": 0.237576,
+     "present": 0.36753
+    },
+    {
+     "tonemap": 0.01725,
+     "easu": 0.2372,
+     "present": 0.334532
+    },
+    {
+     "tonemap": 0.017249,
+     "easu": 0.237202,
+     "present": 0.33449
+    },
+    {
+     "tonemap": 0.06354,
+     "easu": 0.276326,
+     "present": 0.445653
+    },
+    {
+     "tonemap": 0.017957,
+     "easu": 0.237243,
+     "present": 0.353655
+    },
+    {
+     "tonemap": 0.151954,
+     "easu": 1.675032,
+     "present": 1.941941
+    },
+    {
+     "tonemap": 0.034333,
+     "easu": 0.237952,
+     "present": 0.337699
+    },
+    {
+     "tonemap": 0.016749,
+     "easu": 0.237285,
+     "present": 0.321781
+    },
+    {
+     "tonemap": 0.017041,
+     "easu": 0.237327,
+     "present": 0.334865
+    },
+    {
+     "tonemap": 0.018042,
+     "easu": 0.237076,
+     "present": 0.354823
+    },
+    {
+     "tonemap": 0.015916,
+     "easu": 0.237326,
+     "present": 0.35203
+    },
+    {
+     "tonemap": 0.015959,
+     "easu": 0.23745,
+     "present": 0.320116
+    },
+    {
+     "tonemap": 0.01625,
+     "easu": 0.237243,
+     "present": 0.352072
+    },
+    {
+     "tonemap": 0.01625,
+     "easu": 0.237535,
+     "present": 0.332573
+    },
+    {
+     "tonemap": 0.015957,
+     "easu": 0.237368,
+     "present": 0.333073
+    },
+    {
+     "tonemap": 0.016041,
+     "easu": 0.237118,
+     "present": 0.333781
+    },
+    {
+     "tonemap": 0.015666,
+     "easu": 0.237368,
+     "present": 0.351948
+    },
+    {
+     "tonemap": 0.015958,
+     "easu": 0.237284,
+     "present": 0.33399
+    },
+    {
+     "tonemap": 0.015833,
+     "easu": 0.236993,
+     "present": 0.352406
+    },
+    {
+     "tonemap": 0.015958,
+     "easu": 0.237117,
+     "present": 0.332031
+    },
+    {
+     "tonemap": 0.015999,
+     "easu": 0.237035,
+     "present": 0.333198
+    },
+    {
+     "tonemap": 0.017,
+     "easu": 0.237159,
+     "present": 0.332365
+    },
+    {
+     "tonemap": 0.016207,
+     "easu": 0.23716,
+     "present": 0.351948
+    },
+    {
+     "tonemap": 0.016082,
+     "easu": 0.237118,
+     "present": 0.351739
+    },
+    {
+     "tonemap": 0.015791,
+     "easu": 0.237118,
+     "present": 0.333282
+    },
+    {
+     "tonemap": 0.03204,
+     "easu": 0.238493,
+     "present": 0.371405
+    },
+    {
+     "tonemap": 0.685729,
+     "easu": 0.567441,
+     "present": 1.616492
+    }
+   ]
+  },
+  {
+   "input": [
+    960,
+    540
+   ],
+   "output": [
+    1920,
+    1080
+   ],
+   "filter": "fsr1",
+   "means": {
+    "tonemap": 0.07464353125,
+    "easu": 0.2671599375,
+    "present": 0.49493021875000004
+   },
+   "totalMs": 0.8367336875,
+   "samples": [
+    {
+     "tonemap": 0.114205,
+     "easu": 0.500819,
+     "present": 0.717687
+    },
+    {
+     "tonemap": 0.025582,
+     "easu": 0.237784,
+     "present": 0.281826
+    },
+    {
+     "tonemap": 0.016709,
+     "easu": 0.23716,
+     "present": 0.332906
+    },
+    {
+     "tonemap": 0.016708,
+     "easu": 0.237659,
+     "present": 0.353656
+    },
+    {
+     "tonemap": 0.016541,
+     "easu": 0.237618,
+     "present": 0.321406
+    },
+    {
+     "tonemap": 0.016166,
+     "easu": 0.237201,
+     "present": 0.353031
+    },
+    {
+     "tonemap": 0.016583,
+     "easu": 0.237118,
+     "present": 0.332615
+    },
+    {
+     "tonemap": 0.016249,
+     "easu": 0.237243,
+     "present": 0.353489
+    },
+    {
+     "tonemap": 0.018249,
+     "easu": 0.237118,
+     "present": 0.355656
+    },
+    {
+     "tonemap": 0.016916,
+     "easu": 0.237368,
+     "present": 0.321407
+    },
+    {
+     "tonemap": 0.01675,
+     "easu": 0.237243,
+     "present": 0.353739
+    },
+    {
+     "tonemap": 0.016624,
+     "easu": 0.237534,
+     "present": 0.353824
+    },
+    {
+     "tonemap": 0.017374,
+     "easu": 0.237326,
+     "present": 0.321865
+    },
+    {
+     "tonemap": 0.016582,
+     "easu": 0.237743,
+     "present": 0.323031
+    },
+    {
+     "tonemap": 0.119454,
+     "easu": 0.257826,
+     "present": 1.463789
+    },
+    {
+     "tonemap": 0.176454,
+     "easu": 0.437028,
+     "present": 0.8016
+    },
+    {
+     "tonemap": 0.428737,
+     "easu": 0.272449,
+     "present": 1.206838
+    },
+    {
+     "tonemap": 0.092872,
+     "easu": 0.480818,
+     "present": 0.698312
+    },
+    {
+     "tonemap": 0.123747,
+     "easu": 0.362031,
+     "present": 0.5419
+    },
+    {
+     "tonemap": 0.024832,
+     "easu": 0.237327,
+     "present": 0.341282
+    },
+    {
+     "tonemap": 0.016416,
+     "easu": 0.23741,
+     "present": 0.332865
+    },
+    {
+     "tonemap": 0.016917,
+     "easu": 0.237576,
+     "present": 0.33349
+    },
+    {
+     "tonemap": 0.016583,
+     "easu": 0.23741,
+     "present": 0.32299
+    },
+    {
+     "tonemap": 0.016291,
+     "easu": 0.237535,
+     "present": 0.323031
+    },
+    {
+     "tonemap": 0.016333,
+     "easu": 0.237077,
+     "present": 0.353364
+    },
+    {
+     "tonemap": 0.01625,
+     "easu": 0.237159,
+     "present": 0.352824
+    },
+    {
+     "tonemap": 0.016749,
+     "easu": 0.237118,
+     "present": 0.334198
+    },
+    {
+     "tonemap": 0.017374,
+     "easu": 0.237535,
+     "present": 0.335281
+    },
+    {
+     "tonemap": 0.799184,
+     "easu": 0.240783,
+     "present": 1.585202
+    },
+    {
+     "tonemap": 0.062248,
+     "easu": 0.257534,
+     "present": 0.464151
+    },
+    {
+     "tonemap": 0.055831,
+     "easu": 0.268617,
+     "present": 0.611857
+    },
+    {
+     "tonemap": 0.031083,
+     "easu": 0.248951,
+     "present": 0.358655
+    }
+   ]
+  },
+  {
+   "input": [
+    960,
+    540
+   ],
+   "output": [
+    1920,
+    1080
+   ],
+   "filter": "bicubic",
+   "means": {
+    "tonemap": 0.07966684375000001,
+    "present": 0.25032696875
+   },
+   "totalMs": 0.3299938125,
+   "samples": [
+    {
+     "tonemap": 0.014708,
+     "present": 0.17629
+    },
+    {
+     "tonemap": 0.014667,
+     "present": 0.175914
+    },
+    {
+     "tonemap": 0.014417,
+     "present": 0.175538
+    },
+    {
+     "tonemap": 0.014709,
+     "present": 0.175873
+    },
+    {
+     "tonemap": 0.014709,
+     "present": 0.175747
+    },
+    {
+     "tonemap": 0.014667,
+     "present": 0.174123
+    },
+    {
+     "tonemap": 0.014667,
+     "present": 0.175415
+    },
+    {
+     "tonemap": 0.014625,
+     "present": 0.157122
+    },
+    {
+     "tonemap": 0.01479,
+     "present": 0.176164
+    },
+    {
+     "tonemap": 0.014834,
+     "present": 0.156831
+    },
+    {
+     "tonemap": 0.014542,
+     "present": 0.15529
+    },
+    {
+     "tonemap": 0.088582,
+     "present": 0.245246
+    },
+    {
+     "tonemap": 1.015568,
+     "present": 1.257564
+    },
+    {
+     "tonemap": 0.227621,
+     "present": 0.393077
+    },
+    {
+     "tonemap": 0.477492,
+     "present": 0.83332
+    },
+    {
+     "tonemap": 0.184331,
+     "present": 0.387202
+    },
+    {
+     "tonemap": 0.062207,
+     "present": 0.209997
+    },
+    {
+     "tonemap": 0.069999,
+     "present": 0.359287
+    },
+    {
+     "tonemap": 0.069624,
+     "present": 0.227205
+    },
+    {
+     "tonemap": 0.015916,
+     "present": 0.154915
+    },
+    {
+     "tonemap": 0.014958,
+     "present": 0.175872
+    },
+    {
+     "tonemap": 0.0145,
+     "present": 0.175915
+    },
+    {
+     "tonemap": 0.014875,
+     "present": 0.155206
+    },
+    {
+     "tonemap": 0.014791,
+     "present": 0.175789
+    },
+    {
+     "tonemap": 0.014833,
+     "present": 0.175789
+    },
+    {
+     "tonemap": 0.014625,
+     "present": 0.175706
+    },
+    {
+     "tonemap": 0.014749,
+     "present": 0.175372
+    },
+    {
+     "tonemap": 0.014667,
+     "present": 0.176665
+    },
+    {
+     "tonemap": 0.014833,
+     "present": 0.175413
+    },
+    {
+     "tonemap": 0.014375,
+     "present": 0.154955
+    },
+    {
+     "tonemap": 0.014708,
+     "present": 0.175663
+    },
+    {
+     "tonemap": 0.01475,
+     "present": 0.175998
+    }
+   ]
+  },
+  {
+   "input": [
+    1280,
+    720
+   ],
+   "output": [
+    1920,
+    1080
+   ],
+   "filter": "bicubic",
+   "means": {
+    "tonemap": 0.09117571875000001,
+    "present": 0.2695155000000001
+   },
+   "totalMs": 0.3606912187500001,
+   "samples": [
+    {
+     "tonemap": 0.0245,
+     "present": 0.18583
+    },
+    {
+     "tonemap": 0.024709,
+     "present": 0.185622
+    },
+    {
+     "tonemap": 0.024582,
+     "present": 0.185747
+    },
+    {
+     "tonemap": 0.024458,
+     "present": 0.185497
+    },
+    {
+     "tonemap": 0.024416,
+     "present": 0.186164
+    },
+    {
+     "tonemap": 0.024583,
+     "present": 0.18554
+    },
+    {
+     "tonemap": 0.024583,
+     "present": 0.185706
+    },
+    {
+     "tonemap": 0.024749,
+     "present": 0.185955
+    },
+    {
+     "tonemap": 0.209288,
+     "present": 0.339536
+    },
+    {
+     "tonemap": 0.508326,
+     "present": 1.142523
+    },
+    {
+     "tonemap": 0.541699,
+     "present": 0.780405
+    },
+    {
+     "tonemap": 0.185705,
+     "present": 0.372369
+    },
+    {
+     "tonemap": 0.355286,
+     "present": 0.510576
+    },
+    {
+     "tonemap": 0.231621,
+     "present": 0.516617
+    },
+    {
+     "tonemap": 0.105748,
+     "present": 0.256455
+    },
+    {
+     "tonemap": 0.040708,
+     "present": 0.154832
+    },
+    {
+     "tonemap": 0.024792,
+     "present": 0.186372
+    },
+    {
+     "tonemap": 0.024458,
+     "present": 0.18533
+    },
+    {
+     "tonemap": 0.024458,
+     "present": 0.18529
+    },
+    {
+     "tonemap": 0.024417,
+     "present": 0.185289
+    },
+    {
+     "tonemap": 0.024375,
+     "present": 0.185789
+    },
+    {
+     "tonemap": 0.024708,
+     "present": 0.185664
+    },
+    {
+     "tonemap": 0.024707,
+     "present": 0.185622
+    },
+    {
+     "tonemap": 0.0245,
+     "present": 0.18529
+    },
+    {
+     "tonemap": 0.024416,
+     "present": 0.185747
+    },
+    {
+     "tonemap": 0.024459,
+     "present": 0.186206
+    },
+    {
+     "tonemap": 0.024666,
+     "present": 0.185747
+    },
+    {
+     "tonemap": 0.024834,
+     "present": 0.184747
+    },
+    {
+     "tonemap": 0.024457,
+     "present": 0.185872
+    },
+    {
+     "tonemap": 0.0245,
+     "present": 0.185747
+    },
+    {
+     "tonemap": 0.024542,
+     "present": 0.166498
+    },
+    {
+     "tonemap": 0.174373,
+     "present": 0.299912
+    }
+   ]
+  },
+  {
+   "input": [
+    1280,
+    720
+   ],
+   "output": [
+    1920,
+    1080
+   ],
+   "filter": "fsr1",
+   "means": {
+    "tonemap": 0.10336828125000003,
+    "easu": 0.32810956249999995,
+    "present": 0.56609171875
+   },
+   "totalMs": 0.9975695625,
+   "samples": [
+    {
+     "tonemap": 0.077124,
+     "easu": 0.489368,
+     "present": 0.690448
+    },
+    {
+     "tonemap": 0.058624,
+     "easu": 0.420911,
+     "present": 0.537616
+    },
+    {
+     "tonemap": 0.049209,
+     "easu": 0.23933,
+     "present": 0.307496
+    },
+    {
+     "tonemap": 0.033291,
+     "easu": 0.238955,
+     "present": 0.339161
+    },
+    {
+     "tonemap": 0.031083,
+     "easu": 0.238787,
+     "present": 0.36987
+    },
+    {
+     "tonemap": 0.030875,
+     "easu": 0.238496,
+     "present": 0.336495
+    },
+    {
+     "tonemap": 0.031416,
+     "easu": 0.238788,
+     "present": 0.349162
+    },
+    {
+     "tonemap": 0.031333,
+     "easu": 0.238621,
+     "present": 0.370328
+    },
+    {
+     "tonemap": 0.032625,
+     "easu": 0.238913,
+     "present": 0.371454
+    },
+    {
+     "tonemap": 0.032207,
+     "easu": 0.23883,
+     "present": 0.350119
+    },
+    {
+     "tonemap": 0.031208,
+     "easu": 0.239162,
+     "present": 0.369995
+    },
+    {
+     "tonemap": 0.031667,
+     "easu": 0.238579,
+     "present": 0.369953
+    },
+    {
+     "tonemap": 0.031667,
+     "easu": 0.238955,
+     "present": 0.37062
+    },
+    {
+     "tonemap": 1.059276,
+     "easu": 0.248538,
+     "present": 1.826388
+    },
+    {
+     "tonemap": 0.188872,
+     "easu": 0.302579,
+     "present": 0.872362
+    },
+    {
+     "tonemap": 0.06204,
+     "easu": 0.356704,
+     "present": 0.61549
+    },
+    {
+     "tonemap": 0.155206,
+     "easu": 0.476034,
+     "present": 0.799529
+    },
+    {
+     "tonemap": 0.052666,
+     "easu": 0.238913,
+     "present": 0.307787
+    },
+    {
+     "tonemap": 0.034333,
+     "easu": 0.238913,
+     "present": 0.373369
+    },
+    {
+     "tonemap": 0.032541,
+     "easu": 0.238621,
+     "present": 0.350954
+    },
+    {
+     "tonemap": 0.035207,
+     "easu": 0.239038,
+     "present": 0.342494
+    },
+    {
+     "tonemap": 0.033083,
+     "easu": 0.238663,
+     "present": 0.372411
+    },
+    {
+     "tonemap": 0.033209,
+     "easu": 0.238788,
+     "present": 0.371662
+    },
+    {
+     "tonemap": 0.036582,
+     "easu": 0.23908,
+     "present": 0.354703
+    },
+    {
+     "tonemap": 0.032832,
+     "easu": 0.238705,
+     "present": 0.352536
+    },
+    {
+     "tonemap": 0.032333,
+     "easu": 0.238538,
+     "present": 0.338037
+    },
+    {
+     "tonemap": 0.032292,
+     "easu": 0.238705,
+     "present": 0.370952
+    },
+    {
+     "tonemap": 0.032041,
+     "easu": 0.239038,
+     "present": 0.349661
+    },
+    {
+     "tonemap": 0.032749,
+     "easu": 0.238496,
+     "present": 0.337412
+    },
+    {
+     "tonemap": 0.10854,
+     "easu": 1.669932,
+     "present": 2.25959
+    },
+    {
+     "tonemap": 0.708781,
+     "easu": 0.538075,
+     "present": 1.649392
+    },
+    {
+     "tonemap": 0.102873,
+     "easu": 0.504451,
+     "present": 0.737489
+    }
+   ]
+  },
+  {
+   "input": [
+    1280,
+    720
+   ],
+   "output": [
+    1920,
+    1080
+   ],
+   "filter": "fsr1",
+   "means": {
+    "tonemap": 0.11201409375,
+    "easu": 0.3196225937500001,
+    "present": 0.60832271875
+   },
+   "totalMs": 1.03995940625,
+   "samples": [
+    {
+     "tonemap": 0.044708,
+     "easu": 0.398244,
+     "present": 0.692573
+    },
+    {
+     "tonemap": 0.127248,
+     "easu": 0.457785,
+     "present": 0.688073
+    },
+    {
+     "tonemap": 0.053791,
+     "easu": 0.238788,
+     "present": 0.348245
+    },
+    {
+     "tonemap": 0.032374,
+     "easu": 0.239081,
+     "present": 0.351536
+    },
+    {
+     "tonemap": 0.031499,
+     "easu": 0.238788,
+     "present": 0.370577
+    },
+    {
+     "tonemap": 0.031292,
+     "easu": 0.238788,
+     "present": 0.369953
+    },
+    {
+     "tonemap": 0.031917,
+     "easu": 0.23883,
+     "present": 0.370954
+    },
+    {
+     "tonemap": 0.032791,
+     "easu": 0.238579,
+     "present": 0.371994
+    },
+    {
+     "tonemap": 0.032375,
+     "easu": 0.239329,
+     "present": 0.372078
+    },
+    {
+     "tonemap": 0.033166,
+     "easu": 0.238579,
+     "present": 0.371912
+    },
+    {
+     "tonemap": 0.031167,
+     "easu": 0.238455,
+     "present": 0.369785
+    },
+    {
+     "tonemap": 0.031458,
+     "easu": 0.238537,
+     "present": 0.370077
+    },
+    {
+     "tonemap": 0.031124,
+     "easu": 0.238663,
+     "present": 0.369702
+    },
+    {
+     "tonemap": 0.032416,
+     "easu": 0.238454,
+     "present": 0.370452
+    },
+    {
+     "tonemap": 0.031875,
+     "easu": 0.238496,
+     "present": 0.370494
+    },
+    {
+     "tonemap": 0.180038,
+     "easu": 0.239912,
+     "present": 1.751098
+    },
+    {
+     "tonemap": 0.196997,
+     "easu": 0.294037,
+     "present": 0.814487
+    },
+    {
+     "tonemap": 0.503284,
+     "easu": 0.643031,
+     "present": 1.46356
+    },
+    {
+     "tonemap": 0.114666,
+     "easu": 0.588866,
+     "present": 0.846487
+    },
+    {
+     "tonemap": 0.066457,
+     "easu": 0.317662,
+     "present": 0.467618
+    },
+    {
+     "tonemap": 0.043959,
+     "easu": 0.239205,
+     "present": 0.382953
+    },
+    {
+     "tonemap": 0.031332,
+     "easu": 0.238787,
+     "present": 0.369619
+    },
+    {
+     "tonemap": 0.031083,
+     "easu": 0.238497,
+     "present": 0.36916
+    },
+    {
+     "tonemap": 0.031624,
+     "easu": 0.238622,
+     "present": 0.370328
+    },
+    {
+     "tonemap": 0.03125,
+     "easu": 0.238621,
+     "present": 0.369704
+    },
+    {
+     "tonemap": 0.031584,
+     "easu": 0.238871,
+     "present": 0.37037
+    },
+    {
+     "tonemap": 0.031375,
+     "easu": 0.238788,
+     "present": 0.36991
+    },
+    {
+     "tonemap": 0.0335,
+     "easu": 0.239121,
+     "present": 0.371995
+    },
+    {
+     "tonemap": 0.033292,
+     "easu": 0.238579,
+     "present": 0.371495
+    },
+    {
+     "tonemap": 0.032209,
+     "easu": 0.23883,
+     "present": 0.370454
+    },
+    {
+     "tonemap": 1.16594,
+     "easu": 1.498769,
+     "present": 3.249159
+    },
+    {
+     "tonemap": 0.41666,
+     "easu": 0.298329,
+     "present": 0.999525
+    }
+   ]
+  },
+  {
+   "input": [
+    1280,
+    720
+   ],
+   "output": [
+    1920,
+    1080
+   ],
+   "filter": "bicubic",
+   "means": {
+    "tonemap": 0.16785278124999997,
+    "present": 0.347673125
+   },
+   "totalMs": 0.5155259062499999,
+   "samples": [
+    {
+     "tonemap": 0.024166,
+     "present": 0.184872
+    },
+    {
+     "tonemap": 0.024542,
+     "present": 0.185081
+    },
+    {
+     "tonemap": 0.131998,
+     "present": 0.276912
+    },
+    {
+     "tonemap": 0.694864,
+     "present": 0.951111
+    },
+    {
+     "tonemap": 0.280329,
+     "present": 0.443535
+    },
+    {
+     "tonemap": 0.688824,
+     "present": 0.886569
+    },
+    {
+     "tonemap": 0.398994,
+     "present": 0.607158
+    },
+    {
+     "tonemap": 0.043457,
+     "present": 0.275038
+    },
+    {
+     "tonemap": 0.046915,
+     "present": 0.362952
+    },
+    {
+     "tonemap": 0.100332,
+     "present": 0.225205
+    },
+    {
+     "tonemap": 0.027166,
+     "present": 0.188788
+    },
+    {
+     "tonemap": 0.024874,
+     "present": 0.186331
+    },
+    {
+     "tonemap": 0.024791,
+     "present": 0.185872
+    },
+    {
+     "tonemap": 0.024708,
+     "present": 0.185788
+    },
+    {
+     "tonemap": 0.025125,
+     "present": 0.186955
+    },
+    {
+     "tonemap": 0.025041,
+     "present": 0.184789
+    },
+    {
+     "tonemap": 0.02504,
+     "present": 0.186039
+    },
+    {
+     "tonemap": 0.024708,
+     "present": 0.186081
+    },
+    {
+     "tonemap": 0.024792,
+     "present": 0.185539
+    },
+    {
+     "tonemap": 0.024874,
+     "present": 0.186122
+    },
+    {
+     "tonemap": 0.025041,
+     "present": 0.186372
+    },
+    {
+     "tonemap": 0.024457,
+     "present": 0.186039
+    },
+    {
+     "tonemap": 0.024917,
+     "present": 0.186039
+    },
+    {
+     "tonemap": 0.024667,
+     "present": 0.185956
+    },
+    {
+     "tonemap": 0.024749,
+     "present": 0.18583
+    },
+    {
+     "tonemap": 0.024915,
+     "present": 0.187164
+    },
+    {
+     "tonemap": 0.025375,
+     "present": 0.186748
+    },
+    {
+     "tonemap": 0.079666,
+     "present": 0.228329
+    },
+    {
+     "tonemap": 1.166065,
+     "present": 1.430228
+    },
+    {
+     "tonemap": 0.076624,
+     "present": 0.257913
+    },
+    {
+     "tonemap": 0.724155,
+     "present": 0.963486
+    },
+    {
+     "tonemap": 0.465118,
+     "present": 0.680699
+    }
+   ]
+  }
+ ],
+ "errors": [],
+ "adapter": {},
+ "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+ "hardware": "Apple M5 Pro / Metal 3",
+ "notes": [
+  "Isolated GPU timestamps, not app FPS. ABBA, 32 measured samples after 16 warmup.",
+  "720p source is a resized 540p capture for timing only.",
+  "FSR shader port uses FP32, exact guarded reciprocals and RCAS noise attenuation."
+ ]
+}

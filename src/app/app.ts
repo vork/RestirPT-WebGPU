@@ -162,7 +162,7 @@ export class App {
     dynamicResolution: false, targetMs: 33,
   };
   // M8: Catmull-Rom upscale (anti-ringing clamp) by default (m8-perf.md §10)
-  readonly present: PresentSettings = { exposureEV: 0, tonemap: 'standard', filter: 'bicubic', highlightNonFinite: true };
+  readonly present: PresentSettings = { exposureEV: 0, tonemap: 'standard', filter: 'bicubic', sharpening: 0.5, highlightNonFinite: true };
   /** M8 dynamic resolution (m8-perf.md §9): the controller and the last frame's GPU busy time (ms, from onSubmittedWorkDone). */
   readonly dynres = new DynamicResolution();
   gpuFrameMs = 0;
@@ -590,7 +590,7 @@ export class App {
       // Reserved lazily, in encode order (tonemap, then present) and only for passes that are encoded: an unwritten pair
       // resolves to stale values, and attributeFrame breaks end-time ties by reservation order (timestamps.ts).
       () => this.timestamps.pass('present'),
-      { toneTimestampWrites: () => this.timestamps.pass('tonemap') },   // perf2 WP-7g
+      { toneTimestampWrites: () => this.timestamps.pass('tonemap'), upscaleTimestampWrites: () => this.timestamps.pass('fsr-easu') },   // perf2 WP-7g
     );
     this.probe.encodeCopy(enc, this.debug.buffer, this.frameCounter);
     this.timestamps.resolve(enc);

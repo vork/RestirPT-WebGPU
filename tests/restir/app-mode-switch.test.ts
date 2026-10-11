@@ -18,9 +18,15 @@ describe('app ReSTIR mode switches', () => {
 
 it('Potato bounds work without overwriting the other modes or explicit feature overrides', () => {
   const p = restirAppSettings('potato', 5, true);
-  expect(p).toMatchObject({ maxBounces: 1, temporal: false, slots: 1, rounds: 1, boostSlots: 0,
+  expect(p).toMatchObject({ maxBounces: 1, indirectCache: 0, temporal: false, slots: 1, rounds: 1, boostSlots: 0,
     risM: 4, rrMinBounces: 1, dupmap: false, dualMv: false });
   expect(restirAppSettings('potato', 0).maxBounces).toBe(0);
-  expect(restirAppSettings('interactive', 5)).toMatchObject({ maxBounces: 5, temporal: true, slots: 3, boostSlots: 3, risM: 32 });
+  expect(restirAppSettings('interactive', 5)).toMatchObject({ maxBounces: 5, indirectCache: 0, temporal: true, slots: 3, boostSlots: 3, risM: 32 });
   expect(restirAppSettings('potato', 3, true, { rrMinBounces: 2 }).rrMinBounces).toBe(2);
+});
+
+it('cached indirect is opt-in and cannot leak into other modes or zero-bounce rendering', () => {
+  expect(restirAppSettings('potato', 3, true, { indirectCache: 2 }).indirectCache).toBe(2);
+  for (const mode of MODES.filter(m => m !== 'potato')) expect(restirAppSettings(mode, 3, true, { indirectCache: 2 }).indirectCache).toBe(0);
+  expect(restirAppSettings('potato', 0, true, { indirectCache: 4 }).indirectCache).toBe(0);
 });

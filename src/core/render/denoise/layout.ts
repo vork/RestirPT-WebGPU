@@ -8,7 +8,7 @@ export const DN_ITER_SIZE = 16;
 /** DnParams.taaFlags (dn-common.wgsl DNT_*; Changelog DN-16). */
 export const DNT = { DILATE: 1, CUBIC: 2 } as const;
 /** DnParams.flags (dn-common.wgsl DNF_*). */
-export const DNF = { RESET: 1, LAMBDA: 2, HAS_L1: 4, FW: 8, INVERSE: 16, GRADIENT: 32, LAMBDA_CAM: 64, NO_RESOLVE: 128, GUIDE: 256 } as const;
+export const DNF = { RESET: 1, LAMBDA: 2, HAS_L1: 4, FW: 8, INVERSE: 16, GRADIENT: 32, LAMBDA_CAM: 64, NO_RESOLVE: 128, GUIDE: 256, CACHE_LIGHT: 512 } as const;
 /** DnIter.flags (dn-filter.wgsl DNI_*). */
 export const DNI = { FEEDBACK: 1, FINAL: 2, COPY: 4 } as const;
 /** Reprojection outcome codes (view 526; dn-temporal.wgsl DN_REPROJ_*). */
@@ -85,6 +85,7 @@ export interface DnParamsCpu {
   tsStride?: number;
   /** Frames since the last lighting change (0 = this frame; Changelog DN-6). */
   sinceChange?: number;
+  indirectStride?: number;
 }
 
 export const dnTiles = (w: number, h: number): [number, number] => [Math.ceil(w / 8), Math.ceil(h / 8)];
@@ -100,7 +101,8 @@ export function packDnParams(o: DnParamsCpu, out = new ArrayBuffer(DN_PARAMS_SIZ
   u[12] = o.tsBase >>> 0; u[13] = o.resPlanes >>> 0; f[14] = o.settings.sigmaA; f[15] = o.settings.varCorr; f[16] = o.settings.nMaxT; u[17] = Math.min(o.sinceChange ?? 0xffff, 0xffff); u[18] = o.settings.invRadius; f[19] = o.settings.lumMinN; u[20] = o.settings.lumPre;
   f[21] = o.settings.taaLightMax; f[22] = o.settings.taaCamMax; u[23] = (o.settings.taaDilate ? DNT.DILATE : 0) | (o.settings.taaCubic ? DNT.CUBIC : 0);
   f[24] = o.settings.taaGammaLight; f[25] = o.settings.taaGammaCam;
-  if (o.tsStride) u[26] = o.tsStride >>> 0;
+  u[26] = o.tsStride ?? 0;
+  u[27] = o.indirectStride ?? 0;
   return out;
 }
 
@@ -125,9 +127,9 @@ export function denoiserAllowed(render: DenoiseRenderMode, restir: DenoiseRestir
 export function denoiserDefault(render: DenoiseRenderMode, restir: DenoiseRestirMode): boolean {
   return render === 'restir' && (restir === 'interactive' || restir === 'potato');
 }
-/** App defaults only: Potato drops the widest à-trous pass. Explicit session overrides win in every mode. */
-export function denoiserAppSettings(render: DenoiseRenderMode, restir: DenoiseRestirMode, overrides: Partial<DenoiserSettings> = {}): DenoiserSettings {
-  return { ...DENOISER_DEFAULTS, ...(render === 'restir' && restir === 'potato' ? { iterations: 3 } : {}), ...overrides };
+/** App defaults only: Potato defaults to three spatial passes; its opt-in cache uses two stronger passes. Explicit session overrides win in every mode. */
+export function denoiserAppSettings(render: DenoiseRenderMode, restir: DenoiseRestirMode, overrides: Partial<DenoiserSettings> = {}, cachedIndirect = false): DenoiserSettings {
+  return { ...DENOISER_DEFAULTS, ...(render === 'restir' && restir === 'potato' ? cachedIndirect ? { iterations: 2, alphaMin: 0.08, sigmaN: 32, sigmaA: 0.2, sigmaL: 12, lumPre: 0, guide: false, taaCamMax: 12, taaGammaCam: 1.5, taaLightMax: 16 } : { iterations: 3 } : {}), ...overrides };
 }
 /** Key of the per-mode toggle memory. */
 export const denoiseModeKey = (render: DenoiseRenderMode, restir: DenoiseRestirMode): string => (render === 'restir' ? `restir:${restir}` : render);

@@ -1,0 +1,8065 @@
+{
+ "timings": [
+  {
+   "height": 540,
+   "mode": "old",
+   "ms": 17.343749998758238,
+   "fps": 57.65765766178578,
+   "runs": 2
+  },
+  {
+   "height": 540,
+   "mode": "cache",
+   "ms": 14.23333333308498,
+   "fps": 70.2576112424437,
+   "runs": 2
+  },
+  {
+   "height": 720,
+   "mode": "old",
+   "ms": 30.305208334078394,
+   "fps": 32.99762829465501,
+   "runs": 2
+  },
+  {
+   "height": 720,
+   "mode": "cache",
+   "ms": 24.736458332588278,
+   "fps": 40.42615909499789,
+   "runs": 2
+  },
+  {
+   "height": 1080,
+   "mode": "old",
+   "ms": 67.20208333432674,
+   "fps": 14.880491055984885,
+   "runs": 1
+  },
+  {
+   "height": 1080,
+   "mode": "cache",
+   "ms": 54.609375,
+   "fps": 18.311874105865524,
+   "runs": 1
+  }
+ ],
+ "summary": [
+  {
+   "mode": "old",
+   "motion": "static",
+   "displayStd": 0.013131256680935621,
+   "darkInteriorStd": 0.007147100288420916,
+   "flip": 0.09624719759449363
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "displayStd": 0.013651133049279451,
+   "darkInteriorStd": 0.009909873711876571,
+   "flip": 0.13587040826678276
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "displayStd": 0.014003142016008496,
+   "darkInteriorStd": 0.009558284422382712,
+   "flip": 0.1287453956902027
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "displayStd": 0.0130466737318784,
+   "darkInteriorStd": 0.010465943487361073,
+   "flip": 0.15593481622636318
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "displayStd": 0.013766999123618007,
+   "darkInteriorStd": 0.007496621226891875,
+   "flip": 0.10167529433965683
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "displayStd": 0.012659986037760973,
+   "darkInteriorStd": 0.008318986278027296,
+   "flip": 0.11233721300959587
+  }
+ ],
+ "smoothness": [
+  {
+   "mode": "old",
+   "motion": "static",
+   "frame": 16,
+   "seeds": 4,
+   "displayStd": 0.018345823511481285,
+   "darkInteriorStd": 0.01009664312005043
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "frame": 32,
+   "seeds": 4,
+   "displayStd": 0.013322447426617146,
+   "darkInteriorStd": 0.007245350629091263
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "frame": 48,
+   "seeds": 4,
+   "displayStd": 0.011074554175138474,
+   "darkInteriorStd": 0.0059883082285523415
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "frame": 63,
+   "seeds": 4,
+   "displayStd": 0.009782201610505581,
+   "darkInteriorStd": 0.005258099175989628
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "frame": 16,
+   "seeds": 4,
+   "displayStd": 0.020138120278716087,
+   "darkInteriorStd": 0.01480616070330143
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "frame": 32,
+   "seeds": 4,
+   "displayStd": 0.014109908603131771,
+   "darkInteriorStd": 0.010362996719777584
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "frame": 48,
+   "seeds": 4,
+   "displayStd": 0.011058051139116287,
+   "darkInteriorStd": 0.007946252822875977
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "frame": 63,
+   "seeds": 4,
+   "displayStd": 0.00929845217615366,
+   "darkInteriorStd": 0.006524084601551294
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "frame": 16,
+   "seeds": 4,
+   "displayStd": 0.014279760420322418,
+   "darkInteriorStd": 0.009554894641041756
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "frame": 32,
+   "seeds": 4,
+   "displayStd": 0.013845779933035374,
+   "darkInteriorStd": 0.00947469100356102
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "frame": 48,
+   "seeds": 4,
+   "displayStd": 0.013865544460713863,
+   "darkInteriorStd": 0.009540238417685032
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "frame": 63,
+   "seeds": 4,
+   "displayStd": 0.01402148324996233,
+   "darkInteriorStd": 0.009663313627243042
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "frame": 16,
+   "seeds": 4,
+   "displayStd": 0.0165950246155262,
+   "darkInteriorStd": 0.012538214214146137
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "frame": 32,
+   "seeds": 4,
+   "displayStd": 0.0125358235090971,
+   "darkInteriorStd": 0.010365922003984451
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "frame": 48,
+   "seeds": 4,
+   "displayStd": 0.011764895170927048,
+   "darkInteriorStd": 0.00997090619057417
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "frame": 63,
+   "seeds": 4,
+   "displayStd": 0.011290951631963253,
+   "darkInteriorStd": 0.008988731540739536
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "frame": 16,
+   "seeds": 4,
+   "displayStd": 0.019294962286949158,
+   "darkInteriorStd": 0.010758036747574806
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "frame": 32,
+   "seeds": 4,
+   "displayStd": 0.013983742333948612,
+   "darkInteriorStd": 0.007592742331326008
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "frame": 48,
+   "seeds": 4,
+   "displayStd": 0.011574329808354378,
+   "darkInteriorStd": 0.0062110223807394505
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "frame": 63,
+   "seeds": 4,
+   "displayStd": 0.01021496206521988,
+   "darkInteriorStd": 0.0054246834479272366
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "frame": 16,
+   "seeds": 4,
+   "displayStd": 0.01710129901766777,
+   "darkInteriorStd": 0.011342382989823818
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "frame": 32,
+   "seeds": 4,
+   "displayStd": 0.01202025730162859,
+   "darkInteriorStd": 0.007747527677565813
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "frame": 48,
+   "seeds": 4,
+   "displayStd": 0.010891950689256191,
+   "darkInteriorStd": 0.007102190982550383
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "frame": 63,
+   "seeds": 4,
+   "displayStd": 0.01062643714249134,
+   "darkInteriorStd": 0.00708384346216917
+  }
+ ],
+ "quality": [
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 1,
+   "frame": 16,
+   "flip": 0.10405644029378891,
+   "luminance": 0.09777808009875992
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 1,
+   "frame": 32,
+   "flip": 0.09588930755853653,
+   "luminance": 0.09887362556696562
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 1,
+   "frame": 48,
+   "flip": 0.09309445321559906,
+   "luminance": 0.09911533175634063
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 1,
+   "frame": 63,
+   "flip": 0.09147024154663086,
+   "luminance": 0.09939616268410732
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 2,
+   "frame": 16,
+   "flip": 0.10404520481824875,
+   "luminance": 0.09794339303502553
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 2,
+   "frame": 32,
+   "flip": 0.09607527405023575,
+   "luminance": 0.09874912199963394
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 2,
+   "frame": 48,
+   "flip": 0.09316715598106384,
+   "luminance": 0.09896838800523992
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 2,
+   "frame": 63,
+   "flip": 0.09157055616378784,
+   "luminance": 0.09910170655675413
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 3,
+   "frame": 16,
+   "flip": 0.10434897989034653,
+   "luminance": 0.09776205732008156
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 3,
+   "frame": 32,
+   "flip": 0.09603704512119293,
+   "luminance": 0.09876972131577168
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 3,
+   "frame": 48,
+   "flip": 0.09305920451879501,
+   "luminance": 0.09896334278189858
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 3,
+   "frame": 63,
+   "flip": 0.09156374633312225,
+   "luminance": 0.09914311861715863
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 4,
+   "frame": 16,
+   "flip": 0.10428130626678467,
+   "luminance": 0.09749146316539604
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 4,
+   "frame": 32,
+   "flip": 0.09622900933027267,
+   "luminance": 0.0983530347187201
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 4,
+   "frame": 48,
+   "flip": 0.09334786236286163,
+   "luminance": 0.09869834249412594
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 4,
+   "frame": 63,
+   "flip": 0.0917193740606308,
+   "luminance": 0.09896218429022172
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 1,
+   "frame": 16,
+   "flip": 0.13792428374290466,
+   "luminance": 0.09518783705722353
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 1,
+   "frame": 32,
+   "flip": 0.13482901453971863,
+   "luminance": 0.09514196780232805
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 1,
+   "frame": 48,
+   "flip": 0.13486333191394806,
+   "luminance": 0.09510055489402412
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 1,
+   "frame": 63,
+   "flip": 0.1352042704820633,
+   "luminance": 0.0951582759534332
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 2,
+   "frame": 16,
+   "flip": 0.1390271782875061,
+   "luminance": 0.09513824510945329
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 2,
+   "frame": 32,
+   "flip": 0.1354561448097229,
+   "luminance": 0.09496157088201848
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 2,
+   "frame": 48,
+   "flip": 0.13516360521316528,
+   "luminance": 0.09487950467585395
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 2,
+   "frame": 63,
+   "flip": 0.1354038119316101,
+   "luminance": 0.094830025128267
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 3,
+   "frame": 16,
+   "flip": 0.13921713829040527,
+   "luminance": 0.09567634300283841
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 3,
+   "frame": 32,
+   "flip": 0.13514550030231476,
+   "luminance": 0.09536754213281536
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 3,
+   "frame": 48,
+   "flip": 0.13466842472553253,
+   "luminance": 0.09517679507540901
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 3,
+   "frame": 63,
+   "flip": 0.13485226035118103,
+   "luminance": 0.09510542409572259
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 4,
+   "frame": 16,
+   "flip": 0.13782665133476257,
+   "luminance": 0.09490775554683828
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 4,
+   "frame": 32,
+   "flip": 0.13449084758758545,
+   "luminance": 0.09470244314492887
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 4,
+   "frame": 48,
+   "flip": 0.13468018174171448,
+   "luminance": 0.09468384896071819
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 4,
+   "frame": 63,
+   "flip": 0.13517388701438904,
+   "luminance": 0.09473254673406646
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 1,
+   "frame": 16,
+   "flip": 0.12777933478355408,
+   "luminance": 0.09615270015343316
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 1,
+   "frame": 32,
+   "flip": 0.12922365963459015,
+   "luminance": 0.09686664769680722
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 1,
+   "frame": 48,
+   "flip": 0.1286461502313614,
+   "luminance": 0.09724458444967493
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 1,
+   "frame": 63,
+   "flip": 0.12966224551200867,
+   "luminance": 0.09683056362926713
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 2,
+   "frame": 16,
+   "flip": 0.1266913115978241,
+   "luminance": 0.09622465688112856
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 2,
+   "frame": 32,
+   "flip": 0.12928877770900726,
+   "luminance": 0.0962580349702697
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 2,
+   "frame": 48,
+   "flip": 0.12997284531593323,
+   "luminance": 0.09626722405905319
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 2,
+   "frame": 63,
+   "flip": 0.12948045134544373,
+   "luminance": 0.09641595781324389
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 3,
+   "frame": 16,
+   "flip": 0.12729814648628235,
+   "luminance": 0.09663943857005595
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 3,
+   "frame": 32,
+   "flip": 0.1294693946838379,
+   "luminance": 0.09645820023190883
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 3,
+   "frame": 48,
+   "flip": 0.1291380673646927,
+   "luminance": 0.09635071472754489
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 3,
+   "frame": 63,
+   "flip": 0.12834157049655914,
+   "luminance": 0.096588227103595
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 4,
+   "frame": 16,
+   "flip": 0.1274888962507248,
+   "luminance": 0.0961911481154875
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 4,
+   "frame": 32,
+   "flip": 0.12872125208377838,
+   "luminance": 0.09660581069672079
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 4,
+   "frame": 48,
+   "flip": 0.12911652028560638,
+   "luminance": 0.09672737839231671
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 4,
+   "frame": 63,
+   "flip": 0.12960770726203918,
+   "luminance": 0.09684793320918411
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 1,
+   "frame": 16,
+   "flip": 0.15221881866455078,
+   "luminance": 0.09396914561752566
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 1,
+   "frame": 32,
+   "flip": 0.1564694195985794,
+   "luminance": 0.09444137357328816
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 1,
+   "frame": 48,
+   "flip": 0.15679442882537842,
+   "luminance": 0.09443742031273988
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 1,
+   "frame": 63,
+   "flip": 0.1575288325548172,
+   "luminance": 0.09453319040732563
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 2,
+   "frame": 16,
+   "flip": 0.15339526534080505,
+   "luminance": 0.09370449573462958
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 2,
+   "frame": 32,
+   "flip": 0.1562175303697586,
+   "luminance": 0.09400332966554872
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 2,
+   "frame": 48,
+   "flip": 0.15811675786972046,
+   "luminance": 0.09425383380787136
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 2,
+   "frame": 63,
+   "flip": 0.15765000879764557,
+   "luminance": 0.09421026649469626
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 3,
+   "frame": 16,
+   "flip": 0.15311534702777863,
+   "luminance": 0.09421895949049082
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 3,
+   "frame": 32,
+   "flip": 0.15648996829986572,
+   "luminance": 0.09424167614163076
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 3,
+   "frame": 48,
+   "flip": 0.1575041115283966,
+   "luminance": 0.09416627555395733
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 3,
+   "frame": 63,
+   "flip": 0.15680138766765594,
+   "luminance": 0.09412874273659869
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 4,
+   "frame": 16,
+   "flip": 0.15216736495494843,
+   "luminance": 0.09334469485399347
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 4,
+   "frame": 32,
+   "flip": 0.15510950982570648,
+   "luminance": 0.09390946346798419
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 4,
+   "frame": 48,
+   "flip": 0.15719814598560333,
+   "luminance": 0.09428987218194354
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 4,
+   "frame": 63,
+   "flip": 0.15818016231060028,
+   "luminance": 0.094414464378222
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 1,
+   "frame": 16,
+   "flip": 0.10962840169668198,
+   "luminance": 0.10186217522006386
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 1,
+   "frame": 32,
+   "flip": 0.1018589660525322,
+   "luminance": 0.1015910877343189
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 1,
+   "frame": 48,
+   "flip": 0.0987635999917984,
+   "luminance": 0.10125229385948288
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 1,
+   "frame": 63,
+   "flip": 0.09716788679361343,
+   "luminance": 0.10129787704910267
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 2,
+   "frame": 16,
+   "flip": 0.10908579081296921,
+   "luminance": 0.10399559190164938
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 2,
+   "frame": 32,
+   "flip": 0.10142968595027924,
+   "luminance": 0.10253026630454531
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 2,
+   "frame": 48,
+   "flip": 0.0988541767001152,
+   "luminance": 0.10203091705802783
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 2,
+   "frame": 63,
+   "flip": 0.09737211465835571,
+   "luminance": 0.10176238338906761
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 3,
+   "frame": 16,
+   "flip": 0.10916689038276672,
+   "luminance": 0.10155816261159326
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 3,
+   "frame": 32,
+   "flip": 0.10110815614461899,
+   "luminance": 0.10132045026845193
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 3,
+   "frame": 48,
+   "flip": 0.09842408448457718,
+   "luminance": 0.10106512081676909
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 3,
+   "frame": 63,
+   "flip": 0.09714024513959885,
+   "luminance": 0.10103748698441486
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 4,
+   "frame": 16,
+   "flip": 0.10933838784694672,
+   "luminance": 0.10136361777940539
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 4,
+   "frame": 32,
+   "flip": 0.10137365013360977,
+   "luminance": 0.10100339403570903
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 4,
+   "frame": 48,
+   "flip": 0.09871459007263184,
+   "luminance": 0.1010019344932086
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 4,
+   "frame": 63,
+   "flip": 0.09737808257341385,
+   "luminance": 0.10109420714713462
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 1,
+   "frame": 16,
+   "flip": 0.11500536650419235,
+   "luminance": 0.09825538871409704
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 1,
+   "frame": 32,
+   "flip": 0.1115594357252121,
+   "luminance": 0.09722309053671398
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 1,
+   "frame": 48,
+   "flip": 0.11136604845523834,
+   "luminance": 0.09658655805352431
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 1,
+   "frame": 63,
+   "flip": 0.1104712039232254,
+   "luminance": 0.09711501049295246
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 2,
+   "frame": 16,
+   "flip": 0.11501407623291016,
+   "luminance": 0.09843306925239692
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 2,
+   "frame": 32,
+   "flip": 0.11140067875385284,
+   "luminance": 0.09687015726366778
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 2,
+   "frame": 48,
+   "flip": 0.11248144507408142,
+   "luminance": 0.09669733286838893
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 2,
+   "frame": 63,
+   "flip": 0.111984021961689,
+   "luminance": 0.09705847944771012
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 3,
+   "frame": 16,
+   "flip": 0.1156320720911026,
+   "luminance": 0.0980854828412083
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 3,
+   "frame": 32,
+   "flip": 0.11069093644618988,
+   "luminance": 0.09710277138188707
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 3,
+   "frame": 48,
+   "flip": 0.11143741011619568,
+   "luminance": 0.09653526746374644
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 3,
+   "frame": 63,
+   "flip": 0.11076868325471878,
+   "luminance": 0.09693806683042272
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 4,
+   "frame": 16,
+   "flip": 0.11541970074176788,
+   "luminance": 0.09798745752221502
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 4,
+   "frame": 32,
+   "flip": 0.11038852483034134,
+   "luminance": 0.0968148751413601
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 4,
+   "frame": 48,
+   "flip": 0.11187024414539337,
+   "luminance": 0.0966891551476909
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 4,
+   "frame": 63,
+   "flip": 0.11190555989742279,
+   "luminance": 0.0973550786597241
+  }
+ ],
+ "capture_metadata": [
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 1,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 3,
+    "alphaMin": 0.2,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 128,
+    "sigmaL": 4,
+    "sigmaA": 0.05,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": true,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 1,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 32,
+    "taaCamMax": 8,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "full path estimate"
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 2,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 3,
+    "alphaMin": 0.2,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 128,
+    "sigmaL": 4,
+    "sigmaA": 0.05,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": true,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 1,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 32,
+    "taaCamMax": 8,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "full path estimate"
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 3,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 3,
+    "alphaMin": 0.2,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 128,
+    "sigmaL": 4,
+    "sigmaA": 0.05,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": true,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 1,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 32,
+    "taaCamMax": 8,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "full path estimate"
+  },
+  {
+   "mode": "old",
+   "motion": "static",
+   "seed": 4,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 3,
+    "alphaMin": 0.2,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 128,
+    "sigmaL": 4,
+    "sigmaA": 0.05,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": true,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 1,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 32,
+    "taaCamMax": 8,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "full path estimate"
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 1,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "restir": {},
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 2,
+    "alphaMin": 0.08,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 32,
+    "sigmaL": 12,
+    "sigmaA": 0.2,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": false,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 0,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 16,
+    "taaCamMax": 12,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1.5,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "direct lighting plus emission; indirect cache appears only in dn"
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 2,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "restir": {},
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 2,
+    "alphaMin": 0.08,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 32,
+    "sigmaL": 12,
+    "sigmaA": 0.2,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": false,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 0,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 16,
+    "taaCamMax": 12,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1.5,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "direct lighting plus emission; indirect cache appears only in dn"
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 3,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "restir": {},
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 2,
+    "alphaMin": 0.08,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 32,
+    "sigmaL": 12,
+    "sigmaA": 0.2,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": false,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 0,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 16,
+    "taaCamMax": 12,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1.5,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "direct lighting plus emission; indirect cache appears only in dn"
+  },
+  {
+   "mode": "cache",
+   "motion": "static",
+   "seed": 4,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "restir": {},
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 2,
+    "alphaMin": 0.08,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 32,
+    "sigmaL": 12,
+    "sigmaA": 0.2,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": false,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 0,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 16,
+    "taaCamMax": 12,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1.5,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "direct lighting plus emission; indirect cache appears only in dn"
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 1,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 3,
+    "alphaMin": 0.2,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 128,
+    "sigmaL": 4,
+    "sigmaA": 0.05,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": true,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 1,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 32,
+    "taaCamMax": 8,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "full path estimate"
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 2,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 3,
+    "alphaMin": 0.2,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 128,
+    "sigmaL": 4,
+    "sigmaA": 0.05,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": true,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 1,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 32,
+    "taaCamMax": 8,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "full path estimate"
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 3,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 3,
+    "alphaMin": 0.2,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 128,
+    "sigmaL": 4,
+    "sigmaA": 0.05,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": true,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 1,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 32,
+    "taaCamMax": 8,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "full path estimate"
+  },
+  {
+   "mode": "old",
+   "motion": "pan",
+   "seed": 4,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 3,
+    "alphaMin": 0.2,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 128,
+    "sigmaL": 4,
+    "sigmaA": 0.05,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": true,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 1,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 32,
+    "taaCamMax": 8,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "full path estimate"
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 1,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "restir": {},
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 2,
+    "alphaMin": 0.08,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 32,
+    "sigmaL": 12,
+    "sigmaA": 0.2,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": false,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 0,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 16,
+    "taaCamMax": 12,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1.5,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "direct lighting plus emission; indirect cache appears only in dn"
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 2,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "restir": {},
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 2,
+    "alphaMin": 0.08,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 32,
+    "sigmaL": 12,
+    "sigmaA": 0.2,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": false,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 0,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 16,
+    "taaCamMax": 12,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1.5,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "direct lighting plus emission; indirect cache appears only in dn"
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 3,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "restir": {},
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 2,
+    "alphaMin": 0.08,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 32,
+    "sigmaL": 12,
+    "sigmaA": 0.2,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": false,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 0,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 16,
+    "taaCamMax": 12,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1.5,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "direct lighting plus emission; indirect cache appears only in dn"
+  },
+  {
+   "mode": "cache",
+   "motion": "pan",
+   "seed": 4,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "restir": {},
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 2,
+    "alphaMin": 0.08,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 32,
+    "sigmaL": 12,
+    "sigmaA": 0.2,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": false,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 0,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 16,
+    "taaCamMax": 12,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1.5,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "direct lighting plus emission; indirect cache appears only in dn"
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 1,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 3,
+    "alphaMin": 0.2,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 128,
+    "sigmaL": 4,
+    "sigmaA": 0.05,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": true,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 1,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 32,
+    "taaCamMax": 8,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "full path estimate"
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 2,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 3,
+    "alphaMin": 0.2,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 128,
+    "sigmaL": 4,
+    "sigmaA": 0.05,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": true,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 1,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 32,
+    "taaCamMax": 8,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "full path estimate"
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 3,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 3,
+    "alphaMin": 0.2,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 128,
+    "sigmaL": 4,
+    "sigmaA": 0.05,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": true,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 1,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 32,
+    "taaCamMax": 8,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "full path estimate"
+  },
+  {
+   "mode": "old",
+   "motion": "light",
+   "seed": 4,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 3,
+    "alphaMin": 0.2,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 128,
+    "sigmaL": 4,
+    "sigmaA": 0.05,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": true,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 1,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 32,
+    "taaCamMax": 8,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "full path estimate"
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 1,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "restir": {},
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 2,
+    "alphaMin": 0.08,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 32,
+    "sigmaL": 12,
+    "sigmaA": 0.2,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": false,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 0,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 16,
+    "taaCamMax": 12,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1.5,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "direct lighting plus emission; indirect cache appears only in dn"
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 2,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "restir": {},
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 2,
+    "alphaMin": 0.08,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 32,
+    "sigmaL": 12,
+    "sigmaA": 0.2,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": false,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 0,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 16,
+    "taaCamMax": 12,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1.5,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "direct lighting plus emission; indirect cache appears only in dn"
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 3,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "restir": {},
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 2,
+    "alphaMin": 0.08,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 32,
+    "sigmaL": 12,
+    "sigmaA": 0.2,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": false,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 0,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 16,
+    "taaCamMax": 12,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1.5,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "direct lighting plus emission; indirect cache appears only in dn"
+  },
+  {
+   "mode": "cache",
+   "motion": "light",
+   "seed": 4,
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "moller-trumbore",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "auto",
+    "overrides": {
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "watertight": false,
+     "restirMode": "potato"
+    },
+    "restir": {},
+    "perfFlags": []
+   },
+   "denoiser": {
+    "iterations": 2,
+    "alphaMin": 0.08,
+    "lambda0": 0.03,
+    "lambda1": 0.15,
+    "sigmaZ": 1,
+    "sigmaN": 32,
+    "sigmaL": 12,
+    "sigmaA": 0.2,
+    "varCorr": 3,
+    "resolve": true,
+    "nMaxT": 1024,
+    "guide": false,
+    "invRadius": 3,
+    "lumMinN": 4,
+    "lumPre": 0,
+    "nMax": 64,
+    "gradientOnCamera": false,
+    "taaLightMax": 16,
+    "taaCamMax": 12,
+    "taaDilate": true,
+    "taaCubic": true,
+    "taaGammaLight": 4,
+    "taaGammaCam": 1.5,
+    "atrousTile": true
+   },
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chrome": "155.0.8059.40",
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1",
+   "rawSignal": "direct lighting plus emission; indirect cache appears only in dn"
+  }
+ ],
+ "performance": {
+  "tag": "final",
+  "chrome": "155.0.8059.40",
+  "reports": [
+   {
+    "ok": true,
+    "label": "540p-old-0",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 0,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 0
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 17.354166666666668,
+     "medianMs": 17.350000023841858,
+     "minMs": 17.325000017881393,
+     "maxMs": 17.399999976158142,
+     "blocks": [
+      17.350000023841858,
+      17.337499976158142,
+      17.350000023841858,
+      17.362499982118607,
+      17.325000017881393,
+      17.38749998807907,
+      17.375,
+      17.337500005960464,
+      17.349999994039536,
+      17.337500005960464,
+      17.337500005960464,
+      17.399999976158142
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-10T21:30:48.528Z",
+    "wallS": 4.911700000047683,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 302.5
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 177.10000014305115
+     }
+    },
+    "latency": {
+     "meanMs": 17.71250009536743,
+     "medianMs": 17.700000286102295,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.6750001013278961,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.15000009536743164,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.11250004172325134,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.9125001430511475,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 11.275000095367432,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.4250001013278961,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.20000013709068298,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.2375001311302185,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.6875001192092896,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.9250001013278961,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.10000002384185791,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.4000001549720764,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.33750006556510925,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.4750001132488251,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.6625000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous2",
+      "meanMs": 0.5250000655651093,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.1375001072883606,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 19.237501680850983,
+    "denoiser": {
+     "totalMs": 1.8972314375,
+     "passes": [
+      {
+       "name": "dn_temporal",
+       "ms": 0.29308853125
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.211345765625
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.38509101562500003
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.5511647656249999
+      },
+      {
+       "name": "dn_atrous2",
+       "ms": 0.419012421875
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.03581128124999999
+      }
+     ]
+    },
+    "counters": {
+     "fr": 0.001691096756707923,
+     "queues": [
+      {
+       "counter": 599,
+       "n": 599,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 64477,
+       "n": 64477,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "540p-cache-1",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {}
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 14.235416668156782,
+     "medianMs": 14.237500011920929,
+     "minMs": 14.1875,
+     "maxMs": 14.3125,
+     "blocks": [
+      14.1875,
+      14.212500005960464,
+      14.237500011920929,
+      14.262499988079071,
+      14.237500011920929,
+      14.224999994039536,
+      14.212500005960464,
+      14.224999994039536,
+      14.199999988079071,
+      14.25,
+      14.3125,
+      14.262500017881393
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-10T21:30:53.436Z",
+    "wallS": 4.2065,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 366.2999999523163
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 185.20000004768372
+     }
+    },
+    "latency": {
+     "meanMs": 14.537500083446503,
+     "medianMs": 14.599999904632568,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.6875000596046448,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.16250017285346985,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.10000002384185791,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.9750001430511475,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 8.775000095367432,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.42500004172325134,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.2125001847743988,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.2000001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.5000001192092896,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.8875001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.12500008940696716,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.4125000536441803,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.27500012516975403,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.3875001072883606,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.18750011920928955,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.48750004172325134,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.6625001132488251,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.1625000536441803,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 16.62500175833702,
+    "denoiser": {
+     "totalMs": 1.6985430781250002,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.25710865625
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.166056015625
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.25757481249999997
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.08057042187499999
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.374711765625
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.5219009218749999
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.038377046874999994
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.823199927726082e-05,
+     "queues": [
+      {
+       "counter": 10,
+       "n": 10,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 42611,
+       "n": 42611,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "540p-cache-2",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {}
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 14.231249998013178,
+     "medianMs": 14.237499982118607,
+     "minMs": 14.200000017881393,
+     "maxMs": 14.25,
+     "blocks": [
+      14.237499982118607,
+      14.224999994039536,
+      14.200000017881393,
+      14.224999994039536,
+      14.224999994039536,
+      14.25,
+      14.224999994039536,
+      14.237500011920929,
+      14.224999994039536,
+      14.237500011920929,
+      14.237499982118607,
+      14.25
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-10T21:30:57.635Z",
+    "wallS": 4.217299999952316,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 378.5
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 220.79999995231628
+     }
+    },
+    "latency": {
+     "meanMs": 14.512500077486038,
+     "medianMs": 14.500000238418579,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.7000001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.08750009536743164,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.12500011920928955,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.9375000894069672,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 8.762500077486038,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.43750011920928955,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.17500025033950806,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.17500001192092896,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.4250001013278961,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.8625001013278961,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.10000008344650269,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.3625001013278961,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.2625000774860382,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.33750012516975403,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.20000004768371582,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.4625001549720764,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.6750001013278961,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.10000008344650269,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 16.187501847743988,
+    "denoiser": {
+     "totalMs": 1.6933661875,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.256789078125
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.16589728125000003
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.256369171875
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.080561953125
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.37234709374999997
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.52080328125
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.03854825
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.823199927726082e-05,
+     "queues": [
+      {
+       "counter": 10,
+       "n": 10,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 42611,
+       "n": 42611,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "540p-old-3",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 0,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 0
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 17.333333330849808,
+     "medianMs": 17.337500005960464,
+     "minMs": 17.299999982118607,
+     "maxMs": 17.400000005960464,
+     "blocks": [
+      17.3125,
+      17.32499998807907,
+      17.30000001192093,
+      17.337500005960464,
+      17.299999982118607,
+      17.337500005960464,
+      17.36250001192093,
+      17.400000005960464,
+      17.337499976158142,
+      17.337500005960464,
+      17.299999982118607,
+      17.349999994039536
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-10T21:31:01.859Z",
+    "wallS": 4.6395999999046325,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 372.90000009536743
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 189.79999995231628
+     }
+    },
+    "latency": {
+     "meanMs": 17.63750010728836,
+     "medianMs": 17.600000143051147,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.7000000774860382,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.1375001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.08750006556510925,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.8875001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 11.362500101327896,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.4125001132488251,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.1250002384185791,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.30000004172325134,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.7000001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.8500000536441803,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.11250010132789612,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.3875000774860382,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.3000001311302185,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.4750000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.7375001013278961,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous2",
+      "meanMs": 0.5375000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.15000012516975403,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 19.26250171661377,
+    "denoiser": {
+     "totalMs": 1.890538125,
+     "passes": [
+      {
+       "name": "dn_temporal",
+       "ms": 0.282065984375
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.21326034375
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.38820496875000005
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.55409121875
+      },
+      {
+       "name": "dn_atrous2",
+       "ms": 0.41643176562499995
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.035067171875000004
+      }
+     ]
+    },
+    "counters": {
+     "fr": 0.001691096756707923,
+     "queues": [
+      {
+       "counter": 599,
+       "n": 599,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 64477,
+       "n": 64477,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "720p-old-0",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 1280,
+    "height": 720,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 0,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 0
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 30.290625000993412,
+     "medianMs": 30.287499994039536,
+     "minMs": 30.19999998807907,
+     "maxMs": 30.36250001192093,
+     "blocks": [
+      30.349999994039536,
+      30.36250001192093,
+      30.32499998807907,
+      30.337500005960464,
+      30.287499994039536,
+      30.275000005960464,
+      30.19999998807907,
+      30.25,
+      30.275000005960464,
+      30.30000001192093,
+      30.275000005960464,
+      30.25
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-10T21:31:06.505Z",
+    "wallS": 6.546200000047683,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 359.40000009536743
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 162.10000014305115
+     }
+    },
+    "latency": {
+     "meanMs": 30.52500009536743,
+     "medianMs": 30.50000023841858,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 2.725000023841858,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.16250014305114746,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.1000000536441803,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 1.3875001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 19.88750010728836,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.6625000834465027,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.1500001847743988,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.3000001311302185,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 1.1375001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 1.5250000655651093,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.15000006556510925,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.5625001788139343,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.48750004172325134,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.825000137090683,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 1.1125000715255737,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous2",
+      "meanMs": 0.8875001072883606,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.16250008344650269,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 32.22500169277191,
+    "denoiser": {
+     "totalMs": 3.346924828125,
+     "passes": [
+      {
+       "name": "dn_temporal",
+       "ms": 0.47488259374999997
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.3717638906249999
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.6920798125
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.9783841406250001
+      },
+      {
+       "name": "dn_atrous2",
+       "ms": 0.7540881093749999
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.07421107812499998
+      }
+     ]
+    },
+    "counters": {
+     "fr": 0.001789872449866194,
+     "queues": [
+      {
+       "counter": 1236,
+       "n": 1236,
+       "capacity": 921600,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 130451,
+       "n": 130451,
+       "capacity": 921600,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "720p-cache-1",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 1280,
+    "height": 720,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {}
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 24.742708332836628,
+     "medianMs": 24.737499982118607,
+     "minMs": 24.6875,
+     "maxMs": 24.82499998807907,
+     "blocks": [
+      24.775000005960464,
+      24.737499982118607,
+      24.700000017881393,
+      24.737499982118607,
+      24.700000017881393,
+      24.6875,
+      24.69999998807907,
+      24.712500005960464,
+      24.775000005960464,
+      24.82499998807907,
+      24.762500017881393,
+      24.799999982118607
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-10T21:31:13.073Z",
+    "wallS": 5.765099999904632,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 373.19999980926514
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 162
+     }
+    },
+    "latency": {
+     "meanMs": 25.112500101327896,
+     "medianMs": 25.100000143051147,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 2.7500001192092896,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.16250011324882507,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.1000000536441803,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 1.4000000953674316,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 15.212500095367432,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.6875000596046448,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.2125001847743988,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.18750011920928955,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.650000125169754,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 1.5500000715255737,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.10000011324882507,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.5375000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.37500011920928955,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.6000000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.22500008344650269,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.8000001013278961,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 1.0750001072883606,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.2000000774860382,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 26.825001806020737,
+    "denoiser": {
+     "totalMs": 2.9764115625,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.4211354375
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.285044484375
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.447073890625
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.159964359375
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.6608440625
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.92716225
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.073098453125
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.896233737647563e-05,
+     "queues": [
+      {
+       "counter": 20,
+       "n": 20,
+       "capacity": 921600,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 87954,
+       "n": 87954,
+       "capacity": 921600,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "720p-cache-2",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 1280,
+    "height": 720,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {}
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 24.730208332339924,
+     "medianMs": 24.724999994039536,
+     "minMs": 24.67500001192093,
+     "maxMs": 24.80000001192093,
+     "blocks": [
+      24.76249998807907,
+      24.80000001192093,
+      24.737499982118607,
+      24.73750001192093,
+      24.712500005960464,
+      24.724999994039536,
+      24.69999998807907,
+      24.700000017881393,
+      24.712499976158142,
+      24.67500001192093,
+      24.712500005960464,
+      24.787499994039536
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-10T21:31:18.825Z",
+    "wallS": 5.7625,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 391.7999999523163
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 164.70000004768372
+     }
+    },
+    "latency": {
+     "meanMs": 25.06250011920929,
+     "medianMs": 25.100000143051147,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 2.7500001192092896,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.17500007152557373,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.1000000536441803,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 1.400000125169754,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 15.237500131130219,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.7250000834465027,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.1125001311302185,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.262500137090683,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.7250001132488251,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 1.5000000596046448,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.15000012516975403,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.5250000953674316,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.3875000774860382,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.575000137090683,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.25000008940696716,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.7875000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 1.0375000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.17500010132789612,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 26.875001817941666,
+    "denoiser": {
+     "totalMs": 2.976617984375,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.4221445625
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.28580620312499994
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.44679851562500006
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.159267015625
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.65939096875
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.92750996875
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.07347810937499999
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.896233737647563e-05,
+     "queues": [
+      {
+       "counter": 20,
+       "n": 20,
+       "capacity": 921600,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 87954,
+       "n": 87954,
+       "capacity": 921600,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "720p-old-3",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 1280,
+    "height": 720,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 0,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 0
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 30.319791667163372,
+     "medianMs": 30.3125,
+     "minMs": 30.299999982118607,
+     "maxMs": 30.36250001192093,
+     "blocks": [
+      30.325000017881393,
+      30.349999994039536,
+      30.337500005960464,
+      30.3125,
+      30.3125,
+      30.3125,
+      30.299999982118607,
+      30.30000001192093,
+      30.299999982118607,
+      30.3125,
+      30.36250001192093,
+      30.3125
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-10T21:31:24.597Z",
+    "wallS": 6.572299999952317,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 378.5
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 163.59999990463257
+     }
+    },
+    "latency": {
+     "meanMs": 30.537500113248825,
+     "medianMs": 30.50000023841858,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 2.675000101327896,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.2250000536441803,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.06250008940696716,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 1.412500113248825,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 19.875000089406967,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.7000001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.21250015497207642,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.27500012516975403,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 1.1875000894069672,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 1.537500113248825,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.15000006556510925,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.5625000894069672,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.4750001132488251,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.8250001072883606,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 1.1000000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous2",
+      "meanMs": 0.9125000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.12500008940696716,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 32.312501668930054,
+    "denoiser": {
+     "totalMs": 3.33675896875,
+     "passes": [
+      {
+       "name": "dn_temporal",
+       "ms": 0.46747726562499997
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.37047084375
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.6900285625
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.9792147968750001
+      },
+      {
+       "name": "dn_atrous2",
+       "ms": 0.7543785468750001
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.073537921875
+      }
+     ]
+    },
+    "counters": {
+     "fr": 0.001789872449866194,
+     "queues": [
+      {
+       "counter": 1236,
+       "n": 1236,
+       "capacity": 921600,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 130451,
+       "n": 130451,
+       "capacity": 921600,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "1080p-old-0",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 1920,
+    "height": 1080,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 0,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 0
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 67.20208333432674,
+     "medianMs": 67.2000000178814,
+     "minMs": 67.13749998807907,
+     "maxMs": 67.2625000178814,
+     "blocks": [
+      67.2000000178814,
+      67.26249998807907,
+      67.2625000178814,
+      67.21249997615814,
+      67.23750001192093,
+      67.25,
+      67.19999998807907,
+      67.1875,
+      67.17500001192093,
+      67.16249999403954,
+      67.1375000178814,
+      67.13749998807907
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-10T21:31:31.180Z",
+    "wallS": 12.165799999952316,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 360.40000009536743
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 161.29999995231628
+     }
+    },
+    "latency": {
+     "meanMs": 67.51250010728836,
+     "medianMs": 67.40000009536743,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 5.650000125169754,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.3125000596046448,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.07500013709068298,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 2.7250000536441803,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 44.150000125169754,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 1.3250001668930054,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.16250011324882507,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.33750009536743164,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 2.5625001192092896,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 3.325000077486038,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.2375001311302185,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 1.1375000774860382,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 1.0000000894069672,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 1.7125000655651093,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 2.300000101327896,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous2",
+      "meanMs": 1.8625001311302185,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.2500000596046448,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 69.1250017285347,
+    "denoiser": {
+     "totalMs": 7.483329296875,
+     "passes": [
+      {
+       "name": "dn_temporal",
+       "ms": 1.027251234375
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.834147515625
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 1.5597145625000002
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 2.181128828125
+      },
+      {
+       "name": "dn_atrous2",
+       "ms": 1.6920502656249998
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.18715746874999997
+      }
+     ]
+    },
+    "counters": {
+     "fr": 0.0019129891318341522,
+     "queues": [
+      {
+       "counter": 3269,
+       "n": 3269,
+       "capacity": 2073600,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 334673,
+       "n": 334673,
+       "capacity": 2073600,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "1080p-cache-1",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 1920,
+    "height": 1080,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {}
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 54.609375,
+     "medianMs": 54.61250001192093,
+     "minMs": 54.54999998211861,
+     "maxMs": 54.6875,
+     "blocks": [
+      54.587500005960464,
+      54.650000005960464,
+      54.6875,
+      54.650000005960464,
+      54.61249998211861,
+      54.5625,
+      54.61250001192093,
+      54.61250001192093,
+      54.54999998211861,
+      54.5625,
+      54.599999994039536,
+      54.625
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-10T21:31:43.355Z",
+    "wallS": 10.351400000095367,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 382.90000009536743
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 166.5
+     }
+    },
+    "latency": {
+     "meanMs": 54.9125000834465,
+     "medianMs": 54.90000009536743,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 5.637500077486038,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.3250000774860382,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.10000011324882507,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 2.750000089406967,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 33.75000008940697,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 1.3250001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.22500017285346985,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.18750008940696716,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 1.4750001430511475,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 3.2875000536441803,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.17500010132789612,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 1.0500001311302185,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.8125000894069672,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 1.0875000655651093,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.5375001132488251,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 1.6000000536441803,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 2.212500125169754,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.2875001132488251,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 56.82500180602074,
+    "denoiser": {
+     "totalMs": 6.59363184375,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.9047713437499999
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.6183850625
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.9772181718749999
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.37578590625
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 1.468383234375
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 2.062139109375
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.18453946875
+      }
+     ]
+    },
+    "counters": {
+     "fr": 1.8140918656120747e-05,
+     "queues": [
+      {
+       "counter": 31,
+       "n": 31,
+       "capacity": 2073600,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 229982,
+       "n": 229982,
+       "capacity": 2073600,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "540p-old-pan",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 0,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 0
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 17.476041664679844,
+     "medianMs": 17.474999994039536,
+     "minMs": 17.4375,
+     "maxMs": 17.5625,
+     "blocks": [
+      17.5625,
+      17.524999976158142,
+      17.475000023841858,
+      17.474999994039536,
+      17.474999994039536,
+      17.48750001192093,
+      17.44999998807907,
+      17.4375,
+      17.44999998807907,
+      17.475000023841858,
+      17.4375,
+      17.462499976158142
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-10T21:31:53.731Z",
+    "wallS": 4.732299999952316,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 402.5
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 168.29999995231628
+     }
+    },
+    "latency": {
+     "meanMs": 17.700000077486038,
+     "medianMs": 17.700000047683716,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.5500001907348633,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.1250000298023224,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.08750009536743164,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.9500001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 11.350000113248825,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.40000009536743164,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.22500011324882507,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.21250015497207642,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.7250000834465027,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.9250001013278961,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.0750001072883606,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.5000000894069672,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.2875000536441803,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.4875001013278961,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.6625001430511475,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous2",
+      "meanMs": 0.6000000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.30000007152557373,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 19.462501734495163,
+    "denoiser": {
+     "totalMs": 2.119976671875,
+     "passes": [
+      {
+       "name": "dn_temporal",
+       "ms": 0.32598971875
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.22449923437500002
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.40108895312500004
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.520952296875
+      },
+      {
+       "name": "dn_atrous2",
+       "ms": 0.429770703125
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.2162005625
+      }
+     ]
+    },
+    "counters": {
+     "fr": 0.0016590672478969373,
+     "queues": [
+      {
+       "counter": 596,
+       "n": 596,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 66221,
+       "n": 66221,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "540p-cache-pan",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {}
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 14.422916665673256,
+     "medianMs": 14.425000011920929,
+     "minMs": 14.400000005960464,
+     "maxMs": 14.449999988079071,
+     "blocks": [
+      14.4375,
+      14.424999982118607,
+      14.4375,
+      14.412499994039536,
+      14.4375,
+      14.425000011920929,
+      14.449999988079071,
+      14.400000005960464,
+      14.400000005960464,
+      14.4375,
+      14.412499994039536,
+      14.400000005960464
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-10T21:31:58.449Z",
+    "wallS": 4.228400000095368,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 388.7000000476837
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 162.20000004768372
+     }
+    },
+    "latency": {
+     "meanMs": 14.775000095367432,
+     "medianMs": 14.700000047683716,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.5875000655651093,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.18750014901161194,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.07500007748603821,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.9500000774860382,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 8.81250011920929,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.40000009536743164,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.2125002145767212,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.2000000774860382,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.48750007152557373,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.9125000834465027,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.12500011920928955,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.46250009536743164,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.22500011324882507,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.4500000476837158,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.16250008344650269,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.5125001072883606,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.6250000894069672,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.325000137090683,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 16.71250182390213,
+    "denoiser": {
+     "totalMs": 1.9280389062499999,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.2517435
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.16320656249999999
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.31125046875
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.09439578125
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.37310809375
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.5157812187499999
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.2164211875
+      }
+     ]
+    },
+    "counters": {
+     "fr": 1.6702019274130242e-05,
+     "queues": [
+      {
+       "counter": 6,
+       "n": 6,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 45873,
+       "n": 45873,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "540p-old-light",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 0,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 0
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 17.327083334326744,
+     "medianMs": 17.325000017881393,
+     "minMs": 17.299999982118607,
+     "maxMs": 17.375,
+     "blocks": [
+      17.337500005960464,
+      17.325000017881393,
+      17.299999982118607,
+      17.325000017881393,
+      17.299999982118607,
+      17.30000001192093,
+      17.32499998807907,
+      17.337500005960464,
+      17.36250001192093,
+      17.375,
+      17.3125,
+      17.32499998807907
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-10T21:32:02.670Z",
+    "wallS": 4.617200000047684,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 378.09999990463257
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 177.90000009536743
+     }
+    },
+    "latency": {
+     "meanMs": 17.562500089406967,
+     "medianMs": 17.600000143051147,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.7000001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.16250008344650269,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.08750009536743164,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.9375000596046448,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 11.275000095367432,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.40000009536743164,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.17500030994415283,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.2500000298023224,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.6375000774860382,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.9125000536441803,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.11250007152557373,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.4000001549720764,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.27500012516975403,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.5125000774860382,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.6625000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous2",
+      "meanMs": 0.5125000774860382,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.08750012516975403,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 19.100001722574234,
+    "denoiser": {
+     "totalMs": 1.89901328125,
+     "passes": [
+      {
+       "name": "dn_temporal",
+       "ms": 0.283496375
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.21435829687500002
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.39112609375
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.5548513281249999
+      },
+      {
+       "name": "dn_atrous2",
+       "ms": 0.418407140625
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.035255796875
+      }
+     ]
+    },
+    "counters": {
+     "fr": 0.001727798355768362,
+     "queues": [
+      {
+       "counter": 612,
+       "n": 612,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 65630,
+       "n": 65630,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "540p-cache-light",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {}
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 14.248958334326744,
+     "medianMs": 14.237500011920929,
+     "minMs": 14.212500005960464,
+     "maxMs": 14.299999982118607,
+     "blocks": [
+      14.237500011920929,
+      14.224999994039536,
+      14.212500005960464,
+      14.237499982118607,
+      14.275000005960464,
+      14.262500017881393,
+      14.299999982118607,
+      14.275000005960464,
+      14.224999994039536,
+      14.237500011920929,
+      14.262499988079071,
+      14.237500011920929
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-10T21:32:07.278Z",
+    "wallS": 4.156200000047684,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 384.60000014305115
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 169.79999995231628
+     }
+    },
+    "latency": {
+     "meanMs": 14.487500101327896,
+     "medianMs": 14.5,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.7000000774860382,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.12500011920928955,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.08750012516975403,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.9125000536441803,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 8.687500089406967,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.4250001013278961,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.12500014901161194,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.2000001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.4625001549720764,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.9000000953674316,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.10000008344650269,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.3500001132488251,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.2625000476837158,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.3500001132488251,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.17500007152557373,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.46250009536743164,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.6625001132488251,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.15000006556510925,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 16.137501776218414,
+    "denoiser": {
+     "totalMs": 1.75677971875,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.258173078125
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.167831515625
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.26192175
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.084205703125
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.3745907031249999
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.536375296875
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.07158410937500001
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.5408799349534736e-05,
+     "queues": [
+      {
+       "counter": 9,
+       "n": 9,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 43617,
+       "n": 43617,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "flip_version": "1.7",
+ "reference_spp": 12288,
+ "notes": [
+  "GPU harness throughput, not display FPS; Apple M5 Pro, Chrome/Metal.",
+  "Fixed resolution. Sparse indirect sampling, full-resolution primary geometry and direct lighting.",
+  "Display std is variability across four matched seeds, including jitter; lower does not prove accuracy or absence of lag.",
+  "Dark interior ROI: x=0..249, y=80..479, at 960x540.",
+  "FLIP is against the 12288-spp long-path reference at oscillation knots; accuracy is secondary for this explicitly biased mode.",
+  "Cached raw captures contain direct lighting/emission only; compare dn outputs for complete images.",
+  "Quality captures use rgba32float, performance uses rgba16float."
+ ],
+ "manifests": {
+  "final-jobs": [
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 960,
+    "height": 540,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 0
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "540p-old-0",
+    "denoiser": {
+     "iterations": 3,
+     "alphaMin": 0.2,
+     "sigmaN": 128,
+     "sigmaA": 0.05,
+     "sigmaL": 4,
+     "lumPre": 1,
+     "guide": true,
+     "taaCamMax": 8,
+     "taaGammaCam": 1,
+     "taaLightMax": 32
+    }
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 960,
+    "height": 540,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 2
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "540p-cache-1",
+    "denoiser": {}
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 960,
+    "height": 540,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 2
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "540p-cache-2",
+    "denoiser": {}
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 960,
+    "height": 540,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 0
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "540p-old-3",
+    "denoiser": {
+     "iterations": 3,
+     "alphaMin": 0.2,
+     "sigmaN": 128,
+     "sigmaA": 0.05,
+     "sigmaL": 4,
+     "lumPre": 1,
+     "guide": true,
+     "taaCamMax": 8,
+     "taaGammaCam": 1,
+     "taaLightMax": 32
+    }
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 1280,
+    "height": 720,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 0
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "720p-old-0",
+    "denoiser": {
+     "iterations": 3,
+     "alphaMin": 0.2,
+     "sigmaN": 128,
+     "sigmaA": 0.05,
+     "sigmaL": 4,
+     "lumPre": 1,
+     "guide": true,
+     "taaCamMax": 8,
+     "taaGammaCam": 1,
+     "taaLightMax": 32
+    }
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 1280,
+    "height": 720,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 2
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "720p-cache-1",
+    "denoiser": {}
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 1280,
+    "height": 720,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 2
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "720p-cache-2",
+    "denoiser": {}
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 1280,
+    "height": 720,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 0
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "720p-old-3",
+    "denoiser": {
+     "iterations": 3,
+     "alphaMin": 0.2,
+     "sigmaN": 128,
+     "sigmaA": 0.05,
+     "sigmaL": 4,
+     "lumPre": 1,
+     "guide": true,
+     "taaCamMax": 8,
+     "taaGammaCam": 1,
+     "taaLightMax": 32
+    }
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 1920,
+    "height": 1080,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 0
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "1080p-old-0",
+    "denoiser": {
+     "iterations": 3,
+     "alphaMin": 0.2,
+     "sigmaN": 128,
+     "sigmaA": 0.05,
+     "sigmaL": 4,
+     "lumPre": 1,
+     "guide": true,
+     "taaCamMax": 8,
+     "taaGammaCam": 1,
+     "taaLightMax": 32
+    }
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 1920,
+    "height": 1080,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 2
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "1080p-cache-1",
+    "denoiser": {}
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 960,
+    "height": 540,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 0
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "540p-old-pan",
+    "denoiser": {
+     "iterations": 3,
+     "alphaMin": 0.2,
+     "sigmaN": 128,
+     "sigmaA": 0.05,
+     "sigmaL": 4,
+     "lumPre": 1,
+     "guide": true,
+     "taaCamMax": 8,
+     "taaGammaCam": 1,
+     "taaLightMax": 32
+    },
+    "pan": 0.005
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 960,
+    "height": 540,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 2
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "540p-cache-pan",
+    "denoiser": {},
+    "pan": 0.005
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 960,
+    "height": 540,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 0
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "540p-old-light",
+    "denoiser": {
+     "iterations": 3,
+     "alphaMin": 0.2,
+     "sigmaN": 128,
+     "sigmaA": 0.05,
+     "sigmaL": 4,
+     "lumPre": 1,
+     "guide": true,
+     "taaCamMax": 8,
+     "taaGammaCam": 1,
+     "taaLightMax": 32
+    },
+    "lightAnim": {
+     "index": 0,
+     "amp": 1
+    }
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 960,
+    "height": 540,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 2
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "540p-cache-light",
+    "denoiser": {},
+    "lightAnim": {
+     "index": 0,
+     "amp": 1
+    }
+   }
+  ],
+  "final-quality-jobs": [
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,4,8,12,16,20,24,28,32,36,40,44,48,52,56,60,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato2-static-final-s1",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "16,32,48,63",
+    "--seed",
+    "2",
+    "--run",
+    "potato2-static-final-s2",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "16,32,48,63",
+    "--seed",
+    "3",
+    "--run",
+    "potato2-static-final-s3",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "16,32,48,63",
+    "--seed",
+    "4",
+    "--run",
+    "potato2-static-final-s4",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,4,8,12,16,20,24,28,32,36,40,44,48,52,56,60,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato2-pan-final-s1",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--pan-osc",
+    ".5"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "16,32,48,63",
+    "--seed",
+    "2",
+    "--run",
+    "potato2-pan-final-s2",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--pan-osc",
+    ".5"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "16,32,48,63",
+    "--seed",
+    "3",
+    "--run",
+    "potato2-pan-final-s3",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--pan-osc",
+    ".5"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "16,32,48,63",
+    "--seed",
+    "4",
+    "--run",
+    "potato2-pan-final-s4",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--pan-osc",
+    ".5"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,4,8,12,16,20,24,28,32,36,40,44,48,52,56,60,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato2-light-final-s1",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--light-osc",
+    "0:1"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "16,32,48,63",
+    "--seed",
+    "2",
+    "--run",
+    "potato2-light-final-s2",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--light-osc",
+    "0:1"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "16,32,48,63",
+    "--seed",
+    "3",
+    "--run",
+    "potato2-light-final-s3",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--light-osc",
+    "0:1"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "16,32,48,63",
+    "--seed",
+    "4",
+    "--run",
+    "potato2-light-final-s4",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--light-osc",
+    "0:1"
+   ]
+  ]
+ }
+}

@@ -147,6 +147,7 @@ function expectMoments(gpu: ArrayLike<number>, ref: ArrayLike<number>, skipFw = 
 
 interface FrameIn {
   cam: CameraState; prev: CameraState; px: RefPixel[]; radiance: Float64Array; l1: Float64Array; reset: boolean;
+  indirect?: GPUTexture; indirectStride?: number; indirectLightingChanged?: boolean;
   settings: DenoiserSettings; kind: 'restir' | 'pt'; restir?: DenoiseFrame['restir']; advanced?: boolean; motion?: [number, number][];
 }
 let frameNo = 0;
@@ -172,6 +173,7 @@ function encodeFrame(f: FrameIn, record?: GPUComputePassDescriptor[]): void {
     rig.device.queue.submit([e2.finish()]);
   }
   const ok = rig.dn.encode(enc, {
+    indirect: f.indirect, indirectStride: f.indirectStride, indirectLightingChanged: f.indirectLightingChanged,
     kind: f.kind, advanced: f.advanced ?? true, reset: f.reset, frameUniforms: rig.fu.buffer, gbuf: rig.gbuf,
     radiance: f.kind === 'restir' ? rig.radiance : undefined, l1: f.kind === 'restir' ? rig.l1 : undefined, colour: rig.colour, restir: f.restir, debugGroup: rig.debug.bindGroup,
   });
@@ -512,6 +514,55 @@ describe('denoiser passes vs the f64 reference', () => {
     const ref = refTemporal({ W, H, px, cam, prevCam: cam, radiance, flags: DNF.RESET, settings: { ...S, iterations: 0 } }, emptyState(W, H));
     const g = await gpuState();
     expect(maxErr(g.atrous[0], ref.atrous0, 1e-3).err).toBeLessThan(2e-3);
+  });
+
+  it('Potato indirect cache: sparse reconstruction, black samples, lighting response, disocclusion and held frames', async () => {
+    const cam = camAt(0), px = scene(cam), black = new Float64Array(P * 3);
+    const input = rig.device.createTexture({ size: [W, H], format: 'rgba32float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    const at = (16 * W + 12) * 4;
+    const settings = { ...DENOISER_DEFAULTS, iterations: 0, resolve: false };
+    const draw = async (value: number | undefined, reset = false, lighting = false, pixels = px) => {
+      const a = new Float32Array(P * 4), phase = frameNo % 16;
+      pixels.forEach((p, i) => {
+        if (!p.hit || i % W % 4 !== phase % 4 || Math.floor(i / W) % 4 !== Math.floor(phase / 4) || value === undefined) return;
+        const ad = Math.max(...p.albedo) < .02 ? [1, 1, 1] : p.albedo.map(x => Math.max(x, .02) + .04);
+        for (let k = 0; k < 3; k++) a[i * 4 + k] = value * ad[k];
+        a[i * 4 + 3] = 1;
+      });
+      rig.device.queue.writeTexture({ texture: input }, a, { bytesPerRow: W * 16 }, [W, H]);
+      encodeFrame({ cam, prev: cam, px: pixels, radiance: black, l1: black, reset, settings, kind: 'restir',
+        indirect: input, indirectStride: 4, indirectLightingChanged: lighting });
+      return f16(rig.dn.textures!.gi!.hist[rig.dn.parity]);
+    };
+    try {
+      const first = await draw(2, true);
+      expect(first[at]).toBeCloseTo(2, 2); // reconstruction does not multiply energy by 16
+      expect(first[at + 3]).toBe(1);
+      expect(first[0]).toBe(0); // background never receives cached GI
+      const missing = await draw(undefined);
+      expect(missing[at]).toBeCloseTo(2, 2); // untraced is not black
+      for (let i = 0; i < 20; i++) await draw(2);
+      const before = await f16(rig.dn.textures!.gi!.hist[rig.dn.parity]);
+      const dark = await draw(0, false, true);
+      expect(dark[at]).toBeLessThan(before[at] * .82); // an actual black sample removes stale light
+      expect(dark[at]).toBeGreaterThan(before[at] * .78);
+      const held = rig.device.createCommandEncoder();
+      rig.dn.encode(held, { kind: 'restir', advanced: false, reset: false, frameUniforms: rig.fu.buffer,
+        gbuf: rig.gbuf, radiance: rig.radiance, l1: rig.l1, colour: rig.colour, debugGroup: rig.debug.bindGroup });
+      rig.device.queue.submit([held.finish()]);
+      expect(await f16(rig.dn.textures!.gi!.hist[rig.dn.parity])).toEqual(dark);
+      if (rig.device.features.has('timestamp-query')) {
+        await rig.dn.time(2);
+        expect(await f16(rig.dn.textures!.gi!.hist[rig.dn.parity])).toEqual(dark);
+      }
+      const moved = px.map(p => ({ ...p, pos: p.pos.map(x => x * 2) as V3 }));
+      expect((await draw(undefined, false, false, moved))[at]).toBe(0); // rejected previous depth
+      await draw(2, true);
+      const flipped = px.map(p => ({ ...p, ns: [0, 0, -1] as V3 }));
+      expect((await draw(undefined, false, false, flipped))[at]).toBe(0); // rejected previous normal
+      await draw(2, true);
+      expect((await draw(undefined, true))[at]).toBe(0); // explicit reset clears old GI
+    } finally { input.destroy(); }
   });
 
   it('registry: the live denoiser is visible to the T16 check and gone after destroy()', async () => {

@@ -15,7 +15,8 @@ struct BlitParams {
   flags: u32,          // BLIT_* bits
   split: f32,          // A|B split position in [0,1] (left = debug)
   probePixel: vec2u,
-  _pad: vec2u,
+  sharpening: f32,
+  _pad: u32,
 }
 
 const BLIT_BILINEAR: u32 = 1u;
@@ -31,6 +32,9 @@ const BLIT_PRETONED: u32 = 64u;   // perf2 WP-7g: the beauty comes from dispTex 
 @group(0) @binding(2) var<uniform> P: BlitParams;
 @group(0) @binding(3) var dispTex: texture_2d<f32>;   // WP-7g: display-encoded beauty (internal resolution)
 @group(0) @binding(4) var dispSmp: sampler;           // WP-7g: bilinear, clamp-to-edge
+
+@group(0) @binding(5) var easuTex: texture_2d<f32>;
+#include "post/fsr-rcas.wgsl"
 
 @vertex
 fn vs_fullscreen(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
@@ -138,7 +142,9 @@ fn fs_blit(@builtin(position) pos: vec4f) -> @location(0) vec4f {
     if (abs(pos.x - sx) < 1.0) { return vec4f(1.0, 1.0, 1.0, 1.0); }
     dbgView = pos.x < sx;
   }
-  var c = sample_src(uv * src, dbgView);
+  var c: vec3f;
+  if (!dbgView && (P.flags & 128u) != 0u) { c = fsr_rcas(vec2i(pos.xy)); }
+  else { c = sample_src(uv * src, dbgView); }
   if ((P.flags & BLIT_PROBE) != 0u) {
     // outline the probe pixel's footprint (at least 7 canvas px wide)
     let scale = dst / src;

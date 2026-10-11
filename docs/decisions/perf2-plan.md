@@ -972,6 +972,7 @@ difference mode and playback. These checks do not replace the full unbiased Stag
 ## 9. Potato ReSTIR
 
 User authorized a separate quality-for-speed mode on 2026-10-10. Interactive stays the launch default.
+This section records the default Potato implementation; §10 adds an optional experimental indirect cache.
 No dynamic resolution, reduced render target, sparse pixel dispatch or upscaling was introduced. All output pixels
 still trace primary geometry and receive freshly sampled lighting. This mode is an explicit approximation to the
 longer-path image, not an equal-quality optimization or a change to the validation presets.
@@ -1126,3 +1127,131 @@ with the listed local captures to regenerate figures and videos. The local viewe
 illustrative playback of captured frames, not real-time screen recordings.
 
 Transcript provenance: yt-dlp English automatic captions for `jusWW2pPnA0`; fetched 2026-10-10. JSON3 SHA-256: `756fca9ea5669f190d704d322651870b369f787c1a5095c8818f117d2b0d2dad`.
+
+
+## 10. Potato: direct ReSTIR and cached indirect lighting
+
+**Decision: opt-in, not a replacement for the default Potato renderer.** Select **ReSTIR → Potato indirect →
+cached 1/4 (experimental)** while in Potato. The 1/16 option is faster but less stable. Interactive remains the
+launch default. The ordinary/unbiased estimators and default Potato settings remain unchanged. No dynamic resolution.
+
+The user requested direct-light ReSTIR plus cached indirect, prioritizing speed and visual fidelity over accuracy.
+The implementation separates full-resolution direct reservoirs from sparse indirect path estimates. Sponza benefits
+from the reduced tracing cost, but cross-scene screening found unacceptable quality regressions for a universal default.
+
+### Signal separation and reconstruction
+
+- Primary geometry, direct-light RIS M=4 and one spatial partner remain full resolution. No temporal reservoirs.
+  Only direct candidates (path length 2) enter the reservoir and its weight sum. One pixel per fixed 2×2 tile
+  continues to the second scattering vertex; the selected pixel rotates over four seed indices. An optional 4×4
+  variant rotates over sixteen. The existing max-bounces cap of 1 and RR-after-1 remain.
+- Indirect NEE, environment/triangle endings and analytic-light crossings accumulate weighted path contributions
+  outside the direct reservoir. Alpha distinguishes a traced black sample from a missing update. There is no
+  multiplication by the sampling interval. The cache demodulates by albedo, reconstructs from nine neighbouring
+  tiles, validates reprojected depth/normal history, then applies recurrent spatial blur.
+- History caps at 32 frames, minimum update weight 0.05. Stable indirect outliers are clamped to four times cached
+  luminance (minimum 0.02). Lighting changes bypass this cap and raise the update weight to 0.2. Identical environment
+  uploads do not count as edits. Newly exposed surfaces reconstruct locally or start with zero confidence.
+- The cache is combined with direct illumination after reservoir resampling. Its optional denoiser profile uses
+  two à-trous levels, alphaMin=0.08, sigmaN=32, sigmaA=0.2, sigmaL=12, no luminance prefilter or converged guide,
+  camera resolve cap 12/gamma 1.5, and light resolve cap 16. Explicit overrides win. Cache off restores the previous
+  three-level Potato profile. Disabling denoising restores per-pixel indirect tracing. Cache textures allocate lazily;
+  mode/stride changes invalidate history, and all textures are released on resize/destruction.
+
+This is a **screen-space cache of one-bounce path estimates**, inspired by the sparse sampling and recurrent
+filtering in the [Tiny Glade talk at 28:35](https://www.youtube.com/watch?v=jusWW2pPnA0&t=1715s) and
+[Zhdan's recurrent blur presentation](https://developer.download.nvidia.com/video/gputechconf/gtc/2020/presentations/s22699-fast-denoising-with-self-stabilizing-recurrent-blurs.pdf).
+It does not implement Tiny Glade's screen-space ray march, proxy BVH fallback, SH representation, or radiance reuse
+at secondary hits for extra bounces. Tiny Glade removed GI ReSTIR in its outdoor renderer; our direct-light ReSTIR stays.
+
+### Performance and visual results
+
+Fixed-resolution Sponza: Chrome 155 / Metal 3 / Apple M5 Pro. 96 measured frames after 32 warmup; eight isolated-pass
+frames and eight latency samples. Old/new/new/old at 540p and 720p; one old/new pair at 1080p. The control explicitly
+pins previous Potato settings. Cache numbers below use **1/4 sampling**, not the faster rejected 1/16 prototype.
+
+| Resolution | Default Potato | Optional cached indirect | Equivalent throughput, old → new |
+|---|---:|---:|---:|
+| 960×540 | 17.34 ms | 14.23 ms | 57.7 → 70.3 FPS |
+| 1280×720 | 30.31 ms | 24.74 ms | 33.0 → 40.4 FPS |
+| 1920×1080 | 67.20 ms | 54.61 ms | 14.9 → 18.3 FPS |
+
+Approximately 18–19% less GPU-harness frame time, excluding presentation, UI and display pacing. These are not
+measured application FPS. Initial path tracing remains the largest cost. The earlier 1/16 prototype reached about
+81/47/21 FPS but was less stable. Direct-only tracing reached about 7.9 ms at 540p but removed too much interior fill.
+
+Four matched seeds, frames 16/32/48/63: Sponza display-space variability falls about 7% during camera motion and 8%
+with moving light, but rises 4% when static; the dark-interior ROI gets worse in all three cases. FLIP against the
+12288-spp reference changes from 0.096→0.136 static, 0.129→0.156 pan, and 0.102→0.112 moving light. Less variability
+alone does not prove accuracy or absence of lag. Smoothing attenuates glossy response and isolated indirect highlights.
+
+A further **48 captures** cover Cornell, normal-mapped glossy objects, glass/light crossings and alpha foliage,
+with static camera, camera motion and moving analytic light, two seeds each at 384×384. All are finite and free of GPU
+errors, but cached output has more across-seed variation in every screening category: Cornell static 0.0030→0.0075,
+Cornell pan 0.0110→0.0261, glossy moving-light 0.0052→0.0098. Images show mottling and loss of glossy/faceted detail.
+Those regressions are why caching remains explicitly experimental and off by default. Scene metrics and manifests:
+[`potato-scenes-results.json`](potato-scenes-results.json).
+
+Camera disocclusion uses geometry validation and local reconstruction; illumination can initially be missing or lag.
+Moving lights refresh the cache, but sparse samples can produce mottling. An 80-frame power-halving/light-removal
+sequence also completes with finite output. The harness now waits for Mode-A/B shader changes instead of capturing
+an undenoised compilation fallback. This excludes first-use compilation latency from that recovery test. The current
+scene bridge supports camera, analytic-light and environment animation, **not skinned/deforming/moving mesh animation**;
+this work does not certify cached GI for animated geometry. Full mesh replacement resets the renderer.
+
+### Reproduction and verification
+
+`validation/tools/potato-cache-review.py` regenerates Sponza comparisons/videos from four-seed captures.
+[`potato-cache-results.json`](potato-cache-results.json) records effective settings, hardware, exact timings, reference
+errors and variability. Manifests explicitly pin cache stride after the opt-in decision. Cross-scene sheets come from
+`validation/tools/potato-scenes-review.py`. Local viewers/artifacts: `validation/out/potato2/review.html`,
+`static-comparison.png`, `pan.mp4`, `light.mp4`, and `{cornell,glossy,glass,foliage}-comparison.png`. Videos are illustrative
+capture playback, not realtime performance recordings. Cached raw PFMs contain **direct/emission only**; complete
+renderings are denoised PFMs, identified in metadata.
+
+GPU tests cover direct-reservoir isolation, reconstruction energy, black/missing samples, lighting response,
+depth/normal rejection, reset/held frames and mode switches. CPU tests check opt-in/default restoration and uniform
+packing. Ten shipped golden tests retain their expected outputs. Actual app controls verify default interactive,
+per-pixel Potato, cache opt-in, denoise off/on, return to interactive, and FSR with canvas resizing. This is not an
+unbiasedness certification for Potato.
+
+## 11. Optional FSR 1 spatial upscaling
+
+Select **Render → Output → upscale filter → FSR 1 (EASU + RCAS)**. Internal resolution stays at the selected fixed
+540p/720p/1080p preset; dynamic resolution is not enabled. Bicubic remains the default. The FSR sharpening slider
+sets linear RCAS strength from zero (off) to one, default 0.5. FSR works independently of the indirect cache and in
+all rendering modes.
+
+This is a WGSL FP32 port of AMD's [FSR 1 EASU and RCAS](https://github.com/GPUOpen-Effects/FidelityFX-FSR/blob/master/ffx-fsr/ffx_fsr1.h),
+v1.20210629, with the MIT license retained in both shader files. EASU is a twelve-tap directionally adaptive Lanczos
+approximation with nearest-2×2 anti-ringing bounds; it is more than a fixed Lanczos resize. Tone mapping runs at
+internal resolution, EASU writes an output-sized RGBA16 texture, and RCAS runs in the final blit. This avoids an extra
+copy pass. The port uses clamped scalar texture loads and guarded exact reciprocals instead of AMD's gather/reciprocal
+approximations; RCAS enables AMD's optional noise attenuation. It is an algorithm port, not bit-identical to AMD's
+FP16 assembly. UI, probe marks and raster overlays are composed afterward. Debug views retain their existing filter.
+Native-size output bypasses FSR; downscaling or a mixed up/down axis uses bicubic. It requires neither motion vectors
+nor a separate temporal history, so it adds no temporal ghosting of its own.
+
+`validation/gpu-tests/fsr.gpu.test.ts` compares output with an independent scalar CPU evaluation, including FP16
+intermediate quantization, within one 8-bit level. Tests cover black/white endpoints, odd dimensions, sharpening
+0/0.5/1, resizing, native/downscale bypass, debug split, and forcing the required pre-tone path. Existing presentation
+regressions also pass. The EASU pass has its own GPU HUD timestamp; RCAS is included in `present`.
+
+On the same M5 Pro, isolated tone-map + upscale + present timestamps at 1920×1080 output:
+
+| Internal resolution | Bicubic | FSR 1 | Additional presentation work |
+|---|---:|---:|---:|
+| 960×540 | 0.48 ms | 0.82 ms | 0.34 ms |
+| 1280×720 | 0.44 ms | 1.02 ms | 0.58 ms |
+
+These are means of ABBA runs, 32 samples per run after 16 warmup. GPU scheduling varies (individual bicubic runs
+0.33–0.64 ms); do not interpret the last decimal as reliable or add these isolated sums to predict app FPS exactly.
+This filter costs more than bicubic at the same internal resolution; its purpose is better presentation of a lower
+fixed resolution. It cannot recover missing rendered detail, remove all shimmer, or replace temporal supersampling.
+The frozen 540p Sponza comparison is subtly sharper at arches/cloth edges but also sharpens residual noise. 720p timing
+uses a resized copy of the same input solely for cost measurement, not a 720p visual-quality claim.
+
+Reproduce with `npx tsx validation/harness/with-gpu-lock.ts fsr-review -- node validation/harness/fsr-review.mjs`
+after generating the Sponza capture. Local output: `validation/out/fsr/review.html`, `bicubic.png`, `fsr1.png`.
+Recorded timing evidence: [`fsr-results.json`](fsr-results.json). A temporal upscaler would require a separate integration
+and quality study; it is not included in this spatial implementation.

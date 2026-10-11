@@ -110,6 +110,7 @@ fn dn_reproject(p: vec2u, pos: vec3f, n: vec3f) -> DnHistory {
 
 /// λ at pixel p: bilinear between tile centres (8·t + 3.5) of the 3×3-tile λ texture.
 fn dn_lambda(p: vec2u) -> f32 {
+  if (dn_flag(DNF_CACHE_LIGHT)) { return mix(dn.lambda0, dn.lambda1, 0.2); }
   if (!dn_flag(DNF_GRADIENT)) { return 0.0; }
   let camMoved = (frame.flags & FRAME_CAMERA_MOVED) != 0u;
   if (!(dn_flag(DNF_LAMBDA) || (dn_flag(DNF_LAMBDA_CAM) && camMoved))) { return 0.0; }

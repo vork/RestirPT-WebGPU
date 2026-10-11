@@ -184,11 +184,17 @@ edit is refreshed in the kernel.
 ## Potato ReSTIR
 
 The app starts in **interactive ReSTIR**. For speed, choose **ReSTIR → preset → Potato ReSTIR**.
-It caps max bounces at 1 (two scattering vertices), uses one spatial partner and four RIS light candidates,
-and disables reservoir history. Temporal denoising stays on, with three à-trous passes. Render resolution,
-geometry, materials, and primary visibility are unchanged. Expect darker indirect light, reduced multi-bounce
-reflections/transmission, and more noise during motion. Returning to interactive restores its normal defaults;
-explicit feature and denoiser overrides remain session-wide. Performance and research: [perf2 §9](docs/decisions/perf2-plan.md#9-potato-restir).
+Potato caps path depth at one indirect bounce and reduces direct-light candidates/spatial partners.
+The **Potato indirect** control optionally enables experimental cached GI (1/4 or 1/16 sampling). The 1/4 setting
+measures about **70 FPS at 540p, 40 at 720p, and 18 at 1080p** in the Sponza GPU harness on an M5 Pro, excluding
+presentation/UI. It can introduce mottling during motion, lighting lag and blurred glossy detail, so **per-pixel
+indirect remains the default**. Disabling denoising restores per-pixel sampling. Interactive starts by default.
+See [measurements and cross-scene limitations](docs/decisions/perf2-plan.md#10-potato-direct-restir-and-cached-indirect-lighting).
+
+For fixed-resolution upscaling, choose **Render → Output → upscale filter → FSR 1 (EASU + RCAS)**.
+Sharpening is adjustable; bicubic remains the default. FSR runs after denoising/tone mapping and before overlays,
+without enabling dynamic resolution. Native-size rendering bypasses it. The measured presentation cost at 1080p
+output is about 0.8–1.0 ms on this M5 Pro. See [implementation and comparisons](docs/decisions/perf2-plan.md#11-optional-fsr-1-spatial-upscaling).
 
 ## The panel
 

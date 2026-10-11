@@ -16,6 +16,10 @@ fn rs_initial(@builtin(global_invocation_id) gid: vec3u) {
 #endif
   let p = rs_pix(vec2u(gid.x, gid.y + rsDispatch.rowBase));
   if (!p.valid) { return; }
+#if RS_POTATO_CACHE
+  ptIndirect = vec3f(0.0);
+  textureStore(ptIndirectOut, p.px, vec4f(0.0));
+#endif
   let key = rs_frame_key(p.member, rs_t(), p.localIdx);
   let first = (rsDispatch.flags & RSD_FIRST_CHUNK) != 0u;
   let lastChunk = (rsDispatch.flags & RSD_FINAL_CHUNK) != 0u;
@@ -25,6 +29,12 @@ fn rs_initial(@builtin(global_invocation_id) gid: vec3u) {
     return;
   }
   pathtree_run(p, key, rsDispatch.treeBase, rsDispatch.treeCount, first, lastChunk);
+#if RS_POTATO_CACHE
+  if (pt_indirect_active(p.local)) {
+    let valid = all_finite3(ptIndirect);
+    textureStore(ptIndirectOut, p.px, vec4f(select(vec3f(0.0), clamp(ptIndirect, vec3f(0.0), vec3f(65504.0)), valid), 1.0));
+  }
+#endif
 }
 
 #if RS_RIS_PREPASS && RS_RIS_NEE

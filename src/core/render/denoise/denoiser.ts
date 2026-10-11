@@ -51,6 +51,10 @@ export interface DenoiseFrame {
   /** ReSTIR: rsFrame (L1 + estimate) and rsL1. PT: undefined (the colour target holds the 1-spp sample; it is copied). */
   radiance?: GPUTexture;
   l1?: GPUTexture;
+  /** Potato: sparse indirect samples and their fixed tile stride. */
+  indirect?: GPUTexture;
+  indirectStride?: number;
+  indirectLightingChanged?: boolean;
   /** Output (and, for the PT, input) colour target. */
   colour: GPUTexture;
   restir?: DenoiseRestirInput;
@@ -69,6 +73,7 @@ interface Targets {
   gradTile: GPUTexture; gradTile2: GPUTexture; lambda: GPUTexture; input?: GPUTexture;
   /** perf2 WP-7f (DN_ZGRAD_TEX): the centre depth gradient of every hit pixel (dn_variance → dn_atrous). */
   zg?: GPUTexture;
+  gi?: { hist: [GPUTexture, GPUTexture]; scratch: GPUTexture; combined: GPUTexture };
 }
 
 const C = 0x4;   // GPUShaderStage.COMPUTE (no WebGPU global at import time: the CPU tests import the renderer)
@@ -95,6 +100,7 @@ export class Denoiser {
   private t: Targets | undefined;
   private cur = 0;
   private needsReset = true;
+  private indirectStride = 0;
   private plan: PlanPass[] = [];
   /** perf2 WP-7a (DN_GRAD_SKIP): the full plan of the last advanced frame (gradient passes included when the frame is
    *  eligible) and whether its gradient passes are in `plan`. */
@@ -108,7 +114,7 @@ export class Denoiser {
   private readonly params: GPUBuffer;
   private readonly iterBufs: GPUBuffer[];
   private readonly g0Layout: GPUBindGroupLayout;
-  private readonly layouts: Record<'gradient' | 'gradFilter' | 'temporal' | 'variance' | 'atrous' | 'resolve', GPUBindGroupLayout>;
+  private readonly layouts: Record<'indirect' | 'gradient' | 'gradFilter' | 'temporal' | 'variance' | 'atrous' | 'resolve', GPUBindGroupLayout>;
   private readonly empty: GPUBindGroupLayout;
   private readonly emptyGroup: GPUBindGroup;
   private readonly pipelines = new Map<string, GPUComputePipeline>();
@@ -134,6 +140,7 @@ export class Denoiser {
     this.empty = device.createBindGroupLayout({ label: 'dn-empty', entries: [] });
     this.emptyGroup = device.createBindGroup({ label: 'dn-empty', layout: this.empty, entries: [] });
     this.layouts = {
+      indirect: device.createBindGroupLayout({ label: 'dn-indirect', entries: entries([{ buffer: ro }, { texture: tex() }, { texture: tex() }, { texture: tex('uint') }, { texture: tex() }, { storageTexture: st('rgba16float') }, { storageTexture: st('rgba32float') }]) }),
       gradient: device.createBindGroupLayout({ label: 'dn-gradient', entries: entries([{ buffer: ro }, { buffer: ro }, { texture: tex() }, { storageTexture: st('rgba32float') }, { texture: tex() }, { texture: tex() }, { texture: tex() }, { texture: tex() }, { storageTexture: st('rgba32float') }]) }),
       gradFilter: device.createBindGroupLayout({ label: 'dn-grad-filter', entries: entries([{ texture: tex() }, { storageTexture: st('r32float') }, { texture: tex() }]) }),
       temporal: device.createBindGroupLayout({
@@ -179,6 +186,8 @@ export class Denoiser {
       this.pipelines.set(key, pipe);
     };
     await Promise.all([
+      mk('dn_indirect', 'denoise/dn-indirect.wgsl', 'dn_indirect', this.layouts.indirect, {}),
+      mk('dn_indirect_blur', 'denoise/dn-indirect.wgsl', 'dn_indirect', this.layouts.indirect, { DN_GI_BLUR: true }),
       mk('dn_gradient', 'denoise/dn-gradient.wgsl', 'dn_gradient', this.layouts.gradient, { DN_GRADIENT: true }),
       mk('dn_grad_filter', 'denoise/dn-gradient.wgsl', 'dn_grad_filter', this.layouts.gradFilter, { DN_GRAD_FILTER: true }),
       mk('dn_temporal', 'denoise/dn-temporal.wgsl', 'dn_temporal', this.layouts.temporal, {}),
@@ -264,6 +273,8 @@ export class Denoiser {
       enc.copyTextureToTexture({ texture: f.colour }, { texture: input }, [t.w, t.h]);
     }
     if (this.kind !== f.kind) { this.kind = f.kind; this.needsReset = true; }
+    const stride = f.indirect ? f.indirectStride ?? 0 : 0;
+    if (this.indirectStride !== stride) { this.indirectStride = stride; this.needsReset = true; }
     if (f.advanced || !this.plan.length) this.cur = 1 - this.cur;
     const cur = this.cur, prev = 1 - cur;
     const reset = f.reset || this.needsReset;
@@ -272,6 +283,7 @@ export class Denoiser {
     const r = f.kind === 'restir' ? f.restir : undefined;
     let flags = 0;
     if (reset) flags |= DNF.RESET;
+    if (f.indirect && f.indirectLightingChanged) flags |= DNF.CACHE_LIGHT;
     if (f.kind === 'restir') flags |= DNF.HAS_L1;
     if (!this.settings.resolve) flags |= DNF.NO_RESOLVE;
     if (r) flags |= DNF.FW;
@@ -282,17 +294,31 @@ export class Denoiser {
       if (r.inverse) flags |= DNF.INVERSE;
     }
     this.lastFlags = flags;
-    this.sinceChange = (flags & DNF.LAMBDA) || reset ? 0 : Math.min(this.sinceChange + 1, 0xffff);
+    this.sinceChange = (flags & (DNF.LAMBDA | DNF.CACHE_LIGHT)) || reset ? 0 : Math.min(this.sinceChange + 1, 0xffff);
     if (this.settings.guide && this.settings.resolve && this.sinceChange >= 8) flags |= DNF.GUIDE;
-    this.device.queue.writeBuffer(this.params, 0, packDnParams({ width: t.w, height: t.h, flags, settings: this.settings, tsBase: r?.tsBase ?? 0, tsStride: r?.tsStride, resPlanes: r?.resPlanes ?? 10, sinceChange: this.sinceChange }));
+    this.device.queue.writeBuffer(this.params, 0, packDnParams({ width: t.w, height: t.h, flags, settings: this.settings, tsBase: r?.tsBase ?? 0, tsStride: r?.tsStride, resPlanes: r?.resPlanes ?? 10, sinceChange: this.sinceChange, indirectStride: f.indirectStride }));
     this.writeIterations();
 
     const v = view;
-    const radiance = f.kind === 'pt' ? t.input! : f.radiance!;
+    let radiance = f.kind === 'pt' ? t.input! : f.radiance!;
     const l1 = f.l1 ?? this.dummyTex;
     const wg: [number, number] = [Math.ceil(t.w / 8), Math.ceil(t.h / 8)];
     const [tx, ty] = dnTiles(t.w, t.h);
     const plan: PlanPass[] = [];
+    if (f.indirect) {
+      if (!t.gi) {
+        const mk = (label: string, format: GPUTextureFormat) => this.device.createTexture({ label, size: [t.w, t.h], format,
+          usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
+        t.gi = { hist: [mk('gi-history0', 'rgba16float'), mk('gi-history1', 'rgba16float')], scratch: mk('gi-scratch', 'rgba16float'), combined: mk('gi-combined', 'rgba32float') };
+      }
+      plan.push({ name: 'dn_indirect', pipeline: this.pipelines.get('dn_indirect')!, wg,
+        g1: this.group(`indirect:${oid(f.gbuf)}:${oid(f.indirect)}:${oid(radiance)}:${cur}`, this.layouts.indirect,
+          [{ buffer: f.gbuf }, v(f.indirect), v(t.gi.hist[prev]), v(t.geo[prev]), v(radiance), v(t.gi.scratch), v(t.gi.combined)]) });
+      plan.push({ name: 'dn_indirect_blur', pipeline: this.pipelines.get('dn_indirect_blur')!, wg,
+        g1: this.group(`indirectBlur:${oid(f.gbuf)}:${oid(radiance)}:${cur}`, this.layouts.indirect,
+          [{ buffer: f.gbuf }, v(t.gi.scratch), v(t.gi.hist[prev]), v(t.geo[prev]), v(radiance), v(t.gi.hist[cur]), v(t.gi.combined)]) });
+      radiance = t.gi.combined;
+    }
     if (flags & DNF.GRADIENT) {
       plan.push({ name: 'dn_gradient', pipeline: this.pipelines.get('dn_gradient')!, wg,
         g1: this.group(`grad:${oid(r!.arena)}:${oid(r!.resW)}:${prev}:${oid(radiance)}:${oid(l1)}`, this.layouts.gradient,
@@ -434,6 +460,7 @@ export class Denoiser {
     if (!t) return;
     for (const x of [...t.hist, ...t.mom, ...t.alb, ...t.l1, ...t.taa, t.out, t.lumG, t.tap, ...t.geo, ...t.atrous, t.gradTile, t.gradTile2, t.lambda]) x.destroy();
     t.zg?.destroy();
+    if (t.gi) { for (const x of [...t.gi.hist, t.gi.scratch, t.gi.combined]) x.destroy(); }
     t.input?.destroy();
     this.t = undefined;
   }

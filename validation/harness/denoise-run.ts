@@ -216,6 +216,10 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
         }));
       } else r.setLights(st.lights);
       if (st.env) r.setEnvParams(st.env.params);
+      // Removing the last area light can select Mode A on the following frame.
+      // Wait for that variant instead of capturing the app's temporary compile fallback.
+      r.restir!.kernel.syncLightModeVariant();
+      if (!r.restir!.kernel.isPrepared()) await r.restir!.prepare();
       fu.write({
         camera: cam, prevCamera: prev ?? cam, width: W, height: H, frameIndex: i, seedIndex: i, runSeed: o.seed >>> 0, flags: 0,
         jitterMode: jm, jitter: o.jitter === 'r2' ? r2Jitter(i, o.seed >>> 0) : [0.5, 0.5], origin, exposure: 1, time: i / 24, dt: 1 / 24, sceneDiag,
@@ -334,6 +338,7 @@ export async function renderDenoise(ctx: GpuContext, o: RenderDenoiseOptions): P
     const meta = {
       kind: 'denoise-eval', mode: o.mode, run: o.run, package: o.package, packageSha256: hash.sha256, seed: o.seed, width: W, height: H, frames: total,
       pkgFrames: Array.from({ length: total }, (_, i) => pkgFrame(i)), evalFrames: o.evalFrames ?? [], tiles: o.mode === 'recovery' ? { tile: TILE, x: tilesX, y: tilesY, layout: 'f32 [frame][tile][dn, raw]' } : undefined,
+      rawSignal: r.restir?.settings.indirectCache ? 'direct lighting plus emission; indirect cache appears only in dn' : 'full path estimate',
       renderer: { renderMode: ropts.renderMode, restirMode: ropts.restirMode, settings: r.restir?.settings, textureMode: ropts.textureMode, intersector: ropts.watertight ? 'woop-watertight' : 'moller-trumbore', jitter: 'iid', accumulate: false, lightMode, bvhKind: ropts.bvhKind ?? 'bvh2', overrides: o.renderer, restir: o.restir, perfFlags: o.perfFlags ?? [] },
       denoiser: { on: denoise, settings: r.denoiser?.settings, perFrame }, jitter: o.jitter ?? 'iid', accumulate: !!o.accumulate, pan: o.pan, lightAnim: o.lightAnim, panOsc: o.panOsc, lightOsc: o.lightOsc, vbuf: { primIdMismatch: vbufMismatch, maxBaryDiff: vbufMaxBary }, timing, finalizeCounters: fin,
       experimentalBuilderUrl: o.experimentalBuilderUrl, captureVbuffer: o.captureVbuffer,

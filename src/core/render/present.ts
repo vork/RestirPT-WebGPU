@@ -1,5 +1,5 @@
 // Present (plan §1.8, §1.10): fullscreen render pass that resolves the internal-resolution linear 'color' texture
-// (exposure 2^EV + view transform) or the debug view and upscales it to the canvas (nearest | bilinear), then draws
+// (exposure 2^EV + view transform) or the debug view and upscales it to the canvas (nearest | bilinear | bicubic | FSR 1), then draws
 // the raster overlay in the same pass. The canvas is configured non-sRGB (bgra8unorm): encoding happens in WGSL.
 // perf2 WP-7g (PresentSettings.pretone, default on): a compute pass (post/tonemap.wgsl) applies the view transform once
 // per internal texel into an rgba16float display texture, which the blit upscales (9 bilinear taps for bicubic, one
@@ -11,7 +11,7 @@ import type { Overlay } from './overlay.ts';
 
 export type Tonemap = 'standard' | 'agx' | 'aces' | 'raw';
 export const TONEMAP_CODE: Record<Tonemap, number> = { standard: 0, agx: 1, aces: 2, raw: 3 };
-export type UpscaleFilter = 'nearest' | 'bilinear' | 'bicubic';
+export type UpscaleFilter = 'nearest' | 'bilinear' | 'bicubic' | 'fsr1';
 
 export interface PresentSettings {
   exposureEV: number;
@@ -20,6 +20,8 @@ export interface PresentSettings {
   highlightNonFinite: boolean;
   /** perf2 WP-7g: tonemap once per internal texel (default true; false = the M8 per-tap transform, for A/B). */
   pretone?: boolean;
+  /** RCAS linear strength, 0 disables sharpening, 1 is maximum. Default 0.5. */
+  sharpening?: number;
 }
 
 export interface PresentDebug {
@@ -30,7 +32,7 @@ export interface PresentDebug {
   probePixel: [number, number];
 }
 
-const BLIT = { BILINEAR: 1, DEBUG: 2, SPLIT: 4, NONFINITE: 8, PROBE: 16, BICUBIC: 32, PRETONED: 64 } as const;
+const BLIT = { BILINEAR: 1, DEBUG: 2, SPLIT: 4, NONFINITE: 8, PROBE: 16, BICUBIC: 32, PRETONED: 64, FSR: 128 } as const;
 const PARAMS_SIZE = 48;
 const TONE_PARAMS_SIZE = 32;
 
@@ -63,6 +65,11 @@ export class Presenter {
   private readonly toneParams: GPUBuffer;
   private toneGroup: GPUBindGroup | undefined;
   private disp: GPUTexture | undefined;
+  private easuPipeline: GPUComputePipeline | undefined;
+  private readonly easuLayout: GPUBindGroupLayout;
+  private readonly easuParams: GPUBuffer;
+  private easuGroup: GPUBindGroup | undefined;
+  private easu: GPUTexture | undefined;
   private readonly sampler: GPUSampler;
   private readonly toneScratch = new ArrayBuffer(TONE_PARAMS_SIZE);
 
@@ -81,6 +88,7 @@ export class Presenter {
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
         { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+        { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
       ],
     });
     this.params = device.createBuffer({ label: 'blit-params', size: PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -93,10 +101,17 @@ export class Presenter {
       ],
     });
     this.toneParams = device.createBuffer({ label: 'tonemap-params', size: TONE_PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.easuLayout = device.createBindGroupLayout({ label: 'fsr-easu', entries: [
+      { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float' } },
+      { binding: 1, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba16float' } },
+      { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+    ] });
+    this.easuParams = device.createBuffer({ label: 'fsr-easu-params', size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.sampler = device.createSampler({ label: 'blit-disp', magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
   }
 
   async init(): Promise<void> {
+    await this.initEasu();
     const shader = composeWgsl('post/blit.wgsl', { sources: shaderSources });
     const module = await createCheckedShaderModule(this.device, shader, 'blit');
     this.pipeline = await this.device.createRenderPipelineAsync({
@@ -113,6 +128,12 @@ export class Presenter {
     });
   }
 
+  private async initEasu(): Promise<void> {
+    const module = await createCheckedShaderModule(this.device, composeWgsl('post/fsr-easu.wgsl', { sources: shaderSources }), 'fsr-easu');
+    this.easuPipeline = await this.device.createComputePipelineAsync({ label: 'fsr-easu',
+      layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.easuLayout] }), compute: { module, entryPoint: 'easu' } });
+  }
+
   /**
    * Encode the present pass into the current canvas texture. `color` is rgba32float/rgba16float linear radiance,
    * `debugOut` the display-encoded debug view (both internal resolution).
@@ -123,15 +144,26 @@ export class Presenter {
     s: PresentSettings,
     dbg: PresentDebug,
     overlay?: { overlay: Overlay; camera: CameraState },
-    /** The blit's timestamps; a function is called only when the pass is encoded, after the tonemap's (encode order). */
+    /** The blit's timestamps, allocated after tonemap and optional EASU in encode order. */
     timestampWrites?: GPURenderPassTimestampWrites | (() => GPURenderPassTimestampWrites | undefined),
     /** WP-7g: the tonemap pass's timestamps (a function: called only when the pass is encoded); `target`: render into
      *  this texture (tests) instead of the canvas. */
-    o: { toneTimestampWrites?: GPUComputePassTimestampWrites | (() => GPUComputePassTimestampWrites | undefined); target?: GPUTexture } = {},
+    o: { upscaleTimestampWrites?: GPUComputePassTimestampWrites | (() => GPUComputePassTimestampWrites | undefined); toneTimestampWrites?: GPUComputePassTimestampWrites | (() => GPUComputePassTimestampWrites | undefined); target?: GPUTexture } = {},
   ): void {
     if (!this.pipeline || !this.tonePipeline) return;
     const target = o.target ?? this.context.getCurrentTexture();
-    if (src.color !== this.boundColor || src.debugOut !== this.boundDebug) {
+    const beauty = !(dbg.active && !dbg.split);
+    const fsr = s.filter === 'fsr1' && beauty && target.width >= src.color.width && target.height >= src.color.height
+      && (target.width > src.color.width || target.height > src.color.height);
+    // EASU requires display-encoded input, including when the legacy A/B flag is off.
+    const pretone = s.pretone !== false || fsr;
+    const ew = fsr ? target.width : 1, eh = fsr ? target.height : 1;
+    if (this.easu?.width !== ew || this.easu?.height !== eh) {
+      this.easu?.destroy();
+      this.easu = this.device.createTexture({ label: 'fsr-easu', size: [ew, eh], format: 'rgba16float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
+      this.bindGroup = undefined;
+    }
+    if (src.color !== this.boundColor || src.debugOut !== this.boundDebug || !this.bindGroup) {
       this.boundColor = src.color;
       this.boundDebug = src.debugOut;
       this.disp?.destroy();
@@ -147,8 +179,13 @@ export class Presenter {
           { binding: 2, resource: { buffer: this.params } },
           { binding: 3, resource: this.disp.createView() },
           { binding: 4, resource: this.sampler },
+          { binding: 5, resource: this.easu!.createView() },
         ],
       });
+      this.easuGroup = this.device.createBindGroup({ label: 'fsr-easu', layout: this.easuLayout, entries: [
+        { binding: 0, resource: this.disp.createView() }, { binding: 1, resource: this.easu!.createView() },
+        { binding: 2, resource: { buffer: this.easuParams } },
+      ] });
       this.toneGroup = this.device.createBindGroup({
         label: 'tonemap',
         layout: this.toneLayout,
@@ -159,9 +196,6 @@ export class Presenter {
         ],
       });
     }
-    const pretone = s.pretone !== false;
-    // the beauty is needed unless the debug view covers the whole canvas
-    const beauty = !(dbg.active && !dbg.split);
     if (pretone && beauty) {
       const tu = new Uint32Array(this.toneScratch), tf = new Float32Array(this.toneScratch);
       tu[0] = src.color.width; tu[1] = src.color.height; tf[2] = 2 ** s.exposureEV; tu[3] = TONEMAP_CODE[s.tonemap]; tu[4] = s.highlightNonFinite ? 1 : 0;
@@ -173,6 +207,13 @@ export class Presenter {
       cp.dispatchWorkgroups(Math.ceil(src.color.width / 8), Math.ceil(src.color.height / 8));
       cp.end();
     }
+    if (fsr) {
+      this.device.queue.writeBuffer(this.easuParams, 0, new Uint32Array([src.color.width, src.color.height, target.width, target.height]));
+      const tw = typeof o.upscaleTimestampWrites === 'function' ? o.upscaleTimestampWrites() : o.upscaleTimestampWrites;
+      const cp = encoder.beginComputePass({ label: 'fsr-easu', timestampWrites: tw });
+      cp.setPipeline(this.easuPipeline!); cp.setBindGroup(0, this.easuGroup!);
+      cp.dispatchWorkgroups(Math.ceil(target.width / 8), Math.ceil(target.height / 8)); cp.end();
+    }
     const u32 = new Uint32Array(this.scratch);
     const f32 = new Float32Array(this.scratch);
     u32[0] = src.color.width; u32[1] = src.color.height;
@@ -181,7 +222,8 @@ export class Presenter {
     u32[5] = TONEMAP_CODE[s.tonemap];
     let flags = 0;
     if (s.filter === 'bilinear') flags |= BLIT.BILINEAR;
-    if (s.filter === 'bicubic') flags |= BLIT.BICUBIC;
+    if (s.filter === 'bicubic' || s.filter === 'fsr1') flags |= BLIT.BICUBIC;
+    if (fsr) flags |= BLIT.FSR;
     if (dbg.active) flags |= BLIT.DEBUG;
     if (dbg.active && dbg.split) flags |= BLIT.SPLIT;
     if (s.highlightNonFinite) flags |= BLIT.NONFINITE;
@@ -190,7 +232,7 @@ export class Presenter {
     u32[6] = flags;
     f32[7] = dbg.splitPos;
     u32[8] = dbg.probePixel[0]; u32[9] = dbg.probePixel[1];
-    u32[10] = 0; u32[11] = 0;
+    f32[10] = Number.isFinite(s.sharpening ?? 0.5) ? Math.max(0, Math.min(1, s.sharpening ?? 0.5)) : 0.5; u32[11] = 0;
     this.device.queue.writeBuffer(this.params, 0, this.scratch);
 
     const pass = encoder.beginRenderPass({
@@ -205,5 +247,5 @@ export class Presenter {
     pass.end();
   }
 
-  destroy(): void { this.params.destroy(); this.toneParams.destroy(); this.disp?.destroy(); }
+  destroy(): void { this.params.destroy(); this.toneParams.destroy(); this.disp?.destroy(); this.easu?.destroy(); this.easuParams.destroy(); }
 }

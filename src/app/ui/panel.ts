@@ -194,7 +194,8 @@ export function buildPanel(app: App): PanelHandle {
   out.addBinding(p, 'exposureEV', { label: 'exposure (EV)', min: -10, max: 10, step: 0.1 });
   tip(out.addBinding(p, 'tonemap', { label: 'view transform', options: { 'Standard (Blender, exact)': 'standard', 'AgX (approx.)': 'agx', 'ACES fit (approx.)': 'aces', 'Raw (linear)': 'raw' } }),
     'Display transform. Standard matches Blender exactly; AgX and ACES are approximations.');
-  out.addBinding(p, 'filter', { label: 'upscale filter', options: { 'bicubic (Catmull-Rom)': 'bicubic', bilinear: 'bilinear', nearest: 'nearest' } });
+  out.addBinding(p, 'filter', { label: 'upscale filter', options: { 'FSR 1 (EASU + RCAS)': 'fsr1', 'bicubic (Catmull-Rom)': 'bicubic', bilinear: 'bilinear', nearest: 'nearest' } });
+  tip(out.addBinding(p, 'sharpening', { label: 'FSR sharpening', min: 0, max: 1, step: 0.05 }), 'FSR 1 sharpening strength. Zero disables sharpening. Applies only when enlarging the fixed internal resolution.');
   // M8 dynamic resolution (docs/decisions/m8-perf.md §9)
   out.addBinding(r, 'dynamicResolution', { label: 'dynamic res' }).on('change', (e) => app.setDynamicResolution(e.value));
   out.addBinding(r, 'targetMs', { label: 'target (ms)', min: 8, max: 100, step: 1 }).on('change', (e) => app.setDynamicResolution(r.dynamicResolution, e.value));

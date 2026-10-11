@@ -63,7 +63,7 @@ import { RELEASE_PERF_FLAGS, normalizePerfFlags, perfFlagDefines, perfFlagsKey, 
 export type RestirAppMode = 'interactive' | 'potato' | 'unbiased' | 'criteria2022' | 'offline' | 'initial';
 export const RESTIR_APP_MODES: Record<RestirAppMode, string> = {
   interactive: 'ReSTIR-interactive (S 1, 1 round × 3 + boost 3, σ 16, RIS-NEE, dual MV, RR after bounce 2; unbiased: duplication map off by default)',
-  potato: 'Potato ReSTIR (max bounces capped at 1, 1 spatial partner, RIS 4, RR after bounce 1, no reservoir history; temporal denoising on). Faster, with darker indirect light and more noise.',
+  potato: 'Potato ReSTIR: full-resolution direct light (RIS 4, 1 spatial partner), optional experimental cached indirect, and denoising. Biased: softer bounce lighting and highlights, with some lighting lag. Max bounces capped at 1.',
   unbiased: 'ReSTIR-unbiased (S 1, 1 round × 3, σ 16, RIS-NEE)', criteria2022: 'ReSTIR-2022-criteria', offline: 'Offline (S 32, 3 rounds × 6, σ 16, RIS-NEE)',
   initial: 'initial only (rung 3.1 / 3.3)',
 };
@@ -77,7 +77,8 @@ export function restirAppSettings(mode: RestirAppMode, maxBounces: number, tempo
     : mode === 'initial' ? { ...RESTIR_PRESETS.interactive, rounds: 0 } : RESTIR_PRESETS.interactive;
   const app = mode === 'potato' ? POTATO_APP_DEFAULTS : mode === 'interactive' ? INTERACTIVE_APP_DEFAULTS : {};
   return { ...DEFAULT_RESTIR_SETTINGS, ...base, ...app, criteria: mode === 'criteria2022' ? '2022' : 'enhanced',
-    maxBounces: mode === 'potato' ? Math.min(maxBounces, 1) : maxBounces, temporal: mode !== 'potato' && temporal, ...features };
+    maxBounces: mode === 'potato' ? Math.min(maxBounces, 1) : maxBounces, temporal: mode !== 'potato' && temporal, ...features,
+    indirectCache: mode === 'potato' && maxBounces > 0 ? features.indirectCache ?? 0 : 0 };
 }
 
 /** perf2 (perf2-plan.md §5 user decisions, WP-10 rule): app-level defaults of app mode 'interactive', applied over the
@@ -95,14 +96,15 @@ export const INTERACTIVE_APP_DEFAULTS: Readonly<Partial<RestirSettings>> = Objec
 
 /** Explicit quality-for-speed app mode; validation presets and saved renderer options stay unchanged.
  *  maxBounces=1 permits two scattering vertices (Cycles convention). No reservoir history; the denoiser still
- *  reprojects colour history. See perf2-plan.md §9 for measurements and the truncated-indirect-light tradeoff. */
+ *  reprojects colour history. Optional cached indirect updates one pixel per 2×2 or 4×4 tile; off by default after cross-scene quality screening.
+ *  See perf2-plan.md §9–10 for measurements and the quality tradeoffs. */
 export const POTATO_APP_DEFAULTS: Readonly<Partial<RestirSettings>> = Object.freeze({
-  slots: 1, boostSlots: 0, risM: 4, rrMinBounces: 1, dupmap: false, dualMv: false,
+  indirectCache: 0, slots: 1, boostSlots: 0, risM: 4, rrMinBounces: 1, dupmap: false, dualMv: false,
 });
 
 /** M6 feature toggles of the app (restir-m6-api.md MD13) and the perf2 D1 RR start: per-session overrides of the mode's
  *  settings (preset ⊕ INTERACTIVE_APP_DEFAULTS; empty = those). */
-export type RestirFeatureOverrides = Partial<Pick<RestirSettings, 'pairing' | 'risNee' | 'dualMv' | 'dupmap' | 'rrMinBounces'>>;
+export type RestirFeatureOverrides = Partial<Pick<RestirSettings, 'pairing' | 'risNee' | 'dualMv' | 'dupmap' | 'rrMinBounces' | 'indirectCache'>>;
 
 /** M8 (m8-perf.md §3): 'auto' picks the CWBVH from this many triangles on. */
 export const CWBVH_AUTO_MIN_TRIS = 65536;
@@ -351,6 +353,7 @@ export class Renderer {
       rs.pass.setSettings(this.restirSettings());
       await this.prepareRestirVariant(rs);
     }
+    this.denoiser?.setSettings(this.denoiserSettings());
     // perf2 WP-7d: a perf-flag change can change the G-buffer texel size (GBUF_48)
     const tg = this.targets;
     if (tg && tg.gbuf.size !== tg.t.width * tg.t.height * gbufTexelBytes(this.perfFlags())) this.resize(tg.t);
@@ -393,11 +396,15 @@ export class Renderer {
     return p;
   }
 
+  private indirectLightingChanged = true;
+
   /** Analytic lights for the PT (stable ids; the alias table is rebuilt only when powers or the set change). */
   setLights(lights: readonly LightData[]): LightsUpdate | undefined {
     this.lights = lights;
     const r = this.state?.rs?.pass.setLights(lights);
-    return this.state?.pt?.setLights(lights) ?? r;
+    const update = this.state?.pt?.setLights(lights) ?? r;
+    if (r?.lightsChanged || update?.lightsChanged) this.indirectLightingChanged = true;
+    return update;
   }
 
   /** Compile the ReSTIR pass for `state` (never throws; errors go to restirError and the PT beauty stays). */
@@ -452,7 +459,10 @@ export class Renderer {
 
   /** The ReSTIR settings of the current app options (mode preset ⊕ M6 feature toggles). */
   restirSettings(): Partial<RestirSettings> {
-    return restirAppSettings(this.options.restirMode, this.options.maxBounces, this.options.temporal, this.options.restirFeatures);
+    const settings = restirAppSettings(this.options.restirMode, this.options.maxBounces, this.options.temporal, this.options.restirFeatures);
+    // The cache is reconstructed by the denoiser. Raw display restores full per-pixel indirect sampling.
+    if (!this.denoiseWanted()) settings.indirectCache = 0;
+    return settings;
   }
 
   /** perf2: the perf flags of the interactive kernels (options.restirKernel.perfFlags, default RELEASE_PERF_FLAGS). */
@@ -546,6 +556,8 @@ export class Renderer {
     await this.attachImportance(next);   // Worker-built tables (plan §1.4b) before the PT sees the env
     const old = this.env;
     this.env = next;
+    this.indirectLightingChanged = true;
+    if (this.state?.rs?.pass.settings.indirectCache) this.denoiser?.reset();
     this.state?.pt?.setEnvironment(next);
     this.state?.rs?.pass.setEnvironment(next);
     if (this.targets) this.targets.frameGroup = this.frameGroup(this.targets.t);
@@ -554,6 +566,10 @@ export class Renderer {
 
   /** Env rotation/strength/tint/visibility (UI or timeline). Strength/tint rebuild the pmf (P(env)); rotation never does. */
   setEnvParams(p: Partial<EnvParamsCpu>): void {
+    const prev = this.env.params;
+    if ((p.rotationZ !== undefined && p.rotationZ !== prev.rotationZ) || (p.strength !== undefined && p.strength !== prev.strength)
+      || (p.visibleToCamera !== undefined && p.visibleToCamera !== prev.visibleToCamera)
+      || (p.tint !== undefined && p.tint.some((x, i) => x !== prev.tint[i]))) this.indirectLightingChanged = true;
     writeEnvParams(this.device, this.env, p);
     this.state?.pt?.setEnvOptions();
     this.state?.rs?.pass.setEnvOptions();
@@ -782,6 +798,15 @@ export class Renderer {
     this.syncDenoiseMode();
     this.options.denoise = on;
     this.denoiseByMode[this.denoiseModeKey] = on;
+    const rs = this.state?.rs;
+    if (rs && this.options.restirMode === 'potato') {
+      const indirectCache = this.restirSettings().indirectCache!;
+      if (rs.pass.settings.indirectCache !== indirectCache) {
+        rs.pass.setSettings({ indirectCache });
+        this.denoiser?.reset();
+        void this.prepareRestirVariant(rs);
+      }
+    }
   }
   /** The toggle of the current mode is on and the mode allows the denoiser. */
   denoiseWanted(): boolean {
@@ -794,7 +819,8 @@ export class Renderer {
     this.denoiser?.setSettings(this.denoiserSettings());
   }
   denoiserSettings(): DenoiserSettings {
-    return denoiserAppSettings(this.options.renderMode, this.options.restirMode, this.pendingDenoiserSettings);
+    return denoiserAppSettings(this.options.renderMode, this.options.restirMode, this.pendingDenoiserSettings,
+      (this.options.restirFeatures.indirectCache ?? 0) > 0);
   }
   readonly pendingDenoiserSettings: Partial<DenoiserSettings> = {};
 
@@ -851,6 +877,12 @@ export class Renderer {
       const fl = adv?.flags ?? 0;
       f.radiance = res.frameTex;
       f.l1 = res.l1;
+      if (k.settings.indirectCache) {
+        f.indirect = res.indirectTexture();
+        f.indirectStride = k.settings.indirectCache;
+        f.indirectLightingChanged = this.indirectLightingChanged;
+        if (frame.advanced) this.indirectLightingChanged = false;
+      }
       f.restir = {
         arena: res.arena, resW: res.res[k.resBase()], resFinal: res.res[k.finalResIndex()],
         tsBase: RS_WGSL_CONSTS.RS_ARENA_HDR_WORDS + arenaWords(res.pixels, res.alloc.slots).tState, tsStride: res.pixels, resPlanes: k.resPlaneStride,

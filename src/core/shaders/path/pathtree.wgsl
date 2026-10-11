@@ -34,6 +34,16 @@
 #include "restir/cross.wgsl"
 #endif
 
+#if RS_POTATO_CACHE
+@group(2) @binding(4) var ptIndirectOut: texture_storage_2d<rgba16float, write>;
+var<private> ptIndirect: vec3f;
+fn pt_indirect_active(p: vec2u) -> bool {
+  let N = u32($RS_POTATO_CACHE);
+  let phase = rs_t() % (N * N);
+  return all(p % vec2u(N) == vec2u(phase % N, phase / N));
+}
+#endif
+
 #if RS_DUMP_CANDIDATES
 @group(2) @binding(4) var<storage, read_write> candDump: array<u32>;
 var<private> ptDumpPrims: array<u32, 8>;
@@ -115,6 +125,13 @@ fn pt_put(ai: u32, sel: bool, di: u32, i: u32, v: vec4u) {
 fn pt_emit(ai: u32, sel: bool, di: u32, w: f32, F: vec3f, seed: vec2u, flags: u32, rc: vec3u, jDen: f32, rcWi: vec3f, aux: f32,
            rcRad: vec3f, wBefore: f32, end: vec3u, hist: u32, sfx: vec3u, sfxFlags: u32, sfxDir: vec3f, sfxT: f32, betaS: vec3f,
            sfxP2: f32, ordinal: u32, selId: u32, kMargin: f32, endpointId: u32) {
+#if RS_POTATO_CACHE
+  // Indirect candidates never enter the direct reservoir or its weight sum. Sum the path estimator instead.
+  if (rf_d(flags) > 2u) {
+    if (w > 0.0 && luminance(F) > 0.0) { ptIndirect += F * (w / luminance(F)); }
+    return;
+  }
+#endif
 #if RS_ONE_CHUNK
   if (sel) { ptSelF = F; ptAnySel = true; }
 #endif
@@ -244,7 +261,13 @@ fn pt_cross_candidates(ai: u32, px: vec2u, key: vec2u, seed: vec2u, s: u32, B: u
     if (!rs_pos_finite(w)) {
       if (!(w == 0.0)) { (*bad).x += 1u; }
     } else {
+#if RS_POTATO_CACHE
+      if (B == 1u) {
+#endif
       sel = ris_update(wSum, w, rs_rand(key, RS_PASS_INITIAL, counter));
+#if RS_POTATO_CACHE
+      }
+#endif
       var di = 0xFFFFFFFFu;
 #if RS_DUMP_CANDIDATES
       if (s == 0u && ptDumpCross < RS_DUMP_CAP) { di = ptDumpCross; ptDumpCross++; }
@@ -291,7 +314,11 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
   let vb = rs_vbuf(p.px);
   let thr = rs_geo(p.px).w;
   let camPos = rs_cam_pos();
+#if RS_POTATO_CACHE
+  let maxB = select(1u, rsParams.maxBounces + 1u, pt_indirect_active(p.local));
+#else
   let maxB = rsParams.maxBounces + 1u;
+#endif
   let rr = (rsParams.flags & RSF_RR) != 0u;
   let envPresent = (envParams.flags & ENV_FLAG_PRESENT) != 0u;
   bvh_stats_reset();
@@ -478,7 +505,13 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
             if (!rs_pos_finite(w)) {
               if (!(w == 0.0)) { nonFinite++; }
             } else {
+#if RS_POTATO_CACHE
+              if (B == 1u) {
+#endif
               sel = ris_update(&wSum, w, rs_rand(key, RS_PASS_INITIAL, counter));
+#if RS_POTATO_CACHE
+              }
+#endif
               var di = 0xFFFFFFFFu;
 #if RS_DUMP_CANDIDATES
               if (s == 0u && nDump < RS_DUMP_CAP) { di = nDump; nDump++; }
@@ -708,7 +741,13 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
         if (!rs_pos_finite(w)) {
           if (!(w == 0.0)) { nonFinite++; }
         } else {
+#if RS_POTATO_CACHE
+          if (B == 1u) {
+#endif
           sel = ris_update(&wSum, w, rs_rand(key, RS_PASS_INITIAL, counter));
+#if RS_POTATO_CACHE
+          }
+#endif
           var di = 0xFFFFFFFFu;
 #if RS_DUMP_CANDIDATES
           if (s == 0u && nDump < RS_DUMP_CAP) { di = nDump; nDump++; }
