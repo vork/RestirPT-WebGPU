@@ -540,6 +540,24 @@ describe('denoiser passes vs the f64 reference', () => {
       expect(first[at]).toBeCloseTo(2, 2); // reconstruction does not multiply energy by 16
       expect(first[at + 3]).toBe(1);
       expect(first[0]).toBe(0); // background never receives cached GI
+      // Reveal only indirect lighting. Cache radiance stays unattenuated throughout the ramp.
+      black.fill(.25);
+      for (let update = 0; update <= 16; update++) {
+        const cache = await draw(2, update === 0);
+        expect(cache[at]).toBeCloseTo(2, 2);
+        if ([0, 1, 8, 16].includes(update)) {
+          const combined = await f32(rig.dn.textures!.gi!.combined);
+          const t = update / 16, reveal = t * t * (3 - 2 * t);
+          expect(combined[at]).toBeCloseTo(.25 + 2 * .84 * reveal, 2);
+          expect(combined[0]).toBeCloseTo(.25, 5); // even background/direct stays immediately visible
+        }
+      }
+      await draw(2, false, true);
+      expect((await f32(rig.dn.textures!.gi!.combined))[at]).toBeCloseTo(.25 + 2 * .84, 2); // light change does not restart reveal
+      const revealDisocclusion = px.map(p => ({ ...p, pos: p.pos.map(x => x * 2) as V3 }));
+      expect((await draw(2, false, false, revealDisocclusion))[at]).toBeCloseTo(2, 2);
+      expect((await f32(rig.dn.textures!.gi!.combined))[at]).toBeCloseTo(.25, 5); // rejected depth starts a fresh reveal
+      black.fill(0);
       // One arbitrarily bright path must not seed a persistent patch in an otherwise dark surface.
       const outlier = await draw((i, phase) => i === (16 + Math.floor(phase / 4)) * W + 12 + phase % 4 ? 200 : 0, true);
       expect(outlier[at]).toBeGreaterThan(0);

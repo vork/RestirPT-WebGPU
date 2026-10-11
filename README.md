@@ -192,7 +192,9 @@ indirect remains the default**. Disabling denoising restores per-pixel sampling.
 The cache deliberately favours stability over accuracy: robust sample weighting suppresses bright blotches,
 including while lights move. The latest change reduces Sponza's static block-averaged flicker by 27% versus the
 previous cache, with 6–10% lower full-image linear brightness and essentially unchanged GPU time. It does not
-eliminate disocclusion noise. See [stability comparisons](docs/decisions/perf2-plan.md#13-potato-cache-stability-over-accuracy)
+eliminate disocclusion noise. New cached indirect lighting now fades in smoothly over 16 valid updates; direct
+lighting appears immediately. Fresh areas temporarily look darker, and the final denoiser can extend settling.
+See [fade comparisons](docs/decisions/perf2-plan.md#14-gentle-reveal-of-new-indirect-lighting), [stability comparisons](docs/decisions/perf2-plan.md#13-potato-cache-stability-over-accuracy)
 and [cross-scene limitations](docs/decisions/perf2-plan.md#10-potato-direct-restir-and-cached-indirect-lighting).
 
 Fixed-resolution upscaling defaults to **FSR 1 (EASU + RCAS)** with sharpening at 0.5.

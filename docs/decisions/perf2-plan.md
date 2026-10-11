@@ -1431,3 +1431,37 @@ and settings were not modified. The shader uses the same inputs and resource lay
 
 The next structural improvement remains separating diffuse cache data from view-dependent glossy/transmitted paths
 and improving the fallback for newly visible surfaces (§12). Merely extending history would trade boiling for trails.
+
+
+## 14. Gentle reveal of new indirect lighting
+
+Requested after the stability experiment: fade newly visible areas in more gently. Implemented on top of
+`fb1b6f0` for cached Potato GI, without changing direct lighting, geometry, cache radiance or other rendering modes.
+At combination, multiply indirect lighting by `smoothstep(1, 17, valid history age)`. History stores the complete
+estimate, avoiding recursive attenuation. Age 1 contributes no GI, age 9 contributes half, age 17 contributes all.
+The ramp takes 16 successful updates: about 0.27 s at 60 FPS or 0.53 s at 30 FPS. It is frame-based, not wall-clock-based.
+Missing samples preserve age; rejected geometry/reset starts again. A lighting change alone does not restart it.
+The existing final denoiser can soften and lengthen the visible transition.
+
+Visual comparison: 15 matched seed-1 jobs across Sponza, Cornell, glossy, glass and foliage, covering stationary,
+camera and analytic-light motion, all 64 frames exported. Sponza's newly exposed side walls show far fewer bright
+patches during pans. The tradeoff is deliberate temporary darkening: new surfaces show direct illumination first.
+This cannot hide direct-light noise or provide correct unseen lighting, and fast motion can keep some areas dim.
+
+Tests verify the ramp's endpoints and midpoint, immediate direct/background visibility, unattenuated cache history,
+no restart on a lighting change, and restart after rejected depth. All 13 relevant GPU tests and the production build
+pass. GPU throughput remains about 14.21 ms at 540p and 24.72 ms at 720p (two sequential runs each; presentation excluded).
+No extra pass, ray, resource or dynamic-resolution change was introduced.
+
+Long stationary screens at 64/128/256 frames revealed a limitation of applying the fade before the existing final
+resolve: its long averaging history retains part of the darker startup. By frame 255, whole-image mean brightness
+is still 0.8% lower in Sponza, 4.9% in Cornell and 3.8% in glossy than the unfaded stabilized cache. This decreased over
+the sequence, but full-image brightness is not restored immediately at update 17. Keep this explicit rather than
+claiming a strict half-second end-to-end response. The cache-only synthetic test verifies that its radiance itself
+is not repeatedly attenuated. Changing the final resolve's history cap would require a separate stability tradeoff.
+
+Evidence: [`potato-fade-results.json`](potato-fade-results.json), including matched manifests, long static differences
+and final timing reports. Reproduce the review with `validation/.venv/bin/python validation/tools/potato-fade-review.py`.
+Local output: `validation/out/potato3/fade-review.html` and `sponza-pan-fade.mp4` (left: stabilized unfaded cache; right:
+fade enabled). Videos are slowed to 15 FPS for inspection. This is a one-seed visual screen, not a new four-seed
+stability claim; §13's statistics describe the preceding robust-filter change.

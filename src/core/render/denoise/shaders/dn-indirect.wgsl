@@ -114,6 +114,10 @@ fn dn_indirect(@builtin(global_invocation_id) gid: vec3u) {
   }
 #endif
   c = dn_fp16v(c);
+  // Keep full radiance in history: feeding the fade back would continually darken the cache.
   textureStore(cacheOut, p, vec4f(c, age));
-  textureStore(combined, p, vec4f(d + c * dn_demod_factor(g.albedo), 1.0));
+  // Newly visible surfaces start with direct lighting, then reveal GI over 16 valid updates.
+  // Smoothstep has zero slope at both ends; only rejected/reset history restarts the ramp.
+  let reveal = smoothstep(1.0, 17.0, age);
+  textureStore(combined, p, vec4f(d + c * dn_demod_factor(g.albedo) * reveal, 1.0));
 }

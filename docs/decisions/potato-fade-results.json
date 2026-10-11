@@ -1,0 +1,2800 @@
+{
+ "rows": [
+  {
+   "scene": "sponza",
+   "motion": "static",
+   "frames": [
+    {
+     "frame": 0,
+     "displayMeanAbsDifference": 0.014198231510818005,
+     "unfadedLinearMean": 0.08323288708925247,
+     "fadedLinearMean": 0.08042272180318832
+    },
+    {
+     "frame": 4,
+     "displayMeanAbsDifference": 0.013610370457172394,
+     "unfadedLinearMean": 0.08470237255096436,
+     "fadedLinearMean": 0.08205477148294449
+    },
+    {
+     "frame": 8,
+     "displayMeanAbsDifference": 0.01272977702319622,
+     "unfadedLinearMean": 0.08495260775089264,
+     "fadedLinearMean": 0.08246216177940369
+    },
+    {
+     "frame": 12,
+     "displayMeanAbsDifference": 0.01194989588111639,
+     "unfadedLinearMean": 0.08527671545743942,
+     "fadedLinearMean": 0.0829247236251831
+    },
+    {
+     "frame": 16,
+     "displayMeanAbsDifference": 0.01099435705691576,
+     "unfadedLinearMean": 0.08531314134597778,
+     "fadedLinearMean": 0.08311671018600464
+    },
+    {
+     "frame": 24,
+     "displayMeanAbsDifference": 0.009120493195950985,
+     "unfadedLinearMean": 0.08537754416465759,
+     "fadedLinearMean": 0.08347954601049423
+    },
+    {
+     "frame": 32,
+     "displayMeanAbsDifference": 0.007642786018550396,
+     "unfadedLinearMean": 0.08548921346664429,
+     "fadedLinearMean": 0.08382680267095566
+    },
+    {
+     "frame": 48,
+     "displayMeanAbsDifference": 0.005707074888050556,
+     "unfadedLinearMean": 0.0854811891913414,
+     "fadedLinearMean": 0.08413185179233551
+    },
+    {
+     "frame": 63,
+     "displayMeanAbsDifference": 0.0046384502202272415,
+     "unfadedLinearMean": 0.08556629717350006,
+     "fadedLinearMean": 0.0843925029039383
+    }
+   ],
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1"
+  },
+  {
+   "scene": "sponza",
+   "motion": "pan",
+   "frames": [
+    {
+     "frame": 0,
+     "displayMeanAbsDifference": 0.014198231510818005,
+     "unfadedLinearMean": 0.08323288708925247,
+     "fadedLinearMean": 0.08042272180318832
+    },
+    {
+     "frame": 4,
+     "displayMeanAbsDifference": 0.012867886573076248,
+     "unfadedLinearMean": 0.08377982676029205,
+     "fadedLinearMean": 0.08121899515390396
+    },
+    {
+     "frame": 8,
+     "displayMeanAbsDifference": 0.011852853931486607,
+     "unfadedLinearMean": 0.08432379364967346,
+     "fadedLinearMean": 0.08197864145040512
+    },
+    {
+     "frame": 12,
+     "displayMeanAbsDifference": 0.010023342445492744,
+     "unfadedLinearMean": 0.0849490687251091,
+     "fadedLinearMean": 0.08289133757352829
+    },
+    {
+     "frame": 16,
+     "displayMeanAbsDifference": 0.008478972129523754,
+     "unfadedLinearMean": 0.08475913107395172,
+     "fadedLinearMean": 0.08299432694911957
+    },
+    {
+     "frame": 24,
+     "displayMeanAbsDifference": 0.006136157549917698,
+     "unfadedLinearMean": 0.085447758436203,
+     "fadedLinearMean": 0.08416610211133957
+    },
+    {
+     "frame": 32,
+     "displayMeanAbsDifference": 0.004756083711981773,
+     "unfadedLinearMean": 0.08559051901102066,
+     "fadedLinearMean": 0.08463779091835022
+    },
+    {
+     "frame": 48,
+     "displayMeanAbsDifference": 0.003561718389391899,
+     "unfadedLinearMean": 0.08564502000808716,
+     "fadedLinearMean": 0.08501297980546951
+    },
+    {
+     "frame": 63,
+     "displayMeanAbsDifference": 0.0031931421253830194,
+     "unfadedLinearMean": 0.08573811501264572,
+     "fadedLinearMean": 0.08519934862852097
+    }
+   ],
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1"
+  },
+  {
+   "scene": "sponza",
+   "motion": "light",
+   "frames": [
+    {
+     "frame": 0,
+     "displayMeanAbsDifference": 0.014198231510818005,
+     "unfadedLinearMean": 0.08323288708925247,
+     "fadedLinearMean": 0.08042272180318832
+    },
+    {
+     "frame": 4,
+     "displayMeanAbsDifference": 0.013456009328365326,
+     "unfadedLinearMean": 0.09192395210266113,
+     "fadedLinearMean": 0.08925043791532516
+    },
+    {
+     "frame": 8,
+     "displayMeanAbsDifference": 0.011933835223317146,
+     "unfadedLinearMean": 0.09462674707174301,
+     "fadedLinearMean": 0.0921706035733223
+    },
+    {
+     "frame": 12,
+     "displayMeanAbsDifference": 0.009661589749157429,
+     "unfadedLinearMean": 0.0895005539059639,
+     "fadedLinearMean": 0.08743638545274734
+    },
+    {
+     "frame": 16,
+     "displayMeanAbsDifference": 0.007377514149993658,
+     "unfadedLinearMean": 0.08471071720123291,
+     "fadedLinearMean": 0.08303903788328171
+    },
+    {
+     "frame": 24,
+     "displayMeanAbsDifference": 0.004265114665031433,
+     "unfadedLinearMean": 0.0877566710114479,
+     "fadedLinearMean": 0.08656981587409973
+    },
+    {
+     "frame": 32,
+     "displayMeanAbsDifference": 0.002764740027487278,
+     "unfadedLinearMean": 0.08399468660354614,
+     "fadedLinearMean": 0.0830933153629303
+    },
+    {
+     "frame": 48,
+     "displayMeanAbsDifference": 0.0015420647105202079,
+     "unfadedLinearMean": 0.0835854634642601,
+     "fadedLinearMean": 0.08291377127170563
+    },
+    {
+     "frame": 63,
+     "displayMeanAbsDifference": 0.0012000967981293797,
+     "unfadedLinearMean": 0.08409290015697479,
+     "fadedLinearMean": 0.08348622918128967
+    }
+   ],
+   "packageSha256": "606f88e7a785c9250038e33a89bc2c78b79952e701939742a828e33c420859d1"
+  },
+  {
+   "scene": "cornell",
+   "motion": "static",
+   "frames": [
+    {
+     "frame": 0,
+     "displayMeanAbsDifference": 0.09781518578529358,
+     "unfadedLinearMean": 0.2808167040348053,
+     "fadedLinearMean": 0.23190321028232574
+    },
+    {
+     "frame": 4,
+     "displayMeanAbsDifference": 0.0867462158203125,
+     "unfadedLinearMean": 0.2796620726585388,
+     "fadedLinearMean": 0.23320643603801727
+    },
+    {
+     "frame": 8,
+     "displayMeanAbsDifference": 0.07487013936042786,
+     "unfadedLinearMean": 0.279335081577301,
+     "fadedLinearMean": 0.23592007160186768
+    },
+    {
+     "frame": 12,
+     "displayMeanAbsDifference": 0.06928220391273499,
+     "unfadedLinearMean": 0.27917978167533875,
+     "fadedLinearMean": 0.23805548250675201
+    },
+    {
+     "frame": 16,
+     "displayMeanAbsDifference": 0.06304066628217697,
+     "unfadedLinearMean": 0.27907639741897583,
+     "fadedLinearMean": 0.2406141459941864
+    },
+    {
+     "frame": 24,
+     "displayMeanAbsDifference": 0.05245409160852432,
+     "unfadedLinearMean": 0.2789415717124939,
+     "fadedLinearMean": 0.2455533891916275
+    },
+    {
+     "frame": 32,
+     "displayMeanAbsDifference": 0.04509614408016205,
+     "unfadedLinearMean": 0.27887651324272156,
+     "fadedLinearMean": 0.24945096671581268
+    },
+    {
+     "frame": 48,
+     "displayMeanAbsDifference": 0.03626604750752449,
+     "unfadedLinearMean": 0.2787792384624481,
+     "fadedLinearMean": 0.2545849680900574
+    },
+    {
+     "frame": 63,
+     "displayMeanAbsDifference": 0.03165077790617943,
+     "unfadedLinearMean": 0.2787368595600128,
+     "fadedLinearMean": 0.2574746906757355
+    }
+   ],
+   "packageSha256": "06b968475c907e8b76c7c650c0f35a4b6fa8b8aa9e99dce23665c7ebb3190ba8"
+  },
+  {
+   "scene": "cornell",
+   "motion": "pan",
+   "frames": [
+    {
+     "frame": 0,
+     "displayMeanAbsDifference": 0.09781518578529358,
+     "unfadedLinearMean": 0.2808167040348053,
+     "fadedLinearMean": 0.23190321028232574
+    },
+    {
+     "frame": 4,
+     "displayMeanAbsDifference": 0.013834934681653976,
+     "unfadedLinearMean": 0.05049527436494827,
+     "fadedLinearMean": 0.042926207184791565
+    },
+    {
+     "frame": 8,
+     "displayMeanAbsDifference": 0.0909966304898262,
+     "unfadedLinearMean": 0.27851203083992004,
+     "fadedLinearMean": 0.23163768649101257
+    },
+    {
+     "frame": 12,
+     "displayMeanAbsDifference": 0.016278130933642387,
+     "unfadedLinearMean": 0.03579380363225937,
+     "fadedLinearMean": 0.027870340272784233
+    },
+    {
+     "frame": 16,
+     "displayMeanAbsDifference": 0.09047916531562805,
+     "unfadedLinearMean": 0.2784890830516815,
+     "fadedLinearMean": 0.23179905116558075
+    },
+    {
+     "frame": 24,
+     "displayMeanAbsDifference": 0.09070587903261185,
+     "unfadedLinearMean": 0.27833953499794006,
+     "fadedLinearMean": 0.23172342777252197
+    },
+    {
+     "frame": 32,
+     "displayMeanAbsDifference": 0.08932381868362427,
+     "unfadedLinearMean": 0.2777947783470154,
+     "fadedLinearMean": 0.23187462985515594
+    },
+    {
+     "frame": 48,
+     "displayMeanAbsDifference": 0.08986439555883408,
+     "unfadedLinearMean": 0.2779242694377899,
+     "fadedLinearMean": 0.23166097700595856
+    },
+    {
+     "frame": 63,
+     "displayMeanAbsDifference": 0.09069982916116714,
+     "unfadedLinearMean": 0.27871403098106384,
+     "fadedLinearMean": 0.2318231761455536
+    }
+   ],
+   "packageSha256": "06b968475c907e8b76c7c650c0f35a4b6fa8b8aa9e99dce23665c7ebb3190ba8"
+  },
+  {
+   "scene": "cornell",
+   "motion": "light",
+   "frames": [
+    {
+     "frame": 0,
+     "displayMeanAbsDifference": 0.09781518578529358,
+     "unfadedLinearMean": 0.2808167040348053,
+     "fadedLinearMean": 0.23190321028232574
+    },
+    {
+     "frame": 4,
+     "displayMeanAbsDifference": 0.07142513990402222,
+     "unfadedLinearMean": 0.05128859728574753,
+     "fadedLinearMean": 0.031837087124586105
+    },
+    {
+     "frame": 8,
+     "displayMeanAbsDifference": 0.03756727650761604,
+     "unfadedLinearMean": 0.0671977549791336,
+     "fadedLinearMean": 0.05825038254261017
+    },
+    {
+     "frame": 12,
+     "displayMeanAbsDifference": 0.02613726072013378,
+     "unfadedLinearMean": 0.032820992171764374,
+     "fadedLinearMean": 0.02763369120657444
+    },
+    {
+     "frame": 16,
+     "displayMeanAbsDifference": 0.013730118982493877,
+     "unfadedLinearMean": 0.056304533034563065,
+     "fadedLinearMean": 0.053790315985679626
+    },
+    {
+     "frame": 24,
+     "displayMeanAbsDifference": 0.007173994556069374,
+     "unfadedLinearMean": 0.05417436733841896,
+     "fadedLinearMean": 0.05304295942187309
+    },
+    {
+     "frame": 32,
+     "displayMeanAbsDifference": 0.005746364593505859,
+     "unfadedLinearMean": 0.05360741540789604,
+     "fadedLinearMean": 0.05274176970124245
+    },
+    {
+     "frame": 48,
+     "displayMeanAbsDifference": 0.0052120499312877655,
+     "unfadedLinearMean": 0.05350711569190025,
+     "fadedLinearMean": 0.052743107080459595
+    },
+    {
+     "frame": 63,
+     "displayMeanAbsDifference": 0.005931326653808355,
+     "unfadedLinearMean": 0.06484852731227875,
+     "fadedLinearMean": 0.06360171735286713
+    }
+   ],
+   "packageSha256": "06b968475c907e8b76c7c650c0f35a4b6fa8b8aa9e99dce23665c7ebb3190ba8"
+  },
+  {
+   "scene": "glossy",
+   "motion": "static",
+   "frames": [
+    {
+     "frame": 0,
+     "displayMeanAbsDifference": 0.0791969820857048,
+     "unfadedLinearMean": 0.4056982696056366,
+     "fadedLinearMean": 0.3400094509124756
+    },
+    {
+     "frame": 4,
+     "displayMeanAbsDifference": 0.07429809868335724,
+     "unfadedLinearMean": 0.40445858240127563,
+     "fadedLinearMean": 0.34158459305763245
+    },
+    {
+     "frame": 8,
+     "displayMeanAbsDifference": 0.06719540804624557,
+     "unfadedLinearMean": 0.40383943915367126,
+     "fadedLinearMean": 0.34466806054115295
+    },
+    {
+     "frame": 12,
+     "displayMeanAbsDifference": 0.06204652041196823,
+     "unfadedLinearMean": 0.40353357791900635,
+     "fadedLinearMean": 0.3479319214820862
+    },
+    {
+     "frame": 16,
+     "displayMeanAbsDifference": 0.05655089020729065,
+     "unfadedLinearMean": 0.40330836176872253,
+     "fadedLinearMean": 0.3516955077648163
+    },
+    {
+     "frame": 24,
+     "displayMeanAbsDifference": 0.04705638065934181,
+     "unfadedLinearMean": 0.40298858284950256,
+     "fadedLinearMean": 0.35887348651885986
+    },
+    {
+     "frame": 32,
+     "displayMeanAbsDifference": 0.040233064442873,
+     "unfadedLinearMean": 0.40278932452201843,
+     "fadedLinearMean": 0.36450818181037903
+    },
+    {
+     "frame": 48,
+     "displayMeanAbsDifference": 0.031827908009290695,
+     "unfadedLinearMean": 0.40255406498908997,
+     "fadedLinearMean": 0.3719448447227478
+    },
+    {
+     "frame": 63,
+     "displayMeanAbsDifference": 0.02737179584801197,
+     "unfadedLinearMean": 0.4024999439716339,
+     "fadedLinearMean": 0.3761679232120514
+    }
+   ],
+   "packageSha256": "609bd4d55fce22a7979052dac29fc054e4bc67e96e1eb7a5f075f418584c609d"
+  },
+  {
+   "scene": "glossy",
+   "motion": "pan",
+   "frames": [
+    {
+     "frame": 0,
+     "displayMeanAbsDifference": 0.0791969820857048,
+     "unfadedLinearMean": 0.4056982696056366,
+     "fadedLinearMean": 0.3400094509124756
+    },
+    {
+     "frame": 4,
+     "displayMeanAbsDifference": 0.04091188684105873,
+     "unfadedLinearMean": 0.2576587498188019,
+     "fadedLinearMean": 0.21969085931777954
+    },
+    {
+     "frame": 8,
+     "displayMeanAbsDifference": 0.06930866837501526,
+     "unfadedLinearMean": 0.40685173869132996,
+     "fadedLinearMean": 0.34603583812713623
+    },
+    {
+     "frame": 12,
+     "displayMeanAbsDifference": 0.03871994465589523,
+     "unfadedLinearMean": 0.2354743778705597,
+     "fadedLinearMean": 0.20220549404621124
+    },
+    {
+     "frame": 16,
+     "displayMeanAbsDifference": 0.060845997184515,
+     "unfadedLinearMean": 0.40594837069511414,
+     "fadedLinearMean": 0.3516019880771637
+    },
+    {
+     "frame": 24,
+     "displayMeanAbsDifference": 0.05752363055944443,
+     "unfadedLinearMean": 0.40572017431259155,
+     "fadedLinearMean": 0.35661596059799194
+    },
+    {
+     "frame": 32,
+     "displayMeanAbsDifference": 0.053719405084848404,
+     "unfadedLinearMean": 0.4047640562057495,
+     "fadedLinearMean": 0.35930538177490234
+    },
+    {
+     "frame": 48,
+     "displayMeanAbsDifference": 0.051891785115003586,
+     "unfadedLinearMean": 0.4052807092666626,
+     "fadedLinearMean": 0.362505167722702
+    },
+    {
+     "frame": 63,
+     "displayMeanAbsDifference": 0.052538927644491196,
+     "unfadedLinearMean": 0.40663444995880127,
+     "fadedLinearMean": 0.36414390802383423
+    }
+   ],
+   "packageSha256": "609bd4d55fce22a7979052dac29fc054e4bc67e96e1eb7a5f075f418584c609d"
+  },
+  {
+   "scene": "glossy",
+   "motion": "light",
+   "frames": [
+    {
+     "frame": 0,
+     "displayMeanAbsDifference": 0.0791969820857048,
+     "unfadedLinearMean": 0.4056982696056366,
+     "fadedLinearMean": 0.3400094509124756
+    },
+    {
+     "frame": 4,
+     "displayMeanAbsDifference": 0.06913381069898605,
+     "unfadedLinearMean": 0.19843997061252594,
+     "fadedLinearMean": 0.156610369682312
+    },
+    {
+     "frame": 8,
+     "displayMeanAbsDifference": 0.04382393881678581,
+     "unfadedLinearMean": 0.2156093716621399,
+     "fadedLinearMean": 0.18890979886054993
+    },
+    {
+     "frame": 12,
+     "displayMeanAbsDifference": 0.03246339410543442,
+     "unfadedLinearMean": 0.1870972365140915,
+     "fadedLinearMean": 0.16739198565483093
+    },
+    {
+     "frame": 16,
+     "displayMeanAbsDifference": 0.021319733932614326,
+     "unfadedLinearMean": 0.21037203073501587,
+     "fadedLinearMean": 0.19746993482112885
+    },
+    {
+     "frame": 24,
+     "displayMeanAbsDifference": 0.012915939092636108,
+     "unfadedLinearMean": 0.20311729609966278,
+     "fadedLinearMean": 0.195672407746315
+    },
+    {
+     "frame": 32,
+     "displayMeanAbsDifference": 0.009923026897013187,
+     "unfadedLinearMean": 0.20644910633563995,
+     "fadedLinearMean": 0.2008443921804428
+    },
+    {
+     "frame": 48,
+     "displayMeanAbsDifference": 0.007871975190937519,
+     "unfadedLinearMean": 0.20579586923122406,
+     "fadedLinearMean": 0.20146669447422028
+    },
+    {
+     "frame": 63,
+     "displayMeanAbsDifference": 0.0071933576837182045,
+     "unfadedLinearMean": 0.2017279714345932,
+     "fadedLinearMean": 0.19784000515937805
+    }
+   ],
+   "packageSha256": "609bd4d55fce22a7979052dac29fc054e4bc67e96e1eb7a5f075f418584c609d"
+  },
+  {
+   "scene": "glass",
+   "motion": "static",
+   "frames": [
+    {
+     "frame": 0,
+     "displayMeanAbsDifference": 0.034661248326301575,
+     "unfadedLinearMean": 0.5157469511032104,
+     "fadedLinearMean": 0.47829800844192505
+    },
+    {
+     "frame": 4,
+     "displayMeanAbsDifference": 0.0314110703766346,
+     "unfadedLinearMean": 0.5132055878639221,
+     "fadedLinearMean": 0.47765520215034485
+    },
+    {
+     "frame": 8,
+     "displayMeanAbsDifference": 0.02844473160803318,
+     "unfadedLinearMean": 0.5112667083740234,
+     "fadedLinearMean": 0.4776686131954193
+    },
+    {
+     "frame": 12,
+     "displayMeanAbsDifference": 0.02639884129166603,
+     "unfadedLinearMean": 0.510529637336731,
+     "fadedLinearMean": 0.4786873459815979
+    },
+    {
+     "frame": 16,
+     "displayMeanAbsDifference": 0.024253491312265396,
+     "unfadedLinearMean": 0.5100948214530945,
+     "fadedLinearMean": 0.48022016882896423
+    },
+    {
+     "frame": 24,
+     "displayMeanAbsDifference": 0.02056216262280941,
+     "unfadedLinearMean": 0.5096361637115479,
+     "fadedLinearMean": 0.48346322774887085
+    },
+    {
+     "frame": 32,
+     "displayMeanAbsDifference": 0.017906080931425095,
+     "unfadedLinearMean": 0.5092885494232178,
+     "fadedLinearMean": 0.48600074648857117
+    },
+    {
+     "frame": 48,
+     "displayMeanAbsDifference": 0.014605299569666386,
+     "unfadedLinearMean": 0.5089821219444275,
+     "fadedLinearMean": 0.4895213544368744
+    },
+    {
+     "frame": 63,
+     "displayMeanAbsDifference": 0.012852167710661888,
+     "unfadedLinearMean": 0.508906900882721,
+     "fadedLinearMean": 0.49156704545021057
+    }
+   ],
+   "packageSha256": "13ffef97630865c906ba3049b9d12565ad947c80c90fbb99c746301da2e4cb02"
+  },
+  {
+   "scene": "glass",
+   "motion": "pan",
+   "frames": [
+    {
+     "frame": 0,
+     "displayMeanAbsDifference": 0.034661248326301575,
+     "unfadedLinearMean": 0.5157469511032104,
+     "fadedLinearMean": 0.47829800844192505
+    },
+    {
+     "frame": 4,
+     "displayMeanAbsDifference": 0.028691457584500313,
+     "unfadedLinearMean": 0.4659660756587982,
+     "fadedLinearMean": 0.4339158236980438
+    },
+    {
+     "frame": 8,
+     "displayMeanAbsDifference": 0.027322780340909958,
+     "unfadedLinearMean": 0.5108116269111633,
+     "fadedLinearMean": 0.4778243899345398
+    },
+    {
+     "frame": 12,
+     "displayMeanAbsDifference": 0.020887600257992744,
+     "unfadedLinearMean": 0.48258164525032043,
+     "fadedLinearMean": 0.45531582832336426
+    },
+    {
+     "frame": 16,
+     "displayMeanAbsDifference": 0.019621936604380608,
+     "unfadedLinearMean": 0.5102584362030029,
+     "fadedLinearMean": 0.4842509627342224
+    },
+    {
+     "frame": 24,
+     "displayMeanAbsDifference": 0.015138919465243816,
+     "unfadedLinearMean": 0.5112118124961853,
+     "fadedLinearMean": 0.4913906455039978
+    },
+    {
+     "frame": 32,
+     "displayMeanAbsDifference": 0.011755354702472687,
+     "unfadedLinearMean": 0.511184573173523,
+     "fadedLinearMean": 0.4955574572086334
+    },
+    {
+     "frame": 48,
+     "displayMeanAbsDifference": 0.008789737708866596,
+     "unfadedLinearMean": 0.5106632113456726,
+     "fadedLinearMean": 0.4994571805000305
+    },
+    {
+     "frame": 63,
+     "displayMeanAbsDifference": 0.007933340966701508,
+     "unfadedLinearMean": 0.511162519454956,
+     "fadedLinearMean": 0.5012965202331543
+    }
+   ],
+   "packageSha256": "13ffef97630865c906ba3049b9d12565ad947c80c90fbb99c746301da2e4cb02"
+  },
+  {
+   "scene": "glass",
+   "motion": "light",
+   "frames": [
+    {
+     "frame": 0,
+     "displayMeanAbsDifference": 0.034661248326301575,
+     "unfadedLinearMean": 0.5157469511032104,
+     "fadedLinearMean": 0.47829800844192505
+    },
+    {
+     "frame": 4,
+     "displayMeanAbsDifference": 0.030276529490947723,
+     "unfadedLinearMean": 0.5126654505729675,
+     "fadedLinearMean": 0.477803111076355
+    },
+    {
+     "frame": 8,
+     "displayMeanAbsDifference": 0.025477925315499306,
+     "unfadedLinearMean": 0.5118176937103271,
+     "fadedLinearMean": 0.4805210828781128
+    },
+    {
+     "frame": 12,
+     "displayMeanAbsDifference": 0.019471168518066406,
+     "unfadedLinearMean": 0.4800003170967102,
+     "fadedLinearMean": 0.45569440722465515
+    },
+    {
+     "frame": 16,
+     "displayMeanAbsDifference": 0.015454824082553387,
+     "unfadedLinearMean": 0.4643116593360901,
+     "fadedLinearMean": 0.4453175961971283
+    },
+    {
+     "frame": 24,
+     "displayMeanAbsDifference": 0.010446063242852688,
+     "unfadedLinearMean": 0.4901628792285919,
+     "fadedLinearMean": 0.4764377176761627
+    },
+    {
+     "frame": 32,
+     "displayMeanAbsDifference": 0.008569485507905483,
+     "unfadedLinearMean": 0.4603251814842224,
+     "fadedLinearMean": 0.44940248131752014
+    },
+    {
+     "frame": 48,
+     "displayMeanAbsDifference": 0.007282840088009834,
+     "unfadedLinearMean": 0.45904219150543213,
+     "fadedLinearMean": 0.44967371225357056
+    },
+    {
+     "frame": 63,
+     "displayMeanAbsDifference": 0.006999704521149397,
+     "unfadedLinearMean": 0.4664965271949768,
+     "fadedLinearMean": 0.4572620987892151
+    }
+   ],
+   "packageSha256": "13ffef97630865c906ba3049b9d12565ad947c80c90fbb99c746301da2e4cb02"
+  },
+  {
+   "scene": "foliage",
+   "motion": "static",
+   "frames": [
+    {
+     "frame": 0,
+     "displayMeanAbsDifference": 0.0016009175451472402,
+     "unfadedLinearMean": 0.19020354747772217,
+     "fadedLinearMean": 0.18891578912734985
+    },
+    {
+     "frame": 4,
+     "displayMeanAbsDifference": 0.0015642737271264195,
+     "unfadedLinearMean": 0.19032631814479828,
+     "fadedLinearMean": 0.1890939623117447
+    },
+    {
+     "frame": 8,
+     "displayMeanAbsDifference": 0.0014791844878345728,
+     "unfadedLinearMean": 0.19034640491008759,
+     "fadedLinearMean": 0.18918272852897644
+    },
+    {
+     "frame": 12,
+     "displayMeanAbsDifference": 0.0013790621887892485,
+     "unfadedLinearMean": 0.19036023318767548,
+     "fadedLinearMean": 0.1892777383327484
+    },
+    {
+     "frame": 16,
+     "displayMeanAbsDifference": 0.0012656277976930141,
+     "unfadedLinearMean": 0.19037014245986938,
+     "fadedLinearMean": 0.18937814235687256
+    },
+    {
+     "frame": 24,
+     "displayMeanAbsDifference": 0.0010523926466703415,
+     "unfadedLinearMean": 0.19037951529026031,
+     "fadedLinearMean": 0.1895572543144226
+    },
+    {
+     "frame": 32,
+     "displayMeanAbsDifference": 0.0008886812720447779,
+     "unfadedLinearMean": 0.19038867950439453,
+     "fadedLinearMean": 0.18969754874706268
+    },
+    {
+     "frame": 48,
+     "displayMeanAbsDifference": 0.0006752150948159397,
+     "unfadedLinearMean": 0.1903925985097885,
+     "fadedLinearMean": 0.18987327814102173
+    },
+    {
+     "frame": 63,
+     "displayMeanAbsDifference": 0.0005568997003138065,
+     "unfadedLinearMean": 0.19039364159107208,
+     "fadedLinearMean": 0.18996983766555786
+    }
+   ],
+   "packageSha256": "72aec742c57d910dd6591cbec9f9f8f6d9358cd776c4eb3ed84170f3b0f4efb9"
+  },
+  {
+   "scene": "foliage",
+   "motion": "pan",
+   "frames": [
+    {
+     "frame": 0,
+     "displayMeanAbsDifference": 0.0016009175451472402,
+     "unfadedLinearMean": 0.19020354747772217,
+     "fadedLinearMean": 0.18891578912734985
+    },
+    {
+     "frame": 4,
+     "displayMeanAbsDifference": 0.0014577683759853244,
+     "unfadedLinearMean": 0.18429528176784515,
+     "fadedLinearMean": 0.18317505717277527
+    },
+    {
+     "frame": 8,
+     "displayMeanAbsDifference": 0.0013990029692649841,
+     "unfadedLinearMean": 0.19036060571670532,
+     "fadedLinearMean": 0.18924838304519653
+    },
+    {
+     "frame": 12,
+     "displayMeanAbsDifference": 0.0011985928285866976,
+     "unfadedLinearMean": 0.16931341588497162,
+     "fadedLinearMean": 0.16835448145866394
+    },
+    {
+     "frame": 16,
+     "displayMeanAbsDifference": 0.0009744245908223093,
+     "unfadedLinearMean": 0.1904369443655014,
+     "fadedLinearMean": 0.18960675597190857
+    },
+    {
+     "frame": 24,
+     "displayMeanAbsDifference": 0.0006409930647350848,
+     "unfadedLinearMean": 0.19038870930671692,
+     "fadedLinearMean": 0.1898067742586136
+    },
+    {
+     "frame": 32,
+     "displayMeanAbsDifference": 0.00042923539876937866,
+     "unfadedLinearMean": 0.19044889509677887,
+     "fadedLinearMean": 0.1900283545255661
+    },
+    {
+     "frame": 48,
+     "displayMeanAbsDifference": 0.00021699430362787098,
+     "unfadedLinearMean": 0.19040794670581818,
+     "fadedLinearMean": 0.19017070531845093
+    },
+    {
+     "frame": 63,
+     "displayMeanAbsDifference": 0.0001476006000302732,
+     "unfadedLinearMean": 0.1903453767299652,
+     "fadedLinearMean": 0.19016635417938232
+    }
+   ],
+   "packageSha256": "72aec742c57d910dd6591cbec9f9f8f6d9358cd776c4eb3ed84170f3b0f4efb9"
+  },
+  {
+   "scene": "foliage",
+   "motion": "light",
+   "frames": [
+    {
+     "frame": 0,
+     "displayMeanAbsDifference": 0.0016009175451472402,
+     "unfadedLinearMean": 0.19020354747772217,
+     "fadedLinearMean": 0.18891578912734985
+    },
+    {
+     "frame": 4,
+     "displayMeanAbsDifference": 0.001734795980155468,
+     "unfadedLinearMean": 0.15147435665130615,
+     "fadedLinearMean": 0.15040019154548645
+    },
+    {
+     "frame": 8,
+     "displayMeanAbsDifference": 0.0012096083955839276,
+     "unfadedLinearMean": 0.16051071882247925,
+     "fadedLinearMean": 0.15974904596805573
+    },
+    {
+     "frame": 12,
+     "displayMeanAbsDifference": 0.0008231132524088025,
+     "unfadedLinearMean": 0.16610823571681976,
+     "fadedLinearMean": 0.16558633744716644
+    },
+    {
+     "frame": 16,
+     "displayMeanAbsDifference": 0.00048495488590560853,
+     "unfadedLinearMean": 0.1743287742137909,
+     "fadedLinearMean": 0.17405258119106293
+    },
+    {
+     "frame": 24,
+     "displayMeanAbsDifference": 0.0002758691553026438,
+     "unfadedLinearMean": 0.16114309430122375,
+     "fadedLinearMean": 0.1610335260629654
+    },
+    {
+     "frame": 32,
+     "displayMeanAbsDifference": 0.0001979711523745209,
+     "unfadedLinearMean": 0.17422322928905487,
+     "fadedLinearMean": 0.1741449534893036
+    },
+    {
+     "frame": 48,
+     "displayMeanAbsDifference": 0.00014248058141674846,
+     "unfadedLinearMean": 0.17421790957450867,
+     "fadedLinearMean": 0.17415577173233032
+    },
+    {
+     "frame": 63,
+     "displayMeanAbsDifference": 0.0001297649141633883,
+     "unfadedLinearMean": 0.1737850159406662,
+     "fadedLinearMean": 0.1737266480922699
+    }
+   ],
+   "packageSha256": "72aec742c57d910dd6591cbec9f9f8f6d9358cd776c4eb3ed84170f3b0f4efb9"
+  }
+ ],
+ "manifest": [
+  [
+   "--package",
+   "validation/scenes/cornell_i_512",
+   "--mode",
+   "flip",
+   "--frames",
+   "64",
+   "--eval-frames",
+   "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+   "--seed",
+   "1",
+   "--run",
+   "potato3-cornell-static-fade-s1",
+   "--width",
+   "384",
+   "--height",
+   "384",
+   "--renderer",
+   "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+   "--osc-knots",
+   "0,16,32,48,63",
+   "--restir",
+   "{\"indirectCache\":2}"
+  ],
+  [
+   "--package",
+   "validation/scenes/cornell_i_512",
+   "--mode",
+   "flip",
+   "--frames",
+   "64",
+   "--eval-frames",
+   "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+   "--seed",
+   "1",
+   "--run",
+   "potato3-cornell-pan-fade-s1",
+   "--width",
+   "384",
+   "--height",
+   "384",
+   "--renderer",
+   "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+   "--osc-knots",
+   "0,16,32,48,63",
+   "--pan-osc",
+   "0.5",
+   "--restir",
+   "{\"indirectCache\":2}"
+  ],
+  [
+   "--package",
+   "validation/scenes/cornell_i_512",
+   "--mode",
+   "flip",
+   "--frames",
+   "64",
+   "--eval-frames",
+   "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+   "--seed",
+   "1",
+   "--run",
+   "potato3-cornell-light-fade-s1",
+   "--width",
+   "384",
+   "--height",
+   "384",
+   "--renderer",
+   "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+   "--osc-knots",
+   "0,16,32,48,63",
+   "--light-osc",
+   "0:1",
+   "--restir",
+   "{\"indirectCache\":2}"
+  ],
+  [
+   "--package",
+   "validation/out/m7/scenes/m7_nm_smooth_256",
+   "--mode",
+   "flip",
+   "--frames",
+   "64",
+   "--eval-frames",
+   "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+   "--seed",
+   "1",
+   "--run",
+   "potato3-glossy-static-fade-s1",
+   "--width",
+   "384",
+   "--height",
+   "384",
+   "--renderer",
+   "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+   "--osc-knots",
+   "0,16,32,48,63",
+   "--restir",
+   "{\"indirectCache\":2}"
+  ],
+  [
+   "--package",
+   "validation/out/m7/scenes/m7_nm_smooth_256",
+   "--mode",
+   "flip",
+   "--frames",
+   "64",
+   "--eval-frames",
+   "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+   "--seed",
+   "1",
+   "--run",
+   "potato3-glossy-pan-fade-s1",
+   "--width",
+   "384",
+   "--height",
+   "384",
+   "--renderer",
+   "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+   "--osc-knots",
+   "0,16,32,48,63",
+   "--pan-osc",
+   "0.5",
+   "--restir",
+   "{\"indirectCache\":2}"
+  ],
+  [
+   "--package",
+   "validation/out/m7/scenes/m7_nm_smooth_256",
+   "--mode",
+   "flip",
+   "--frames",
+   "64",
+   "--eval-frames",
+   "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+   "--seed",
+   "1",
+   "--run",
+   "potato3-glossy-light-fade-s1",
+   "--width",
+   "384",
+   "--height",
+   "384",
+   "--renderer",
+   "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+   "--osc-knots",
+   "0,16,32,48,63",
+   "--light-osc",
+   "0:1",
+   "--restir",
+   "{\"indirectCache\":2}"
+  ],
+  [
+   "--package",
+   "validation/out/m6/scenes/m6_crossings_B_256",
+   "--mode",
+   "flip",
+   "--frames",
+   "64",
+   "--eval-frames",
+   "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+   "--seed",
+   "1",
+   "--run",
+   "potato3-glass-static-fade-s1",
+   "--width",
+   "384",
+   "--height",
+   "384",
+   "--renderer",
+   "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+   "--osc-knots",
+   "0,16,32,48,63",
+   "--restir",
+   "{\"indirectCache\":2}"
+  ],
+  [
+   "--package",
+   "validation/out/m6/scenes/m6_crossings_B_256",
+   "--mode",
+   "flip",
+   "--frames",
+   "64",
+   "--eval-frames",
+   "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+   "--seed",
+   "1",
+   "--run",
+   "potato3-glass-pan-fade-s1",
+   "--width",
+   "384",
+   "--height",
+   "384",
+   "--renderer",
+   "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+   "--osc-knots",
+   "0,16,32,48,63",
+   "--pan-osc",
+   "0.5",
+   "--restir",
+   "{\"indirectCache\":2}"
+  ],
+  [
+   "--package",
+   "validation/out/m6/scenes/m6_crossings_B_256",
+   "--mode",
+   "flip",
+   "--frames",
+   "64",
+   "--eval-frames",
+   "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+   "--seed",
+   "1",
+   "--run",
+   "potato3-glass-light-fade-s1",
+   "--width",
+   "384",
+   "--height",
+   "384",
+   "--renderer",
+   "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+   "--osc-knots",
+   "0,16,32,48,63",
+   "--light-osc",
+   "0:1",
+   "--restir",
+   "{\"indirectCache\":2}"
+  ],
+  [
+   "--package",
+   "validation/scenes/m5s_alpha_foliage",
+   "--mode",
+   "flip",
+   "--frames",
+   "64",
+   "--eval-frames",
+   "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+   "--seed",
+   "1",
+   "--run",
+   "potato3-foliage-static-fade-s1",
+   "--width",
+   "384",
+   "--height",
+   "384",
+   "--renderer",
+   "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+   "--osc-knots",
+   "0,16,32,48,63",
+   "--restir",
+   "{\"indirectCache\":2}"
+  ],
+  [
+   "--package",
+   "validation/scenes/m5s_alpha_foliage",
+   "--mode",
+   "flip",
+   "--frames",
+   "64",
+   "--eval-frames",
+   "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+   "--seed",
+   "1",
+   "--run",
+   "potato3-foliage-pan-fade-s1",
+   "--width",
+   "384",
+   "--height",
+   "384",
+   "--renderer",
+   "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+   "--osc-knots",
+   "0,16,32,48,63",
+   "--pan-osc",
+   "0.5",
+   "--restir",
+   "{\"indirectCache\":2}"
+  ],
+  [
+   "--package",
+   "validation/scenes/m5s_alpha_foliage",
+   "--mode",
+   "flip",
+   "--frames",
+   "64",
+   "--eval-frames",
+   "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+   "--seed",
+   "1",
+   "--run",
+   "potato3-foliage-light-fade-s1",
+   "--width",
+   "384",
+   "--height",
+   "384",
+   "--renderer",
+   "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+   "--osc-knots",
+   "0,16,32,48,63",
+   "--light-osc",
+   "0:1",
+   "--restir",
+   "{\"indirectCache\":2}"
+  ],
+  [
+   "--package",
+   "validation/out/wpq-sponza_perf_540",
+   "--mode",
+   "flip",
+   "--frames",
+   "64",
+   "--eval-frames",
+   "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+   "--seed",
+   "1",
+   "--run",
+   "potato3-sponza-static-fade-s1",
+   "--width",
+   "960",
+   "--height",
+   "540",
+   "--renderer",
+   "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+   "--restir",
+   "{\"indirectCache\":2}",
+   "--dn-json",
+   "{}",
+   "--osc-knots",
+   "0,16,32,48,63"
+  ],
+  [
+   "--package",
+   "validation/out/wpq-sponza_perf_540",
+   "--mode",
+   "flip",
+   "--frames",
+   "64",
+   "--eval-frames",
+   "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+   "--seed",
+   "1",
+   "--run",
+   "potato3-sponza-pan-fade-s1",
+   "--width",
+   "960",
+   "--height",
+   "540",
+   "--renderer",
+   "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+   "--restir",
+   "{\"indirectCache\":2}",
+   "--dn-json",
+   "{}",
+   "--osc-knots",
+   "0,16,32,48,63",
+   "--pan-osc",
+   ".5"
+  ],
+  [
+   "--package",
+   "validation/out/wpq-sponza_perf_540",
+   "--mode",
+   "flip",
+   "--frames",
+   "64",
+   "--eval-frames",
+   "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+   "--seed",
+   "1",
+   "--run",
+   "potato3-sponza-light-fade-s1",
+   "--width",
+   "960",
+   "--height",
+   "540",
+   "--renderer",
+   "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+   "--restir",
+   "{\"indirectCache\":2}",
+   "--dn-json",
+   "{}",
+   "--osc-knots",
+   "0,16,32,48,63",
+   "--light-osc",
+   "0:1"
+  ]
+ ],
+ "notes": [
+  "One-seed visual screen, 15 matched jobs with all 64 frames, not a four-seed stability remeasurement.",
+  "Baseline fb1b6f0 includes robust weighting; only the indirect reveal differs. Direct-light samples and cache history are unchanged.",
+  "Fade is smoothstep(1,17,valid history age) at combination; the main denoiser can further soften its visible response.",
+  "Age is measured in valid updates, not wall-clock time. Missing samples pause aging; history rejection/reset starts over.",
+  "Static frame63 should approach the same established lighting. Under motion, fresh areas are deliberately darker.",
+  "Videos slowed to15FPS for inspection, not a performance recording.",
+  "Main resolve history extends settling beyond the GI ramp. At frame255 the faded static mean is still 0.8% lower in Sponza, 4.9% Cornell, 3.8% glossy. Full-image brightness recovery is not instantaneous at update17."
+ ],
+ "longStatic": [
+  {
+   "scene": "cornell",
+   "frame": 63,
+   "linearMeanRatio": 0.9237196574697897,
+   "displayMeanAbsDifference": 0.0316507798619185
+  },
+  {
+   "scene": "cornell",
+   "frame": 127,
+   "linearMeanRatio": 0.9419123337915596,
+   "displayMeanAbsDifference": 0.024093138736134813
+  },
+  {
+   "scene": "cornell",
+   "frame": 255,
+   "linearMeanRatio": 0.9511894735545843,
+   "displayMeanAbsDifference": 0.020444031376043753
+  },
+  {
+   "scene": "glossy",
+   "frame": 63,
+   "linearMeanRatio": 0.9345787822399081,
+   "displayMeanAbsDifference": 0.02737179525325761
+  },
+  {
+   "scene": "glossy",
+   "frame": 127,
+   "linearMeanRatio": 0.9529463460789458,
+   "displayMeanAbsDifference": 0.020013437312909516
+  },
+  {
+   "scene": "glossy",
+   "frame": 255,
+   "linearMeanRatio": 0.9622450561290852,
+   "displayMeanAbsDifference": 0.016444502724006053
+  },
+  {
+   "scene": "sponza",
+   "frame": 63,
+   "linearMeanRatio": 0.9862819553312698,
+   "displayMeanAbsDifference": 0.004638450437569806
+  },
+  {
+   "scene": "sponza",
+   "frame": 127,
+   "linearMeanRatio": 0.9898073447272809,
+   "displayMeanAbsDifference": 0.0028239443028907764
+  },
+  {
+   "scene": "sponza",
+   "frame": 255,
+   "linearMeanRatio": 0.991586864911728,
+   "displayMeanAbsDifference": 0.001919086670827003
+  }
+ ],
+ "performance": {
+  "tag": "fade-perf",
+  "chrome": "155.0.8059.40",
+  "reports": [
+   {
+    "ok": true,
+    "label": "540p-fade-0",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 2
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 14.21875,
+     "medianMs": 14.224999994039536,
+     "minMs": 14.1875,
+     "maxMs": 14.25,
+     "blocks": [
+      14.199999988079071,
+      14.25,
+      14.237500011920929,
+      14.224999994039536,
+      14.224999994039536,
+      14.225000023841858,
+      14.224999994039536,
+      14.1875,
+      14.200000017881393,
+      14.199999988079071,
+      14.212500005960464,
+      14.237499982118607
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-11T12:52:39.083Z",
+    "wallS": 4.431399999856949,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 295.89999985694885
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 176.09999990463257
+     }
+    },
+    "latency": {
+     "meanMs": 14.525000095367432,
+     "medianMs": 14.5,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.700000137090683,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.11250004172325134,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.1125001311302185,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.900000125169754,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 8.700000077486038,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.43750011920928955,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.23750022053718567,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.1625000536441803,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.43750008940696716,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.8625001311302185,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.1000000536441803,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.35000014305114746,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.2750000059604645,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.3625001311302185,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.15000009536743164,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.4750001132488251,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.6125000715255737,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.15000009536743164,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 16.13750183582306,
+    "denoiser": {
+     "totalMs": 1.6993667031250002,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.263824046875
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.16252940625000004
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.25714582812500003
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.079891984375
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.37282184375000005
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.52211384375
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.03914134375
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.823199927726082e-05,
+     "queues": [
+      {
+       "counter": 10,
+       "n": 10,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 42611,
+       "n": 42611,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "540p-fade-1",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 2
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 14.200000000496706,
+     "medianMs": 14.199999988079071,
+     "minMs": 14.175000011920929,
+     "maxMs": 14.237500011920929,
+     "blocks": [
+      14.175000011920929,
+      14.212499976158142,
+      14.175000011920929,
+      14.212500005960464,
+      14.1875,
+      14.199999988079071,
+      14.212500005960464,
+      14.175000011920929,
+      14.1875,
+      14.199999988079071,
+      14.237500011920929,
+      14.224999994039536
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-11T12:52:43.515Z",
+    "wallS": 4.136799999952316,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 356.7000000476837
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 182.40000009536743
+     }
+    },
+    "latency": {
+     "meanMs": 14.475000113248825,
+     "medianMs": 14.5,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.6750001311302185,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.17500007152557373,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.12500014901161194,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.9125000238418579,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 8.750000089406967,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.43750008940696716,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.2000003457069397,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.20000001788139343,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.48750007152557373,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.8500001132488251,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.1000000536441803,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.46250009536743164,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.2500000596046448,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.37500011920928955,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.16250008344650269,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.5375001430511475,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.6625000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.15000009536743164,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 16.51250183582306,
+    "denoiser": {
+     "totalMs": 1.70801684375,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.2621860625
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.164675265625
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.26097910937499996
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.08196353125000001
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.373847796875
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.524567421875
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.037795609375000004
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.823199927726082e-05,
+     "queues": [
+      {
+       "counter": 10,
+       "n": 10,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 42611,
+       "n": 42611,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "720p-fade-0",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 1280,
+    "height": 720,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 2
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 24.71666666616996,
+     "medianMs": 24.712500005960464,
+     "minMs": 24.69999998807907,
+     "maxMs": 24.75,
+     "blocks": [
+      24.712500005960464,
+      24.724999994039536,
+      24.712500005960464,
+      24.69999998807907,
+      24.724999994039536,
+      24.712500005960464,
+      24.712500005960464,
+      24.75,
+      24.73750001192093,
+      24.69999998807907,
+      24.712500005960464,
+      24.69999998807907
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-11T12:52:47.671Z",
+    "wallS": 5.803200000047684,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 366.90000009536743
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 213.90000009536743
+     }
+    },
+    "latency": {
+     "meanMs": 24.975000113248825,
+     "medianMs": 25,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 2.7000001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.1875000298023224,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.050000131130218506,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 1.4375000894069672,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 15.237500101327896,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.6625001430511475,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.17500010132789612,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.20000013709068298,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.6750001609325409,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 1.5250000357627869,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.12500005960464478,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.5250001549720764,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.3625001013278961,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.5750000476837158,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.2375001311302185,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.7750000953674316,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 1.0375000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.21250015497207642,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 26.70000186562538,
+    "denoiser": {
+     "totalMs": 2.9818067812499995,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.4300611875
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.279230734375
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.44820078124999996
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.15974559375
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.6596285468749999
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.9293960156249998
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.07337585937499999
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.896233737647563e-05,
+     "queues": [
+      {
+       "counter": 20,
+       "n": 20,
+       "capacity": 921600,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 87954,
+       "n": 87954,
+       "capacity": 921600,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "720p-fade-1",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 1280,
+    "height": 720,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 2
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 24.72083333383004,
+     "medianMs": 24.724999994039536,
+     "minMs": 24.6875,
+     "maxMs": 24.75,
+     "blocks": [
+      24.73750001192093,
+      24.6875,
+      24.6875,
+      24.724999994039536,
+      24.724999994039536,
+      24.73750001192093,
+      24.75,
+      24.75,
+      24.712500005960464,
+      24.69999998807907,
+      24.73750001192093,
+      24.69999998807907
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-11T12:52:53.467Z",
+    "wallS": 5.760599999904633,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 363.2000000476837
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 185.20000004768372
+     }
+    },
+    "latency": {
+     "meanMs": 24.975000083446503,
+     "medianMs": 25,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 2.7000001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.2000001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.08750006556510925,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 1.4000000953674316,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 15.237500071525574,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.6375000476837158,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.21250030398368835,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.20000004768371582,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.7625000774860382,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 1.4875000715255737,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.1125001311302185,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.5750000774860382,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.3500000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.5500001013278961,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.2625000774860382,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.775000125169754,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 1.0750000476837158,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.11250010132789612,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 26.737501740455627,
+    "denoiser": {
+     "totalMs": 2.9812129375000005,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.42951162500000006
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.278973015625
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.44977437499999995
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.160356921875
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.6592067343750001
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.927721578125
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.07352740625
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.896233737647563e-05,
+     "queues": [
+      {
+       "counter": 20,
+       "n": 20,
+       "capacity": 921600,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 87954,
+       "n": 87954,
+       "capacity": 921600,
+       "overflow": 0
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "longManifests": {
+  "no-fade": [
+   [
+    "--package",
+    "validation/scenes/cornell_i_512",
+    "--mode",
+    "flip",
+    "--frames",
+    "256",
+    "--eval-frames",
+    "63,127,255",
+    "--seed",
+    "1",
+    "--run",
+    "potato3-cornell-static-long-no-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--restir",
+    "{\"indirectCache\":2}"
+   ],
+   [
+    "--package",
+    "validation/out/m7/scenes/m7_nm_smooth_256",
+    "--mode",
+    "flip",
+    "--frames",
+    "256",
+    "--eval-frames",
+    "63,127,255",
+    "--seed",
+    "1",
+    "--run",
+    "potato3-glossy-static-long-no-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--restir",
+    "{\"indirectCache\":2}"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "256",
+    "--eval-frames",
+    "63,127,255",
+    "--seed",
+    "1",
+    "--run",
+    "potato3-sponza-static-long-no-fade-s1",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63"
+   ]
+  ],
+  "fade": [
+   [
+    "--package",
+    "validation/scenes/cornell_i_512",
+    "--mode",
+    "flip",
+    "--frames",
+    "256",
+    "--eval-frames",
+    "63,127,255",
+    "--seed",
+    "1",
+    "--run",
+    "potato3-cornell-static-long-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--restir",
+    "{\"indirectCache\":2}"
+   ],
+   [
+    "--package",
+    "validation/out/m7/scenes/m7_nm_smooth_256",
+    "--mode",
+    "flip",
+    "--frames",
+    "256",
+    "--eval-frames",
+    "63,127,255",
+    "--seed",
+    "1",
+    "--run",
+    "potato3-glossy-static-long-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--restir",
+    "{\"indirectCache\":2}"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "256",
+    "--eval-frames",
+    "63,127,255",
+    "--seed",
+    "1",
+    "--run",
+    "potato3-sponza-static-long-fade-s1",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63"
+   ]
+  ]
+ }
+}
