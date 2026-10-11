@@ -1355,3 +1355,79 @@ light reservoirs, optionally adding validated temporal light-sample reuse. [RTXD
 distinguishes this direct-light sampling architecture from ReSTIR PT. That is a larger potential speed target than
 shaving another blur pass, but its benefit in this code is unmeasured. Reuse of stale shadow visibility would need
 separate moving-light/camera tests and should never silently enter unbiased modes.
+
+
+## 13. Potato cache: stability over accuracy
+
+The user's clarified priority is a stable, pleasant image and speed, accepting bias and lost accuracy. This changes
+how we judge Potato; normal/unbiased modes retain their existing behaviour. Cached GI remains an explicit choice in
+**ReSTIR → Potato indirect → cached 1/4**. FSR remains the default presentation filter.
+
+Implemented a combined cache-only experiment:
+
+- Before sparse spatial reconstruction, weight each demodulated estimate by `1 / (1 + 4 * luminance)` in addition
+  to the existing geometry/spatial weights. This robust mean suppresses rare bright paths before they spread into
+  correlated patches. Constant neighbourhoods retain their value, but uneven lighting loses energy deliberately.
+- Recurrent blur uses stride `N - 1` instead of `N`, mixing sampling phases through feedback. Tap count stays nine;
+  primary geometry, direct lighting, ray count, resolution, buffers and pass count are unchanged.
+- Keep the bright-sample limiter active while lights move, with an allowance of `2 * history luminance + 0.05`.
+  The additive term allows dark surfaces to relight. Temporal update rates remain 0.05 static / 0.2 lighting changes;
+  history age still affects young pixels. This is an outlier-control heuristic, not a local lighting-change detector.
+
+These changes were measured together, so the evidence establishes the combined effect, not each change's contribution.
+The stronger bias does not preserve radiometric accuracy and can diminish real glossy highlights/colour bleeding.
+
+### Matched results
+
+Four seeds × five scenes × static/camera/light motion × before/after, plus two light-step sequences: **122 successful
+capture jobs**. All seed-1 jobs export every frame, including peak camera/light offsets (frame 20, not just the
+return-to-origin knots). Other seeds export frames 16/32/48/63. All metrics use complete denoised images; cached raw
+exports only contain direct light. Captures omit FSR so sharpening cannot confound the comparison.
+
+| Scene | Static flicker reduction | Across-seed deviation reduction (static / camera / light) | Full-image linear brightness reduction |
+|---|---:|---:|---:|
+| Sponza | 27.4% | 30.0% / 29.0% / 25.4% | 5.8–10.0% |
+| Cornell | 33.5% | 34.7% / 32.2% / 39.0% | 16.2–17.5% |
+| Glossy | 33.5% | 33.1% / 29.2% / 33.1% | 15.3–17.2% |
+| Glass | 41.3% | 52.3% / 43.6% / 42.7% | 17.6–21.0% |
+| Alpha foliage | 4.8% | 7.8% / 4.5% / 2.7% | about 0.7% |
+
+“Static flicker” is mean absolute frame-to-frame change of display-space 8×8 block means, frames 16–63, one seed.
+Across-seed deviation uses four matched seeds at the four listed frames. These metrics include the benefit of lower
+brightness and do not establish accuracy. No motion-compensated temporal score is claimed. Camera/light sequences
+are visual screens; static meshes only. Screens show reduced wall/ceiling mottling, with visibly darker bounce light.
+Fast Sponza pans still reveal noisy disocclusions, and glossy detail remains approximate. This is an improvement to
+the existing opt-in cache, not grounds to call all Potato motion artifacts solved or to promote it automatically.
+
+Two sequential timing runs per configuration on M5 Pro / Chrome155 / Metal3:
+
+| Resolution | Previous cache | Stabilized cache |
+|---|---:|---:|
+| 960×540 | 14.23 ms | 14.23 ms (~70.3 GPU FPS) |
+| 1280×720 | 24.73 ms | 24.77 ms (~40.4 GPU FPS) |
+
+Presentation/UI are excluded. Timing differences are effectively negligible in this screen; this was not interleaved
+ABBA and is not a speedup claim. 1080p was not remeasured for this shader revision.
+
+### Response checks and reproduction
+
+The expanded GPU test verifies uniform-signal preservation, isolated bright-sample suppression, capped lighting
+spikes, black-vs-missing samples, history rejection, held-frame immutability and bounded recovery. In the synthetic
+cache-only test, a black→2 step reaches >98% by 40 lighting updates; switching to black removes >97% within 16 updates.
+Those bounds are not immediate response: at 30 FPS, 40 frames is 1.33 s. Real combined rendering has separately updated
+direct illumination. An 80-frame scene sequence also halves analytic power at 32 and removes its last analytic light
+at 56; emissive geometry remains. Its complete-image mean is not an isolated GI settling measurement.
+
+Validation: 13 GPU tests pass across denoiser and Potato-mode suites. Production build passes. Normal modes' paths
+and settings were not modified. The shader uses the same inputs and resource layouts.
+
+- Evidence and capture manifests: [`potato-stability-results.json`](potato-stability-results.json).
+- Analysis: `validation/.venv/bin/python validation/tools/potato-stability-review.py` after captures.
+- Local review: `validation/out/potato3/review.html`; Sponza/glossy static, pan and moving-light MP4 comparisons.
+  Video playback is slowed to 15 FPS for inspection, not a performance recording.
+- `before` captures use commit 22df07e's cache shader; `after` uses this section's implementation. Capture manifests
+  are embedded in the evidence JSON. Run with `run-denoise.ts --jobs FILE --lock-per-job`; timing manifests can be
+  reconstructed from each report's options in that evidence.
+
+The next structural improvement remains separating diffuse cache data from view-dependent glossy/transmitted paths
+and improving the fallback for newly visible surfaces (§12). Merely extending history would trade boiling for trails.

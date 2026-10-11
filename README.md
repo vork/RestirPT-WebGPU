@@ -189,7 +189,11 @@ The **Potato indirect** control optionally enables experimental cached GI (1/4 o
 measures about **70 FPS at 540p, 40 at 720p, and 18 at 1080p** in the Sponza GPU harness on an M5 Pro, excluding
 presentation/UI. It can introduce mottling during motion, lighting lag and blurred glossy detail, so **per-pixel
 indirect remains the default**. Disabling denoising restores per-pixel sampling. Interactive starts by default.
-See [measurements and cross-scene limitations](docs/decisions/perf2-plan.md#10-potato-direct-restir-and-cached-indirect-lighting).
+The cache deliberately favours stability over accuracy: robust sample weighting suppresses bright blotches,
+including while lights move. The latest change reduces Sponza's static block-averaged flicker by 27% versus the
+previous cache, with 6–10% lower full-image linear brightness and essentially unchanged GPU time. It does not
+eliminate disocclusion noise. See [stability comparisons](docs/decisions/perf2-plan.md#13-potato-cache-stability-over-accuracy)
+and [cross-scene limitations](docs/decisions/perf2-plan.md#10-potato-direct-restir-and-cached-indirect-lighting).
 
 Fixed-resolution upscaling defaults to **FSR 1 (EASU + RCAS)** with sharpening at 0.5.
 Change the filter or sharpening in **Render → Output**; bicubic is still available. FSR runs after denoising/tone mapping and before overlays,

@@ -521,12 +521,13 @@ describe('denoiser passes vs the f64 reference', () => {
     const input = rig.device.createTexture({ size: [W, H], format: 'rgba32float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
     const at = (16 * W + 12) * 4;
     const settings = { ...DENOISER_DEFAULTS, iterations: 0, resolve: false };
-    const draw = async (value: number | undefined, reset = false, lighting = false, pixels = px) => {
+    const draw = async (value: number | ((i: number, phase: number) => number) | undefined, reset = false, lighting = false, pixels = px) => {
       const a = new Float32Array(P * 4), phase = frameNo % 16;
       pixels.forEach((p, i) => {
         if (!p.hit || i % W % 4 !== phase % 4 || Math.floor(i / W) % 4 !== Math.floor(phase / 4) || value === undefined) return;
         const ad = Math.max(...p.albedo) < .02 ? [1, 1, 1] : p.albedo.map(x => Math.max(x, .02) + .04);
-        for (let k = 0; k < 3; k++) a[i * 4 + k] = value * ad[k];
+        const v = typeof value === 'function' ? value(i, phase) : value;
+        for (let k = 0; k < 3; k++) a[i * 4 + k] = v * ad[k];
         a[i * 4 + 3] = 1;
       });
       rig.device.queue.writeTexture({ texture: input }, a, { bytesPerRow: W * 16 }, [W, H]);
@@ -539,8 +540,17 @@ describe('denoiser passes vs the f64 reference', () => {
       expect(first[at]).toBeCloseTo(2, 2); // reconstruction does not multiply energy by 16
       expect(first[at + 3]).toBe(1);
       expect(first[0]).toBe(0); // background never receives cached GI
+      // One arbitrarily bright path must not seed a persistent patch in an otherwise dark surface.
+      const outlier = await draw((i, phase) => i === (16 + Math.floor(phase / 4)) * W + 12 + phase % 4 ? 200 : 0, true);
+      expect(outlier[at]).toBeGreaterThan(0);
+      expect(outlier[at]).toBeLessThan(.2);
+      await draw(2, true);
       const missing = await draw(undefined);
       expect(missing[at]).toBeCloseTo(2, 2); // untraced is not black
+      for (let i = 0; i < 20; i++) await draw(2);
+      const spike = await draw(200, false, true);
+      expect(spike[at]).toBeLessThan(2.5); // moving lights must not disable the bright-sample limiter
+      await draw(2, true);
       for (let i = 0; i < 20; i++) await draw(2);
       const before = await f16(rig.dn.textures!.gi!.hist[rig.dn.parity]);
       const dark = await draw(0, false, true);
@@ -562,6 +572,13 @@ describe('denoiser passes vs the f64 reference', () => {
       expect((await draw(undefined, false, false, flipped))[at]).toBe(0); // rejected previous normal
       await draw(2, true);
       expect((await draw(undefined, true))[at]).toBe(0); // explicit reset clears old GI
+      await draw(0, true);
+      for (let i = 0; i < 40; i++) await draw(2, false, true);
+      const relit = await f16(rig.dn.textures!.gi!.hist[rig.dn.parity]);
+      expect(relit[at]).toBeGreaterThan(1.96); // capped history must still escape black and settle
+      for (let i = 0; i < 16; i++) await draw(0, false, true);
+      const extinguished = await f16(rig.dn.textures!.gi!.hist[rig.dn.parity]);
+      expect(extinguished[at]).toBeLessThan(.06); // at least 97% decay within 16 lighting updates
     } finally { input.destroy(); }
   });
 

@@ -41,7 +41,12 @@ fn dn_indirect(@builtin(global_invocation_id) gid: vec3u) {
   var w = 0.0;
   for (var y = -1; y <= 1; y++) {
     for (var x = -1; x <= 1; x++) {
+#if DN_GI_BLUR
+      // Mix adjacent phases instead of feeding independent N-stride subgrids back into history.
+      let q = base + vec2i(x, y) * i32(max(N - 1u, 1u));
+#else
       let q = base + vec2i(x, y) * i32(N);
+#endif
       if (!dn_in_image(q)) { continue; }
       let sample = textureLoad(raw, q, 0);
       if (sample.a == 0.0) { continue; }
@@ -52,11 +57,15 @@ fn dn_indirect(@builtin(global_invocation_id) gid: vec3u) {
       let plane = max(abs(dot(delta, g.ns)), abs(dot(delta, v.ns)));
       if (plane > footprint * 4.0) { continue; }
       let offset = vec2f(q) - vec2f(p);
-      let weight = exp(-dot(offset, offset) / (2.0 * f32(N * N))) * pow(normal, 4.0);
+      var weight = exp(-dot(offset, offset) / (2.0 * f32(N * N))) * pow(normal, 4.0);
 #if DN_GI_BLUR
       c += sample.rgb * weight;
 #else
-      c += dn_fp16v(sample.rgb / dn_demod_factor(v.albedo)) * weight;
+      let irradiance = dn_fp16v(sample.rgb / dn_demod_factor(v.albedo));
+      // Deliberately biased robust mean: stop rare bright paths becoming persistent spatial patches.
+      // Equal-valued neighbourhoods retain their brightness; only uneven estimates are downweighted.
+      weight /= 1.0 + 4.0 * luminance(irradiance);
+      c += irradiance * weight;
 #endif
       w += weight;
     }
@@ -93,11 +102,10 @@ fn dn_indirect(@builtin(global_invocation_id) gid: vec3u) {
   if (w > 0.0) {
     if (h.a > 0.0) {
       let alpha = max(1.0 / age, select(0.05, 0.2, dn_flag(DNF_CACHE_LIGHT)));
-      // Biased suppression of isolated bright indirect samples. Broad lighting changes bypass the cap.
-      if (!dn_flag(DNF_CACHE_LIGHT)) {
-        let limit = max(luminance(h.rgb) * 4.0, 0.02);
-        c *= min(1.0, limit / max(luminance(c), 1e-6));
-      }
+      // Keep outlier suppression during moving-light frames too. The additive allowance lets
+      // previously dark surfaces brighten, while the unchanged lighting alpha limits response lag.
+      let limit = luminance(h.rgb) * 2.0 + 0.05;
+      c *= min(1.0, limit / max(luminance(c), 1e-6));
       c = mix(h.rgb, c, alpha);
     }
   } else {
