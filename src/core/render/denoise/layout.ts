@@ -3,12 +3,12 @@
 // reads (restir/tframe.wgsl, restir/types.wgsl; checked against render/restir/layout.ts by tests/denoise).
 import type { DebugViewDef } from '../debug-views.ts';
 
-export const DN_PARAMS_SIZE = 112;
+export const DN_PARAMS_SIZE = 128;
 export const DN_ITER_SIZE = 16;
 /** DnParams.taaFlags (dn-common.wgsl DNT_*; Changelog DN-16). */
 export const DNT = { DILATE: 1, CUBIC: 2 } as const;
 /** DnParams.flags (dn-common.wgsl DNF_*). */
-export const DNF = { RESET: 1, LAMBDA: 2, HAS_L1: 4, FW: 8, INVERSE: 16, GRADIENT: 32, LAMBDA_CAM: 64, NO_RESOLVE: 128, GUIDE: 256, CACHE_LIGHT: 512 } as const;
+export const DNF = { RESET: 1, LAMBDA: 2, HAS_L1: 4, FW: 8, INVERSE: 16, GRADIENT: 32, LAMBDA_CAM: 64, NO_RESOLVE: 128, GUIDE: 256, CACHE_LIGHT: 512, WORLD_CACHE: 1024 } as const;
 /** DnIter.flags (dn-filter.wgsl DNI_*). */
 export const DNI = { FEEDBACK: 1, FINAL: 2, COPY: 4 } as const;
 /** Reprojection outcome codes (view 526; dn-temporal.wgsl DN_REPROJ_*). */
@@ -86,11 +86,13 @@ export interface DnParamsCpu {
   /** Frames since the last lighting change (0 = this frame; Changelog DN-6). */
   sinceChange?: number;
   indirectStride?: number;
+  worldStep?: number;
+  worldEpoch?: number;
 }
 
 export const dnTiles = (w: number, h: number): [number, number] => [Math.ceil(w / 8), Math.ceil(h / 8)];
 
-/** Pack DnParams (112 B, dn-common.wgsl). */
+/** Pack DnParams (128 B, dn-common.wgsl). */
 export function packDnParams(o: DnParamsCpu, out = new ArrayBuffer(DN_PARAMS_SIZE)): ArrayBuffer {
   const u = new Uint32Array(out), f = new Float32Array(out);
   const [tx, ty] = dnTiles(o.width, o.height);
@@ -103,6 +105,7 @@ export function packDnParams(o: DnParamsCpu, out = new ArrayBuffer(DN_PARAMS_SIZ
   f[24] = o.settings.taaGammaLight; f[25] = o.settings.taaGammaCam;
   u[26] = o.tsStride ?? 0;
   u[27] = o.indirectStride ?? 0;
+  u[28] = o.worldStep ?? 0; u[29] = o.worldEpoch ?? 0;
   return out;
 }
 

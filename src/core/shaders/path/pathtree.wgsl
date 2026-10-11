@@ -36,12 +36,23 @@
 
 #if RS_POTATO_CACHE
 @group(2) @binding(4) var ptIndirectOut: texture_storage_2d<rgba16float, write>;
+@group(2) @binding(5) var ptSpecularOut: texture_storage_2d<rgba16float, write>;
+@group(2) @binding(6) var ptGuideOut: texture_storage_2d<rgba16float, write>;
 var<private> ptIndirect: vec3f;
+var<private> ptSpecular: vec3f;
+var<private> ptGuide: vec4f;
 fn pt_indirect_active(p: vec2u) -> bool {
   let N = u32($RS_POTATO_CACHE);
   let phase = rs_t() % (N * N);
   return all(p % vec2u(N) == vec2u(phase % N, phase / N));
 }
+#endif
+
+#if RS_POTATO_SCREEN
+#include "path/potato-screen.wgsl"
+#endif
+#if RS_POTATO_BLUE
+@group(2) @binding(7) var ptBlueNoise: texture_2d<f32>;
 #endif
 
 #if RS_DUMP_CANDIDATES
@@ -128,7 +139,11 @@ fn pt_emit(ai: u32, sel: bool, di: u32, w: f32, F: vec3f, seed: vec2u, flags: u3
 #if RS_POTATO_CACHE
   // Indirect candidates never enter the direct reservoir or its weight sum. Sum the path estimator instead.
   if (rf_d(flags) > 2u) {
-    if (w > 0.0 && luminance(F) > 0.0) { ptIndirect += F * (w / luminance(F)); }
+    if (w > 0.0 && luminance(F) > 0.0) {
+      let contribution = F * (w / luminance(F));
+      if ((hist & 7u) == LOBE_D) { ptIndirect += contribution; }
+      else { ptSpecular += contribution; }
+    }
     return;
   }
 #endif
@@ -315,7 +330,7 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
   let thr = rs_geo(p.px).w;
   let camPos = rs_cam_pos();
 #if RS_POTATO_CACHE
-  let maxB = select(1u, rsParams.maxBounces + 1u, pt_indirect_active(p.local));
+  var maxB = select(1u, rsParams.maxBounces + 1u, pt_indirect_active(p.local));
 #else
   let maxB = rsParams.maxBounces + 1u;
 #endif
@@ -368,6 +383,9 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
 #endif
       rsdbg_vertex(p.px, 0u, B, cur.pos, (hist >> (4u * min(B - 1u, 7u))) & 0xFu);
       let m = material_eval(cur, V);
+#if RS_POTATO_CACHE
+      if (B == 1u) { ptGuide = vec4f(bsdf_prepare(m, V).w_d, m.roughness); }
+#endif
       let curV = rc_vertex(cur, m);
       // ---- (1) NEE candidate, d = B + 1 (not at a delta-only vertex) ------------------------------------------------
       if ((m.flags & MATEVAL_HAS_NON_DELTA) != 0u) {
@@ -533,8 +551,26 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
         rrInv /= q;
       }
       // ---- (3) BSDF continuation ------------------------------------------------------------------------------------
+#if RS_POTATO_BLUE
+      var bsdfU = rs_path_bsdf_u4(seed, B);
+      if (B > 1u) {
+        // Keep primary/direct samples unchanged. Translate the whole tile (never hash individual texels).
+        // Index the sparse tile grid, so stride 2/4 does not destroy the blue-noise spectrum.
+        let shift = pcg3d(vec3u(frame.runSeed, rs_t(), B)).xy & vec2u(63u);
+        let grid = select(p.local, p.local / vec2u(u32($RS_POTATO_CACHE)), (hist & 7u) == LOBE_D);
+        let q = (grid + shift) & vec2u(63u);
+        let blue = (textureLoad(ptBlueNoise, q, 0).rg * 255.0 + vec2f(0.5)) / 256.0;
+        bsdfU.y = blue.x; bsdfU.z = blue.y;
+      }
+      let bs = bsdf_sample(m, V, bsdfU);
+#else
       let bs = bsdf_sample(m, V, rs_path_bsdf_u4(seed, B));
+#endif
       if (!bs.valid) { break; }
+#if RS_POTATO_CACHE
+      // View-dependent paths are sampled per pixel and never enter the diffuse cache.
+      if (B == 1u && bs.lobe != LOBE_D) { maxB = rsParams.maxBounces + 1u; }
+#endif
       hist = pt_hist_set(hist, B, bs.lobe | select(0u, 8u, bs.is_delta));
       let org = offset_ray(cur.pos, select(-cur.ng, cur.ng, dot(cur.ng, bs.L) >= 0.0));
 #if RS_LAST_ANYHIT && !RS_MODE_B
@@ -543,10 +579,22 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
       // no crossings) and the tree stops, so the same call site traces it as an any-hit query and stops there; an escape
       // is the same miss as the closest-hit query. Only counters see it (BVH stats, RSC_BASE_JDEN_INVALID of the dead q_b).
       let lastAny = B == maxB;
+#if RS_POTATO_SCREEN
+      var h = Hit(FLT_MAX, 0.0, 0.0, BVH_MISS);
+      if (!lastAny && B == 1u && bs.lobe == LOBE_D) { h = pt_screen_hit(org, bs.L, curPrim, p); }
+      if (h.primId == BVH_MISS) { h = bvh_trace(org, bs.L, FLT_MAX, lastAny, curPrim, BVH_MISS); }
+#else
       let h = bvh_trace(org, bs.L, FLT_MAX, lastAny, curPrim, BVH_MISS);
+#endif
       if (lastAny && h.primId != BVH_MISS) { break; }
 #else
+#if RS_POTATO_SCREEN
+      var h = Hit(FLT_MAX, 0.0, 0.0, BVH_MISS);
+      if (B == 1u && maxB > 1u && bs.lobe == LOBE_D) { h = pt_screen_hit(org, bs.L, curPrim, p); }
+      if (h.primId == BVH_MISS) { h = trace_closest_ex(org, bs.L, FLT_MAX, curPrim, BVH_MISS); }
+#else
       let h = trace_closest_ex(org, bs.L, FLT_MAX, curPrim, BVH_MISS);
+#endif
 #endif
       let isHit = h.primId != BVH_MISS;
       var nxt = cur;

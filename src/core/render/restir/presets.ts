@@ -7,6 +7,11 @@ export interface RestirSettings {
   maxBounces: number;
   /** Potato only: trace indirect at one pixel per N×N tile, for a separate biased radiance cache (0 = off). */
   indirectCache: 0 | 2 | 4;
+  /** Potato diffuse fallback retained on world-space surfaces. */
+  indirectWorldCache: boolean;
+  /** Potato experiments: screen candidate lookup and spatial blue noise for secondary BSDF directions. */
+  indirectScreenTrace: boolean;
+  indirectBlueNoise: boolean;
   /** Russian roulette at initial sampling (D11: the PT's q = min(sqrt(max_c β_c), 1) for B > rrMinBounces). */
   rr: boolean; rrMinBounces: number;
   /** S path trees per pixel streamed into one reservoir (offline 32). */
@@ -63,7 +68,7 @@ export interface RestirSettings {
 export type RestirPresetName = 'initial' | 'initial-rr' | 'offline' | 'interactive' | 'criteria2022' | 'temporal' | 'full' | 'offline-m6' | 'full-m6';
 
 export const DEFAULT_RESTIR_SETTINGS: RestirSettings = {
-  indirectCache: 0, maxBounces: 3, rr: false, rrMinBounces: 3, trees: 1, rounds: 0, slots: 3, diskRadius: 30,
+  indirectCache: 0, indirectWorldCache: false, indirectScreenTrace: false, indirectBlueNoise: false, maxBounces: 3, rr: false, rrMinBounces: 3, trees: 1, rounds: 0, slots: 3, diskRadius: 30,
   criteria: 'enhanced', tau: 2e-4, alphaMin: 0.2,
   temporal: false, cCap: 20, temporalMis: 'contribution', temporalCheck: 'none', refresh: 'exact', boostSlots: 0,
   pairing: 'disk', pairSigma: 16, risNee: false, risM: 32, dualMv: false, dupmap: false,

@@ -147,7 +147,7 @@ function expectMoments(gpu: ArrayLike<number>, ref: ArrayLike<number>, skipFw = 
 
 interface FrameIn {
   cam: CameraState; prev: CameraState; px: RefPixel[]; radiance: Float64Array; l1: Float64Array; reset: boolean;
-  indirect?: GPUTexture; indirectStride?: number; indirectLightingChanged?: boolean;
+  indirect?: GPUTexture; indirectSpecular?: GPUTexture; indirectGuide?: GPUTexture; indirectStride?: number; indirectLightingChanged?: boolean; indirectWorldCache?: boolean;
   settings: DenoiserSettings; kind: 'restir' | 'pt'; restir?: DenoiseFrame['restir']; advanced?: boolean; motion?: [number, number][];
 }
 let frameNo = 0;
@@ -173,7 +173,7 @@ function encodeFrame(f: FrameIn, record?: GPUComputePassDescriptor[]): void {
     rig.device.queue.submit([e2.finish()]);
   }
   const ok = rig.dn.encode(enc, {
-    indirect: f.indirect, indirectStride: f.indirectStride, indirectLightingChanged: f.indirectLightingChanged,
+    indirect: f.indirect, indirectSpecular: f.indirectSpecular, indirectGuide: f.indirectGuide, indirectWorldCache: f.indirectWorldCache, indirectStride: f.indirectStride, indirectLightingChanged: f.indirectLightingChanged,
     kind: f.kind, advanced: f.advanced ?? true, reset: f.reset, frameUniforms: rig.fu.buffer, gbuf: rig.gbuf,
     radiance: f.kind === 'restir' ? rig.radiance : undefined, l1: f.kind === 'restir' ? rig.l1 : undefined, colour: rig.colour, restir: f.restir, debugGroup: rig.debug.bindGroup,
   });
@@ -598,6 +598,80 @@ describe('denoiser passes vs the f64 reference', () => {
       const extinguished = await f16(rig.dn.textures!.gi!.hist[rig.dn.parity]);
       expect(extinguished[at]).toBeLessThan(.06); // at least 97% decay within 16 lighting updates
     } finally { input.destroy(); }
+  });
+
+  it('world irradiance survives screen disocclusion, but rejects changed lights, normals and resets', async () => {
+    const cam = camAt(0), px = scene(cam), black = new Float64Array(P * 3);
+    const input = rig.device.createTexture({ size: [W, H], format: 'rgba32float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    const settings = { ...DENOISER_DEFAULTS, iterations: 0, resolve: false };
+    const hidden = px.map(p => ({ ...p, hit: false }));
+    const draw = async (pixels: RefPixel[], value: number, reset = false, lighting = false) => {
+      const rgb = new Float64Array(P * 3);
+      pixels.forEach((p, i) => p.albedo.forEach((a, k) => { rgb[i * 3 + k] = value * (Math.max(...p.albedo) < .02 ? 1 : Math.max(a, .02) + .04); }));
+      writeTex(input, rgb);
+      encodeFrame({ cam, prev: cam, px: pixels, radiance: black, l1: black, reset, settings, kind: 'restir',
+        indirect: input, indirectStride: 2, indirectWorldCache: true, indirectLightingChanged: lighting });
+      return f32(rig.dn.textures!.gi!.combined);
+    };
+    try {
+      await draw(px, 2, true);
+      for (let i = 0; i < 20; i++) await draw(px, 2);
+      await draw(hidden, 0);
+      const revisited = await draw(px, 0);
+      expect(revisited.filter((x, i) => i % 4 !== 3 && x > .3).length).toBeGreaterThan(P);
+      const held = rig.device.createCommandEncoder();
+      rig.dn.encode(held, { kind: 'restir', advanced: false, reset: false, frameUniforms: rig.fu.buffer,
+        gbuf: rig.gbuf, radiance: rig.radiance, l1: rig.l1, colour: rig.colour, debugGroup: rig.debug.bindGroup });
+      rig.device.queue.submit([held.finish()]);
+      expect(await f32(rig.dn.textures!.gi!.combined)).toEqual(revisited);
+      if (rig.device.features.has('timestamp-query')) {
+        await rig.dn.time(2);
+        expect(await f32(rig.dn.textures!.gi!.combined)).toEqual(revisited);
+      }
+      await draw(hidden, 0);
+      const unlit = await draw(px, 0, false, true);
+      expect(unlit.filter((_, i) => i % 4 !== 3).every(x => x === 0)).toBe(true);
+      await draw(px, 2, true);
+      for (let i = 0; i < 20; i++) await draw(px, 2);
+      await draw(hidden, 0);
+      const opposite = await draw(px.map(p => ({ ...p, ns: [0, 0, -1] as V3 })), 0);
+      expect(opposite.filter((_, i) => i % 4 !== 3).every(x => x === 0)).toBe(true);
+      await draw(px, 2, true);
+      for (let i = 0; i < 20; i++) await draw(px, 2);
+      await draw(hidden, 0);
+      const nearbyWall = await draw(px.map(p => ({ ...p, pos: [p.pos[0], p.pos[1], p.pos[2] - .02] as V3 })), 0);
+      expect(nearbyWall.filter((_, i) => i % 4 !== 3).every(x => x === 0)).toBe(true);
+      for (let i = 0; i < 121; i++) await draw(hidden, 0);
+      const expired = await draw(px, 0);
+      expect(expired.filter((_, i) => i % 4 !== 3).every(x => x === 0)).toBe(true);
+      const reset = await draw(px, 0, true);
+      expect(reset.filter((_, i) => i % 4 !== 3).every(x => x === 0)).toBe(true);
+    } finally { input.destroy(); }
+  });
+
+  it('diffuse closure weight remodulates cached GI, while specular bypasses its reveal', async () => {
+    const cam = camAt(0), px = scene(cam), direct = new Float64Array(P * 3).fill(.25), black = new Float64Array(P * 3);
+    const textures = Array.from({ length: 3 }, () => rig.device.createTexture({ size: [W, H], format: 'rgba32float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST }));
+    const [input, specular, guide] = textures;
+    writeTex(input, new Float64Array(P * 3).fill(1));
+    writeTex(specular, new Float64Array(P * 3).fill(.7));
+    writeTex(guide, new Float64Array(P * 3).fill(.5));
+    const at = (16 * W + 12) * 4;
+    try {
+      for (let i = 0; i <= 16; i++) {
+        encodeFrame({ cam, prev: cam, px, radiance: direct, l1: black, reset: i === 0,
+          settings: { ...DENOISER_DEFAULTS, iterations: 0, resolve: false }, kind: 'restir',
+          indirect: input, indirectSpecular: specular, indirectGuide: guide, indirectStride: 2 });
+        const combined = await f32(rig.dn.textures!.gi!.combined);
+        if (i === 0) expect(combined[at]).toBeCloseTo(.95, 3);
+        if (i === 16) expect(combined[at]).toBeCloseTo(1.95, 3);
+      }
+      writeTex(guide, black);
+      encodeFrame({ cam, prev: cam, px, radiance: direct, l1: black, reset: false,
+        settings: { ...DENOISER_DEFAULTS, iterations: 0, resolve: false }, kind: 'restir',
+        indirect: input, indirectSpecular: specular, indirectGuide: guide, indirectStride: 2 });
+      expect((await f32(rig.dn.textures!.gi!.combined))[at]).toBeCloseTo(.95, 3);
+    } finally { textures.forEach(t => t.destroy()); }
   });
 
   it('registry: the live denoiser is visible to the T16 check and gone after destroy()', async () => {

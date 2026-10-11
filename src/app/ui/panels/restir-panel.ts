@@ -43,11 +43,18 @@ export function addRestirPanel(app: App, r: Renderer, inspector: RestirInspector
   // after a change recompiles; the config hash changes, so the history resets)
   const feat = r.options.restirFeatures;
   const eff = () => restirSettings(undefined, r.restirSettings());
-  const fx = { indirectCache: feat.indirectCache ?? 0, gauss: eff().pairing === 'gauss', ris: eff().risNee, dualMv: eff().dualMv, dupmap: eff().dupmap, rrMin: eff().rrMinBounces };
+  const fx = { world: eff().indirectWorldCache, screen: eff().indirectScreenTrace, blue: eff().indirectBlueNoise, indirectCache: feat.indirectCache ?? 0, gauss: eff().pairing === 'gauss', ris: eff().risNee, dualMv: eff().dualMv, dupmap: eff().dupmap, rrMin: eff().rrMinBounces };
   const setF = (o: RestirFeatureOverrides) => { Object.assign(feat, o); void r.setOptions({ restirFeatures: feat }).then(() => app.resetHistory()); };
   const cache = tip(f.addBinding(fx, 'indirectCache', { label: 'Potato indirect', options: { 'per-pixel (default)': 0, 'cached 1/4 (experimental)': 2, 'cached 1/16 (experimental)': 4 } }),
-    'Experimental speed/quality tradeoff for Potato only. Faster in Sponza; can produce mottling during motion, lighting lag and blurred glossy detail. Requires denoising.')
+    'Experimental speed/quality tradeoff for Potato only. Faster in Sponza; can produce mottling during motion, lighting lag and softened detail. Requires denoising.')
     .on('change', q((e) => setF({ indirectCache: Number(e.value) as 0 | 2 | 4 })));
+  const gi = f.addFolder({ title: 'Potato cached lighting', expanded: false });
+  tip(gi.addBinding(fx, 'world', { label: 'persistent diffuse' }), 'Reuse diffuse lighting on previously visible surfaces. Lighting changes invalidate it; reflections stay view-dependent.')
+    .on('change', q((e) => setF({ indirectWorldCache: e.value })));
+  tip(gi.addBinding(fx, 'screen', { label: 'screen lookup' }), 'Experimental screen-space ray lookup. May be slower depending on the scene; off by default.')
+    .on('change', q((e) => setF({ indirectScreenTrace: e.value })));
+  tip(gi.addBinding(fx, 'blue', { label: 'blue-noise GI' }), 'Experimental spatial blue noise for secondary indirect directions. Does not change direct lighting; off by default.')
+    .on('change', q((e) => setF({ indirectBlueNoise: e.value })));
   const ef = f.addFolder({ title: 'Enhanced features', expanded: false });
   tip(ef.addBinding(fx, 'gauss', { label: 'σ 16 pairing maps' }), 'Spatial partners from reciprocal pairing maps with Gaussian (σ 16 px) offsets; off = disk partners.')
     .on('change', q((e) => setF({ pairing: e.value ? 'gauss' : 'disk' })));
@@ -72,6 +79,8 @@ export function addRestirPanel(app: App, r: Renderer, inspector: RestirInspector
       ui.temporal = eff().temporal;
       cache.disabled = r.options.restirMode !== 'potato';
       fx.indirectCache = feat.indirectCache ?? 0;
+      gi.disabled = cache.disabled || fx.indirectCache === 0;
+      fx.world = eff().indirectWorldCache; fx.screen = eff().indirectScreenTrace; fx.blue = eff().indirectBlueNoise;
       temporalToggle.disabled = r.options.restirMode === 'potato';
       { const e = eff(); fx.gauss = e.pairing === 'gauss'; fx.ris = e.risNee; fx.dualMv = e.dualMv; fx.dupmap = e.dupmap; fx.rrMin = e.rrMinBounces; }
       ui.inspector = !!inspector?.visible;

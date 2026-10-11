@@ -186,14 +186,20 @@ edit is refreshed in the kernel.
 The app starts in **interactive ReSTIR**. For speed, choose **ReSTIR → preset → Potato ReSTIR**.
 Potato caps path depth at one indirect bounce and reduces direct-light candidates/spatial partners.
 The **Potato indirect** control optionally enables experimental cached GI (1/4 or 1/16 sampling). The 1/4 setting
-measures about **70 FPS at 540p, 40 at 720p, and 18 at 1080p** in the Sponza GPU harness on an M5 Pro, excluding
-presentation/UI. It can introduce mottling during motion, lighting lag and blurred glossy detail, so **per-pixel
+measures about **65 FPS at 540p, 37 at 720p, and 17 at 1080p** in the Sponza GPU harness on an M5 Pro, excluding
+presentation/UI. It can introduce mottling during motion, lighting lag and softened detail, so **per-pixel
 indirect remains the default**. Disabling denoising restores per-pixel sampling. Interactive starts by default.
 The cache deliberately favours stability over accuracy: robust sample weighting suppresses bright blotches,
-including while lights move. The latest change reduces Sponza's static block-averaged flicker by 27% versus the
+including while lights move. The earlier robust-filter change reduced Sponza's static block-averaged flicker by 27% versus the
 previous cache, with 6–10% lower full-image linear brightness and essentially unchanged GPU time. It does not
 eliminate disocclusion noise. New cached indirect lighting now fades in smoothly over 16 valid updates; direct
 lighting appears immediately. Fresh areas temporarily look darker, and the final denoiser can extend settling.
+Cached lighting now separates diffuse bounce light from per-pixel reflections. **Potato cached lighting → persistent
+diffuse** retains lighting on previously seen world-space surfaces; it is enabled when caching is selected. Light changes
+invalidate the world fallback. Unseen areas still fade in. The screen-lookup and blue-noise experiments are available
+in the same folder, off by default: screen lookup is slower in the measured Sponza view, and blue noise has no established
+overall stability win. This version costs more than the earlier mixed diffuse/specular cache; see
+[world-cache measurements and limitations](docs/decisions/perf2-plan.md#15-persistent-diffuse-lighting-screen-lookup-and-blue-noise).
 See [fade comparisons](docs/decisions/perf2-plan.md#14-gentle-reveal-of-new-indirect-lighting), [stability comparisons](docs/decisions/perf2-plan.md#13-potato-cache-stability-over-accuracy)
 and [cross-scene limitations](docs/decisions/perf2-plan.md#10-potato-direct-restir-and-cached-indirect-lighting).
 

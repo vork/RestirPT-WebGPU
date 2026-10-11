@@ -9,7 +9,7 @@
 #include "common/nan.wgsl"
 #include "debug/debug-common.wgsl"
 
-struct DnParams {          // 112 B
+struct DnParams {          // 128 B
   size: vec2u,             //  0  W, H (internal resolution)
   tiles: vec2u,            //  8  ⌈W/8⌉, ⌈H/8⌉
   flags: u32,              // 16  DNF_*
@@ -35,9 +35,11 @@ struct DnParams {          // 112 B
   taaGammaLight: f32,      // 96  resolve variance-clipping γ in the lighting window, static camera (0 = none; DN-16)
   taaGammaCam: f32,        // 100 resolve variance-clipping γ while the camera moves (0 = none; DN-16)
   pad6: u32, indirectStride: u32,
+  worldStep: u32, worldEpoch: u32, worldPad: vec2u,
 }
 @group(0) @binding(1) var<uniform> dn: DnParams;
 
+const DNF_WORLD_CACHE: u32 = 1024u;
 const DNF_CACHE_LIGHT: u32 = 512u; // Potato cache: lighting changed, shorten the response
 const DNF_RESET: u32 = 1u;         // full history reset this frame
 const DNF_LAMBDA: u32 = 2u;        // the change bits open the gate: a light or env change between t−1 and t

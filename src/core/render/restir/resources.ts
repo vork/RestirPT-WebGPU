@@ -6,6 +6,7 @@
 // M5 (restir-temporal-api.md §2.2, §2.6, §4.2; P0 by T-A): the temporal / refresh passes, G0 binding 8 (RsTemporal),
 // the ping-ponged ReSTIR G-buffer rsVbuf[2] / rsGeo[2] (parity g; `vbuf`/`geo`/`views.vbuf`/`views.geo` are the CUR
 // parity; `vbufPrev`/`geoPrev` the previous frame's) and the arena extension (tState, sfxOut).
+import { blueNoiseBytes } from './noise/blue-noise.ts';
 import type { Defines } from '../../gpu/wgsl-composer.ts';
 import { envDefines } from '../env-gpu.ts';
 import { LUT_RECORDS_BASE } from '../lights-gpu.ts';
@@ -75,7 +76,7 @@ export const RS_PASSES: Record<RsPassName, RsPassDef> = {
   },
   rs_initial: {
     file: 'passes/restir/initial.wgsl', entry: 'rs_initial', scene: true, debug: true,
-    g2: [RW, RW, TEX_U, TEX_F, { k: 'st', format: 'rgba16float' }],
+    g2: [RW, RW, TEX_U, TEX_F, { k: 'st', format: 'rgba16float' }, { k: 'st', format: 'rgba16float' }, { k: 'st', format: 'rgba16float' }, TEX_F],
     defines: { RS_RES_OUT_BINDING: b(0), RS_ARENA_BINDING: b(1), RS_ARENA_RW: true, RS_VBUF_BINDING: b(2), RS_GEO_BINDING: b(3) },
   },
   rs_initial_dump: {
@@ -256,8 +257,23 @@ export class RestirResources {
   readonly l1: GPUTexture;
   readonly shade: GPUTexture;
   readonly frameTex: GPUTexture;
+  private blueNoise?: GPUTexture;
+  private blueView?: GPUTextureView;
+  private noiseView(): GPUTextureView {
+    if (!this.blueView) {
+      this.blueNoise = this.device.createTexture({ label: 'potato-blue-noise', size: [64, 64], format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+      this.device.queue.writeTexture({ texture: this.blueNoise }, blueNoiseBytes(), { bytesPerRow: 256 }, [64, 64]);
+      this.blueView = this.blueNoise.createView();
+    }
+    return this.blueView;
+  }
   private giRaw?: GPUTexture;
   private giDummy?: GPUTexture;
+  private giSpecular?: GPUTexture;
+  private giGuide?: GPUTexture;
+  private giAuxViews = new Map<string, GPUTextureView>();
+  private giAuxDummies = new Map<string, GPUTexture>();
   private giViews = new Map<boolean, GPUTextureView>();
   private indirectView(enabled: boolean): GPUTextureView {
     let v = this.giViews.get(enabled);
@@ -270,6 +286,28 @@ export class RestirResources {
     return this[key] ??= this.device.createTexture({ label: `rs-${key}`,
       size: enabled ? [this.alloc.atlasW, this.alloc.atlasH] : [1, 1], format: 'rgba16float',
       usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
+  }
+  indirectAux(kind: 'specular' | 'guide', enabled = true): GPUTextureView {
+    const viewKey = `${kind}:${enabled}`;
+    const cached = this.giAuxViews.get(viewKey);
+    if (cached) return cached;
+    if (!enabled) {
+      let t = this.giAuxDummies.get(kind);
+      if (!t) {
+        t = this.device.createTexture({ label: `gi-dummy-${kind}`, size: [1, 1], format: 'rgba16float', usage: GPUTextureUsage.STORAGE_BINDING });
+        this.giAuxDummies.set(kind, t);
+      }
+      const view = t.createView(); this.giAuxViews.set(viewKey, view); return view;
+    }
+    const key = kind === 'specular' ? 'giSpecular' : 'giGuide';
+    const tex = this[key] ??= this.device.createTexture({ label: `rs-${key}`, size: [this.alloc.atlasW, this.alloc.atlasH],
+      format: 'rgba16float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
+    const view = tex.createView(); this.giAuxViews.set(viewKey, view); return view;
+  }
+  indirectAuxTexture(kind: 'specular' | 'guide'): GPUTexture {
+    const key = kind === 'specular' ? 'giSpecular' : 'giGuide';
+    if (!this[key]) this.indirectAux(kind);
+    return this[key]!;
   }
   readonly pairTex: GPUTexture;
   readonly maskTex: GPUTexture;
@@ -363,7 +401,7 @@ export class RestirResources {
       }
       case 'rs_vtrace': return this.group(name, name, [this.vsrcView(), arena]);
       // rs_initial writes res[inIdx] (= res[w], TD2; 0 with temporal off).
-      case 'rs_initial': return this.group(`${name}:${inIdx}${g}:gi${!!ext.indirectCache}`, name, [rin, arena, v.vbuf, v.geo, this.indirectView(!!ext.indirectCache)]);
+      case 'rs_initial': return this.group(`${name}:${inIdx}${g}:gi${!!ext.indirectCache}`, name, [rin, arena, v.vbuf, v.geo, this.indirectView(!!ext.indirectCache), this.indirectAux('specular', !!ext.indirectCache), this.indirectAux('guide', !!ext.indirectCache), this.noiseView()]);
       case 'rs_initial_dump':
         if (!this.candDump) throw new Error('rs_initial_dump: allocate with dump = true');
         return this.group(`${name}:${inIdx}${g}`, name, [rin, arena, v.vbuf, v.geo, { buffer: this.candDump }]);
@@ -425,8 +463,9 @@ export class RestirResources {
 
   destroy(): void {
     for (const x of [...this.res, this.arena, this.args, this.ensStats, this.ensPixel]) x.destroy();
-    this.candDump?.destroy();
-    this.giRaw?.destroy(); this.giDummy?.destroy();
+    this.candDump?.destroy(); this.blueNoise?.destroy();
+    for (const t of this.giAuxDummies.values()) t.destroy();
+    this.giRaw?.destroy(); this.giDummy?.destroy(); this.giSpecular?.destroy(); this.giGuide?.destroy();
     this.vsrc?.tex.destroy();
     for (const t of new Set([...this.vbufs, ...this.geos, this.l1, this.shade, this.frameTex, this.pairTex, this.maskTex])) t.destroy();
     this.groups.clear();

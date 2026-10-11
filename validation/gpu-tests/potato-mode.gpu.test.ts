@@ -107,3 +107,12 @@ it('cached indirect cannot enter or change the direct-light reservoir estimate',
   reference[0].forEach((v, i) => { if (i % 4 !== 3) { err += Math.abs(v - cached[0][i]); scale += Math.abs(v); } });
   expect(err / Math.max(scale, 1e-12)).toBeLessThan(1e-4);
 }, 180_000);
+
+it('screen-first and blue-noise indirect variants remain finite and preserve direct lighting', async () => {
+  const base: Float32Array[] = [], experiments: Float32Array[] = [];
+  await run(['potato'], { indirectCache: 2 }, base);
+  await run(['potato'], { indirectCache: 2, indirectScreenTrace: true, indirectBlueNoise: true }, experiments);
+  let err = 0, scale = 0;
+  base[0].forEach((v, i) => { if (i % 4 !== 3) { err += Math.abs(v - experiments[0][i]); scale += Math.abs(v); } });
+  expect(err / Math.max(scale, 1e-12)).toBeLessThan(1e-4);
+}, 180_000);

@@ -1,9 +1,10 @@
-// Potato-only, deliberately biased screen-space radiance cache. Sparse one-bounce estimates are demodulated,
+// Potato-only, deliberately biased diffuse cache with an optional world-space fallback. Sparse one-bounce estimates are demodulated,
 // reconstructed across a fixed 3x3 tile neighbourhood, and accumulated with validated reprojection. A black traced
 // sample (alpha 1) is data; an untraced pixel (alpha 0) is not. No multiplication by the sparse sampling interval.
 // Direct illumination stays in its own ReSTIR reservoir. This pass adds the indirect cache only after resampling.
 #include "denoise/dn-common.wgsl"
 #include "passes/gbuffer.wgsl"
+#include "denoise/dn-world-common.wgsl"
 #if GBUF_48
 @group(1) @binding(0) var<storage, read> gbuf: array<GBufStore>;
 #else
@@ -16,12 +17,22 @@
 @group(1) @binding(5) var cacheOut: texture_storage_2d<rgba16float, write>;
 @group(1) @binding(6) var combined: texture_storage_2d<rgba32float, write>;
 
+@group(1) @binding(7) var specular: texture_2d<f32>;
+@group(1) @binding(8) var diffuseGuide: texture_2d<f32>;
+@group(1) @binding(9) var<storage, read> worldCache: array<GiWorldEntry>;
+
+fn gi_diffuse_factor(p: vec2u, albedo: vec3f) -> vec3f {
+  // A 1x1 guide is the synthetic/legacy test path. Production always supplies the exact Lambert weight.
+  if (all(textureDimensions(diffuseGuide) == vec2u(1u))) { return dn_demod_factor(albedo); }
+  return textureLoad(diffuseGuide, p, 0).rgb;
+}
+
 @compute @workgroup_size(8, 8, 1)
 fn dn_indirect(@builtin(global_invocation_id) gid: vec3u) {
   let p = gid.xy;
   if (any(p >= dn.size)) { return; }
   let g = gbuf[p.y * dn.size.x + p.x];
-  let d = textureLoad(direct, p, 0).rgb;
+  let d = textureLoad(direct, p, 0).rgb + textureLoad(specular, p, 0).rgb;
   if ((g.flags & GB_HIT) == 0u) {
     textureStore(cacheOut, p, vec4f(0.0));
     textureStore(combined, p, vec4f(d, 1.0));
@@ -61,7 +72,7 @@ fn dn_indirect(@builtin(global_invocation_id) gid: vec3u) {
 #if DN_GI_BLUR
       c += sample.rgb * weight;
 #else
-      let irradiance = dn_fp16v(sample.rgb / dn_demod_factor(v.albedo));
+      let irradiance = dn_fp16v(sample.rgb / max(gi_diffuse_factor(vec2u(q), v.albedo), vec3f(0.02)));
       // Deliberately biased robust mean: stop rare bright paths becoming persistent spatial patches.
       // Equal-valued neighbourhoods retain their brightness; only uneven estimates are downweighted.
       weight /= 1.0 + 4.0 * luminance(irradiance);
@@ -119,5 +130,16 @@ fn dn_indirect(@builtin(global_invocation_id) gid: vec3u) {
   // Newly visible surfaces start with direct lighting, then reveal GI over 16 valid updates.
   // Smoothstep has zero slope at both ends; only rejected/reset history restarts the ramp.
   let reveal = smoothstep(1.0, 17.0, age);
-  textureStore(combined, p, vec4f(d + c * dn_demod_factor(g.albedo) * reveal, 1.0));
+  var indirect = c * reveal;
+#if DN_GI_BLUR
+  if (dn_flag(DNF_WORLD_CACHE) && reveal < 1.0) {
+    let pos = g.pos + frame.origin;
+    let entry = worldCache[gi_world_index(pos, g.ns)];
+    if (gi_world_valid(entry, pos, g.ns)) {
+      // Only the displayed fallback uses persistent lighting. Fresh local history remains independent.
+      indirect = mix(entry.irradiance, c, reveal);
+    }
+  }
+#endif
+  textureStore(combined, p, vec4f(d + indirect * gi_diffuse_factor(p, g.albedo), 1.0));
 }

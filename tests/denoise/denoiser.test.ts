@@ -75,7 +75,7 @@ describe('mirrors (WGSL ↔ layout.ts ↔ ReSTIR layout)', () => {
 });
 
 describe('uniforms and the à-trous plan', () => {
-  it('packDnParams matches DnParams (112 B)', () => {
+  it('packDnParams matches DnParams (128 B)', () => {
     const b = packDnParams({ width: 961, height: 539, flags: DNF.RESET | DNF.FW, settings: { ...DENOISER_DEFAULTS, alphaMin: 0.25 }, tsBase: 12345, resPlanes: 10 });
     expect(b.byteLength).toBe(DN_PARAMS_SIZE);
     const u = new Uint32Array(b), f = new Float32Array(b);
@@ -84,10 +84,10 @@ describe('uniforms and the à-trous plan', () => {
     expect([u[12], u[13]]).toEqual([12345, 10]);
     const b2 = packDnParams({ width: 8, height: 8, flags: 0, settings: { ...DENOISER_DEFAULTS, taaLightMax: 24, taaCamMax: 12, taaDilate: true, taaCubic: true }, tsBase: 0, resPlanes: 10 });
     expect([new Float32Array(b2)[21], new Float32Array(b2)[22], new Uint32Array(b2)[23]]).toEqual([24, 12, DNT.DILATE | DNT.CUBIC]);   // DN-16
-    const b3 = packDnParams({ width: 8, height: 8, flags: 0, settings: DENOISER_DEFAULTS, tsBase: 0, resPlanes: 1, indirectStride: 4, tsStride: 64 });
-    expect(Array.from(new Uint32Array(b3).slice(26))).toEqual([64, 4]);
+    const b3 = packDnParams({ width: 8, height: 8, flags: 0, settings: DENOISER_DEFAULTS, tsBase: 0, resPlanes: 1, indirectStride: 4, tsStride: 64, worldStep: 19, worldEpoch: 7 });
+    expect(Array.from(new Uint32Array(b3).slice(26))).toEqual([64, 4, 19, 7, 0, 0]);
     packDnParams({ width: 8, height: 8, flags: 0, settings: DENOISER_DEFAULTS, tsBase: 0, resPlanes: 1 }, b3);
-    expect(Array.from(new Uint32Array(b3).slice(26))).toEqual([0, 0]);
+    expect(Array.from(new Uint32Array(b3).slice(26))).toEqual([0, 0, 0, 0, 0, 0]);
     expect(dnTiles(960, 540)).toEqual([120, 68]);
   });
   it('atrousPlan: steps 2^i, feedback on the first, final on the last; N = 0 is one copy pass', () => {

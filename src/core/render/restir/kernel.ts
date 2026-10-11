@@ -232,7 +232,10 @@ export class RestirKernel {
 
   /** Composer defines shared by every ReSTIR pipeline (+ the pass's own). */
   defines(name: RsPassName, extra: Defines = {}): Defines {
-    return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug && (!this.perfFlagSet.RS_DEBUG_STRIP || this.debugActive), extra: { ...this.m6Defines(), RS_POTATO_CACHE: name === 'rs_initial' ? this.settings.indirectCache : 0, NM_PLANT: m7NmPlantDefine(this.settings, name), ...this.layoutDefines(), ...this.passPerfDefines(name), ...extra } });
+    return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug && (!this.perfFlagSet.RS_DEBUG_STRIP || this.debugActive), extra: { ...this.m6Defines(),
+      RS_POTATO_SCREEN: name === 'rs_initial' && !!this.settings.indirectCache && this.settings.indirectScreenTrace,
+      RS_POTATO_BLUE: name === 'rs_initial' && !!this.settings.indirectCache && this.settings.indirectBlueNoise,
+      RS_POTATO_CACHE: name === 'rs_initial' ? this.settings.indirectCache : 0, NM_PLANT: m7NmPlantDefine(this.settings, name), ...this.layoutDefines(), ...this.passPerfDefines(name), ...extra } });
   }
   /** perf2 WP-2d: RS_RIS_PREPASS changes rs_initial's text only while the pre-pass runs (risPrepassActive()); every other
    *  text (other passes, the dump, custom / test pipelines that call pathtree_run) composes without it. */
@@ -315,7 +318,7 @@ export class RestirKernel {
     const d = this.m6Defines();
     const pf = perfFlagsKey(this.perfFlagSet);   // perf2: '' without flags (the pre-perf2 key)
     const pre = this.perfFlagSet.RS_RIS_PREPASS ? (this.risPrepassActive() ? ':pre' : ':inline') : '';   // perf2 WP-2d
-    return `gi${this.settings.indirectCache}:${d.RS_RIS_NEE}${d.RS_MODE_B}${d.RS_DUAL_MV}${d.RS_DUPMAP}${d.RS_PLANT_T2}${d.RS_PLANT_SMOOTH_J}${m7NmPlantDefine(this.settings, 'rs_spatial_shift')}${pf ? `|${pf}${pre}` : ''}${this.perfFlagSet.RS_DEBUG_STRIP ? `:dbg${Number(this.debugActive)}` : ''}`;
+    return `gi${this.settings.indirectCache}:ss${+this.settings.indirectScreenTrace}:bn${+this.settings.indirectBlueNoise}:${d.RS_RIS_NEE}${d.RS_MODE_B}${d.RS_DUAL_MV}${d.RS_DUPMAP}${d.RS_PLANT_T2}${d.RS_PLANT_SMOOTH_J}${m7NmPlantDefine(this.settings, 'rs_spatial_shift')}${pf ? `|${pf}${pre}` : ''}${this.perfFlagSet.RS_DEBUG_STRIP ? `:dbg${Number(this.debugActive)}` : ''}`;
   }
 
   /** Compile (once) the pipeline of a standard pass; `extra` defines give test variants (their own cache key). */

@@ -1,0 +1,6681 @@
+{
+ "baseline": "803231e",
+ "performance": {
+  "tag": "final",
+  "chrome": "155.0.8059.40",
+  "reports": [
+   {
+    "ok": true,
+    "label": "540p-cache2-0",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "indirectWorldCache": true,
+     "indirectScreenTrace": false,
+     "indirectBlueNoise": false,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 2
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 15.484375,
+     "medianMs": 15.487499982118607,
+     "minMs": 15.462499976158142,
+     "maxMs": 15.525000005960464,
+     "blocks": [
+      15.462500005960464,
+      15.487499982118607,
+      15.475000023841858,
+      15.462499976158142,
+      15.475000023841858,
+      15.487499982118607,
+      15.5,
+      15.487500011920929,
+      15.474999994039536,
+      15.525000005960464,
+      15.474999994039536,
+      15.5
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-11T18:07:55.549Z",
+    "wallS": 5.3897999999523165,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 289.90000009536743
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 173.60000014305115
+     }
+    },
+    "latency": {
+     "meanMs": 15.712500095367432,
+     "medianMs": 15.700000047683716,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.7125000357627869,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.15000015497207642,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.1000000536441803,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.962500125169754,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 9.800000101327896,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.4125000834465027,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.2000000774860382,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.1750001609325409,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.4500001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.900000125169754,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.13750013709068298,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.45000001788139343,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.2750001847743988,
+      "count": 8
+     },
+     {
+      "name": "dn_world_select",
+      "meanMs": 0.23750004172325134,
+      "count": 8
+     },
+     {
+      "name": "dn_world_update",
+      "meanMs": 0.08750012516975403,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.33750009536743164,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.2000000774860382,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.4750000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.6875001192092896,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.10000008344650269,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 17.850001990795135,
+    "denoiser": {
+     "totalMs": 1.9011533281249997,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.31256039062499996
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.17855071874999998
+      },
+      {
+       "name": "dn_world_select",
+       "ms": 0.119115328125
+      },
+      {
+       "name": "dn_world_update",
+       "ms": 0.0063514374999999994
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.247950671875
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.08439585937500002
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.374471484375
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.537879828125
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.03742003125
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.823199927726082e-05,
+     "queues": [
+      {
+       "counter": 10,
+       "n": 10,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 42611,
+       "n": 42611,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "540p-cache0-1",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 0,
+     "indirectWorldCache": true,
+     "indirectScreenTrace": false,
+     "indirectBlueNoise": false,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 0
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 17.333333333333332,
+     "medianMs": 17.337500005960464,
+     "minMs": 17.30000001192093,
+     "maxMs": 17.375,
+     "blocks": [
+      17.337500005960464,
+      17.337500005960464,
+      17.3125,
+      17.337500005960464,
+      17.3125,
+      17.375,
+      17.362499982118607,
+      17.349999994039536,
+      17.3125,
+      17.337500005960464,
+      17.30000001192093,
+      17.32499998807907
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-11T18:08:00.995Z",
+    "wallS": 4.692900000095367,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 358
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 204.90000009536743
+     }
+    },
+    "latency": {
+     "meanMs": 17.65000009536743,
+     "medianMs": 17.700000047683716,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.725000113248825,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.1375001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.07500007748603821,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.9125000834465027,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 11.337500095367432,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.3875001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.21250015497207642,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.23750010132789612,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.712500125169754,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.8750000894069672,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.16250008344650269,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.37500008940696716,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.31250008940696716,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.46250009536743164,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.7375001013278961,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous2",
+      "meanMs": 0.5125001072883606,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.1375000774860382,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 19.312501698732376,
+    "denoiser": {
+     "totalMs": 1.8957627187500001,
+     "passes": [
+      {
+       "name": "dn_temporal",
+       "ms": 0.28230793750000005
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.211363296875
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.3916326875
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.55486290625
+      },
+      {
+       "name": "dn_atrous2",
+       "ms": 0.41905325
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.034915078125
+      }
+     ]
+    },
+    "counters": {
+     "fr": 0.001691096756707923,
+     "queues": [
+      {
+       "counter": 599,
+       "n": 599,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 64477,
+       "n": 64477,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "540p-cache2-2",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "indirectWorldCache": true,
+     "indirectScreenTrace": false,
+     "indirectBlueNoise": false,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 2
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 15.42812499900659,
+     "medianMs": 15.4375,
+     "minMs": 15.400000005960464,
+     "maxMs": 15.462499976158142,
+     "blocks": [
+      15.400000005960464,
+      15.462499976158142,
+      15.4375,
+      15.4375,
+      15.425000011920929,
+      15.4375,
+      15.412499994039536,
+      15.4375,
+      15.412499994039536,
+      15.425000011920929,
+      15.400000005960464,
+      15.449999988079071
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-11T18:08:05.647Z",
+    "wallS": 4.3817999999523165,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 370.7000000476837
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 219.09999990463257
+     }
+    },
+    "latency": {
+     "meanMs": 15.712500095367432,
+     "medianMs": 15.700000047683716,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.712500125169754,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.11250007152557373,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.12500005960464478,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.900000125169754,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 9.750000089406967,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.42500007152557373,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.18750017881393433,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.21250012516975403,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.4750001132488251,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.9250001013278961,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.1000000536441803,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.4500001072883606,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.27500009536743164,
+      "count": 8
+     },
+     {
+      "name": "dn_world_select",
+      "meanMs": 0.22500014305114746,
+      "count": 8
+     },
+     {
+      "name": "dn_world_update",
+      "meanMs": 0.08750003576278687,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.3875000774860382,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.20000016689300537,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.5500000715255737,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.6500000953674316,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.10000008344650269,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 17.850001990795135,
+    "denoiser": {
+     "totalMs": 1.8845526093750002,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.30288731249999995
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.177843640625
+      },
+      {
+       "name": "dn_world_select",
+       "ms": 0.118043109375
+      },
+      {
+       "name": "dn_world_update",
+       "ms": 0.0064497343749999984
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.24535045312500003
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.08382418750000001
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.37453400000000003
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.5362320625
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.03698571874999999
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.823199927726082e-05,
+     "queues": [
+      {
+       "counter": 10,
+       "n": 10,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 42611,
+       "n": 42611,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "720p-cache2-3",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 1280,
+    "height": 720,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "indirectWorldCache": true,
+     "indirectScreenTrace": false,
+     "indirectBlueNoise": false,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 2
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 26.895833333333332,
+     "medianMs": 26.887500017881393,
+     "minMs": 26.837500005960464,
+     "maxMs": 26.98750001192093,
+     "blocks": [
+      26.94999998807907,
+      26.98750001192093,
+      26.912499994039536,
+      26.887500017881393,
+      26.849999994039536,
+      26.924999982118607,
+      26.887500017881393,
+      26.88749998807907,
+      26.900000005960464,
+      26.837500005960464,
+      26.849999994039536,
+      26.875
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-11T18:08:10.040Z",
+    "wallS": 6.11,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 365.90000009536743
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 188.20000004768372
+     }
+    },
+    "latency": {
+     "meanMs": 27.13750010728836,
+     "medianMs": 27.100000143051147,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 2.7000001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.16250008344650269,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.12500011920928955,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 1.3875000774860382,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 17.037500113248825,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.6625001132488251,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.18750017881393433,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.21250009536743164,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.7250000834465027,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 1.5125001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.12500005960464478,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.6250000596046448,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.4250001311302185,
+      "count": 8
+     },
+     {
+      "name": "dn_world_select",
+      "meanMs": 0.2625001072883606,
+      "count": 8
+     },
+     {
+      "name": "dn_world_update",
+      "meanMs": 0.07500007748603821,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.575000137090683,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.2625001072883606,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.7625000774860382,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 1.1250000894069672,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.1375001072883606,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 29.087502032518387,
+    "denoiser": {
+     "totalMs": 3.3348430468749997,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.5072430468749999
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.306157515625
+      },
+      {
+       "name": "dn_world_select",
+       "ms": 0.209565890625
+      },
+      {
+       "name": "dn_world_update",
+       "ms": 0.008417734375
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.44408187500000007
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.16917437499999996
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.6641265624999999
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.9498736249999999
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.07360234375
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.896233737647563e-05,
+     "queues": [
+      {
+       "counter": 20,
+       "n": 20,
+       "capacity": 921600,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 87954,
+       "n": 87954,
+       "capacity": 921600,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "720p-cache0-4",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 1280,
+    "height": 720,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 0,
+     "indirectWorldCache": true,
+     "indirectScreenTrace": false,
+     "indirectBlueNoise": false,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 0
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 30.26875000198682,
+     "medianMs": 30.26249998807907,
+     "minMs": 30.23750001192093,
+     "maxMs": 30.3125,
+     "blocks": [
+      30.25,
+      30.23750001192093,
+      30.30000001192093,
+      30.25,
+      30.26249998807907,
+      30.30000001192093,
+      30.3125,
+      30.25,
+      30.299999982118607,
+      30.25,
+      30.25,
+      30.262500017881393
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-11T18:08:16.199Z",
+    "wallS": 6.6011000001430515,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 354.39999985694885
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 192.59999990463257
+     }
+    },
+    "latency": {
+     "meanMs": 30.537500083446503,
+     "medianMs": 30.50000023841858,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 2.7250001430511475,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.2500000596046448,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.08750015497207642,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 1.4125000834465027,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 19.85000005364418,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.6875001192092896,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.11250019073486328,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.3500001132488251,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 1.1875000894069672,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 1.5125000774860382,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.15000006556510925,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.637500137090683,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.4875001013278961,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.8375000655651093,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 1.1000000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous2",
+      "meanMs": 0.9375001192092896,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.1375000774860382,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 32.46250173449516,
+    "denoiser": {
+     "totalMs": 3.333526703125,
+     "passes": [
+      {
+       "name": "dn_temporal",
+       "ms": 0.468112
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.369314109375
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.6858052812500001
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.9822029843750001
+      },
+      {
+       "name": "dn_atrous2",
+       "ms": 0.7528270156250001
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.07369228124999999
+      }
+     ]
+    },
+    "counters": {
+     "fr": 0.001789872449866194,
+     "queues": [
+      {
+       "counter": 1236,
+       "n": 1236,
+       "capacity": 921600,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 130451,
+       "n": 130451,
+       "capacity": 921600,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "720p-cache2-5",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 1280,
+    "height": 720,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "indirectWorldCache": true,
+     "indirectScreenTrace": false,
+     "indirectBlueNoise": false,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 2
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 26.90625,
+     "medianMs": 26.912499994039536,
+     "minMs": 26.837500005960464,
+     "maxMs": 26.974999994039536,
+     "blocks": [
+      26.912499994039536,
+      26.900000005960464,
+      26.912499994039536,
+      26.974999994039536,
+      26.9375,
+      26.9375,
+      26.92500001192093,
+      26.88749998807907,
+      26.900000005960464,
+      26.837500005960464,
+      26.875,
+      26.875
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-11T18:08:22.769Z",
+    "wallS": 6.107900000095367,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 373.7000000476837
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 191.39999985694885
+     }
+    },
+    "latency": {
+     "meanMs": 27.21250009536743,
+     "medianMs": 27.200000286102295,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 2.750000149011612,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.16250011324882507,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.1375000774860382,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 1.412500113248825,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 17.02500009536743,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.6375001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.18750011920928955,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.2375001311302185,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.7375001311302185,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 1.5000000596046448,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.12500008940696716,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.6250001192092896,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.42500007152557373,
+      "count": 8
+     },
+     {
+      "name": "dn_world_select",
+      "meanMs": 0.31250008940696716,
+      "count": 8
+     },
+     {
+      "name": "dn_world_update",
+      "meanMs": 0.10000014305114746,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.5500000715255737,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.2875000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.7625000476837158,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 1.0875001549720764,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.17500004172325134,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 29.23750200867653,
+    "denoiser": {
+     "totalMs": 3.320419421875,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.5053263125
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.30460275000000003
+      },
+      {
+       "name": "dn_world_select",
+       "ms": 0.207862140625
+      },
+      {
+       "name": "dn_world_update",
+       "ms": 0.008320765625
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.439999796875
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.1672545625
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.6605400781249999
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.94993803125
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.07388431249999998
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.896233737647563e-05,
+     "queues": [
+      {
+       "counter": 20,
+       "n": 20,
+       "capacity": 921600,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 87954,
+       "n": 87954,
+       "capacity": 921600,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "1080p-cache2-6",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 1920,
+    "height": 1080,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "indirectWorldCache": true,
+     "indirectScreenTrace": false,
+     "indirectBlueNoise": false,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 2
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 59.33750000099341,
+     "medianMs": 59.337500005960464,
+     "minMs": 59.25,
+     "maxMs": 59.4375,
+     "blocks": [
+      59.36249998211861,
+      59.275000005960464,
+      59.287499994039536,
+      59.30000001192093,
+      59.337500005960464,
+      59.3125,
+      59.337500005960464,
+      59.4375,
+      59.42499998211861,
+      59.35000002384186,
+      59.375,
+      59.25
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-11T18:08:28.890Z",
+    "wallS": 11.189100000143052,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 383
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 207.79999995231628
+     }
+    },
+    "latency": {
+     "meanMs": 59.71250009536743,
+     "medianMs": 59.700000047683716,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 5.650000125169754,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.2875000536441803,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.1125001311302185,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 2.775000035762787,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 37.86250013113022,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 1.3000001311302185,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.1750001311302185,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.21250009536743164,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 1.5000000894069672,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 3.250000149011612,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.2250000536441803,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 1.2250000536441803,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.7750002145767212,
+      "count": 8
+     },
+     {
+      "name": "dn_world_select",
+      "meanMs": 0.5125000476837158,
+      "count": 8
+     },
+     {
+      "name": "dn_world_update",
+      "meanMs": 0.15000009536743164,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 1.1000000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.4875001311302185,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 1.6625000834465027,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 2.237500101327896,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.31250008940696716,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 61.81250202655792,
+    "denoiser": {
+     "totalMs": 7.314336859375,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 1.09548575
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.648701
+      },
+      {
+       "name": "dn_world_select",
+       "ms": 0.42021304687499994
+      },
+      {
+       "name": "dn_world_update",
+       "ms": 0.010699781249999998
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.9834869531250001
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.390295484375
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 1.4687223749999998
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 2.11049315625
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.18338
+      }
+     ]
+    },
+    "counters": {
+     "fr": 1.8140918656120747e-05,
+     "queues": [
+      {
+       "counter": 31,
+       "n": 31,
+       "capacity": 2073600,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 229982,
+       "n": 229982,
+       "capacity": 2073600,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "1080p-cache2-7",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 1920,
+    "height": 1080,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "indirectWorldCache": true,
+     "indirectScreenTrace": false,
+     "indirectBlueNoise": false,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 2
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 59.28958333283663,
+     "medianMs": 59.287499994039536,
+     "minMs": 59.212500005960464,
+     "maxMs": 59.412499994039536,
+     "blocks": [
+      59.25,
+      59.212500005960464,
+      59.30000001192093,
+      59.287499994039536,
+      59.23749998211861,
+      59.275000005960464,
+      59.412499994039536,
+      59.28750002384186,
+      59.26249998807907,
+      59.287499994039536,
+      59.349999994039536,
+      59.3125
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-11T18:08:40.106Z",
+    "wallS": 11.092900000095367,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 371.09999990463257
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 184.30000019073486
+     }
+    },
+    "latency": {
+     "meanMs": 59.600000113248825,
+     "medianMs": 59.60000014305115,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 5.687500029802322,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.325000137090683,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.05000010132789612,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 2.762500077486038,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 37.78750014305115,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 1.3125000596046448,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.13750022649765015,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.2500000596046448,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 1.5125000476837158,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 3.2375001311302185,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.22500011324882507,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 1.2250000536441803,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.7875001728534698,
+      "count": 8
+     },
+     {
+      "name": "dn_world_select",
+      "meanMs": 0.5500000715255737,
+      "count": 8
+     },
+     {
+      "name": "dn_world_update",
+      "meanMs": 0.12500005960464478,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 1.1125001013278961,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.525000125169754,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 1.5875000953674316,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 2.225000113248825,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.27500006556510925,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 61.70000198483467,
+    "denoiser": {
+     "totalMs": 7.331156390624999,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 1.096831578125
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.650980265625
+      },
+      {
+       "name": "dn_world_select",
+       "ms": 0.4233399218749999
+      },
+      {
+       "name": "dn_world_update",
+       "ms": 0.010691859374999998
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.9874646875
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.39149659375
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 1.4698664062499998
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 2.113114859375
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.18434495312500002
+      }
+     ]
+    },
+    "counters": {
+     "fr": 1.8140918656120747e-05,
+     "queues": [
+      {
+       "counter": 31,
+       "n": 31,
+       "capacity": 2073600,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 229982,
+       "n": 229982,
+       "capacity": 2073600,
+       "overflow": 0
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "ablation": {
+  "tag": "ablation",
+  "chrome": "155.0.8059.40",
+  "reports": [
+   {
+    "ok": true,
+    "label": "540p-base",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "indirectWorldCache": true,
+     "indirectScreenTrace": false,
+     "indirectBlueNoise": false,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 2,
+      "indirectScreenTrace": false,
+      "indirectBlueNoise": false,
+      "indirectWorldCache": true
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 15.476041667163372,
+     "medianMs": 15.462500005960464,
+     "minMs": 15.4375,
+     "maxMs": 15.550000011920929,
+     "blocks": [
+      15.462500005960464,
+      15.462499976158142,
+      15.4375,
+      15.462500005960464,
+      15.462500005960464,
+      15.550000011920929,
+      15.537499994039536,
+      15.487499982118607,
+      15.450000017881393,
+      15.4375,
+      15.474999994039536,
+      15.487500011920929
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-11T14:45:54.044Z",
+    "wallS": 5.416900000095367,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 289.2000000476837
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 170
+     }
+    },
+    "latency": {
+     "meanMs": 15.712500095367432,
+     "medianMs": 15.700000286102295,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.7000000476837158,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.12500008940696716,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.08750009536743164,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.9250001311302185,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 9.78750005364418,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.4250001013278961,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.1875002384185791,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.1625000536441803,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.43750014901161194,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.8625000417232513,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.15000006556510925,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.41250014305114746,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.3250000476837158,
+      "count": 8
+     },
+     {
+      "name": "dn_world_select",
+      "meanMs": 0.21250015497207642,
+      "count": 8
+     },
+     {
+      "name": "dn_world_update",
+      "meanMs": 0.10000002384185791,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.35000014305114746,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.2000000774860382,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.4875001311302185,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.7000000774860382,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.1375000774860382,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 17.77500194311142,
+    "denoiser": {
+     "totalMs": 1.89359671875,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.30565148437499995
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.17864629687499997
+      },
+      {
+       "name": "dn_world_select",
+       "ms": 0.11930812499999999
+      },
+      {
+       "name": "dn_world_update",
+       "ms": 0.00631109375
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.24703465624999998
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.08343675
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.37433884375
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.5379200156249999
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.038518359375
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.823199927726082e-05,
+     "queues": [
+      {
+       "counter": 10,
+       "n": 10,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 42611,
+       "n": 42611,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "540p-screen",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "indirectWorldCache": true,
+     "indirectScreenTrace": true,
+     "indirectBlueNoise": false,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 2,
+      "indirectScreenTrace": true,
+      "indirectBlueNoise": false,
+      "indirectWorldCache": true
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 16.474999999006588,
+     "medianMs": 16.474999994039536,
+     "minMs": 16.44999998807907,
+     "maxMs": 16.549999982118607,
+     "blocks": [
+      16.462500005960464,
+      16.474999994039536,
+      16.474999994039536,
+      16.462500005960464,
+      16.44999998807907,
+      16.5,
+      16.474999994039536,
+      16.462500005960464,
+      16.450000017881393,
+      16.44999998807907,
+      16.48750001192093,
+      16.549999982118607
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-11T14:45:59.468Z",
+    "wallS": 5.327199999809265,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 363
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 206.29999995231628
+     }
+    },
+    "latency": {
+     "meanMs": 16.82500010728836,
+     "medianMs": 16.800000190734863,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.7000000774860382,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.12500011920928955,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.10000008344650269,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.9000000953674316,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 10.775000095367432,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.43750008940696716,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.15000015497207642,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.2000001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.4500001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.8875001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.15000009536743164,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.37500014901161194,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.2874999940395355,
+      "count": 8
+     },
+     {
+      "name": "dn_world_select",
+      "meanMs": 0.15000012516975403,
+      "count": 8
+     },
+     {
+      "name": "dn_world_update",
+      "meanMs": 0.15000009536743164,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.33750009536743164,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.1750001311302185,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.5250000953674316,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.6125000417232513,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.10000011324882507,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 18.587501972913742,
+    "denoiser": {
+     "totalMs": 1.89034159375,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.30302215625
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.17929735937500002
+      },
+      {
+       "name": "dn_world_select",
+       "ms": 0.11736540624999998
+      },
+      {
+       "name": "dn_world_update",
+       "ms": 0.00633078125
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.24614146875
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.08417646875000002
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.374056828125
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.53885634375
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.038621078125
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.823199927726082e-05,
+     "queues": [
+      {
+       "counter": 10,
+       "n": 10,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 42611,
+       "n": 42611,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "540p-blue",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "indirectWorldCache": true,
+     "indirectScreenTrace": false,
+     "indirectBlueNoise": true,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 2,
+      "indirectScreenTrace": false,
+      "indirectBlueNoise": true,
+      "indirectWorldCache": true
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 15.58958333482345,
+     "medianMs": 15.599999994039536,
+     "minMs": 15.5625,
+     "maxMs": 15.625,
+     "blocks": [
+      15.5625,
+      15.599999994039536,
+      15.625,
+      15.612500011920929,
+      15.599999994039536,
+      15.625,
+      15.599999994039536,
+      15.575000017881393,
+      15.574999988079071,
+      15.5625,
+      15.5625,
+      15.575000017881393
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-11T14:46:04.804Z",
+    "wallS": 5.202200000047684,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 375.09999990463257
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 215.79999995231628
+     }
+    },
+    "latency": {
+     "meanMs": 15.900000095367432,
+     "medianMs": 15.900000095367432,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.6875000596046448,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.1375001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.08750009536743164,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.9500000774860382,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 9.87500011920929,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.4375000596046448,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.1875002086162567,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.17500010132789612,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.4125001132488251,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.9000000953674316,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.1375000774860382,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.4500001072883606,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.2875001132488251,
+      "count": 8
+     },
+     {
+      "name": "dn_world_select",
+      "meanMs": 0.2000000774860382,
+      "count": 8
+     },
+     {
+      "name": "dn_world_update",
+      "meanMs": 0.06250008940696716,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.4125001132488251,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.17500004172325134,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.5000001192092896,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.700000137090683,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.11250004172325134,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 17.88750195503235,
+    "denoiser": {
+     "totalMs": 1.8901508437499999,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.3034915625
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.17828112499999998
+      },
+      {
+       "name": "dn_world_select",
+       "ms": 0.117223390625
+      },
+      {
+       "name": "dn_world_update",
+       "ms": 0.006320843749999999
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.24752748437500002
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.08457093750000001
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.374263828125
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.5380288906249999
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.038163359375
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.823199927726082e-05,
+     "queues": [
+      {
+       "counter": 10,
+       "n": 10,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 42611,
+       "n": 42611,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "540p-both",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "indirectWorldCache": true,
+     "indirectScreenTrace": true,
+     "indirectBlueNoise": true,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 2,
+      "indirectScreenTrace": true,
+      "indirectBlueNoise": true,
+      "indirectWorldCache": true
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 16.65416666616996,
+     "medianMs": 16.650000005960464,
+     "minMs": 16.625,
+     "maxMs": 16.69999998807907,
+     "blocks": [
+      16.63749998807907,
+      16.637500017881393,
+      16.63749998807907,
+      16.625,
+      16.650000005960464,
+      16.69999998807907,
+      16.662500023841858,
+      16.63749998807907,
+      16.662499994039536,
+      16.67500001192093,
+      16.650000005960464,
+      16.674999982118607
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-11T14:46:10.016Z",
+    "wallS": 5.3955,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 366.5
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 185
+     }
+    },
+    "latency": {
+     "meanMs": 16.90000009536743,
+     "medianMs": 16.90000009536743,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.725000113248825,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.12500005960464478,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.10000008344650269,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.950000137090683,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 10.950000047683716,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.4125001132488251,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.23750022053718567,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.18750005960464478,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.4125001132488251,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.8875001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.1250000298023224,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.43750014901161194,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.3125,
+      "count": 8
+     },
+     {
+      "name": "dn_world_select",
+      "meanMs": 0.20000025629997253,
+      "count": 8
+     },
+     {
+      "name": "dn_world_update",
+      "meanMs": 0.07499995827674866,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.37500011920928955,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.20000013709068298,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.48750007152557373,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.6875001490116119,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.11250007152557373,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 19.0000019967556,
+    "denoiser": {
+     "totalMs": 1.88927125,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.302596890625
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.17904346875
+      },
+      {
+       "name": "dn_world_select",
+       "ms": 0.11934646875
+      },
+      {
+       "name": "dn_world_update",
+       "ms": 0.006392437499999999
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.246570375
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.083723328125
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.374343265625
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.53721578125
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.037765078125
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.823199927726082e-05,
+     "queues": [
+      {
+       "counter": 10,
+       "n": 10,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 42611,
+       "n": 42611,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   },
+   {
+    "ok": true,
+    "label": "540p-world-off",
+    "errors": [],
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "width": 960,
+    "height": 540,
+    "triangles": 262266,
+    "lights": 1,
+    "env": true,
+    "settings": {
+     "indirectCache": 2,
+     "indirectWorldCache": false,
+     "indirectScreenTrace": false,
+     "indirectBlueNoise": false,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "rendererOptions": {
+     "watertight": false,
+     "renderMode": "restir",
+     "restirMode": "potato",
+     "temporal": true,
+     "accumulate": false,
+     "lightMode": "B",
+     "bvhKind": "auto",
+     "maxBounces": 3,
+     "restirFeatures": {
+      "indirectCache": 2,
+      "indirectScreenTrace": false,
+      "indirectBlueNoise": false,
+      "indirectWorldCache": false
+     }
+    },
+    "perfFlags": "BVH2_PRIV_STACK,BVH_ALPHA_BIT,BVH_CONST_LOOPS,CW_EXP_OR,CW_SCENE_STACK,CW_TRI_BUDGET=2,CW_WG_STACK,DN_COLOUR_EARLY,DN_GRAD_SKIP,DN_ZGRAD_TEX,GBUF_48,MAT_VARIANTS,PRIM_SKIP_BEAUTY,RS_DEBUG_STRIP,RS_DENSE_SLOTS,RS_DUPMAP_S64,RS_LAST_ANYHIT,RS_MIS_TRIM,RS_NEE_SITE,RS_PRIMARY_EXT,RS_REFRESH_VIS,RS_RIS_HOIST,RS_RIS_PREPASS,RS_SKIP_DISPLAY,RS_TSEL_FOLD,RS_TSTATE_SOA,RS_VIS_MERGE",
+    "frame": {
+     "meanMs": 15.330208333830038,
+     "medianMs": 15.325000017881393,
+     "minMs": 15.299999982118607,
+     "maxMs": 15.375,
+     "blocks": [
+      15.325000017881393,
+      15.299999982118607,
+      15.3125,
+      15.337500005960464,
+      15.337500005960464,
+      15.375,
+      15.362499982118607,
+      15.325000017881393,
+      15.3125,
+      15.324999988079071,
+      15.3125,
+      15.337500005960464
+     ],
+     "frames": 96
+    },
+    "adapter": {
+     "vendor": "apple",
+     "architecture": "metal-3",
+     "description": "Apple M5 Pro",
+     "features": [
+      "bgra8unorm-storage",
+      "core-features-and-limits",
+      "float32-filterable",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-compression-bc",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+     ],
+     "wgslLanguageFeatures": [
+      "buffer_view",
+      "immediate_address_space",
+      "linear_indexing",
+      "packed_4x8_integer_dot_product",
+      "pointer_composite_access",
+      "readonly_and_readwrite_storage_textures",
+      "subgroup_id",
+      "subgroup_uniformity",
+      "swizzle_assignment",
+      "texture_and_sampler_let",
+      "texture_formats_tier1",
+      "uniform_buffer_standard_layout",
+      "unrestricted_pointer_parameters"
+     ],
+     "limits": {
+      "maxTextureDimension1D": 16384,
+      "maxTextureDimension2D": 16384,
+      "maxTextureDimension3D": 2048,
+      "maxTextureArrayLayers": 2048,
+      "maxBindGroups": 4,
+      "maxBindingsPerBindGroup": 1000,
+      "maxDynamicUniformBuffersPerPipelineLayout": 10,
+      "maxDynamicStorageBuffersPerPipelineLayout": 8,
+      "maxSampledTexturesPerShaderStage": 48,
+      "maxSamplersPerShaderStage": 16,
+      "maxStorageBuffersPerShaderStage": 10,
+      "maxStorageTexturesPerShaderStage": 8,
+      "maxUniformBuffersPerShaderStage": 12,
+      "maxUniformBufferBindingSize": 65536,
+      "maxStorageBufferBindingSize": 4294967292,
+      "maxBufferSize": 4294967292,
+      "maxComputeWorkgroupStorageSize": 32768,
+      "maxComputeInvocationsPerWorkgroup": 1024,
+      "maxComputeWorkgroupSizeX": 1024,
+      "maxComputeWorkgroupSizeY": 1024,
+      "maxComputeWorkgroupSizeZ": 64,
+      "maxComputeWorkgroupsPerDimension": 65535,
+      "maxImmediateSize": 64
+     },
+     "belowProfile": {}
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "createdAt": "2026-10-11T14:46:15.416Z",
+    "wallS": 4.293799999952316,
+    "bvh": {
+     "kind": "cwbvh",
+     "binary": {
+      "triCount": 262266,
+      "skippedNonFinite": 0,
+      "nodeCount": 136969,
+      "leafCount": 136970,
+      "maxDepth": 27,
+      "maxLeafSize": 3,
+      "avgLeafSize": 1.9147696575892532,
+      "sahCost": 78.99951138417408,
+      "forcedSplits": 0,
+      "buildMs": 353.7000000476837
+     },
+     "wide": {
+      "nodeCount": 25166,
+      "triRefs": 262266,
+      "maxDepth": 12,
+      "avgChildren": 6.263252006675674,
+      "leafSlots": 132456,
+      "sahCost": 14.752212099295182,
+      "buildMs": 194.60000014305115
+     }
+    },
+    "latency": {
+     "meanMs": 15.537500113248825,
+     "medianMs": 15.600000143051147,
+     "rtMs": 0.09999990463256836,
+     "frames": 8
+    },
+    "passes": [
+     {
+      "name": "primary",
+      "meanMs": 1.6750000715255737,
+      "count": 8
+     },
+     {
+      "name": "rs_primary_ext",
+      "meanMs": 0.20000013709068298,
+      "count": 8
+     },
+     {
+      "name": "rs_light_tiles",
+      "meanMs": 0.10000008344650269,
+      "count": 8
+     },
+     {
+      "name": "rs_ris_nee",
+      "meanMs": 0.9000000953674316,
+      "count": 8
+     },
+     {
+      "name": "rs_initial",
+      "meanMs": 9.737500101327896,
+      "count": 8
+     },
+     {
+      "name": "rs_pair_accept",
+      "meanMs": 0.40000009536743164,
+      "count": 8
+     },
+     {
+      "name": "rs_args",
+      "meanMs": 0.16250014305114746,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_replay",
+      "meanMs": 0.2000001072883606,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_shift",
+      "meanMs": 0.46250009536743164,
+      "count": 8
+     },
+     {
+      "name": "rs_spatial_resample",
+      "meanMs": 0.837500125169754,
+      "count": 8
+     },
+     {
+      "name": "rs_finalize_frame",
+      "meanMs": 0.07500007748603821,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect",
+      "meanMs": 0.40000009536743164,
+      "count": 8
+     },
+     {
+      "name": "dn_indirect_blur",
+      "meanMs": 0.2625001072883606,
+      "count": 8
+     },
+     {
+      "name": "dn_temporal",
+      "meanMs": 0.3500001132488251,
+      "count": 8
+     },
+     {
+      "name": "dn_variance",
+      "meanMs": 0.18750005960464478,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous0",
+      "meanMs": 0.4375000596046448,
+      "count": 8
+     },
+     {
+      "name": "dn_atrous1",
+      "meanMs": 0.6250001490116119,
+      "count": 8
+     },
+     {
+      "name": "dn_resolve",
+      "meanMs": 0.13750004768371582,
+      "count": 8
+     }
+    ],
+    "passTotalMs": 17.150001764297485,
+    "denoiser": {
+     "totalMs": 1.7721786875,
+     "passes": [
+      {
+       "name": "dn_indirect",
+       "ms": 0.30319149999999995
+      },
+      {
+       "name": "dn_indirect_blur",
+       "ms": 0.176957390625
+      },
+      {
+       "name": "dn_temporal",
+       "ms": 0.259024140625
+      },
+      {
+       "name": "dn_variance",
+       "ms": 0.08291224999999999
+      },
+      {
+       "name": "dn_atrous0",
+       "ms": 0.37360100000000007
+      },
+      {
+       "name": "dn_atrous1",
+       "ms": 0.5363570625
+      },
+      {
+       "name": "dn_resolve",
+       "ms": 0.038235734375
+      }
+     ]
+    },
+    "counters": {
+     "fr": 2.823199927726082e-05,
+     "queues": [
+      {
+       "counter": 10,
+       "n": 10,
+       "capacity": 518400,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 0,
+       "n": 0,
+       "capacity": 0,
+       "overflow": 0
+      },
+      {
+       "counter": 42611,
+       "n": 42611,
+       "capacity": 518400,
+       "overflow": 0
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "worldReview": [
+  {
+   "scene": "sponza",
+   "motion": "static",
+   "linearMeanRatio": 1.0416476644884989,
+   "displayMAD": 0.008946530417686173,
+   "displayFrameChange": [
+    0.0002476313608277437,
+    0.0002504915324589227
+   ]
+  },
+  {
+   "scene": "sponza",
+   "motion": "pan",
+   "linearMeanRatio": 1.0362089322679198,
+   "displayMAD": 0.007519201520112012,
+   "displayFrameChange": [
+    0.06330039477984857,
+    0.06464031280353899
+   ]
+  },
+  {
+   "scene": "sponza",
+   "motion": "light",
+   "linearMeanRatio": 1.0348157930804665,
+   "displayMAD": 0.006758794130520728,
+   "displayFrameChange": [
+    0.001219890620141723,
+    0.0013059173939714694
+   ]
+  },
+  {
+   "scene": "cornell",
+   "motion": "static",
+   "linearMeanRatio": 1.0258187336447282,
+   "displayMAD": 0.01277207508985098,
+   "displayFrameChange": [
+    0.0004823614424329159,
+    0.0005195551148293006
+   ]
+  },
+  {
+   "scene": "cornell",
+   "motion": "pan",
+   "linearMeanRatio": 1.0834225214980502,
+   "displayMAD": 0.020033628084214005,
+   "displayFrameChange": [
+    0.1586488535574207,
+    0.17969388353100355
+   ]
+  },
+  {
+   "scene": "cornell",
+   "motion": "light",
+   "linearMeanRatio": 0.9954352558506185,
+   "displayMAD": 0.0008301163567489378,
+   "displayFrameChange": [
+    0.0232968559007916,
+    0.023329762510007172
+   ]
+  },
+  {
+   "scene": "glossy",
+   "motion": "static",
+   "linearMeanRatio": 1.0529486414901972,
+   "displayMAD": 0.02321188352160579,
+   "displayFrameChange": [
+    0.0004436006981742526,
+    0.00034886734783427163
+   ]
+  },
+  {
+   "scene": "glossy",
+   "motion": "pan",
+   "linearMeanRatio": 1.0887494310179673,
+   "displayMAD": 0.03258298165615124,
+   "displayFrameChange": [
+    0.1672393644278628,
+    0.15824126758899767
+   ]
+  },
+  {
+   "scene": "glossy",
+   "motion": "light",
+   "linearMeanRatio": 1.0294338648969643,
+   "displayMAD": 0.010095124571968272,
+   "displayFrameChange": [
+    0.01859923471710312,
+    0.01933756416261737
+   ]
+  },
+  {
+   "scene": "glass",
+   "motion": "static",
+   "linearMeanRatio": 1.0493430240126629,
+   "displayMAD": 0.019671786704213937,
+   "displayFrameChange": [
+    0.00024455752014803094,
+    0.0002029887295949662
+   ]
+  },
+  {
+   "scene": "glass",
+   "motion": "pan",
+   "linearMeanRatio": 1.0436041696572171,
+   "displayMAD": 0.01663996010772941,
+   "displayFrameChange": [
+    0.06462244054674765,
+    0.059517271808138636
+   ]
+  },
+  {
+   "scene": "glass",
+   "motion": "light",
+   "linearMeanRatio": 1.0369257491512711,
+   "displayMAD": 0.015572693228362845,
+   "displayFrameChange": [
+    0.0030553096525332236,
+    0.003096578412752507
+   ]
+  },
+  {
+   "scene": "foliage",
+   "motion": "static",
+   "linearMeanRatio": 1.0007884182553766,
+   "displayMAD": 0.0003754323024816998,
+   "displayFrameChange": [
+    4.366383740437933e-05,
+    4.038544466838132e-05
+   ]
+  },
+  {
+   "scene": "foliage",
+   "motion": "pan",
+   "linearMeanRatio": 1.0004804624817856,
+   "displayMAD": 0.00027422963488830026,
+   "displayFrameChange": [
+    0.03627169044131174,
+    0.0362753722027267
+   ]
+  },
+  {
+   "scene": "foliage",
+   "motion": "light",
+   "linearMeanRatio": 0.9998890107813541,
+   "displayMAD": 0.00022644522294649235,
+   "displayFrameChange": [
+    0.0063861409399795675,
+    0.006395823944777084
+   ]
+  }
+ ],
+ "variants": [
+  {
+   "variant": "blue",
+   "scene": "sponza",
+   "motion": "static",
+   "linearMeanRatio": 0.9999969238580069,
+   "displayMAD": 0.00019829899223034882,
+   "displayFrameChange": [
+    0.0002504915324589227,
+    0.00025052595268628753
+   ]
+  },
+  {
+   "variant": "blue",
+   "scene": "sponza",
+   "motion": "pan",
+   "linearMeanRatio": 0.9999868962684533,
+   "displayMAD": 0.00018089553010182507,
+   "displayFrameChange": [
+    0.06464031280353899,
+    0.0646338457477826
+   ]
+  },
+  {
+   "variant": "blue",
+   "scene": "sponza",
+   "motion": "light",
+   "linearMeanRatio": 0.999996688036751,
+   "displayMAD": 0.00027883745327443317,
+   "displayFrameChange": [
+    0.0013059173939714694,
+    0.001306062069547067
+   ]
+  },
+  {
+   "variant": "blue",
+   "scene": "cornell",
+   "motion": "static",
+   "linearMeanRatio": 1.000019828949039,
+   "displayMAD": 0.00011109484780248,
+   "displayFrameChange": [
+    0.0005195551148293006,
+    0.0005193824091044352
+   ]
+  },
+  {
+   "variant": "blue",
+   "scene": "cornell",
+   "motion": "pan",
+   "linearMeanRatio": 1.0000194113617362,
+   "displayMAD": 4.5409831794122667e-05,
+   "displayFrameChange": [
+    0.17969388353100355,
+    0.1796924355080859
+   ]
+  },
+  {
+   "variant": "blue",
+   "scene": "cornell",
+   "motion": "light",
+   "linearMeanRatio": 0.9999952275877262,
+   "displayMAD": 7.013823215601408e-05,
+   "displayFrameChange": [
+    0.023329762510007172,
+    0.023329821535505665
+   ]
+  },
+  {
+   "variant": "blue",
+   "scene": "glossy",
+   "motion": "static",
+   "linearMeanRatio": 0.999916509180852,
+   "displayMAD": 0.0004655575607117608,
+   "displayFrameChange": [
+    0.00034886734783427163,
+    0.00034902852089887344
+   ]
+  },
+  {
+   "variant": "blue",
+   "scene": "glossy",
+   "motion": "pan",
+   "linearMeanRatio": 1.0000010666589105,
+   "displayMAD": 0.0006336688400778757,
+   "displayFrameChange": [
+    0.15824126758899767,
+    0.15827217611991443
+   ]
+  },
+  {
+   "variant": "blue",
+   "scene": "glossy",
+   "motion": "light",
+   "linearMeanRatio": 0.9999021299937516,
+   "displayMAD": 0.0007588512984204014,
+   "displayFrameChange": [
+    0.01933756416261737,
+    0.019335019914235137
+   ]
+  },
+  {
+   "variant": "blue",
+   "scene": "glass",
+   "motion": "static",
+   "linearMeanRatio": 0.9999467789745318,
+   "displayMAD": 0.00032543888637161716,
+   "displayFrameChange": [
+    0.0002029887295949662,
+    0.0002026740534862413
+   ]
+  },
+  {
+   "variant": "blue",
+   "scene": "glass",
+   "motion": "pan",
+   "linearMeanRatio": 1.0001202610467914,
+   "displayMAD": 0.00036751098376432595,
+   "displayFrameChange": [
+    0.059517271808138636,
+    0.059512773824015035
+   ]
+  },
+  {
+   "variant": "blue",
+   "scene": "glass",
+   "motion": "light",
+   "linearMeanRatio": 1.0000087938088966,
+   "displayMAD": 0.0005086591110138169,
+   "displayFrameChange": [
+    0.003096578412752507,
+    0.003094672569809891
+   ]
+  },
+  {
+   "variant": "blue",
+   "scene": "foliage",
+   "motion": "static",
+   "linearMeanRatio": 0.9999961910674356,
+   "displayMAD": 1.73333461890791e-05,
+   "displayFrameChange": [
+    4.038544466838132e-05,
+    4.0457714861661554e-05
+   ]
+  },
+  {
+   "variant": "blue",
+   "scene": "foliage",
+   "motion": "pan",
+   "linearMeanRatio": 1.0000063220640587,
+   "displayMAD": 2.2404127692772308e-05,
+   "displayFrameChange": [
+    0.0362753722027267,
+    0.03627534924236125
+   ]
+  },
+  {
+   "variant": "blue",
+   "scene": "foliage",
+   "motion": "light",
+   "linearMeanRatio": 0.9999970955180407,
+   "displayMAD": 4.419701045904491e-05,
+   "displayFrameChange": [
+    0.006395823944777084,
+    0.006395477156724407
+   ]
+  },
+  {
+   "variant": "screen",
+   "scene": "sponza",
+   "motion": "static",
+   "linearMeanRatio": 1.0000000022247013,
+   "displayMAD": 3.660008878791754e-10,
+   "displayFrameChange": [
+    0.0002504915324589227,
+    0.00025049153325758103
+   ]
+  },
+  {
+   "variant": "screen",
+   "scene": "sponza",
+   "motion": "pan",
+   "linearMeanRatio": 1.0000000000543563,
+   "displayMAD": 2.0146784454336825e-10,
+   "displayFrameChange": [
+    0.06464031280353899,
+    0.06464031279274124
+   ]
+  },
+  {
+   "variant": "screen",
+   "scene": "sponza",
+   "motion": "light",
+   "linearMeanRatio": 1.0000000004236547,
+   "displayMAD": 1.9775323885333124e-10,
+   "displayFrameChange": [
+    0.0013059173939714694,
+    0.0013059173933484675
+   ]
+  }
+ ],
+ "lightStep": {
+  "lightingChangedFrames": [
+   0,
+   32,
+   56
+  ],
+  "linearMean": [
+   0.40944343038396863,
+   0.4088812234841748,
+   0.4079426586860637,
+   0.4064530197298624,
+   0.40550732227303415,
+   0.40483698943299035,
+   0.4043220522680672,
+   0.40400148909776323,
+   0.4039508497174711,
+   0.40408475243066516,
+   0.4043415428767107,
+   0.40461149542504327,
+   0.4049200065458168,
+   0.4052934009760755,
+   0.4056811751301181,
+   0.4061148824449594,
+   0.4065319748700616,
+   0.40695657083727826,
+   0.40738656778400756,
+   0.40782731638925646,
+   0.4082425456143608,
+   0.40865561027549296,
+   0.4090511740564236,
+   0.4094505742198222,
+   0.40981045287865414,
+   0.41016492127375986,
+   0.4105069991980093,
+   0.410831192837466,
+   0.4111468127553601,
+   0.41146267497875,
+   0.41177213339298785,
+   0.41205851384020425,
+   0.4124954550370732,
+   0.41120953226002976,
+   0.40932935290318406,
+   0.40716380794053214,
+   0.40515454816549745,
+   0.4030608638128954,
+   0.40094046420381874,
+   0.39875951945953253,
+   0.3976799858286957,
+   0.39660347708838045,
+   0.3955310655795025,
+   0.39445793409510027,
+   0.3934141721079447,
+   0.39240850899925483,
+   0.3914241287322569,
+   0.39047330352700893,
+   0.3895473280502261,
+   0.38864156933694244,
+   0.3877602508730966,
+   0.38692537292766094,
+   0.38611263808536567,
+   0.3853240868467858,
+   0.38457211533185226,
+   0.3838497309512305,
+   0.35537115847152645,
+   0.34154012096527414,
+   0.3289030719733456,
+   0.31692158432206013,
+   0.305651702455763,
+   0.29510290082996554,
+   0.28527419163007145,
+   0.2761032634371876,
+   0.27394778984002244,
+   0.2716553431318391,
+   0.2692860828641412,
+   0.26686687357830935,
+   0.26442719855475455,
+   0.26198331658338453,
+   0.2595527940467255,
+   0.25714219982680914,
+   0.2547770534776423,
+   0.2524661340362761,
+   0.25019539356888804,
+   0.24797983434396423,
+   0.24581994687238287,
+   0.24371604543006598,
+   0.24167408605129323,
+   0.23968481175792386
+  ],
+  "meta": {
+   "kind": "denoise-eval",
+   "mode": "flip",
+   "run": "potato4-light-step",
+   "package": "/validation/scenes/ixs_e_half_256/",
+   "packageSha256": "dfef24916dc2afe8a1a4c0f8b2c47f1fbbc93d08d610e193c85dc924fe766228",
+   "seed": 1,
+   "width": 256,
+   "height": 256,
+   "frames": 80,
+   "pkgFrames": [
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20
+   ],
+   "evalFrames": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73,
+    74,
+    75,
+    76,
+    77,
+    78,
+    79
+   ],
+   "rawSignal": "direct lighting plus emission; indirect cache appears only in dn",
+   "renderer": {
+    "renderMode": "restir",
+    "restirMode": "potato",
+    "settings": {
+     "indirectCache": 2,
+     "indirectWorldCache": true,
+     "indirectScreenTrace": false,
+     "indirectBlueNoise": false,
+     "maxBounces": 1,
+     "rr": true,
+     "rrMinBounces": 1,
+     "trees": 1,
+     "rounds": 1,
+     "slots": 1,
+     "diskRadius": 30,
+     "criteria": "enhanced",
+     "tau": 0.0002,
+     "alphaMin": 0.2,
+     "temporal": false,
+     "cCap": 5,
+     "temporalMis": "contribution",
+     "temporalCheck": "none",
+     "refresh": "exact",
+     "boostSlots": 0,
+     "pairing": "gauss",
+     "pairSigma": 16,
+     "risNee": true,
+     "risM": 4,
+     "dualMv": false,
+     "dupmap": false
+    },
+    "textureMode": "validation",
+    "intersector": "woop-watertight",
+    "jitter": "iid",
+    "accumulate": false,
+    "lightMode": "B",
+    "bvhKind": "bvh2",
+    "overrides": {
+     "lightMode": "B",
+     "restirMode": "potato"
+    },
+    "restir": {
+     "indirectCache": 2
+    },
+    "perfFlags": []
+   },
+   "denoiser": {
+    "on": true,
+    "settings": {
+     "iterations": 2,
+     "alphaMin": 0.08,
+     "lambda0": 0.03,
+     "lambda1": 0.15,
+     "sigmaZ": 1,
+     "sigmaN": 32,
+     "sigmaL": 12,
+     "sigmaA": 0.2,
+     "varCorr": 3,
+     "resolve": true,
+     "nMaxT": 1024,
+     "guide": false,
+     "invRadius": 3,
+     "lumMinN": 4,
+     "lumPre": 0,
+     "nMax": 64,
+     "gradientOnCamera": false,
+     "taaLightMax": 16,
+     "taaCamMax": 12,
+     "taaDilate": true,
+     "taaCubic": true,
+     "taaGammaLight": 4,
+     "taaGammaCam": 1.5,
+     "atrousTile": true
+    },
+    "perFrame": [
+     {
+      "flags": 1549,
+      "lambdaGate": false,
+      "reset": true
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1548,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1548,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     },
+     {
+      "flags": 1036,
+      "lambdaGate": false,
+      "reset": false
+     }
+    ]
+   },
+   "jitter": "iid",
+   "accumulate": false,
+   "vbuf": {
+    "primIdMismatch": 0,
+    "maxBaryDiff": 0
+   },
+   "finalizeCounters": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "captureVbuffer": false,
+   "adapterInfo": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "description": ""
+   },
+   "chromeVersion": "155.0.8059.40",
+   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "files": [
+    "dn_f0.pfm",
+    "raw_f0.pfm",
+    "dn_f1.pfm",
+    "raw_f1.pfm",
+    "dn_f2.pfm",
+    "raw_f2.pfm",
+    "dn_f3.pfm",
+    "raw_f3.pfm",
+    "dn_f4.pfm",
+    "raw_f4.pfm",
+    "dn_f5.pfm",
+    "raw_f5.pfm",
+    "dn_f6.pfm",
+    "raw_f6.pfm",
+    "dn_f7.pfm",
+    "raw_f7.pfm",
+    "dn_f8.pfm",
+    "raw_f8.pfm",
+    "dn_f9.pfm",
+    "raw_f9.pfm",
+    "dn_f10.pfm",
+    "raw_f10.pfm",
+    "dn_f11.pfm",
+    "raw_f11.pfm",
+    "dn_f12.pfm",
+    "raw_f12.pfm",
+    "dn_f13.pfm",
+    "raw_f13.pfm",
+    "dn_f14.pfm",
+    "raw_f14.pfm",
+    "dn_f15.pfm",
+    "raw_f15.pfm",
+    "dn_f16.pfm",
+    "raw_f16.pfm",
+    "dn_f17.pfm",
+    "raw_f17.pfm",
+    "dn_f18.pfm",
+    "raw_f18.pfm",
+    "dn_f19.pfm",
+    "raw_f19.pfm",
+    "dn_f20.pfm",
+    "raw_f20.pfm",
+    "dn_f21.pfm",
+    "raw_f21.pfm",
+    "dn_f22.pfm",
+    "raw_f22.pfm",
+    "dn_f23.pfm",
+    "raw_f23.pfm",
+    "dn_f24.pfm",
+    "raw_f24.pfm",
+    "dn_f25.pfm",
+    "raw_f25.pfm",
+    "dn_f26.pfm",
+    "raw_f26.pfm",
+    "dn_f27.pfm",
+    "raw_f27.pfm",
+    "dn_f28.pfm",
+    "raw_f28.pfm",
+    "dn_f29.pfm",
+    "raw_f29.pfm",
+    "dn_f30.pfm",
+    "raw_f30.pfm",
+    "dn_f31.pfm",
+    "raw_f31.pfm",
+    "dn_f32.pfm",
+    "raw_f32.pfm",
+    "dn_f33.pfm",
+    "raw_f33.pfm",
+    "dn_f34.pfm",
+    "raw_f34.pfm",
+    "dn_f35.pfm",
+    "raw_f35.pfm",
+    "dn_f36.pfm",
+    "raw_f36.pfm",
+    "dn_f37.pfm",
+    "raw_f37.pfm",
+    "dn_f38.pfm",
+    "raw_f38.pfm",
+    "dn_f39.pfm",
+    "raw_f39.pfm",
+    "dn_f40.pfm",
+    "raw_f40.pfm",
+    "dn_f41.pfm",
+    "raw_f41.pfm",
+    "dn_f42.pfm",
+    "raw_f42.pfm",
+    "dn_f43.pfm",
+    "raw_f43.pfm",
+    "dn_f44.pfm",
+    "raw_f44.pfm",
+    "dn_f45.pfm",
+    "raw_f45.pfm",
+    "dn_f46.pfm",
+    "raw_f46.pfm",
+    "dn_f47.pfm",
+    "raw_f47.pfm",
+    "dn_f48.pfm",
+    "raw_f48.pfm",
+    "dn_f49.pfm",
+    "raw_f49.pfm",
+    "dn_f50.pfm",
+    "raw_f50.pfm",
+    "dn_f51.pfm",
+    "raw_f51.pfm",
+    "dn_f52.pfm",
+    "raw_f52.pfm",
+    "dn_f53.pfm",
+    "raw_f53.pfm",
+    "dn_f54.pfm",
+    "raw_f54.pfm",
+    "dn_f55.pfm",
+    "raw_f55.pfm",
+    "dn_f56.pfm",
+    "raw_f56.pfm",
+    "dn_f57.pfm",
+    "raw_f57.pfm",
+    "dn_f58.pfm",
+    "raw_f58.pfm",
+    "dn_f59.pfm",
+    "raw_f59.pfm",
+    "dn_f60.pfm",
+    "raw_f60.pfm",
+    "dn_f61.pfm",
+    "raw_f61.pfm",
+    "dn_f62.pfm",
+    "raw_f62.pfm",
+    "dn_f63.pfm",
+    "raw_f63.pfm",
+    "dn_f64.pfm",
+    "raw_f64.pfm",
+    "dn_f65.pfm",
+    "raw_f65.pfm",
+    "dn_f66.pfm",
+    "raw_f66.pfm",
+    "dn_f67.pfm",
+    "raw_f67.pfm",
+    "dn_f68.pfm",
+    "raw_f68.pfm",
+    "dn_f69.pfm",
+    "raw_f69.pfm",
+    "dn_f70.pfm",
+    "raw_f70.pfm",
+    "dn_f71.pfm",
+    "raw_f71.pfm",
+    "dn_f72.pfm",
+    "raw_f72.pfm",
+    "dn_f73.pfm",
+    "raw_f73.pfm",
+    "dn_f74.pfm",
+    "raw_f74.pfm",
+    "dn_f75.pfm",
+    "raw_f75.pfm",
+    "dn_f76.pfm",
+    "raw_f76.pfm",
+    "dn_f77.pfm",
+    "raw_f77.pfm",
+    "dn_f78.pfm",
+    "raw_f78.pfm",
+    "dn_f79.pfm",
+    "raw_f79.pfm"
+   ],
+   "ok": true,
+   "errors": [],
+   "timings": {
+    "totalMs": 5072.600000143051
+   },
+   "createdAt": "2026-10-11T18:08:56.923Z"
+  }
+ },
+ "blueNoiseLowFrequencyPowerRatio": [
+  0.00011874652117718734,
+  0.0001116987401506729,
+  0.0001031941010800127,
+  0.00010504969531064694
+ ],
+ "manifests": {
+  "quick-visual.json": [
+   [
+    "--package",
+    "validation/scenes/cornell_i_512",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-world-cornell-static-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--restir",
+    "{\"indirectCache\":2}"
+   ],
+   [
+    "--package",
+    "validation/scenes/cornell_i_512",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-world-cornell-pan-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--pan-osc",
+    "0.5",
+    "--restir",
+    "{\"indirectCache\":2}"
+   ],
+   [
+    "--package",
+    "validation/scenes/cornell_i_512",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-world-cornell-light-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--light-osc",
+    "0:1",
+    "--restir",
+    "{\"indirectCache\":2}"
+   ],
+   [
+    "--package",
+    "validation/out/m7/scenes/m7_nm_smooth_256",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-world-glossy-static-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--restir",
+    "{\"indirectCache\":2}"
+   ],
+   [
+    "--package",
+    "validation/out/m7/scenes/m7_nm_smooth_256",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-world-glossy-pan-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--pan-osc",
+    "0.5",
+    "--restir",
+    "{\"indirectCache\":2}"
+   ],
+   [
+    "--package",
+    "validation/out/m7/scenes/m7_nm_smooth_256",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-world-glossy-light-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--light-osc",
+    "0:1",
+    "--restir",
+    "{\"indirectCache\":2}"
+   ],
+   [
+    "--package",
+    "validation/out/m6/scenes/m6_crossings_B_256",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-world-glass-static-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--restir",
+    "{\"indirectCache\":2}"
+   ],
+   [
+    "--package",
+    "validation/out/m6/scenes/m6_crossings_B_256",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-world-glass-pan-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--pan-osc",
+    "0.5",
+    "--restir",
+    "{\"indirectCache\":2}"
+   ],
+   [
+    "--package",
+    "validation/out/m6/scenes/m6_crossings_B_256",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-world-glass-light-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--light-osc",
+    "0:1",
+    "--restir",
+    "{\"indirectCache\":2}"
+   ],
+   [
+    "--package",
+    "validation/scenes/m5s_alpha_foliage",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-world-foliage-static-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--restir",
+    "{\"indirectCache\":2}"
+   ],
+   [
+    "--package",
+    "validation/scenes/m5s_alpha_foliage",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-world-foliage-pan-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--pan-osc",
+    "0.5",
+    "--restir",
+    "{\"indirectCache\":2}"
+   ],
+   [
+    "--package",
+    "validation/scenes/m5s_alpha_foliage",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-world-foliage-light-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--light-osc",
+    "0:1",
+    "--restir",
+    "{\"indirectCache\":2}"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-world-sponza-static-fade-s1",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-world-sponza-pan-fade-s1",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--pan-osc",
+    ".5"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-world-sponza-light-fade-s1",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--light-osc",
+    "0:1"
+   ]
+  ],
+  "variant-visual.json": [
+   [
+    "--package",
+    "validation/scenes/cornell_i_512",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-blue-cornell-static-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectBlueNoise\": true}"
+   ],
+   [
+    "--package",
+    "validation/scenes/cornell_i_512",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-blue-cornell-pan-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--pan-osc",
+    "0.5",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectBlueNoise\": true}"
+   ],
+   [
+    "--package",
+    "validation/scenes/cornell_i_512",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-blue-cornell-light-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--light-osc",
+    "0:1",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectBlueNoise\": true}"
+   ],
+   [
+    "--package",
+    "validation/out/m7/scenes/m7_nm_smooth_256",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-blue-glossy-static-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectBlueNoise\": true}"
+   ],
+   [
+    "--package",
+    "validation/out/m7/scenes/m7_nm_smooth_256",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-blue-glossy-pan-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--pan-osc",
+    "0.5",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectBlueNoise\": true}"
+   ],
+   [
+    "--package",
+    "validation/out/m7/scenes/m7_nm_smooth_256",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-blue-glossy-light-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--light-osc",
+    "0:1",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectBlueNoise\": true}"
+   ],
+   [
+    "--package",
+    "validation/out/m6/scenes/m6_crossings_B_256",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-blue-glass-static-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectBlueNoise\": true}"
+   ],
+   [
+    "--package",
+    "validation/out/m6/scenes/m6_crossings_B_256",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-blue-glass-pan-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--pan-osc",
+    "0.5",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectBlueNoise\": true}"
+   ],
+   [
+    "--package",
+    "validation/out/m6/scenes/m6_crossings_B_256",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-blue-glass-light-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--light-osc",
+    "0:1",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectBlueNoise\": true}"
+   ],
+   [
+    "--package",
+    "validation/scenes/m5s_alpha_foliage",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-blue-foliage-static-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectBlueNoise\": true}"
+   ],
+   [
+    "--package",
+    "validation/scenes/m5s_alpha_foliage",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-blue-foliage-pan-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--pan-osc",
+    "0.5",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectBlueNoise\": true}"
+   ],
+   [
+    "--package",
+    "validation/scenes/m5s_alpha_foliage",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-blue-foliage-light-fade-s1",
+    "--width",
+    "384",
+    "--height",
+    "384",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"restirMode\": \"potato\"}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--light-osc",
+    "0:1",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectBlueNoise\": true}"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-blue-sponza-static-fade-s1",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectBlueNoise\": true}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-blue-sponza-pan-fade-s1",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectBlueNoise\": true}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--pan-osc",
+    ".5"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-blue-sponza-light-fade-s1",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectBlueNoise\": true}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--light-osc",
+    "0:1"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-screen-sponza-static-fade-s1",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectScreenTrace\": true}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-screen-sponza-pan-fade-s1",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectScreenTrace\": true}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--pan-osc",
+    ".5"
+   ],
+   [
+    "--package",
+    "validation/out/wpq-sponza_perf_540",
+    "--mode",
+    "flip",
+    "--frames",
+    "64",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63",
+    "--seed",
+    "1",
+    "--run",
+    "potato4-screen-sponza-light-fade-s1",
+    "--width",
+    "960",
+    "--height",
+    "540",
+    "--renderer",
+    "{\"lightMode\": \"B\", \"bvhKind\": \"auto\", \"watertight\": false, \"restirMode\": \"potato\"}",
+    "--restir",
+    "{\"indirectCache\": 2, \"indirectScreenTrace\": true}",
+    "--dn-json",
+    "{}",
+    "--osc-knots",
+    "0,16,32,48,63",
+    "--light-osc",
+    "0:1"
+   ]
+  ],
+  "final-perf-jobs.json": [
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 960,
+    "height": 540,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 2
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "540p-cache2-0",
+    "denoiser": {}
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 960,
+    "height": 540,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 0
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "540p-cache0-1",
+    "denoiser": {}
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 960,
+    "height": 540,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 2
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "540p-cache2-2",
+    "denoiser": {}
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 1280,
+    "height": 720,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 2
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "720p-cache2-3",
+    "denoiser": {}
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 1280,
+    "height": 720,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 0
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "720p-cache0-4",
+    "denoiser": {}
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 1280,
+    "height": 720,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 2
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "720p-cache2-5",
+    "denoiser": {}
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 1920,
+    "height": 1080,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 2
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "1080p-cache2-6",
+    "denoiser": {}
+   },
+   {
+    "scene": "/validation/assets/downloaded/sponza/Sponza.gltf",
+    "env": "/validation/assets/downloaded/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+    "width": 1920,
+    "height": 1080,
+    "frames": 96,
+    "warmup": 32,
+    "passFrames": 8,
+    "latencyFrames": 8,
+    "restir": {
+     "indirectCache": 2
+    },
+    "renderer": {
+     "maxBounces": 3,
+     "restirMode": "potato"
+    },
+    "label": "1080p-cache2-7",
+    "denoiser": {}
+   }
+  ],
+  "light-step.json": [
+   [
+    "--package",
+    "validation/scenes/ixs_e_half_256",
+    "--mode",
+    "flip",
+    "--pkg-frames",
+    "13x32,14x24,20x24",
+    "--eval-frames",
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79",
+    "--run",
+    "potato4-light-step",
+    "--renderer",
+    "{\"lightMode\":\"B\",\"restirMode\":\"potato\"}",
+    "--restir",
+    "{\"indirectCache\":2}"
+   ]
+  ]
+ },
+ "notes": [
+  "Single-seed 64-frame visual screens, not a four-seed statistical win.",
+  "World cache is a bounded surface-oriented RGB diffuse cache populated from visible mature estimates; it does not trace offscreen probes or know unseen surfaces.",
+  "Blue noise only changes secondary BSDF direction coordinates. Integer whole-tile translation preserves spatial blue noise; it is not STBN.",
+  "Screen lookup retains an any-hit BVH visibility check and closest-hit fallback. Slower in Sponza; off by default.",
+  "Performance is GPU renderer/denoiser time; excludes presentation, UI and browser scheduling.",
+  "Specular is per-pixel, outside the diffuse cache and fade; still passes through the existing final denoiser.",
+  "Moving analytic lights and camera motion tested. Mesh deformation is not supported by this app path and is not claimed validated."
+ ]
+}

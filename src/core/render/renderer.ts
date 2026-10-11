@@ -99,12 +99,12 @@ export const INTERACTIVE_APP_DEFAULTS: Readonly<Partial<RestirSettings>> = Objec
  *  reprojects colour history. Optional cached indirect updates one pixel per 2×2 or 4×4 tile; off by default after cross-scene quality screening.
  *  See perf2-plan.md §9–10 for measurements and the quality tradeoffs. */
 export const POTATO_APP_DEFAULTS: Readonly<Partial<RestirSettings>> = Object.freeze({
-  indirectCache: 0, slots: 1, boostSlots: 0, risM: 4, rrMinBounces: 1, dupmap: false, dualMv: false,
+  indirectCache: 0, indirectWorldCache: true, slots: 1, boostSlots: 0, risM: 4, rrMinBounces: 1, dupmap: false, dualMv: false,
 });
 
 /** M6 feature toggles of the app (restir-m6-api.md MD13) and the perf2 D1 RR start: per-session overrides of the mode's
  *  settings (preset ⊕ INTERACTIVE_APP_DEFAULTS; empty = those). */
-export type RestirFeatureOverrides = Partial<Pick<RestirSettings, 'pairing' | 'risNee' | 'dualMv' | 'dupmap' | 'rrMinBounces' | 'indirectCache'>>;
+export type RestirFeatureOverrides = Partial<Pick<RestirSettings, 'pairing' | 'risNee' | 'dualMv' | 'dupmap' | 'rrMinBounces' | 'indirectCache' | 'indirectWorldCache' | 'indirectScreenTrace' | 'indirectBlueNoise'>>;
 
 /** M8 (m8-perf.md §3): 'auto' picks the CWBVH from this many triangles on. */
 export const CWBVH_AUTO_MIN_TRIS = 65536;
@@ -880,6 +880,9 @@ export class Renderer {
       if (k.settings.indirectCache) {
         f.indirect = res.indirectTexture();
         f.indirectStride = k.settings.indirectCache;
+        f.indirectWorldCache = k.settings.indirectWorldCache;
+        f.indirectSpecular = res.indirectAuxTexture('specular');
+        f.indirectGuide = res.indirectAuxTexture('guide');
         f.indirectLightingChanged = this.indirectLightingChanged;
         if (frame.advanced) this.indirectLightingChanged = false;
       }

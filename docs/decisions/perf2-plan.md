@@ -1465,3 +1465,75 @@ and final timing reports. Reproduce the review with `validation/.venv/bin/python
 Local output: `validation/out/potato3/fade-review.html` and `sponza-pan-fade.mp4` (left: stabilized unfaded cache; right:
 fade enabled). Videos are slowed to 15 FPS for inspection. This is a one-seed visual screen, not a new four-seed
 stability claim; §13's statistics describe the preceding robust-filter change.
+
+## 15. Persistent diffuse lighting, screen lookup and blue noise
+
+User priority: stable, pleasant biased lighting; retain fixed resolution. Cached Potato now separates diffuse and
+view-dependent indirect paths. The primary sampled lobe chooses the signal: diffuse remains sparse; reflection /
+transmission continuations run per pixel and bypass the diffuse reconstruction and reveal. They still use the final
+image denoiser. Diffuse demodulation uses the actual Lambert closure weight, so metals do not receive cached diffuse
+lighting. Direct ReSTIR candidates remain independent of the indirect estimator.
+
+The persistent fallback is a **surface-oriented RGB diffuse cache**, not a full GIBS implementation or a probe volume.
+It has 32,768 direct-mapped entries, with complete cell tags, normal and plane-distance checks, floating-origin-aware
+positions and a 120-update expiry. Mature visible estimates populate it; deterministic integer selection avoids
+floating-point atomic races. Separate read/write tables make held frames and timing replays deterministic. Memory is
+4 MiB for the tables plus 128 KiB for selection, alongside the two new full-resolution RGBA16F reflection/guide textures.
+On disocclusion, matching world lighting fills the display while fresh screen history builds. It does not feed itself
+back through the screen filter. Previously unseen surfaces still fade from direct lighting. Hash collisions reduce
+coverage rather than accepting a different tagged surface.
+
+**Dynamic lights:** any actual analytic-light or environment change advances a lighting epoch, immediately rejecting
+older world entries. Visible diffuse history keeps the existing faster lighting response and bright-sample limiter;
+it can still lag. New world entries inherit that filtered estimate, so this does not promise instantaneous indirect
+relighting. A power change and subsequent light removal set the change flag exactly at frames 32 and 56 in the 80-frame
+recovery capture. Camera movement retains world entries. Scene/history resets clear them. Animated mesh deformation
+is not supported by this application path; no dynamic-mesh validation is claimed. A production surfel/probe updater
+would budget fresh rays across affected regions, shorten history after significant changes, and revalidate moved
+geometry. See [GIBS](https://www.ea.com/seed/amp/news/siggraph21-global-illumination-surfels) and
+[RTXGI controls](https://github.com/NVIDIAGameWorks/RTXGI-DDGI/blob/main/rtxgi-sdk/include/rtxgi/ddgi/DDGIVolume.h).
+
+Two experiments are exposed under **ReSTIR → Potato cached lighting**, both off by default:
+
+- **Screen lookup:** eight projected probes into the current visibility buffer, actual triangle/alpha intersection,
+  an any-hit BVH check against intervening geometry, then ordinary closest-hit fallback when uncertain. This is a
+  candidate-lookup shortcut, not screen-radiance reuse or a hierarchical depth marcher. Sponza costs about **16.47 ms**
+  instead of **15.48 ms** at 540p. It is not promoted as an optimization; measured display differences are negligible.
+- **Blue-noise GI:** a bundled 64×64 RGBA CC0 texture by Christoph Peters changes secondary BSDF direction coordinates.
+  Primary/direct sampling is untouched. Whole-tile translations preserve spatial correlation, and diffuse samples
+  address the sparse tile grid. Per-pixel reflection paths address the full pixel grid. This is **spatial blue noise,
+  not STBN**. It costs about **15.59 ms** in the same ablation. One-seed cross-scene results do not establish a general
+  stability win, so it remains optional. Source, pinned revision, hashes and license are in `restir/noise/README.md`.
+  Background: [Moments in Graphics](https://momentsingraphics.de/BlueNoise.html).
+
+Final M5 Pro / Chrome 155 GPU renderer-and-denoiser timings, 96 measured frames after 32 warmup frames, two cache runs
+at each resolution (presentation, UI and browser scheduling excluded):
+
+| Fixed internal resolution | Cached diffuse + world fallback | GPU FPS | Per-pixel Potato |
+|---|---:|---:|---:|
+| 960×540 | 15.46 ms | 64.7 | 17.33 ms |
+| 1280×720 | 26.90 ms | 37.2 | 30.27 ms |
+| 1920×1080 | 59.31 ms | 16.9 | not rerun |
+
+The preceding mixed diffuse/specular cache was faster (14.21 / 24.72 ms at 540p / 720p). This change buys separation
+and persistent diffuse fallback, not a net speedup over that cache. The world passes alone cost about 0.13 ms at 540p;
+the total world-on/off ablation differs by about 0.15 ms. Most added cost comes from per-pixel specular continuations.
+FSR remains the fixed-resolution presentation default; no dynamic resolution is introduced.
+
+Visual screening: 15 matched scene/motion captures against 803231e (Sponza, Cornell, glossy, glass, foliage; static,
+camera motion and moving analytic light), 15 blue-noise ablations, three screen-lookup Sponza ablations and one light-step
+sequence. All images are finite. In this one-seed screen, static glossy/glass frame changes fall roughly 21% / 17%,
+while Sponza is roughly unchanged (+1%) and Cornell increases 8%. Full-image mean brightness is about 3–5% higher in
+most static scenes; foliage is essentially unchanged. Motion frame differences include changing geometry and are not
+a motion-compensated flicker metric. These mixed results do not establish a general stability improvement.
+
+Validation: production build; 603 CPU tests (7 skipped); all 16 denoiser/Potato GPU tests; all 10 shipped GPU identity
+cases. Added checks cover diffuse remodulation, specular bypass of the fade, screen/blue shader variants, world reuse,
+lighting invalidation, opposite normals, nearby parallel surfaces, expiry, reset and held/timing repeatability.
+Ordinary shader-text goldens remain unchanged. Per-pixel Potato remains the default; persistent diffuse is enabled
+when the user selects cached Potato. Interactive ReSTIR remains the startup mode.
+
+Evidence: [`potato-world-results.json`](potato-world-results.json), including manifests, all timing reports, source
+texture spectral checks and light-step metadata. Review scripts: `validation/tools/potato-world-review.py` and
+`potato-world-variants.py`. Local comparisons: `validation/out/potato4/world-review.html`, `sponza-world-pan.mp4` and
+`glossy-world-pan.mp4`; videos are slowed to 15 FPS for inspection, not performance recordings.
