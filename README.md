@@ -191,10 +191,10 @@ presentation/UI. It can introduce mottling during motion, lighting lag and blurr
 indirect remains the default**. Disabling denoising restores per-pixel sampling. Interactive starts by default.
 See [measurements and cross-scene limitations](docs/decisions/perf2-plan.md#10-potato-direct-restir-and-cached-indirect-lighting).
 
-For fixed-resolution upscaling, choose **Render → Output → upscale filter → FSR 1 (EASU + RCAS)**.
-Sharpening is adjustable; bicubic remains the default. FSR runs after denoising/tone mapping and before overlays,
+Fixed-resolution upscaling defaults to **FSR 1 (EASU + RCAS)** with sharpening at 0.5.
+Change the filter or sharpening in **Render → Output**; bicubic is still available. FSR runs after denoising/tone mapping and before overlays,
 without enabling dynamic resolution. Native-size rendering bypasses it. The measured presentation cost at 1080p
-output is about 0.8–1.0 ms on this M5 Pro. See [implementation and comparisons](docs/decisions/perf2-plan.md#11-optional-fsr-1-spatial-upscaling).
+output is about 0.8–1.0 ms on this M5 Pro. See [implementation and comparisons](docs/decisions/perf2-plan.md#11-fsr-1-spatial-upscaling).
 
 ## The panel
 

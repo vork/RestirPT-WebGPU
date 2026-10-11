@@ -1215,10 +1215,11 @@ packing. Ten shipped golden tests retain their expected outputs. Actual app cont
 per-pixel Potato, cache opt-in, denoise off/on, return to interactive, and FSR with canvas resizing. This is not an
 unbiasedness certification for Potato.
 
-## 11. Optional FSR 1 spatial upscaling
+## 11. FSR 1 spatial upscaling
 
-Select **Render → Output → upscale filter → FSR 1 (EASU + RCAS)**. Internal resolution stays at the selected fixed
-540p/720p/1080p preset; dynamic resolution is not enabled. Bicubic remains the default. The FSR sharpening slider
+**FSR 1 (EASU + RCAS)** is the launch default, as requested after the comparison. Change it in
+**Render → Output → upscale filter**. Internal resolution stays at the selected fixed
+540p/720p/1080p preset; dynamic resolution is not enabled. Bicubic remains available. The FSR sharpening slider
 sets linear RCAS strength from zero (off) to one, default 0.5. FSR works independently of the indirect cache and in
 all rendering modes.
 
@@ -1255,3 +1256,102 @@ Reproduce with `npx tsx validation/harness/with-gpu-lock.ts fsr-review -- node v
 after generating the Sponza capture. Local output: `validation/out/fsr/review.html`, `bicubic.png`, `fsr1.png`.
 Recorded timing evidence: [`fsr-results.json`](fsr-results.json). A temporal upscaler would require a separate integration
 and quality study; it is not included in this spatial implementation.
+
+
+## 12. Reducing Potato cache mottling: production research and proposed experiments
+
+Research requested after the FSR default change. **The experiments below are proposals, not implemented or measured
+improvements.** Sources were checked on 2026-10-11. FSR now starts at strength 0.5; the actual Chrome startup/mode/resize
+check and TypeScript check pass. Cached GI remains opt-in.
+
+### What the current implementation actually does
+
+`pathtree.wgsl::pt_emit` collects all indirect contributions into one RGB signal; it does not separate diffuse from
+specular at the primary hit. `dn-indirect.wgsl` divides that signal by the shared albedo/Fresnel demodulation factor,
+reconstructs nine neighbouring tile samples, temporally blends, and feeds spatially blurred values back into history.
+That factor is a heuristic for the mixed signal, not a physically isolated diffuse irradiance cache.
+
+The selected pixel has the same rotating phase in every N×N tile. Cache alpha records history age rather than a
+variance estimate or effective independent sample count. Normal/depth are validated, but neither roughness/material
+class nor secondary-ray hit distance guides this cache filter. The recurrent blur steps by N, leaving same-parity
+pixel neighbourhoods. Any analytic-light/environment parameter change raises the update weight from 0.05 to 0.2
+and disables the stable-history bright-sample cap across the entire image. The combined direct+indirect image then
+passes through a second temporal/spatial denoiser.
+
+**Working diagnosis:** sparse high-variance rays are being converted to spatially correlated patches, then retained
+in feedback. Mixing view-dependent glossy samples with diffuse lighting makes those patches harder to filter safely.
+Motion loses useful history; global lighting refresh exposes noisy estimates even in locally unchanged regions.
+The rotating sample pattern and same-parity blur may contribute additional instability. These are code-based
+hypotheses; isolate them with ablations before calling any one the dominant cause. Existing comparisons establish
+that the problem is real, not which change fixes it (§10).
+
+### What shipped games teach us
+
+- **Fortnite Chapter 4 / Lumen:** Epic reports that spatiotemporal blue noise substantially reduced indirect-light
+  noise without extra rays. It also removed an aliasing source by skipping foliage hits in screen traces.
+  [Epic's production write-up](https://www.unrealengine.com/tech-blog/lumen-brings-real-time-global-illumination-to-fortnite-battle-royale-chapter-4?lang=en-US).
+  This supports testing better sampling patterns and treating troublesome material classes explicitly, not assuming
+  every surface should share the same sparse-lighting policy.
+- **DOOM: The Dark Ages / idTech 8:** the GHOST talk's final gather reads screen/world/irradiance caches, stores
+  directional lighting in two-band SH, and filters with normal, depth and ray-hit-distance weights. Direct lighting
+  is added after this filtering; directional occlusion restores local detail. Reflection handling is separate.
+  [Developer slides, 21–29](https://advances.realtimerendering.com/s2025/content/SOUSA_SIGGRAPH_2025_Final.pdf).
+  The relevant lesson is to smooth a low-frequency indirect signal while reconstructing directional/material detail
+  afterward. Its hardware-RT timings are not transferable to our software BVH in WebGPU.
+- **Quake II path tracing:** the developers' filtering walkthrough explains why raw inter-frame differences are
+  themselves noisy and why temporal adaptation needs a better change estimate.
+  [Developer video series and explanation](https://developer.nvidia.com/blog/?p=14548).
+  This argues against replacing our global light flag with a naive per-pixel difference threshold.
+
+Two implementation references strengthen those lessons without being claims about a specific game's code:
+
+- [NVIDIA NRD integration guide](https://github.com/NVIDIA-RTX/NRD): separate diffuse/specular at the primary hit,
+  supply meaningful indirect hit distances, and use short-history information to detect lag. It specifically warns
+  that rotating the chosen pixel in a 2×2 footprint can destabilize guides and increase disocclusion. Our full-resolution
+  guides differ from NRD's quarter-resolution setup, so this is an experiment to run, not proof that our pattern is wrong.
+- [AMD GI-1.0, §§2.1.2 and 2.4](https://gpuopen.com/download/GPUOpen2022_GI1_0.pdf): redistribute a fixed ray budget
+  from successfully reprojected tiles to holes; use SH irradiance and history-dependent spatial filtering. This directly
+  addresses missing-history regions without changing image resolution. It is a research implementation, not evidence
+  that we can reproduce its quality or timings with a few parameter changes.
+
+### Experiment order
+
+1. **Instrument the failure before widening blur.** Add cache-only views for variance, valid history, rejection reason,
+   sample phase and lighting-change response. Compare feedback on/off and cross-phase vs current N-stride blur.
+   Existing across-seed deviation measures uncertainty; add motion-compensated frame differences and light-step
+   settling curves to distinguish boiling from legitimate illumination changes.
+2. **Stabilize the sampler at unchanged ray count.** Compare persistent representative surface samples with the
+   rotating grid. Use vector spatiotemporal blue-noise dimensions for Potato's indirect direction samples, with an
+   explicit dimension mapping that leaves direct reservoirs and ordinary-mode RNG/replay untouched. Do not hash the
+   mask values again or expect simply randomizing the active pixel to preserve their spectral properties.
+   [NVIDIA's sampling explanation](https://developer.nvidia.com/blog/rendering-in-real-time-with-spatiotemporal-blue-noise-textures-part-2/)
+   also notes reduced temporal benefit under motion: this is not a complete disocclusion solution.
+3. **Cache diffuse lighting separately.** Keep sharp/specular/transmission paths outside broad diffuse filtering;
+   initially use a roughness/material gate, then split the actual primary BSDF contributions. Carry first-indirect-hit
+   distance and confidence. Consider SH only after the split; converting arbitrary mixed RGB to SH is not the algorithm.
+   This is the strongest architectural candidate for preserving glossy detail while smoothing walls.
+4. **Make reconstruction depend on confidence and local change.** Track moments/effective confidence, filter uncertain
+   diffuse samples more broadly with geometry/hit-distance gates, and retain sharper mature estimates. Compare short
+   and long histories for statistically significant changes. Keep a robust outlier limiter during moving-light frames,
+   with a fast response for real changes; do not globally expose all noise whenever one light moves. Increase local ray
+   allocation for disocclusions under a fixed total budget. Both extra memory and scheduling cost must be measured.
+5. **Use a persistent fallback if camera motion still dominates.** A small world-space irradiance/probe cache or
+   screen-space ray hit backed by cached world lighting can retain information through occlusion. This is substantially
+   more work, with leakage and update-latency risks. Stronger filtering alone cannot supply unseen lighting.
+
+The quickest useful A/B is sampler/feedback/lighting-change control. The most promising structural change is diffuse
+separation plus confidence-guided reconstruction. Keep FSR at the same strength in comparisons, and also inspect
+before sharpening: RCAS can reveal residual noise but is not its source. Require comparisons at static positions,
+mid-pan/disocclusion (not only the return-to-origin knots), moving lights and abrupt light removal. Use Sponza,
+Cornell, glossy, glass and alpha foliage, at least four seeds for the final candidate, and assess lag and detail as well
+as variance. A faster renderer that hides noise by erasing glossy detail does not meet the stated visual-fidelity goal.
+
+### Additional performance opportunity
+
+The measured 540p initial path pass is about 11.3 ms in default Potato, versus about 1.9 ms for the separately timed
+denoiser (§10); these isolated measurements are diagnostic, not additive frame-time accounting. A dedicated
+**ReSTIR DI implementation** for cached Potato could remove generic path-resampling/replay state and use compact
+light reservoirs, optionally adding validated temporal light-sample reuse. [RTXDI's integration guide](https://github.com/NVIDIA-RTX/RTXDI/blob/main/Doc/Integration.md)
+distinguishes this direct-light sampling architecture from ReSTIR PT. That is a larger potential speed target than
+shaving another blur pass, but its benefit in this code is unmeasured. Reuse of stale shadow visibility would need
+separate moving-light/camera tests and should never silently enter unbiased modes.

@@ -13,6 +13,8 @@ try {
  await page.waitForFunction(()=>window.__integration?.renderer()?.denoisedLastFrame,{timeout:60000});
  await page.evaluate(()=>{window.__app.panel.folders.restir.expanded=true;window.__app.panel.folders.denoiser.expanded=true;});
  const state=()=>page.evaluate(()=>{const r=window.__integration.renderer();return {mode:r.options.restirMode,integrator:r.options.renderMode,bounces:r.options.maxBounces,settings:r.restirSettings(),denoise:r.denoiseWanted(),dn:r.denoiser.settings.iterations,errors:window.__webgpuErrors};});
+ assert.equal(await page.evaluate(()=>window.__app.present.filter),'fsr1');
+ assert.equal(await page.evaluate(()=>window.__app.present.sharpening),0.5);
  const first=await state();assert.equal(first.mode,'interactive');assert.equal(first.integrator,'restir');assert.equal(first.dn,4);results.push(first);
  const selector=page.locator('select').filter({has:page.locator('option', {hasText:'Potato ReSTIR'})});
  await selector.selectOption({label:'Potato ReSTIR'});
@@ -59,5 +61,5 @@ try {
  await page.selectOption('#motion','static');
  await page.screenshot({path:'validation/out/potato2/review-checked.png',fullPage:true});
  assert.deepEqual(errors,[]);writeFileSync('validation/out/potato2/ui-check.json',JSON.stringify({ok:true,states:results,errors},null,2));
- console.log('PASS: interactive startup, Potato/interactive switches, image controls, video playback; no WebGPU/page errors.');
+ console.log('PASS: FSR default at 0.5 sharpening, interactive startup, Potato/interactive switches, image controls, video playback; no WebGPU/page errors.');
 } finally {await browser.close();await server.close();}

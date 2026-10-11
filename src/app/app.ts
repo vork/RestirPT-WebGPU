@@ -161,8 +161,8 @@ export class App {
     resolution: '540p', colorFormat: 'rgba32float', jitter: 'r2', paused: false, freezeSeed: false, freezeFrame: false, freezeHistory: false, overlay: true,
     dynamicResolution: false, targetMs: 33,
   };
-  // M8: Catmull-Rom upscale (anti-ringing clamp) by default (m8-perf.md §10)
-  readonly present: PresentSettings = { exposureEV: 0, tonemap: 'standard', filter: 'bicubic', sharpening: 0.5, highlightNonFinite: true };
+  // Fixed-resolution FSR 1 upscaling by default; native-size output bypasses it (perf2-plan.md §11).
+  readonly present: PresentSettings = { exposureEV: 0, tonemap: 'standard', filter: 'fsr1', sharpening: 0.5, highlightNonFinite: true };
   /** M8 dynamic resolution (m8-perf.md §9): the controller and the last frame's GPU busy time (ms, from onSubmittedWorkDone). */
   readonly dynres = new DynamicResolution();
   gpuFrameMs = 0;
