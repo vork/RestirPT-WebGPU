@@ -1672,3 +1672,26 @@ Local review: `validation/out/potato6/final-review.html`, `sponza-final-pan.mp4`
 The next quality priority is reducing persistent rough-reflection/direct-light variation without returning to dense
 sampling. The next performance target is remaining ray traversal and material work in the light/indirect passes;
 more history alone has not demonstrated a speed win. Further changes need paired timings and multi-seed motion review.
+
+## 18. Environment lifetime during asynchronous startup
+
+After merging to main, startup could remain black with `Buffer "env.params" used in submit while destroyed`.
+The environment loader updated published passes, but a PT or ReSTIR pass still compiling could retain the old
+placeholder environment after it was destroyed. The prior rendering tests loaded the environment before compiling
+passes, so they did not exercise this interleaving.
+
+Newly compiled passes now bind the current environment and sampling options immediately after their final await,
+before publication. Scene publication also reconciles its PT pass because the primary pipeline can finish later.
+Old environment resources are still released; the correction adds no work to the per-frame rendering path.
+
+`renderer-env-lifetime.gpu.test.ts` holds real GPU compilation at three deterministic boundaries: PT creation,
+scene publication after PT creation, and final ReSTIR preparation. It replaces the environment, resumes compilation,
+submits frames, checks finite/nonblack readback and validation errors, then removes the environment again. Before
+the fix, the PT case failed GPU validation and the ReSTIR case retained the old placeholder resource. All three
+cases pass with the fix, as do the six Potato/mode-switch GPU tests and all 610 CPU tests. Production build and
+typecheck pass.
+
+`validation/harness/env-startup-smoke.mjs` runs against the minified production build after `scripts/pages-assets.mjs`.
+Cornell and Sponza startup with an HDRI, followed by live HDRI replacement in cached Potato, all produce finite,
+nonblack frames with zero uncaptured WebGPU/page/console errors. Interactive ReSTIR and FSR defaults are checked.
+Local screenshots and results are in `validation/out/env-startup/`.

@@ -320,6 +320,9 @@ export class Renderer {
       await ptP;
       if (gen !== this.generation) { state.pt?.destroy(); gpu.destroy(); return undefined; }
       if (!pipe) { state.pt?.destroy(); gpu.destroy(); throw new Error(this.lastError ?? 'primary pipeline failed'); }
+      // This scene was private while its primary/PT pipelines compiled. An environment swap
+      // only updates the published state, so reconcile again immediately before publication.
+      if (state.pt) this.bindCurrentEnvironment(state.pt);
       state.pipelines.set(key, pipe);
       const old = this.state;
       this.state = state;
@@ -381,6 +384,7 @@ export class Renderer {
           maxBounces: this.options.maxBounces, rr: this.options.rr, lightMode: this.options.lightMode, features: this.ctx.features, wgslLanguageFeatures: this.ctx.wgslLanguageFeatures,
           env: { nee: this.options.envNee, importanceCap: this.options.envImportanceCap },
         });
+        this.bindCurrentEnvironment(pt);
         const tg = this.targets;
         if (tg) pt.setTargets({ width: tg.t.width, height: tg.t.height, color: tg.t.color, frameUniforms: tg.t.frameUniforms });
         state.pt?.destroy();
@@ -425,6 +429,9 @@ export class Renderer {
         const tg = this.targets;
         if (tg) pass.setTargets({ width: tg.t.width, height: tg.t.height, color: tg.t.color, frameUniforms: tg.t.frameUniforms, vbuf: tg.vbuf });
         await pass.prepare();   // perf2 WP-7e: the V-buffer source is part of the prepare key
+        // Loading an HDRI may destroy the environment captured before any of the awaits above.
+        // Rebind after the final await, before the new pass can encode a frame.
+        this.bindCurrentEnvironment(pass);
         destroyRestir(state.rs);
         state.rs = { pass, dbg, hud: new RestirHud(this.device), temporalFrames: 0, heldFrames: 0 };
         this.restirError = undefined;
@@ -550,6 +557,11 @@ export class Renderer {
   }
 
   // ---- environment --------------------------------------------------------------------------------------------
+
+  private bindCurrentEnvironment(pass: Pick<PtFramePass, 'setEnvironment' | 'setEnvOptions'>): void {
+    pass.setEnvironment(this.env);
+    pass.setEnvOptions({ nee: this.options.envNee, importanceCap: this.options.envImportanceCap });
+  }
 
   async setEnvironment(env: EnvironmentData | undefined): Promise<void> {
     const next = await createEnvResources(this.device, env, 'env', { mode: this.options.textureMode });
