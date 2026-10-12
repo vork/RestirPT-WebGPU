@@ -39,7 +39,7 @@ async function run(modes: RestirAppMode[], overrides?: Partial<RestirSettings>, 
       expect(await r.prepareRestir()).toBeTruthy();
       if (denoise) {
         expect(await r.prepareDenoiser()).toBeTruthy();
-        expect(r.denoiser!.settings.iterations).toBe(mode === 'potato' ? 2 : 4);
+        expect(r.denoiser!.settings.iterations).toBe(mode === 'potato' ? 3 : 4);
       }
       if (overrides) { r.restir!.setSettings(overrides); await r.restir!.prepare(); }
       await r.warmup(false);
@@ -105,14 +105,5 @@ it('cached indirect cannot enter or change the direct-light reservoir estimate',
   await run(['potato'], { indirectCache: 4, maxBounces: 1 }, cached);
   let err = 0, scale = 0;
   reference[0].forEach((v, i) => { if (i % 4 !== 3) { err += Math.abs(v - cached[0][i]); scale += Math.abs(v); } });
-  expect(err / Math.max(scale, 1e-12)).toBeLessThan(1e-4);
-}, 180_000);
-
-it('screen-first and blue-noise indirect variants remain finite and preserve direct lighting', async () => {
-  const base: Float32Array[] = [], experiments: Float32Array[] = [];
-  await run(['potato'], { indirectCache: 2 }, base);
-  await run(['potato'], { indirectCache: 2, indirectScreenTrace: true, indirectBlueNoise: true }, experiments);
-  let err = 0, scale = 0;
-  base[0].forEach((v, i) => { if (i % 4 !== 3) { err += Math.abs(v - experiments[0][i]); scale += Math.abs(v); } });
   expect(err / Math.max(scale, 1e-12)).toBeLessThan(1e-4);
 }, 180_000);

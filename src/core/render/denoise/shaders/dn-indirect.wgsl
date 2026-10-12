@@ -53,8 +53,9 @@ fn dn_indirect(@builtin(global_invocation_id) gid: vec3u) {
   for (var y = -1; y <= 1; y++) {
     for (var x = -1; x <= 1; x++) {
 #if DN_GI_BLUR
-      // Mix adjacent phases instead of feeding independent N-stride subgrids back into history.
-      let q = base + vec2i(x, y) * i32(max(N - 1u, 1u));
+      // Wider diffuse bandwidth reduction, still nine taps. The odd stride mixes sparse phases
+      // instead of leaving independent N-stride subgrids in feedback. Direct/specular stay separate.
+      let q = base + vec2i(x, y) * i32(2u * N - 1u);
 #else
       let q = base + vec2i(x, y) * i32(N);
 #endif
@@ -68,7 +69,11 @@ fn dn_indirect(@builtin(global_invocation_id) gid: vec3u) {
       let plane = max(abs(dot(delta, g.ns)), abs(dot(delta, v.ns)));
       if (plane > footprint * 4.0) { continue; }
       let offset = vec2f(q) - vec2f(p);
+#if DN_GI_BLUR
+      var weight = exp(-dot(offset, offset) / (8.0 * f32(N * N))) * pow(normal, 4.0);
+#else
       var weight = exp(-dot(offset, offset) / (2.0 * f32(N * N))) * pow(normal, 4.0);
+#endif
 #if DN_GI_BLUR
       c += sample.rgb * weight;
 #else

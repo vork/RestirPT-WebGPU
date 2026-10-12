@@ -104,7 +104,7 @@ export const POTATO_APP_DEFAULTS: Readonly<Partial<RestirSettings>> = Object.fre
 
 /** M6 feature toggles of the app (restir-m6-api.md MD13) and the perf2 D1 RR start: per-session overrides of the mode's
  *  settings (preset ⊕ INTERACTIVE_APP_DEFAULTS; empty = those). */
-export type RestirFeatureOverrides = Partial<Pick<RestirSettings, 'pairing' | 'risNee' | 'dualMv' | 'dupmap' | 'rrMinBounces' | 'indirectCache' | 'indirectWorldCache' | 'indirectScreenTrace' | 'indirectBlueNoise'>>;
+export type RestirFeatureOverrides = Partial<Pick<RestirSettings, 'pairing' | 'risNee' | 'dualMv' | 'dupmap' | 'rrMinBounces' | 'indirectCache' | 'indirectWorldCache'>>;
 
 /** M8 (m8-perf.md §3): 'auto' picks the CWBVH from this many triangles on. */
 export const CWBVH_AUTO_MIN_TRIS = 65536;

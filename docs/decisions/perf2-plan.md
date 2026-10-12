@@ -1537,3 +1537,54 @@ Evidence: [`potato-world-results.json`](potato-world-results.json), including ma
 texture spectral checks and light-step metadata. Review scripts: `validation/tools/potato-world-review.py` and
 `potato-world-variants.py`. Local comparisons: `validation/out/potato4/world-review.html`, `sponza-world-pan.mp4` and
 `glossy-world-pan.mp4`; videos are slowed to 15 FPS for inspection, not performance recordings.
+
+## 16. Wider diffuse reconstruction and stronger denoising
+
+The user reiterated that stable, pleasant frames matter more than accuracy, and authorized removal of unused code
+after committing it. The screen-lookup and secondary blue-noise implementations, assets, bindings and UI controls were
+removed after `eec8829` was pushed. Their measurements remain in §15 and `potato-world-results.json`; reproduce those
+historical experiments from `eec8829`, not from the current renderer. Persistent diffuse lighting and per-pixel specular
+remain active for cached Potato.
+
+Two measured changes now ship for cached Potato:
+
+1. The diffuse feedback blur still uses **nine taps**, with odd stride `2*N-1` instead of `N-1`, and a wider Gaussian.
+   Odd spacing mixes all sparse phases. Normal, plane-distance and Euclidean gates remain unchanged. This suppresses
+   larger diffuse blotches without tracing extra rays or adding another cache pass. Direct and specular are separate.
+2. The final geometry/albedo-aware denoiser uses **three iterations** instead of two. Its third scale smooths residual
+   noise in the complete image. It can soften lighting, shadow boundaries and reflected detail; it does not lengthen
+   the temporal history or the 16-update indirect reveal. Other renderer modes retain their existing defaults.
+
+Against `eec8829`, four-seed static tests on frames 32–63 give:
+
+| Scene | 8×8 block variance across seeds | Mean absolute frame changes | Linear mean brightness |
+|---|---:|---:|---:|
+| Sponza | −17.5% | −7.4% | −0.48% |
+| Cornell | −49.5% | +0.2% | +0.04% |
+| Glossy | −34.5% | −1.7% | −0.11% |
+
+These are distinct measures: lower seed variance indicates weaker persistent random blotches, while frame changes
+also include gradual brightness convergence. Neither metric proves motion stability or accuracy. Single-seed glass
+and foliage screens show 5.5% and 3.3% lower static frame changes. Visual inspection covers all five scenes with camera
+and analytic-light motion; the geometry remains readable but indirect lighting is softer. Existing motion artifacts
+are not eliminated. The 80-frame light-power/removal test remains finite, with lighting invalidation at frames 32/56.
+
+The wider diffuse blur alone lowered block seed variance by 1.5% / 41.5% / 16.8% in Sponza / Cornell / glossy, with almost
+unchanged temporal frame changes and GPU cost. The third denoising iteration provides the clearer Sponza improvement.
+Final sampled GPU times are **15.91 ms at 540p (~63 FPS), 27.77 ms at 720p (~36 FPS), 61.69 ms at 1080p (~16 FPS)**.
+Two runs each at 540p/720p, one at 1080p, 96 measured frames after 32 warmup frames. Presentation and UI are excluded;
+FSR adds its separate cost. This is approximately +0.45 ms / +0.87 ms at 540p / 720p versus §15, a deliberate stability
+tradeoff. Fixed resolutions and startup interactive ReSTIR are unchanged. Cached GI remains an opt-in Potato setting.
+
+Validation: production build, 603 CPU tests (7 skipped), all 15 remaining denoiser/Potato GPU tests, and all 10 shipped
+GPU identity cases. No new history-length, direct-reservoir, exposure or sampling changes accompany the filter tuning.
+Evidence: [`potato-smooth-results.json`](potato-smooth-results.json), including both ablations, all manifests and light-step
+curves. `validation/tools/potato-wide-review.py wide` / `smooth` rebuild the reviews. Local output is
+`validation/out/potato5/smooth-review.html`, with `sponza-smooth-pan.mp4` and `glossy-smooth-pan.mp4`, slowed to 15 FPS.
+
+Next substantive candidates, not implemented in this change: confidence-driven cache refresh (spend rays on changed /
+new regions), confidence-weighted history repair at disocclusions, and independent specular temporal history using
+reflection hit distance. These target unnecessary sampling and camera-motion artifacts rather than simply extending
+all history. [NRD's integration guidance](https://github.com/NVIDIA-RTX/NRD) describes separate diffuse/specular signals,
+hit-distance guidance and confidence inputs for reducing temporal lag. Applying those ideas here needs dedicated
+motion and lighting-recovery validation; merely increasing accumulation risks visible trails.

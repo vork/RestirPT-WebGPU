@@ -48,12 +48,6 @@ fn pt_indirect_active(p: vec2u) -> bool {
 }
 #endif
 
-#if RS_POTATO_SCREEN
-#include "path/potato-screen.wgsl"
-#endif
-#if RS_POTATO_BLUE
-@group(2) @binding(7) var ptBlueNoise: texture_2d<f32>;
-#endif
 
 #if RS_DUMP_CANDIDATES
 @group(2) @binding(4) var<storage, read_write> candDump: array<u32>;
@@ -551,21 +545,7 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
         rrInv /= q;
       }
       // ---- (3) BSDF continuation ------------------------------------------------------------------------------------
-#if RS_POTATO_BLUE
-      var bsdfU = rs_path_bsdf_u4(seed, B);
-      if (B > 1u) {
-        // Keep primary/direct samples unchanged. Translate the whole tile (never hash individual texels).
-        // Index the sparse tile grid, so stride 2/4 does not destroy the blue-noise spectrum.
-        let shift = pcg3d(vec3u(frame.runSeed, rs_t(), B)).xy & vec2u(63u);
-        let grid = select(p.local, p.local / vec2u(u32($RS_POTATO_CACHE)), (hist & 7u) == LOBE_D);
-        let q = (grid + shift) & vec2u(63u);
-        let blue = (textureLoad(ptBlueNoise, q, 0).rg * 255.0 + vec2f(0.5)) / 256.0;
-        bsdfU.y = blue.x; bsdfU.z = blue.y;
-      }
-      let bs = bsdf_sample(m, V, bsdfU);
-#else
       let bs = bsdf_sample(m, V, rs_path_bsdf_u4(seed, B));
-#endif
       if (!bs.valid) { break; }
 #if RS_POTATO_CACHE
       // View-dependent paths are sampled per pixel and never enter the diffuse cache.
@@ -579,22 +559,10 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
       // no crossings) and the tree stops, so the same call site traces it as an any-hit query and stops there; an escape
       // is the same miss as the closest-hit query. Only counters see it (BVH stats, RSC_BASE_JDEN_INVALID of the dead q_b).
       let lastAny = B == maxB;
-#if RS_POTATO_SCREEN
-      var h = Hit(FLT_MAX, 0.0, 0.0, BVH_MISS);
-      if (!lastAny && B == 1u && bs.lobe == LOBE_D) { h = pt_screen_hit(org, bs.L, curPrim, p); }
-      if (h.primId == BVH_MISS) { h = bvh_trace(org, bs.L, FLT_MAX, lastAny, curPrim, BVH_MISS); }
-#else
       let h = bvh_trace(org, bs.L, FLT_MAX, lastAny, curPrim, BVH_MISS);
-#endif
       if (lastAny && h.primId != BVH_MISS) { break; }
 #else
-#if RS_POTATO_SCREEN
-      var h = Hit(FLT_MAX, 0.0, 0.0, BVH_MISS);
-      if (B == 1u && maxB > 1u && bs.lobe == LOBE_D) { h = pt_screen_hit(org, bs.L, curPrim, p); }
-      if (h.primId == BVH_MISS) { h = trace_closest_ex(org, bs.L, FLT_MAX, curPrim, BVH_MISS); }
-#else
       let h = trace_closest_ex(org, bs.L, FLT_MAX, curPrim, BVH_MISS);
-#endif
 #endif
       let isHit = h.primId != BVH_MISS;
       var nxt = cur;

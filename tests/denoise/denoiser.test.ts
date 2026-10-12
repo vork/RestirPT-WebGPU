@@ -106,7 +106,7 @@ describe('modes (denoiser.md §8, DN4)', () => {
     expect(denoiserDefault('restir', 'interactive')).toBe(true);
     expect(denoiserDefault('restir', 'potato')).toBe(true);
     expect(denoiserAppSettings('restir', 'potato').iterations).toBe(3);
-    expect(denoiserAppSettings('restir', 'potato', {}, true).iterations).toBe(2);
+    expect(denoiserAppSettings('restir', 'potato', {}, true).iterations).toBe(3);
     expect(denoiserAppSettings('restir', 'interactive')).toEqual(DENOISER_DEFAULTS);
     expect(denoiserAppSettings('pt', 'potato')).toEqual(DENOISER_DEFAULTS);
     expect(denoiserAppSettings('restir', 'potato', { iterations: 5 }).iterations).toBe(5);

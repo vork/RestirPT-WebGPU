@@ -130,9 +130,9 @@ export function denoiserAllowed(render: DenoiseRenderMode, restir: DenoiseRestir
 export function denoiserDefault(render: DenoiseRenderMode, restir: DenoiseRestirMode): boolean {
   return render === 'restir' && (restir === 'interactive' || restir === 'potato');
 }
-/** App defaults only: Potato defaults to three spatial passes; its opt-in cache uses two stronger passes. Explicit session overrides win in every mode. */
+/** App defaults only: Potato uses three spatial passes; its opt-in cache uses stronger smoothing settings. Explicit session overrides win in every mode. */
 export function denoiserAppSettings(render: DenoiseRenderMode, restir: DenoiseRestirMode, overrides: Partial<DenoiserSettings> = {}, cachedIndirect = false): DenoiserSettings {
-  return { ...DENOISER_DEFAULTS, ...(render === 'restir' && restir === 'potato' ? cachedIndirect ? { iterations: 2, alphaMin: 0.08, sigmaN: 32, sigmaA: 0.2, sigmaL: 12, lumPre: 0, guide: false, taaCamMax: 12, taaGammaCam: 1.5, taaLightMax: 16 } : { iterations: 3 } : {}), ...overrides };
+  return { ...DENOISER_DEFAULTS, ...(render === 'restir' && restir === 'potato' ? cachedIndirect ? { iterations: 3, alphaMin: 0.08, sigmaN: 32, sigmaA: 0.2, sigmaL: 12, lumPre: 0, guide: false, taaCamMax: 12, taaGammaCam: 1.5, taaLightMax: 16 } : { iterations: 3 } : {}), ...overrides };
 }
 /** Key of the per-mode toggle memory. */
 export const denoiseModeKey = (render: DenoiseRenderMode, restir: DenoiseRestirMode): string => (render === 'restir' ? `restir:${restir}` : render);

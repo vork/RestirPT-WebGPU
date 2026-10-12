@@ -186,7 +186,7 @@ edit is refreshed in the kernel.
 The app starts in **interactive ReSTIR**. For speed, choose **ReSTIR → preset → Potato ReSTIR**.
 Potato caps path depth at one indirect bounce and reduces direct-light candidates/spatial partners.
 The **Potato indirect** control optionally enables experimental cached GI (1/4 or 1/16 sampling). The 1/4 setting
-measures about **65 FPS at 540p, 37 at 720p, and 17 at 1080p** in the Sponza GPU harness on an M5 Pro, excluding
+measures about **63 FPS at 540p, 36 at 720p, and 16 at 1080p** in the Sponza GPU harness on an M5 Pro, excluding
 presentation/UI. It can introduce mottling during motion, lighting lag and softened detail, so **per-pixel
 indirect remains the default**. Disabling denoising restores per-pixel sampling. Interactive starts by default.
 The cache deliberately favours stability over accuracy: robust sample weighting suppresses bright blotches,
@@ -196,10 +196,14 @@ eliminate disocclusion noise. New cached indirect lighting now fades in smoothly
 lighting appears immediately. Fresh areas temporarily look darker, and the final denoiser can extend settling.
 Cached lighting now separates diffuse bounce light from per-pixel reflections. **Potato cached lighting → persistent
 diffuse** retains lighting on previously seen world-space surfaces; it is enabled when caching is selected. Light changes
-invalidate the world fallback. Unseen areas still fade in. The screen-lookup and blue-noise experiments are available
-in the same folder, off by default: screen lookup is slower in the measured Sponza view, and blue noise has no established
-overall stability win. This version costs more than the earlier mixed diffuse/specular cache; see
+invalidate the world fallback. Unseen areas still fade in. Screen-lookup and blue-noise prototypes were measured,
+archived in commit `eec8829`, and removed from the active renderer because they did not improve the target workload.
+This version costs more than the earlier mixed diffuse/specular cache; see
 [world-cache measurements and limitations](docs/decisions/perf2-plan.md#15-persistent-diffuse-lighting-screen-lookup-and-blue-noise).
+The wider diffuse filter and third denoising pass now favour smoother output: four-seed static screens reduce
+block-level variance across seeds by 17% in Sponza, 49% in Cornell and 34% in the glossy scene. Sponza frame changes
+fall 7%, at about 0.45 ms extra GPU time at 540p. Lighting detail is softer; camera-motion improvement is assessed
+visually, not established by those static metrics. See [stability results](docs/decisions/perf2-plan.md#16-wider-diffuse-reconstruction-and-stronger-denoising).
 See [fade comparisons](docs/decisions/perf2-plan.md#14-gentle-reveal-of-new-indirect-lighting), [stability comparisons](docs/decisions/perf2-plan.md#13-potato-cache-stability-over-accuracy)
 and [cross-scene limitations](docs/decisions/perf2-plan.md#10-potato-direct-restir-and-cached-indirect-lighting).
 
