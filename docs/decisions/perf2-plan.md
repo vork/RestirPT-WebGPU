@@ -1588,3 +1588,87 @@ reflection hit distance. These target unnecessary sampling and camera-motion art
 all history. [NRD's integration guidance](https://github.com/NVIDIA-RTX/NRD) describes separate diffuse/specular signals,
 hit-distance guidance and confidence inputs for reducing temporal lag. Applying those ideas here needs dedicated
 motion and lighting-recovery validation; merely increasing accumulation risks visible trails.
+
+## 17. Separate direct lighting, adaptive diffuse refresh and sparse rough reflections
+
+The next three priorities are implemented for experimental cached Potato. They are enabled when selecting cached
+1/4 or 1/16; per-pixel Potato remains the default and interactive ReSTIR remains the startup mode. FSR stays the
+presentation default. Internal resolution remains fixed.
+
+1. **Separate direct lighting.** Rough opaque surfaces (roughness at least 0.5) use a lean light-only RIS pass with
+   fresh shadow visibility every frame. A separate ordinary path integrator supplies indirect light without path
+   reconnection bookkeeping. Sharp reflections, glass and BSDF-only environment lighting retain the existing direct
+   sampling. Spatial reuse still uses the existing ten-plane reservoir format; this is not a compact reservoir rewrite.
+2. **Adaptive diffuse refresh.** After validated, settled history, diffuse tiles skip alternate update cycles. Camera
+   motion, lighting edits, resets, disocclusions and large innovations reopen normal sparse updates. Feedback is fixed
+   within a frame, including held re-encodes, and discarded across invalid dimensions/history. It never alters direct
+   reservoirs. The persistent world fallback still invalidates on lighting changes.
+3. **Sparse rough reflections.** Rough surfaces trace reflection continuations on the same compact tile grid as
+   diffuse GI. Current-frame geometry/roughness-aware reconstruction and a separate, short specular history fill gaps.
+   Hit-distance changes reject static history; camera/light changes increase the blend toward new samples. The grid
+   stays sparse during motion and light changes, avoiding the measured spikes from dense recovery. Sharp/glass paths
+   retain their fallback. Final cached-Potato denoising uses four iterations instead of three.
+
+The UI exposes **faster direct light**, **adaptive indirect**, and **sparse rough reflections** separately under
+**Potato cached lighting**. Disabling the reflection option restores dense rough-reflection sampling; disabling all
+three and selecting three denoising iterations restores the prior sampling/filter profile. There are two additional
+RGBA16 texture pairs for feedback and reflection history (about 16.6 MB at 540p, 66.4 MB at 1080p).
+
+Matched Sponza measurements on M5 Pro / Metal 3 / Chrome 155: 80 warmup frames, 96 measured frames, two runs per
+variant/resolution in control/candidate/candidate/control order. Motion rows are single pairs at 540p (camera pan
+0.002; analytic light amplitude 1). GPU renderer-plus-denoiser frame times exclude presentation, FSR, UI and browser
+scheduling. Isolated pass timings in the evidence are diagnostic and must not be summed to estimate frame time.
+
+| Workload | Previous profile | New profile | Time reduction | New GPU FPS |
+|---|---:|---:|---:|---:|
+| 540p | 18.29 ms | 13.84 ms | 24.4% | 72.3 |
+| 720p | 40.73 ms | 28.11 ms | 31.0% | 35.6 |
+| 1080p | 85.39 ms | 64.59 ms | 24.4% | 15.5 |
+| pan | 23.56 ms | 16.12 ms | 31.6% | 62.1 |
+| light | 21.62 ms | 15.77 ms | 27.1% | 63.4 |
+
+Absolute timings drifted substantially across this session, including the controls. The paired improvement is more
+useful than comparing these values directly with §16. The control uses the new lean indirect integrator with all three
+features disabled; its standalone comparison was performance-neutral and nearly identical visually (relative L1 below
+3e-6 on five scenes). An initial final benchmark accidentally inherited the promoted defaults in its controls and is
+excluded; the table comes from the corrected explicitly pinned `matched-perf` manifest.
+
+The meaningful speedup appeared only after compact sparse reflection dispatch. Splitting direct/indirect shaders
+alone, or adding history while still tracing every rough reflection, did not deliver the intended gain. Dense and
+half-rate dense camera/light recovery prototypes regressed motion performance and were rejected. Ray traversal and
+indirect sampling remain major costs; the extra final denoising iteration deliberately spends some savings on smoothing.
+
+Quality is a tradeoff, not an across-the-board stability improvement. Four-seed static measurements against `b9eb1d2`,
+frames 32–63:
+
+| Scene | 8×8 block variance across seeds | Mean absolute frame changes | Linear mean brightness |
+|---|---:|---:|---:|
+| sponza | +41.2% | +1.5% | -1.00% |
+| cornell | -13.9% | -0.1% | +0.01% |
+| glossy | +104.8% | +0.7% | -0.14% |
+
+Frame changes are almost unchanged, but Sponza and glossy retain more seed-dependent variation. Cornell improves.
+The fourth denoising pass softens detail; it does not eliminate the increased persistent variation. Single-seed glass
+and foliage frame changes are −1.6% and +2.2%. These statistics do not prove motion stability or accuracy. Side-by-side
+screens were inspected for Sponza, Cornell, glossy, glass and foliage, with static views, camera motion and moving
+analytic lights. They remain visually close, with softer rough reflections and existing disocclusion artifacts.
+
+All 25 captures are finite. The 80-frame power-change/removal sequence invalidates lighting at frames 0/32/56 in both
+versions, with similar gradual recovery and about 1–2% lower image mean in the candidate. Direct shadows update each
+frame, but sparse indirect lighting still lags. Dynamic meshes are not validated or supported by this application path.
+Specialized direct lighting rejects multi-member views explicitly; single-view row-banded dispatch is covered.
+
+Validation: production build, 603 CPU tests (7 skipped), 19 denoiser/Potato GPU tests, and 10 shipped GPU identity cases.
+Coverage includes mature refresh, held-frame repeatability, direct-reservoir isolation, light edits, camera motion,
+row bands, 1/16 mode, environment-NEE fallback, mode switching and world-cache invalidation. Ordinary shader-text
+goldens remain unchanged. Later edits changed comments and UI wording only.
+
+Evidence: [`potato-priorities-results.json`](potato-priorities-results.json), with explicitly pinned jobs, raw final
+performance reports, quality measurements, light-step curves and prototype timing summaries. Rebuild the comparison
+with `validation/.venv/bin/python validation/tools/potato-priorities-review.py final` after running the capture manifest.
+Local review: `validation/out/potato6/final-review.html`, `sponza-final-pan.mp4`, and `glossy-final-pan.mp4`. Videos run at
+15 FPS for inspection; they are not performance recordings.
+
+The next quality priority is reducing persistent rough-reflection/direct-light variation without returning to dense
+sampling. The next performance target is remaining ray traversal and material work in the light/indirect passes;
+more history alone has not demonstrated a speed win. Further changes need paired timings and multi-seed motion review.

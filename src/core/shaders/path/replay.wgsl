@@ -31,6 +31,10 @@
 var<private> rsReplayCrossEntry: u32 = 0xFFFFFFFFu;
 #endif
 
+#if RS_POTATO_DIRECT
+#include "path/potato-direct.wgsl"
+#endif
+
 struct ReplayOut {
   code: u32,             // SC_OK | SC_O0_MISS | SC_O0_TECH | SC_O1 | SC_O3 (+ term, pair, margin packed as §2.6)
   margin: f32,
@@ -59,6 +63,9 @@ fn replay_prefix(seed: vec2u, y1: SurfaceHit, y1Prim: u32, camPos: vec3f, thr: f
   for (var b = 1u; b <= nB; b++) {
     let last = b == nB;
     let m = material_eval(cur, V);
+#if RS_POTATO_DIRECT
+    if (b == 1u && potato_nee_only(m)) { r.code = rs_slot_code(SC_O0_TECH, RCT_NONE, b, 0.0); return r; }
+#endif
     let curV = rc_vertex(cur, m);
     let bs = bsdf_sample(m, V, rs_path_bsdf_u4(seed, b));
     if (!bs.valid) {

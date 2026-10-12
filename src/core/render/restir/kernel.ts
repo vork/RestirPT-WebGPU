@@ -233,7 +233,7 @@ export class RestirKernel {
   /** Composer defines shared by every ReSTIR pipeline (+ the pass's own). */
   defines(name: RsPassName, extra: Defines = {}): Defines {
     return restirDefines(name, { sceneDefines: this.scene.defines(SCENE_GROUP), debug: !!this.o.debug && (!this.perfFlagSet.RS_DEBUG_STRIP || this.debugActive), extra: { ...this.m6Defines(),
-      RS_POTATO_CACHE: name === 'rs_initial' ? this.settings.indirectCache : 0, NM_PLANT: m7NmPlantDefine(this.settings, name), ...this.layoutDefines(), ...this.passPerfDefines(name), ...extra } });
+      RS_POTATO_CACHE: name === 'rs_initial' ? this.settings.indirectCache : 0, RS_POTATO_DIRECT: !!this.settings.indirectCache && this.settings.potatoNeeDirect, RS_POTATO_ADAPTIVE: this.settings.indirectAdaptive, RS_POTATO_SPECULAR: this.settings.indirectSpecularReuse, NM_PLANT: m7NmPlantDefine(this.settings, name), ...this.layoutDefines(), ...this.passPerfDefines(name), ...extra } });
   }
   /** perf2 WP-2d: RS_RIS_PREPASS changes rs_initial's text only while the pre-pass runs (risPrepassActive()); every other
    *  text (other passes, the dump, custom / test pipelines that call pathtree_run) composes without it. */
@@ -316,7 +316,7 @@ export class RestirKernel {
     const d = this.m6Defines();
     const pf = perfFlagsKey(this.perfFlagSet);   // perf2: '' without flags (the pre-perf2 key)
     const pre = this.perfFlagSet.RS_RIS_PREPASS ? (this.risPrepassActive() ? ':pre' : ':inline') : '';   // perf2 WP-2d
-    return `gi${this.settings.indirectCache}:${d.RS_RIS_NEE}${d.RS_MODE_B}${d.RS_DUAL_MV}${d.RS_DUPMAP}${d.RS_PLANT_T2}${d.RS_PLANT_SMOOTH_J}${m7NmPlantDefine(this.settings, 'rs_spatial_shift')}${pf ? `|${pf}${pre}` : ''}${this.perfFlagSet.RS_DEBUG_STRIP ? `:dbg${Number(this.debugActive)}` : ''}`;
+    return `gi${this.settings.indirectCache}:${+this.settings.potatoNeeDirect}:${+this.settings.indirectAdaptive}:${+this.settings.indirectSpecularReuse}:${d.RS_RIS_NEE}${d.RS_MODE_B}${d.RS_DUAL_MV}${d.RS_DUPMAP}${d.RS_PLANT_T2}${d.RS_PLANT_SMOOTH_J}${m7NmPlantDefine(this.settings, 'rs_spatial_shift')}${pf ? `|${pf}${pre}` : ''}${this.perfFlagSet.RS_DEBUG_STRIP ? `:dbg${Number(this.debugActive)}` : ''}`;
   }
 
   /** Compile (once) the pipeline of a standard pass; `extra` defines give test variants (their own cache key). */
@@ -337,6 +337,16 @@ export class RestirKernel {
     return p;
   }
 
+  private async potatoPipeline(entry: string): Promise<GPUComputePipeline> {
+    const key = `${entry}:${this.variantKey()}`;
+    let p = this.pipelines.get(key);
+    if (!p) {
+      p = this.compile(RS_PASSES.rs_initial.file, entry === 'rs_potato_diffuse' ? 'rs_potato_indirect' : entry, this.defines('rs_initial', { RS_POTATO_DIFFUSE: entry === 'rs_potato_diffuse' }), this.pipelineLayout('rs_initial'), entry).then(pl => { this.ready.set(key, pl); return pl; });
+      this.pipelines.set(key, p);
+      p.catch(() => this.pipelines.delete(key));
+    }
+    return p;
+  }
   /** perf2 WP-2d: the pre-pass pipeline (entry rs_ris_nee of rs_initial's own module text: same defines, layout and G2). */
   risPrepassPipeline(): Promise<GPUComputePipeline> {
     const vk = this.variantKey();
@@ -381,6 +391,7 @@ export class RestirKernel {
     if (this.settings.dupmap && this.settings.temporal) base.push('rs_dupmap');
     await Promise.all(base.map((n) => this.pipeline(n)));
     if (this.risPrepassActive()) await this.risPrepassPipeline();
+    if (this.settings.indirectCache && this.settings.potatoNeeDirect) await Promise.all(['rs_potato_light', 'rs_potato_indirect', 'rs_potato_diffuse'].map(n => this.potatoPipeline(n)));
     if (this.colorFormat) await this.pipeline('rs_finalize_frame', {}, this.colorFormat);
     if (this.settings.rounds > 0) await this.spatial.prepare?.(this);
     if ((this.view?.members ?? 1) > 1) await this.ensemble.prepare?.(this);
@@ -422,6 +433,9 @@ export class RestirKernel {
 
   // ---------------------------------------------------------------------------------------------- state
 
+  /** Feedback is immutable for the duration of a frame, including held-frame re-encodes. */
+  indirectFeedback?: GPUTextureView;
+  indirectForceRefresh = true;
   get resources(): RestirResources {
     if (!this.res) throw new Error('RestirKernel: setView() first');
     return this.res;
@@ -456,6 +470,7 @@ export class RestirKernel {
   setSettings(s: Partial<RestirSettings>): void {
     const next = { ...this.settings, ...s };
     validateSettings(next);
+    if ((this.view?.members ?? 1) > 1 && next.indirectCache && next.potatoNeeDirect) throw new Error('Potato direct-light specialization requires a single view');
     if (next.indirectCache && this.o.instrumentation?.dumpCandidates) throw new Error('indirectCache does not support candidate dumps');
     const realloc = numSlotsOf(next) !== numSlotsOf(this.settings) || next.temporal !== this.settings.temporal
       || next.risNee !== this.settings.risNee || next.dupmap !== this.settings.dupmap;
@@ -468,6 +483,7 @@ export class RestirKernel {
 
   /** Sequential / ensemble validation view: the kernel owns the frame uniforms (member tile = width × height). */
   setView(v: RestirView): void {
+    if ((v.members ?? 1) > 1 && this.settings.indirectCache && this.settings.potatoNeeDirect) throw new Error('Potato direct-light specialization requires a single view');
     this.view = v;
     this.frameState.invalidate('view');
     this.external = undefined;
@@ -751,20 +767,29 @@ export class RestirKernel {
     if (this.risPrepassActive() && !pre) throw new Error('RestirKernel: pipeline rs_ris_nee not compiled (await kernel.prepare())');
     for (let tb = 0; tb < s.trees; tb += chunk) {
       const tc = Math.min(chunk, s.trees - tb);
-      const flags = (tb === 0 ? K.RSD_FIRST_CHUNK : 0) | (tb + tc >= s.trees ? K.RSD_FINAL_CHUNK : 0);
+      const flags = (tb === 0 ? K.RSD_FIRST_CHUNK : 0) | (tb + tc >= s.trees ? K.RSD_FINAL_CHUNK : 0) | (s.indirectCache && this.indirectForceRefresh ? 0x200000 : 0);
       for (const [r0, r1] of bands) {
         if (pre) {
           units.push({
             label: `rs_ris_nee[${tb}+${tc}][${r0}]`, costHint: a.atlasW * (r1 - r0) * 2,
-            encode: (enc) => this.encodePass(enc, initName, pre, res.g2(initName, w, { indirectCache: !!s.indirectCache }), { t, passId: K.RS_PASS_INITIAL, treeBase: tb, treeCount: tc, flags, rowBase: r0, rowEnd: r1 },
+            encode: (enc) => this.encodePass(enc, initName, pre, res.g2(initName, w, { indirectCache: !!s.indirectCache, feedback: this.indirectFeedback }), { t, passId: K.RS_PASS_INITIAL, treeBase: tb, treeCount: tc, flags, rowBase: r0, rowEnd: r1 },
               this.perPixelWorkgroups(r0, r1), undefined, 'rs_ris_nee'),
           });
+        }
+        if (s.indirectCache && s.potatoNeeDirect) {
+          for (const entry of ['rs_potato_light', 'rs_potato_indirect', 'rs_potato_diffuse']) {
+            if (entry === 'rs_potato_indirect' && s.indirectSpecularReuse) continue;
+            const pipe = this.ready.get(`${entry}:${this.variantKey()}`)!;
+            units.push({ label: `${entry}[${r0}]`, costHint: a.atlasW * (r1-r0),
+              encode: enc => this.encodePass(enc, initName, pipe, res.g2(initName, w, { indirectCache: true, feedback: this.indirectFeedback }),
+                { t, passId: K.RS_PASS_INITIAL, treeBase: tb, treeCount: tc, flags, rowBase: r0, rowEnd: r1 }, entry === 'rs_potato_diffuse' ? [Math.ceil(a.atlasW / s.indirectCache / 8), Math.ceil((r1-r0+s.indirectCache-1) / s.indirectCache / 8)] : this.perPixelWorkgroups(r0,r1), undefined, entry) });
+          }
         }
         units.push({
           label: `rs_initial[${tb}+${tc}][${r0}]`, costHint: a.atlasW * (r1 - r0) * tc * (s.maxBounces + 1),
           encode: (enc) => {
             if (dump && tb === 0 && r0 === 0) enc.clearBuffer(res.candDump!);
-            this.encodePass(enc, initName, initial, res.g2(initName, w, { indirectCache: !!s.indirectCache }), { t, passId: K.RS_PASS_INITIAL, treeBase: tb, treeCount: tc, flags, rowBase: r0, rowEnd: r1 }, this.perPixelWorkgroups(r0, r1));
+            this.encodePass(enc, initName, initial, res.g2(initName, w, { indirectCache: !!s.indirectCache, feedback: this.indirectFeedback }), { t, passId: K.RS_PASS_INITIAL, treeBase: tb, treeCount: tc, flags, rowBase: r0, rowEnd: r1 }, this.perPixelWorkgroups(r0, r1));
           },
         });
       }

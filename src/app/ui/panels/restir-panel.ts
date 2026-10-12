@@ -43,7 +43,7 @@ export function addRestirPanel(app: App, r: Renderer, inspector: RestirInspector
   // after a change recompiles; the config hash changes, so the history resets)
   const feat = r.options.restirFeatures;
   const eff = () => restirSettings(undefined, r.restirSettings());
-  const fx = { world: eff().indirectWorldCache, indirectCache: feat.indirectCache ?? 0, gauss: eff().pairing === 'gauss', ris: eff().risNee, dualMv: eff().dualMv, dupmap: eff().dupmap, rrMin: eff().rrMinBounces };
+  const fx = { direct: eff().potatoNeeDirect, adaptive: eff().indirectAdaptive, reflections: eff().indirectSpecularReuse, world: eff().indirectWorldCache, indirectCache: feat.indirectCache ?? 0, gauss: eff().pairing === 'gauss', ris: eff().risNee, dualMv: eff().dualMv, dupmap: eff().dupmap, rrMin: eff().rrMinBounces };
   const setF = (o: RestirFeatureOverrides) => { Object.assign(feat, o); void r.setOptions({ restirFeatures: feat }).then(() => app.resetHistory()); };
   const cache = tip(f.addBinding(fx, 'indirectCache', { label: 'Potato indirect', options: { 'per-pixel (default)': 0, 'cached 1/4 (experimental)': 2, 'cached 1/16 (experimental)': 4 } }),
     'Experimental speed/quality tradeoff for Potato only. Faster in Sponza; can produce mottling during motion, lighting lag and softened detail. Requires denoising.')
@@ -51,6 +51,12 @@ export function addRestirPanel(app: App, r: Renderer, inspector: RestirInspector
   const gi = f.addFolder({ title: 'Potato cached lighting', expanded: false });
   tip(gi.addBinding(fx, 'world', { label: 'persistent diffuse' }), 'Reuse diffuse lighting on previously visible surfaces. Lighting changes invalidate it; reflections stay view-dependent.')
     .on('change', q((e) => setF({ indirectWorldCache: e.value })));
+  tip(gi.addBinding(fx, 'direct', { label: 'faster direct light' }), 'Use light sampling on rough opaque surfaces. Sharp reflections and glass retain their existing sampling.')
+    .on('change', q(e => setF({ potatoNeeDirect: e.value })));
+  tip(gi.addBinding(fx, 'adaptive', { label: 'adaptive indirect' }), 'Refresh settled diffuse lighting less often. Motion and lighting changes restore the normal refresh rate.')
+    .on('change', q(e => setF({ indirectAdaptive: e.value })));
+  tip(gi.addBinding(fx, 'reflections', { label: 'sparse rough reflections' }), 'Use fewer rough reflection samples with spatial reconstruction and separate history. Softer detail; every tile receives fresh samples even during motion and lighting edits.')
+    .on('change', q(e => setF({ indirectSpecularReuse: e.value })));
   const ef = f.addFolder({ title: 'Enhanced features', expanded: false });
   tip(ef.addBinding(fx, 'gauss', { label: 'σ 16 pairing maps' }), 'Spatial partners from reciprocal pairing maps with Gaussian (σ 16 px) offsets; off = disk partners.')
     .on('change', q((e) => setF({ pairing: e.value ? 'gauss' : 'disk' })));
@@ -77,6 +83,7 @@ export function addRestirPanel(app: App, r: Renderer, inspector: RestirInspector
       fx.indirectCache = feat.indirectCache ?? 0;
       gi.disabled = cache.disabled || fx.indirectCache === 0;
       fx.world = eff().indirectWorldCache;
+      fx.direct = eff().potatoNeeDirect; fx.adaptive = eff().indirectAdaptive; fx.reflections = eff().indirectSpecularReuse;
       temporalToggle.disabled = r.options.restirMode === 'potato';
       { const e = eff(); fx.gauss = e.pairing === 'gauss'; fx.ris = e.risNee; fx.dualMv = e.dualMv; fx.dupmap = e.dupmap; fx.rrMin = e.rrMinBounces; }
       ui.inspector = !!inspector?.visible;

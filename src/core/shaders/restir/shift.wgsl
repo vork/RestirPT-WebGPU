@@ -47,6 +47,10 @@
 var<private> rsT2SrcAi: u32 = 0xFFFFFFFFu;
 #endif
 
+#if RS_POTATO_DIRECT
+#include "path/potato-direct.wgsl"
+#endif
+
 struct ShiftSrc { empty: bool, flags: u32, seed: vec2u, F: vec3f, rc: vec3u, jDen: f32, rcWi: vec3f, aux: f32,
                   rcRad: vec3f, end: vec3u, endOcc: bool }                // M5: N1 end occluded (¬endVis; false spatially)
 struct ShiftDst { valid: bool, prim: u32, bary: vec2f, thr: f32, camPos: vec3f, fs: u32 }   // M5: fs (CUR spatially)
@@ -246,6 +250,9 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
 #endif
     }
     let m = material_eval(s, V);
+#if RS_POTATO_DIRECT
+    if (!neeHere && B == 1u && potato_nee_only(m)) { return shift_fail(SC_O0_TECH, RCT_NONE, B, 0.0); }
+#endif
     let q = bsdf_query(m, V, L, lobe);
     if (neeHere) {                                       // (a)/(f) at y_{d−1}, (b) at x_{d−1}: p2 = this vertex's p̄
       if (ls.valid && (!atY || ls.prim != yPrevPrim) && any(ls.Lambda > vec3f(0.0))) {
@@ -253,6 +260,9 @@ fn shift_hybrid(src: ShiftSrc, dst: ShiftDst) -> ShiftOut {
         var w1 = nee_mis_w1(ls, rs_p2m(q.p_marg, B), B);   // M6 MD5: M(B) as p2/M (B = d−1; M = 1 unless B = 1)
 #else
         var w1 = nee_mis_w1(ls, q.p_marg, B);
+#endif
+#if RS_POTATO_DIRECT
+        if (B == 1u && potato_nee_only(m)) { w1 = 1.0; }
 #endif
         if (shift_u8_plants_on()) { w1 = shift_u8_w1(ls, q.p_marg, B, w1, !atY && cs == SH_N1, src.aux); }
         neeT = (w1 / ls.q) * (q.f_all * ls.Lambda);

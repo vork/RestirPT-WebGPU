@@ -8,7 +8,7 @@ export const DN_ITER_SIZE = 16;
 /** DnParams.taaFlags (dn-common.wgsl DNT_*; Changelog DN-16). */
 export const DNT = { DILATE: 1, CUBIC: 2 } as const;
 /** DnParams.flags (dn-common.wgsl DNF_*). */
-export const DNF = { RESET: 1, LAMBDA: 2, HAS_L1: 4, FW: 8, INVERSE: 16, GRADIENT: 32, LAMBDA_CAM: 64, NO_RESOLVE: 128, GUIDE: 256, CACHE_LIGHT: 512, WORLD_CACHE: 1024 } as const;
+export const DNF = { RESET: 1, LAMBDA: 2, HAS_L1: 4, FW: 8, INVERSE: 16, GRADIENT: 32, LAMBDA_CAM: 64, NO_RESOLVE: 128, GUIDE: 256, CACHE_LIGHT: 512, WORLD_CACHE: 1024, ADAPTIVE_GI: 2048, SPECULAR_HISTORY: 4096 } as const;
 /** DnIter.flags (dn-filter.wgsl DNI_*). */
 export const DNI = { FEEDBACK: 1, FINAL: 2, COPY: 4 } as const;
 /** Reprojection outcome codes (view 526; dn-temporal.wgsl DN_REPROJ_*). */
@@ -130,9 +130,9 @@ export function denoiserAllowed(render: DenoiseRenderMode, restir: DenoiseRestir
 export function denoiserDefault(render: DenoiseRenderMode, restir: DenoiseRestirMode): boolean {
   return render === 'restir' && (restir === 'interactive' || restir === 'potato');
 }
-/** App defaults only: Potato uses three spatial passes; its opt-in cache uses stronger smoothing settings. Explicit session overrides win in every mode. */
+/** App defaults only: Potato uses three spatial passes; its opt-in cache uses four passes and stronger smoothing settings. Explicit session overrides win in every mode. */
 export function denoiserAppSettings(render: DenoiseRenderMode, restir: DenoiseRestirMode, overrides: Partial<DenoiserSettings> = {}, cachedIndirect = false): DenoiserSettings {
-  return { ...DENOISER_DEFAULTS, ...(render === 'restir' && restir === 'potato' ? cachedIndirect ? { iterations: 3, alphaMin: 0.08, sigmaN: 32, sigmaA: 0.2, sigmaL: 12, lumPre: 0, guide: false, taaCamMax: 12, taaGammaCam: 1.5, taaLightMax: 16 } : { iterations: 3 } : {}), ...overrides };
+  return { ...DENOISER_DEFAULTS, ...(render === 'restir' && restir === 'potato' ? cachedIndirect ? { iterations: 4, alphaMin: 0.08, sigmaN: 32, sigmaA: 0.2, sigmaL: 12, lumPre: 0, guide: false, taaCamMax: 12, taaGammaCam: 1.5, taaLightMax: 16 } : { iterations: 3 } : {}), ...overrides };
 }
 /** Key of the per-mode toggle memory. */
 export const denoiseModeKey = (render: DenoiseRenderMode, restir: DenoiseRestirMode): string => (render === 'restir' ? `restir:${restir}` : render);

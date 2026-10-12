@@ -56,6 +56,8 @@ export interface DenoiseFrame {
   indirectSpecular?: GPUTexture;
   indirectGuide?: GPUTexture;
   indirectStride?: number;
+  indirectAdaptive?: boolean;
+  indirectSpecularReuse?: boolean;
   indirectWorldCache?: boolean;
   indirectLightingChanged?: boolean;
   /** Output (and, for the PT, input) colour target. */
@@ -76,7 +78,7 @@ interface Targets {
   gradTile: GPUTexture; gradTile2: GPUTexture; lambda: GPUTexture; input?: GPUTexture;
   /** perf2 WP-7f (DN_ZGRAD_TEX): the centre depth gradient of every hit pixel (dn_variance → dn_atrous). */
   zg?: GPUTexture;
-  gi?: { hist: [GPUTexture, GPUTexture]; scratch: GPUTexture; combined: GPUTexture };
+  gi?: { unusedSpec: GPUTexture; feedback: [GPUTexture, GPUTexture]; specHist: [GPUTexture, GPUTexture]; hist: [GPUTexture, GPUTexture]; scratch: GPUTexture; combined: GPUTexture };
 }
 
 const C = 0x4;   // GPUShaderStage.COMPUTE (no WebGPU global at import time: the CPU tests import the renderer)
@@ -104,6 +106,7 @@ export class Denoiser {
   private cur = 0;
   private needsReset = true;
   private indirectStride = 0;
+  private indirectMode = '';
   private worldEnabled = false;
   private worldStep = 0;
   private worldEpoch = 1;
@@ -147,7 +150,7 @@ export class Denoiser {
     this.empty = device.createBindGroupLayout({ label: 'dn-empty', entries: [] });
     this.emptyGroup = device.createBindGroup({ label: 'dn-empty', layout: this.empty, entries: [] });
     this.layouts = {
-      indirect: device.createBindGroupLayout({ label: 'dn-indirect', entries: entries([{ buffer: ro }, { texture: tex() }, { texture: tex() }, { texture: tex('uint') }, { texture: tex() }, { storageTexture: st('rgba16float') }, { storageTexture: st('rgba32float') }, { texture: tex() }, { texture: tex() }, { buffer: ro }]) }),
+      indirect: device.createBindGroupLayout({ label: 'dn-indirect', entries: entries([{ buffer: ro }, { texture: tex() }, { texture: tex() }, { texture: tex('uint') }, { texture: tex() }, { storageTexture: st('rgba16float') }, { storageTexture: st('rgba32float') }, { texture: tex() }, { texture: tex() }, { buffer: ro }, { storageTexture: st('rgba16float') }, { texture: tex() }, { storageTexture: st('rgba16float') }, { texture: tex() }]) }),
       world: device.createBindGroupLayout({ label: 'dn-world', entries: entries([{ buffer: ro }, { texture: tex() }, { texture: tex() }, { buffer: ro }, { buffer: { type: 'storage' } }, { buffer: { type: 'storage' } }]) }),
       gradient: device.createBindGroupLayout({ label: 'dn-gradient', entries: entries([{ buffer: ro }, { buffer: ro }, { texture: tex() }, { storageTexture: st('rgba32float') }, { texture: tex() }, { texture: tex() }, { texture: tex() }, { texture: tex() }, { storageTexture: st('rgba32float') }]) }),
       gradFilter: device.createBindGroupLayout({ label: 'dn-grad-filter', entries: entries([{ texture: tex() }, { storageTexture: st('r32float') }, { texture: tex() }]) }),
@@ -196,6 +199,8 @@ export class Denoiser {
     await Promise.all([
       mk('dn_indirect', 'denoise/dn-indirect.wgsl', 'dn_indirect', this.layouts.indirect, {}),
       mk('dn_indirect_blur', 'denoise/dn-indirect.wgsl', 'dn_indirect', this.layouts.indirect, { DN_GI_BLUR: true }),
+      mk('dn_indirect_reuse', 'denoise/dn-indirect.wgsl', 'dn_indirect', this.layouts.indirect, { DN_GI_REUSE: true }),
+      mk('dn_indirect_blur_reuse', 'denoise/dn-indirect.wgsl', 'dn_indirect', this.layouts.indirect, { DN_GI_BLUR: true, DN_GI_REUSE: true }),
       mk('dn_world_select', 'denoise/dn-world.wgsl', 'dn_world_select', this.layouts.world, { DN_WORLD_SELECT: true }),
       mk('dn_world_update', 'denoise/dn-world.wgsl', 'dn_world_update', this.layouts.world, {}),
       mk('dn_gradient', 'denoise/dn-gradient.wgsl', 'dn_gradient', this.layouts.gradient, { DN_GRADIENT: true }),
@@ -283,6 +288,8 @@ export class Denoiser {
       enc.copyTextureToTexture({ texture: f.colour }, { texture: input }, [t.w, t.h]);
     }
     if (this.kind !== f.kind) { this.kind = f.kind; this.needsReset = true; }
+    const indirectMode = `${!!f.indirectAdaptive}:${!!f.indirectSpecularReuse}`;
+    if (indirectMode !== this.indirectMode) { this.indirectMode = indirectMode; this.needsReset = true; }
     const stride = f.indirect ? f.indirectStride ?? 0 : 0;
     if (this.indirectStride !== stride) { this.indirectStride = stride; this.needsReset = true; }
     const worldEnabled = !!f.indirect && !!f.indirectWorldCache;
@@ -295,6 +302,8 @@ export class Denoiser {
     const r = f.kind === 'restir' ? f.restir : undefined;
     let flags = 0;
     if (reset) flags |= DNF.RESET;
+    if (f.indirectAdaptive) flags |= DNF.ADAPTIVE_GI;
+    if (f.indirectSpecularReuse) flags |= DNF.SPECULAR_HISTORY;
     if (f.indirect && f.indirectLightingChanged) flags |= DNF.CACHE_LIGHT;
     if (f.indirect && f.indirectWorldCache) flags |= DNF.WORLD_CACHE;
     this.worldStep++;
@@ -332,19 +341,20 @@ export class Denoiser {
     const [tx, ty] = dnTiles(t.w, t.h);
     const plan: PlanPass[] = [];
     if (f.indirect) {
+      const reuse = !!(f.indirectAdaptive || f.indirectSpecularReuse);
       if (!t.gi) {
         const mk = (label: string, format: GPUTextureFormat) => this.device.createTexture({ label, size: [t.w, t.h], format,
           usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
-        t.gi = { hist: [mk('gi-history0', 'rgba16float'), mk('gi-history1', 'rgba16float')], scratch: mk('gi-scratch', 'rgba16float'), combined: mk('gi-combined', 'rgba32float') };
+        t.gi = { unusedSpec: this.device.createTexture({ size: [1, 1], format: 'rgba16float', usage: GPUTextureUsage.STORAGE_BINDING }), feedback: [mk('gi-feedback0', 'rgba16float'), mk('gi-feedback1', 'rgba16float')], specHist: [mk('gi-spec0', 'rgba16float'), mk('gi-spec1', 'rgba16float')], hist: [mk('gi-history0', 'rgba16float'), mk('gi-history1', 'rgba16float')], scratch: mk('gi-scratch', 'rgba16float'), combined: mk('gi-combined', 'rgba32float') };
       }
       const worldRead = (flags & DNF.WORLD_CACHE) ? this.world!.cache[prev] : this.dummyBuf;
-      const auxKey = `${oid(f.indirectSpecular ?? this.dummyTex)}:${oid(f.indirectGuide ?? this.dummyTex)}:${oid(worldRead)}`;
-      plan.push({ name: 'dn_indirect', pipeline: this.pipelines.get('dn_indirect')!, wg,
+      const auxKey = `${reuse}:${oid(f.indirectSpecular ?? this.dummyTex)}:${oid(f.indirectGuide ?? this.dummyTex)}:${oid(worldRead)}`;
+      plan.push({ name: 'dn_indirect', pipeline: this.pipelines.get(reuse ? 'dn_indirect_reuse' : 'dn_indirect')!, wg,
         g1: this.group(`indirect:${oid(f.gbuf)}:${oid(f.indirect)}:${oid(radiance)}:${cur}:${auxKey}`, this.layouts.indirect,
-          [{ buffer: f.gbuf }, v(f.indirect), v(t.gi.hist[prev]), v(t.geo[prev]), v(radiance), v(t.gi.scratch), v(t.gi.combined), v(f.indirectSpecular ?? this.dummyTex), v(f.indirectGuide ?? this.dummyTex), { buffer: worldRead }]) });
-      plan.push({ name: 'dn_indirect_blur', pipeline: this.pipelines.get('dn_indirect_blur')!, wg,
+          [{ buffer: f.gbuf }, v(f.indirect), v(t.gi.hist[prev]), v(t.geo[prev]), v(radiance), v(t.gi.scratch), v(t.gi.combined), v(f.indirectSpecular ?? this.dummyTex), v(f.indirectGuide ?? this.dummyTex), { buffer: worldRead }, v(t.gi.feedback[cur]), v(t.gi.feedback[prev]), v(t.gi.specHist[cur]), v(t.gi.specHist[prev])]) });
+      plan.push({ name: 'dn_indirect_blur', pipeline: this.pipelines.get(reuse ? 'dn_indirect_blur_reuse' : 'dn_indirect_blur')!, wg,
         g1: this.group(`indirectBlur:${oid(f.gbuf)}:${oid(radiance)}:${cur}:${auxKey}`, this.layouts.indirect,
-          [{ buffer: f.gbuf }, v(t.gi.scratch), v(t.gi.hist[prev]), v(t.geo[prev]), v(radiance), v(t.gi.hist[cur]), v(t.gi.combined), v(f.indirectSpecular ?? this.dummyTex), v(f.indirectGuide ?? this.dummyTex), { buffer: worldRead }]) });
+          [{ buffer: f.gbuf }, v(t.gi.scratch), v(t.gi.hist[prev]), v(t.geo[prev]), v(radiance), v(t.gi.hist[cur]), v(t.gi.combined), v(reuse ? t.gi.specHist[cur] : f.indirectSpecular ?? this.dummyTex), v(f.indirectGuide ?? this.dummyTex), { buffer: worldRead }, v(t.gi.feedback[cur]), v(t.gi.feedback[prev]), v(t.gi.unusedSpec), v(t.gi.specHist[prev])]) });
       if (flags & DNF.WORLD_CACHE) {
         const g1 = this.group(`world:${oid(f.gbuf)}:${auxKey}:${cur}`, this.layouts.world,
           [{ buffer: f.gbuf }, v(t.gi.hist[cur]), v(f.indirectGuide ?? this.dummyTex), { buffer: this.world!.cache[prev] },
@@ -485,6 +495,10 @@ export class Denoiser {
     };
   }
 
+  /** Previous completed feedback, only while its dimensions and history remain valid. */
+  indirectFeedback(width: number, height: number): GPUTextureView | undefined {
+    return !this.needsReset && this.t?.w === width && this.t.h === height && this.t.gi ? view(this.t.gi.feedback[this.cur]) : undefined;
+  }
   /** The per-pixel textures (tests, readback). */
   get textures(): Readonly<Targets> | undefined { return this.t; }
   /** Parity of the current frame's outputs. */
@@ -496,7 +510,7 @@ export class Denoiser {
     for (const x of [...t.hist, ...t.mom, ...t.alb, ...t.l1, ...t.taa, t.out, t.lumG, t.tap, ...t.geo, ...t.atrous, t.gradTile, t.gradTile2, t.lambda]) x.destroy();
     t.zg?.destroy();
     if (this.world) { for (const b of [...this.world.cache, this.world.winners]) b.destroy(); this.world = undefined; }
-    if (t.gi) { for (const x of [...t.gi.hist, t.gi.scratch, t.gi.combined]) x.destroy(); }
+    if (t.gi) { for (const x of [t.gi.unusedSpec, ...t.gi.hist, ...t.gi.feedback, ...t.gi.specHist, t.gi.scratch, t.gi.combined]) x.destroy(); }
     t.input?.destroy();
     this.t = undefined;
   }

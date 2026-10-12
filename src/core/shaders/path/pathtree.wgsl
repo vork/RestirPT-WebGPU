@@ -34,17 +34,35 @@
 #include "restir/cross.wgsl"
 #endif
 
+#if RS_POTATO_DIRECT
+#include "path/potato-direct.wgsl"
+#endif
+
 #if RS_POTATO_CACHE
 @group(2) @binding(4) var ptIndirectOut: texture_storage_2d<rgba16float, write>;
 @group(2) @binding(5) var ptSpecularOut: texture_storage_2d<rgba16float, write>;
 @group(2) @binding(6) var ptGuideOut: texture_storage_2d<rgba16float, write>;
+@group(2) @binding(7) var ptFeedback: texture_2d<f32>;
+var<private> ptSpecularActive: bool;
+var<private> ptSpecularDistance: f32;
+fn pt_force_refresh() -> bool {
+  return (rsDispatch.flags & 0x200000u) != 0u || (frame.flags & (FRAME_CAMERA_MOVED | FRAME_RESET_HISTORY)) != 0u;
+}
 var<private> ptIndirect: vec3f;
 var<private> ptSpecular: vec3f;
 var<private> ptGuide: vec4f;
 fn pt_indirect_active(p: vec2u) -> bool {
   let N = u32($RS_POTATO_CACHE);
   let phase = rs_t() % (N * N);
-  return all(p % vec2u(N) == vec2u(phase % N, phase / N));
+  if (!all(p % vec2u(N) == vec2u(phase % N, phase / N))) { return false; }
+#if RS_POTATO_ADAPTIVE
+  if (!pt_force_refresh() && textureLoad(ptFeedback, p, 0).r >= 8.0) {
+    // Stable tiles refresh every other phase cycle, staggered across the screen.
+    let tile = p / vec2u(N);
+    if (((rs_t() / (N*N) + tile.x + tile.y) & 1u) != 0u) { return false; }
+  }
+#endif
+  return true;
 }
 #endif
 
@@ -294,6 +312,10 @@ fn pt_cross_candidates(ai: u32, px: vec2u, key: vec2u, seed: vec2u, s: u32, B: u
 }
 #endif
 
+#if RS_POTATO_CACHE
+#include "path/potato-indirect.wgsl"
+#endif
+
 fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk: bool, finalChunk: bool) {
   let ai = p.ai;
 #if RS_RIS_PREPASS && RS_RIS_NEE
@@ -324,7 +346,8 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
   let thr = rs_geo(p.px).w;
   let camPos = rs_cam_pos();
 #if RS_POTATO_CACHE
-  var maxB = select(1u, rsParams.maxBounces + 1u, pt_indirect_active(p.local));
+  let maxB = 1u;
+  var indirectMaxB = select(1u, rsParams.maxBounces + 1u, pt_indirect_active(p.local));
 #else
   let maxB = rsParams.maxBounces + 1u;
 #endif
@@ -378,7 +401,17 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
       rsdbg_vertex(p.px, 0u, B, cur.pos, (hist >> (4u * min(B - 1u, 7u))) & 0xFu);
       let m = material_eval(cur, V);
 #if RS_POTATO_CACHE
-      if (B == 1u) { ptGuide = vec4f(bsdf_prepare(m, V).w_d, m.roughness); }
+      if (B == 1u) {
+#if RS_POTATO_SPECULAR
+        let ctx = bsdf_prepare(m, V);
+        ptGuide = vec4f(ctx.w_d, select(m.roughness, -m.roughness, ctx.q_g > 0.0));
+        if (m.roughness >= 0.35 && ctx.q_g == 0.0 && !pt_force_refresh() && textureLoad(ptFeedback, p.px, 0).g >= 8.0) {
+          ptSpecularActive = ((p.local.x + p.local.y + rs_t()) & 1u) == 0u;
+        }
+#else
+        ptGuide = vec4f(bsdf_prepare(m, V).w_d, m.roughness);
+#endif
+      }
 #endif
       let curV = rc_vertex(cur, m);
       // ---- (1) NEE candidate, d = B + 1 (not at a delta-only vertex) ------------------------------------------------
@@ -449,9 +482,20 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
           if (B == 1u && rs_m6_flag(RSF_PLANT_U8_TILE_PMF) && !ls.isDelta) {
             lsw.p1 = ls.p1 * (tileMult / light_pmf(lightsParams.cur, ep.entry));
           }
+#if RS_POTATO_DIRECT
+          var w1 = nee_mis_w1(lsw, rs_p2m(qn.p_marg, B), B);
+#else
           let w1 = nee_mis_w1(lsw, rs_p2m(qn.p_marg, B), B);
+#endif
+#else
+#if RS_POTATO_DIRECT
+          var w1 = nee_mis_w1(ls, qn.p_marg, B);
 #else
           let w1 = nee_mis_w1(ls, qn.p_marg, B);
+#endif
+#endif
+#if RS_POTATO_DIRECT
+          if (B == 1u && potato_nee_only(m)) { w1 = 1.0; }
 #endif
           let F = (w1 / ls.q) * (beta * qn.f_all * ls.Lambda);
 #if RS_NEE_SITE
@@ -548,8 +592,8 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
       let bs = bsdf_sample(m, V, rs_path_bsdf_u4(seed, B));
       if (!bs.valid) { break; }
 #if RS_POTATO_CACHE
-      // View-dependent paths are sampled per pixel and never enter the diffuse cache.
-      if (B == 1u && bs.lobe != LOBE_D) { maxB = rsParams.maxBounces + 1u; }
+      // View-dependent paths have their own sampling schedule and never enter the diffuse cache.
+      if (bs.lobe != LOBE_D) { indirectMaxB = select(1u, rsParams.maxBounces + 1u, ptSpecularActive); }
 #endif
       hist = pt_hist_set(hist, B, bs.lobe | select(0u, 8u, bs.is_delta));
       let org = offset_ray(cur.pos, select(-cur.ng, cur.ng, dot(cur.ng, bs.L) >= 0.0));
@@ -558,13 +602,20 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
       // otherwise): the last continuation (B = maxB) only decides escape vs hit. A hit ends no candidate (no emission,
       // no crossings) and the tree stops, so the same call site traces it as an any-hit query and stops there; an escape
       // is the same miss as the closest-hit query. Only counters see it (BVH stats, RSC_BASE_JDEN_INVALID of the dead q_b).
+#if RS_POTATO_CACHE
+      let lastAny = indirectMaxB == 1u;
+#else
       let lastAny = B == maxB;
+#endif
       let h = bvh_trace(org, bs.L, FLT_MAX, lastAny, curPrim, BVH_MISS);
       if (lastAny && h.primId != BVH_MISS) { break; }
 #else
       let h = trace_closest_ex(org, bs.L, FLT_MAX, curPrim, BVH_MISS);
 #endif
       let isHit = h.primId != BVH_MISS;
+#if RS_POTATO_CACHE
+      if (bs.lobe != LOBE_D && isHit) { ptSpecularDistance = min(h.t + 1.0, 65504.0); }
+#endif
       var nxt = cur;
       var wOut = bs.L;
       if (isHit) {
@@ -780,6 +831,12 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
         rsdbg_candidate(p.px, B + 1u, tech, k, w, luminance(endF), counter, sel);
       }
       if (!isHit) { break; }
+#if RS_POTATO_CACHE
+      if (indirectMaxB > 1u) {
+        potato_indirect(nxt, h.primId, select(-wOut, -bs.L, bs.is_delta), seed, beta, rrInv, bs.lobe == LOBE_D, indirectMaxB);
+      }
+      break;
+#else
       prevV = curV;
       prevE = eB;
       prevPJoint = pt_jpdf(qb);
@@ -791,6 +848,7 @@ fn pathtree_run(p: RsPix, key: vec2u, treeBase: u32, treeCount: u32, firstChunk:
       // of x_{B+1} is the TRACED direction (the PT's), not the position-derived ω (D3): the delta sampler at x_{B+1}
       // would otherwise see the offset origin's tilt (thin slabs near the critical angle: lobe probabilities biased)
       V = select(-wOut, -bs.L, bs.is_delta);
+#endif
     }
   }
 

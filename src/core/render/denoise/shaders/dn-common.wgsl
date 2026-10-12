@@ -39,6 +39,8 @@ struct DnParams {          // 128 B
 }
 @group(0) @binding(1) var<uniform> dn: DnParams;
 
+const DNF_ADAPTIVE_GI: u32 = 2048u;
+const DNF_SPECULAR_HISTORY: u32 = 4096u;
 const DNF_WORLD_CACHE: u32 = 1024u;
 const DNF_CACHE_LIGHT: u32 = 512u; // Potato cache: lighting changed, shorten the response
 const DNF_RESET: u32 = 1u;         // full history reset this frame

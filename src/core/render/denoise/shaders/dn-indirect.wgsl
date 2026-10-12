@@ -20,6 +20,10 @@
 @group(1) @binding(7) var specular: texture_2d<f32>;
 @group(1) @binding(8) var diffuseGuide: texture_2d<f32>;
 @group(1) @binding(9) var<storage, read> worldCache: array<GiWorldEntry>;
+@group(1) @binding(10) var feedbackOut: texture_storage_2d<rgba16float, write>;
+@group(1) @binding(11) var feedbackPrev: texture_2d<f32>;
+@group(1) @binding(12) var specOut: texture_storage_2d<rgba16float, write>;
+@group(1) @binding(13) var specPrev: texture_2d<f32>;
 
 fn gi_diffuse_factor(p: vec2u, albedo: vec3f) -> vec3f {
   // A 1x1 guide is the synthetic/legacy test path. Production always supplies the exact Lambert weight.
@@ -32,8 +36,13 @@ fn dn_indirect(@builtin(global_invocation_id) gid: vec3u) {
   let p = gid.xy;
   if (any(p >= dn.size)) { return; }
   let g = gbuf[p.y * dn.size.x + p.x];
-  let d = textureLoad(direct, p, 0).rgb + textureLoad(specular, p, 0).rgb;
+  let spec = textureLoad(specular, p, 0);
+  var d = textureLoad(direct, p, 0).rgb + spec.rgb;
   if ((g.flags & GB_HIT) == 0u) {
+#if DN_GI_REUSE && !DN_GI_BLUR
+    textureStore(feedbackOut, p, vec4f(0.0));
+    textureStore(specOut, p, vec4f(spec.rgb, 0.0));
+#endif
     textureStore(cacheOut, p, vec4f(0.0));
     textureStore(combined, p, vec4f(d, 1.0));
     return;
@@ -50,6 +59,8 @@ fn dn_indirect(@builtin(global_invocation_id) gid: vec3u) {
   let footprint = max(2.0 * dist * frame.cam.tanHalfY / f32(dn.size.y), 1e-5);
   var c = vec3f(0.0);
   var w = 0.0;
+  var sparseSpec = vec3f(0.0);
+  var sparseSpecW = 0.0;
   for (var y = -1; y <= 1; y++) {
     for (var x = -1; x <= 1; x++) {
 #if DN_GI_BLUR
@@ -61,7 +72,6 @@ fn dn_indirect(@builtin(global_invocation_id) gid: vec3u) {
 #endif
       if (!dn_in_image(q)) { continue; }
       let sample = textureLoad(raw, q, 0);
-      if (sample.a == 0.0) { continue; }
       let v = gbuf[u32(q.y) * dn.size.x + u32(q.x)];
       let delta = v.pos - g.pos;
       let normal = max(dot(g.ns, v.ns), 0.0);
@@ -74,6 +84,14 @@ fn dn_indirect(@builtin(global_invocation_id) gid: vec3u) {
 #else
       var weight = exp(-dot(offset, offset) / (2.0 * f32(N * N))) * pow(normal, 4.0);
 #endif
+#if DN_GI_REUSE && !DN_GI_BLUR
+      if (dn_flag(DNF_SPECULAR_HISTORY) && textureLoad(diffuseGuide, p, 0).a >= 0.5 && normal > 0.95 &&
+          abs(textureLoad(diffuseGuide,q,0).a - textureLoad(diffuseGuide,p,0).a) < 0.15) {
+        let rs = textureLoad(specular,q,0);
+        if (rs.a > 0.0) { sparseSpec += rs.rgb * weight; sparseSpecW += weight; }
+      }
+#endif
+      if (sample.a == 0.0) { continue; }
 #if DN_GI_BLUR
       c += sample.rgb * weight;
 #else
@@ -92,6 +110,8 @@ fn dn_indirect(@builtin(global_invocation_id) gid: vec3u) {
 #else
   var h = vec4f(0.0);
   var hw = 0.0;
+  var hs = vec4f(0.0);
+  var hsw = 0.0;
   if (!dn_flag(DNF_RESET) && frame_view_depth(g.pos, frame.prevCam) > 1e-12) {
     let z = length(g.pos - frame.prevCam.camToWorld[3].xyz);
     let sp = select(vec2f(p), frame_project(g.pos, frame.prevCam) - vec2f(0.5), (frame.flags & FRAME_CAMERA_MOVED) != 0u);
@@ -108,6 +128,13 @@ fn dn_indirect(@builtin(global_invocation_id) gid: vec3u) {
         let v = textureLoad(history, q, 0);
         if (v.a <= 0.0) { continue; }
         let weight = select(1.0-f.x, f.x, o.x == 1) * select(1.0-f.y, f.y, o.y == 1);
+#if DN_GI_REUSE
+        let prevSpec = textureLoad(specPrev, q, 0);
+        if (dot(g.ns, dn_guide_normal(prev)) > 0.95 && prevSpec.a > 0.0) {
+          hs += prevSpec * weight;
+          hsw += weight;
+        }
+#endif
         h += v * weight;
         hw += weight;
       }
@@ -115,6 +142,41 @@ fn dn_indirect(@builtin(global_invocation_id) gid: vec3u) {
   }
   if (hw > 1e-4) { h /= hw; } else { h = vec4f(0.0); }
   var age = min(h.a + 1.0, 32.0);
+#if DN_GI_REUSE
+  let previous = textureLoad(feedbackPrev, p, 0);
+  let moving = (frame.flags & FRAME_CAMERA_MOVED) != 0u;
+  let refresh = dn_flag(DNF_RESET) || dn_flag(DNF_CACHE_LIGHT) || moving;
+  // Count settled updates, not just elapsed frames. Large innovations reopen sampling.
+  var stable = previous.r;
+  if (refresh || h.a < 24.0 || hw < 0.95) { stable = 0.0; }
+  else if (w > 0.0) {
+    let change = length(c - h.rgb) / max(length(h.rgb), 0.05);
+    stable = select(0.0, min(stable + 1.0, 32.0), change < 0.5);
+  }
+  var currentSpec = spec;
+  if (dn_flag(DNF_SPECULAR_HISTORY) && sparseSpecW > 0.0) {
+    currentSpec = vec4f(sparseSpec / sparseSpecW, 1.0);
+  }
+  var sc = currentSpec.rgb;
+  var sa = 1.0;
+  let rough = textureLoad(diffuseGuide, p, 0).a;
+  if (dn_flag(DNF_SPECULAR_HISTORY) && rough >= 0.35) {
+    if (hsw > 1e-4) { hs /= hsw; } else { hs = vec4f(0.0); }
+    // Reflection hit-distance changes invalidate static reuse. Camera motion uses current-frame
+    // sparse reconstruction with a short blend; reflections are not frozen in world space.
+    if (!moving && spec.a > 1.0 && previous.a > 1.0 && abs(spec.a-previous.a) > 0.5 * max(spec.a, previous.a)) { hs = vec4f(0.0); }
+    if (currentSpec.a > 0.0) {
+      sa = min(hs.a + 1.0, 8.0);
+      if (hs.a > 0.0) {
+        let alpha = max(1.0 / sa, select(select(0.125, 0.35, moving), 0.5, dn_flag(DNF_CACHE_LIGHT)));
+        sc = mix(hs.rgb, sc, alpha);
+      }
+    } else { sc = hs.rgb; sa = hs.a; }
+  }
+  textureStore(specOut, p, vec4f(dn_fp16v(sc), sa));
+  textureStore(feedbackOut, p, vec4f(stable, sa, rough, select(previous.a, spec.a, spec.a > 0.0)));
+  d = textureLoad(direct, p, 0).rgb + sc;
+#endif
   if (w > 0.0) {
     if (h.a > 0.0) {
       let alpha = max(1.0 / age, select(0.05, 0.2, dn_flag(DNF_CACHE_LIGHT)));
